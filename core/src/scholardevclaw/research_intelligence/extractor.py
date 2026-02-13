@@ -193,6 +193,187 @@ PAPER_SPECS: Dict[str, Dict] = {
             "max_benchmark_time": 300,
         },
     },
+    "preln_transformer": {
+        "paper": {
+            "title": "On Layer Normalization in the Pre-Training Transformer",
+            "authors": [
+                "Jinliang Du",
+                "Jiangang Du",
+                "Yujia Bao",
+                "Haoyu Wang",
+                "Xue wen",
+                "Dacheng Tao",
+            ],
+            "arxiv": "2203.17056",
+            "year": 2022,
+        },
+        "algorithm": {
+            "name": "Pre-LN Transformer",
+            "replaces": "Post-LN",
+            "description": "Apply LayerNorm before attention/MLP sublayers instead of after",
+            "formula": "LayerNorm(x + Sublayer(x)) instead of x + Sublayer(LayerNorm(x))",
+        },
+        "implementation": {
+            "module_name": "PreLNBlock",
+            "parent_class": "nn.Module",
+            "parameters": ["config"],
+            "forward_signature": "(x: Tensor) -> Tensor",
+        },
+        "changes": {
+            "type": "replace",
+            "target_patterns": ["self.ln_1", "self.ln_2", "LayerNorm"],
+            "replacement": "Move LayerNorm before attention/MLP",
+            "insertion_points": ["Block class forward"],
+            "expected_benefits": ["More stable training", "No warmup needed", "Better convergence"],
+        },
+        "validation": {
+            "test_type": "training_comparison",
+            "metrics": ["loss", "training_stability"],
+            "max_benchmark_time": 300,
+        },
+    },
+    "qknorm": {
+        "paper": {
+            "title": "Query-Key Normalization for Transformers",
+            "authors": [
+                "Namgyu Ho",
+                "Sangmin Bae",
+                "Hyunwoo Kim",
+                "Seungryul Baek",
+                "Seehwan Yoo",
+                "Taesup Kim",
+            ],
+            "arxiv": "2210.07440",
+            "year": 2022,
+        },
+        "algorithm": {
+            "name": "QKNorm",
+            "replaces": "QK without normalization",
+            "description": "Normalize query and key projections to have unit variance",
+            "formula": "Q = Q / ||Q||_2, K = K / ||K||_2",
+        },
+        "implementation": {
+            "module_name": "QKNorm",
+            "parent_class": "nn.Module",
+            "parameters": ["dim", "eps"],
+            "forward_signature": "(q: Tensor, k: Tensor) -> Tuple[Tensor, Tensor]",
+        },
+        "changes": {
+            "type": "extend",
+            "target_patterns": ["self.c_attn", "CausalSelfAttention"],
+            "replacement": "Add QKNorm to attention",
+            "insertion_points": ["CausalSelfAttention forward"],
+            "expected_benefits": ["More stable attention", "Better gradient flow"],
+        },
+        "validation": {
+            "test_type": "training_comparison",
+            "metrics": ["loss", "attention_scores"],
+            "max_benchmark_time": 300,
+        },
+    },
+    "weight_decay_fused": {
+        "paper": {
+            "title": "Decoupled Weight Decay Regularization",
+            "authors": ["Ilya Loshchilov", "Frank Hutter"],
+            "arxiv": "1711.05101",
+            "year": 2017,
+        },
+        "algorithm": {
+            "name": "AdamW",
+            "replaces": "Adam with L2",
+            "description": "Decoupled weight decay for proper regularization",
+            "formula": "θ = θ - η * (grad / (1-β₁ᵗ) + wd * θ)",
+        },
+        "implementation": {
+            "module_name": "AdamW",
+            "parent_class": "torch.optim.Optimizer",
+            "parameters": ["params", "lr", "weight_decay"],
+            "forward_signature": "(params, lr, betas, weight_decay)",
+        },
+        "changes": {
+            "type": "replace",
+            "target_patterns": ["torch.optim.Adam", "optimizer = torch.optim.Adam"],
+            "replacement": "torch.optim.AdamW",
+            "insertion_points": ["train.py optimizer setup"],
+            "expected_benefits": ["Better generalization", "Proper weight decay"],
+        },
+        "validation": {
+            "test_type": "training_comparison",
+            "metrics": ["loss", "perplexity", "weight_norm"],
+            "max_benchmark_time": 300,
+        },
+    },
+    "fused_flashattention": {
+        "paper": {
+            "title": "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning",
+            "authors": ["Tri Dao"],
+            "arxiv": "2307.08691",
+            "year": 2023,
+        },
+        "algorithm": {
+            "name": "FlashAttention-2",
+            "replaces": "FlashAttention",
+            "description": "Improved FlashAttention with better CUDA kernels",
+            "formula": "Online softmax with tiling and recomputation",
+        },
+        "implementation": {
+            "module_name": "FlashAttention2",
+            "parent_class": "nn.Module",
+            "parameters": ["config"],
+            "forward_signature": "(q, k, v: Tensor) -> Tensor",
+        },
+        "changes": {
+            "type": "replace",
+            "target_patterns": ["flash_attn_func", "flash_attn_v2"],
+            "replacement": "FlashAttention2",
+            "insertion_points": ["CausalSelfAttention forward"],
+            "expected_benefits": ["2x speedup", "Better parallelism"],
+        },
+        "validation": {
+            "test_type": "benchmark",
+            "metrics": ["tokens_per_second", "memory_usage"],
+            "max_benchmark_time": 300,
+        },
+    },
+    "mistral": {
+        "paper": {
+            "title": "Mixtral of Experts",
+            "authors": [
+                "Albert Q. Jiang",
+                "Alexandre Sablayrolles",
+                "Arthur Mensch",
+                "Chris Bamford",
+                "Devendra Singh Chaplot",
+                "Guillaume Bress",
+            ],
+            "arxiv": "2401.04088",
+            "year": 2024,
+        },
+        "algorithm": {
+            "name": "MoE",
+            "replaces": "Dense MLP",
+            "description": "Mixtral-style Sparse Mixture of Experts - select top-k experts per token",
+            "formula": "y = Σᵢ Gᵢ(x) * Eᵢ(x) where G is gating and E are experts",
+        },
+        "implementation": {
+            "module_name": "MoE",
+            "parent_class": "nn.Module",
+            "parameters": ["num_experts", "top_k", "dim"],
+            "forward_signature": "(x: Tensor) -> Tensor",
+        },
+        "changes": {
+            "type": "replace",
+            "target_patterns": ["class MLP", "self.mlp"],
+            "replacement": "MoE",
+            "insertion_points": ["Block class"],
+            "expected_benefits": ["Same compute, better quality", "Sparse activation"],
+        },
+        "validation": {
+            "test_type": "training_comparison",
+            "metrics": ["loss", "perplexity", "active_experts"],
+            "max_benchmark_time": 300,
+        },
+    },
 }
 
 
