@@ -178,7 +178,7 @@ Check:
 from scholardevclaw.repo_intelligence.parser import PyTorchRepoParser
 from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 from scholardevclaw.mapping.engine import MappingEngine
-from scholardewclaw.patch_generation.generator import PatchGenerator
+from scholardevclaw.patch_generation.generator import PatchGenerator
 
 # Full pipeline
 parser = PyTorchRepoParser("/path/to/repo")

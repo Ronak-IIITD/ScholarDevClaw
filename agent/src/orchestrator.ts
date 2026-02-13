@@ -1,7 +1,14 @@
-import { logger } from '../utils/logger.js';
-import { config } from '../utils/config.js';
+import { logger } from './utils/logger.js';
+import { config } from './utils/config.js';
 import { PythonSubprocessBridge, PythonHttpBridge } from './bridges/python-bridge.js';
-import { ConvexClientWrapper, type Integration, type IntegrationCreate } from './api/convex.js';
+import type {
+  MappingResult,
+  PatchResult,
+  RepoAnalysisResult,
+  ResearchSpecResult,
+  ValidationResult,
+} from './bridges/python-subprocess.js';
+import { ConvexClientWrapper, type IntegrationCreate } from './api/convex.js';
 import { GitHubClient } from './api/github.js';
 import * as Phase1 from './phases/phase1-repo.js';
 import * as Phase2 from './phases/phase2-research.js';
@@ -15,7 +22,7 @@ export class ScholarDevClawOrchestrator {
   private convex?: ConvexClientWrapper;
   private github?: GitHubClient;
 
-  constructor(useHttp: boolean = false) {
+  constructor(useHttp: boolean = true) {
     if (useHttp) {
       this.bridge = new PythonHttpBridge(config.python.coreApiUrl);
     } else {
@@ -41,7 +48,16 @@ export class ScholarDevClawOrchestrator {
 
     logger.info('Starting integration', { repoUrl, paperUrl, mode: executionMode });
 
-    const context = {
+    const context: {
+      repoPath: string;
+      paperSource: string;
+      sourceType: 'pdf' | 'arxiv';
+      repoAnalysis?: RepoAnalysisResult;
+      researchSpec?: ResearchSpecResult;
+      mapping?: MappingResult;
+      patch?: PatchResult;
+      validation?: ValidationResult;
+    } = {
       repoPath: repoUrl,
       paperSource: paperUrl || paperPdfPath || '',
       sourceType: paperUrl ? 'arxiv' as const : 'pdf' as const,

@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { resolve } from 'path';
+import { resolve as pathResolve } from 'path';
 import { logger } from '../utils/logger.js';
 
 export interface PhaseResult {
@@ -116,10 +116,14 @@ export class PythonSubprocessBridge {
     this.corePath = corePath;
   }
 
-  private async runPython(script: string, args: string[] = []): Promise<PhaseResult> {
-    return new Promise((resolve) => {
-      const proc = spawn(this.pythonCmd, ['-m', `scholardevclaw.${script}`, ...args], {
-        cwd: resolve(this.corePath),
+  private getCoreWorkingDirectory(): string {
+    return pathResolve(process.cwd(), this.corePath);
+  }
+
+  private async runPythonModule(modulePath: string, args: string[] = []): Promise<PhaseResult> {
+    return new Promise((promiseResolve) => {
+      const proc = spawn(this.pythonCmd, ['-m', modulePath, ...args], {
+        cwd: this.getCoreWorkingDirectory(),
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -136,47 +140,87 @@ export class PythonSubprocessBridge {
 
       proc.on('close', (code) => {
         if (code === 0) {
-          try {
-            const result = stdout.trim() ? JSON.parse(stdout) : {};
-            resolve({ success: true, data: result });
-          } catch {
-            resolve({ success: true, data: stdout.trim() });
-          }
+          const output = stdout.trim();
+          const parsed = this.parseJsonFromOutput(output);
+          promiseResolve({ success: true, data: parsed ?? output });
         } else {
           logger.error(`Python script failed: ${stderr}`);
-          resolve({ success: false, error: stderr || `Exit code: ${code}` });
+          promiseResolve({ success: false, error: stderr || `Exit code: ${code}` });
         }
       });
 
       proc.on('error', (err) => {
         logger.error(`Failed to start Python: ${err.message}`);
-        resolve({ success: false, error: err.message });
+        promiseResolve({ success: false, error: err.message });
       });
     });
   }
 
+  private parseJsonFromOutput(output: string): unknown | null {
+    if (!output) {
+      return {};
+    }
+
+    try {
+      return JSON.parse(output);
+    } catch {
+      const lastJsonStart = output.lastIndexOf('\n{');
+      if (lastJsonStart >= 0) {
+        const candidate = output.slice(lastJsonStart + 1);
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          return null;
+        }
+      }
+
+      return null;
+    }
+  }
+
   async analyzeRepo(repoPath: string): Promise<PhaseResult> {
     logger.info('Analyzing repository', { repoPath });
-    return this.runPython('repo_intelligence.parser', [repoPath]);
+    return this.runPythonModule('scholardevclaw.cli', ['analyze', repoPath, '--output-json']);
   }
 
   async extractResearch(paperSource: string, sourceType: 'pdf' | 'arxiv' = 'pdf'): Promise<PhaseResult> {
     logger.info('Extracting research', { paperSource, sourceType });
-    return this.runPython('research_intelligence.extractor', [paperSource, sourceType]);
+    return {
+      success: false,
+      error:
+        'Subprocess mode does not support research extraction via module CLI. Use PythonHttpBridge for end-to-end phase execution.',
+    };
   }
 
   async mapArchitecture(repoAnalysis: unknown, researchSpec: unknown): Promise<PhaseResult> {
     logger.info('Mapping architecture');
-    return this.runPython('mapping.engine', []);
+    void repoAnalysis;
+    void researchSpec;
+    return {
+      success: false,
+      error:
+        'Subprocess mode does not support mapping execution. Use PythonHttpBridge for end-to-end phase execution.',
+    };
   }
 
   async generatePatch(mapping: unknown): Promise<PhaseResult> {
     logger.info('Generating patch');
-    return this.runPython('patch_generation.generator', []);
+    void mapping;
+    return {
+      success: false,
+      error:
+        'Subprocess mode does not support patch generation execution. Use PythonHttpBridge for end-to-end phase execution.',
+    };
   }
 
-  async validate(patch: unknown): Promise<PhaseResult> {
+  async validate(patch: unknown, repoPath?: string): Promise<PhaseResult> {
     logger.info('Running validation');
-    return this.runPython('validation.runner', []);
+    void patch;
+    void repoPath;
+    return {
+      success: false,
+      error:
+        'Subprocess mode does not support validation execution. Use PythonHttpBridge for end-to-end phase execution.',
+    };
   }
 }

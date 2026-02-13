@@ -29,6 +29,41 @@ from pathlib import Path
 from typing import Optional
 
 
+def _build_mapping_result(repo_path: Path, spec_name: str) -> tuple[dict, dict]:
+    from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+    from scholardevclaw.research_intelligence.extractor import ResearchExtractor
+    from scholardevclaw.mapping.engine import MappingEngine
+
+    analyzer = TreeSitterAnalyzer(repo_path)
+    analysis = analyzer.analyze()
+
+    extractor = ResearchExtractor()
+    spec = extractor.get_spec(spec_name)
+    if spec is None:
+        raise ValueError(f"Unknown spec: {spec_name}")
+
+    engine = MappingEngine(analysis.__dict__, spec)
+    mapping = engine.map()
+
+    mapping_result = {
+        "targets": [
+            {
+                "file": t.file,
+                "line": t.line,
+                "current_code": t.current_code,
+                "replacement_required": t.replacement_required,
+                "context": t.context,
+            }
+            for t in mapping.targets
+        ],
+        "strategy": mapping.strategy,
+        "confidence": mapping.confidence,
+        "research_spec": mapping.research_spec,
+    }
+
+    return mapping_result, spec
+
+
 def cmd_analyze(args):
     """Analyze a repository (multi-language support)"""
     path = Path(args.repo_path)
@@ -183,6 +218,124 @@ def cmd_suggest(args):
         print(f"   Found in: {len(suggestion['locations'])} locations")
         print(f"   Category: {suggestion['paper']['category']}")
         print()
+
+
+def cmd_map(args):
+    """Map a research specification to repository locations"""
+    path = Path(args.repo_path)
+    if not path.exists():
+        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Mapping spec '{args.spec}' to: {path}")
+    print("-" * 50)
+
+    try:
+        mapping_result, spec = _build_mapping_result(path, args.spec)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    targets = mapping_result["targets"]
+    print(f"\nAlgorithm: {spec['algorithm']['name']}")
+    print(f"Strategy: {mapping_result['strategy']}")
+    print(f"Confidence: {mapping_result['confidence']}%")
+    print(f"Targets: {len(targets)}")
+
+    for target in targets[:10]:
+        print(f"  - {target['file']}:{target['line']} -> {target['current_code']}")
+
+    if args.output_json:
+        print(json.dumps(mapping_result, indent=2))
+
+
+def cmd_generate(args):
+    """Generate patch artifacts for a research specification"""
+    path = Path(args.repo_path)
+    if not path.exists():
+        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Generating patch for spec '{args.spec}' in: {path}")
+    print("-" * 50)
+
+    try:
+        mapping_result, _ = _build_mapping_result(path, args.spec)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    from scholardevclaw.patch_generation.generator import PatchGenerator
+
+    generator = PatchGenerator(path)
+    patch = generator.generate(mapping_result)
+
+    output_dir = Path(args.output_dir) if args.output_dir else path / "integration-patch"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for nf in patch.new_files:
+        out_file = output_dir / nf.path
+        out_file.write_text(nf.content)
+        print(f"  ✓ Created: {out_file}")
+
+    print(f"\nBranch: {patch.branch_name}")
+    print(f"New files: {len(patch.new_files)}")
+    print(f"Transformations: {len(patch.transformations)}")
+    print(f"Patch output: {output_dir}")
+
+    if args.output_json:
+        output = {
+            "branch_name": patch.branch_name,
+            "algorithm_name": patch.algorithm_name,
+            "paper_reference": patch.paper_reference,
+            "new_files": [{"path": nf.path} for nf in patch.new_files],
+            "transformations": [
+                {
+                    "file": t.file,
+                    "changes": t.changes,
+                }
+                for t in patch.transformations
+            ],
+            "output_dir": str(output_dir),
+        }
+        print(json.dumps(output, indent=2))
+
+
+def cmd_validate(args):
+    """Run validation on a repository"""
+    path = Path(args.repo_path)
+    if not path.exists():
+        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Validating repository: {path}")
+    print("-" * 50)
+
+    from scholardevclaw.validation.runner import ValidationRunner
+
+    runner = ValidationRunner(path)
+    result = runner.run({}, str(path))
+
+    print(f"Stage: {result.stage}")
+    print(f"Passed: {'Yes' if result.passed else 'No'}")
+
+    if result.comparison:
+        print("Comparison:")
+        for key, value in result.comparison.items():
+            print(f"  {key}: {value}")
+
+    if result.error:
+        print(f"Error: {result.error}")
+
+    if args.output_json:
+        output = {
+            "passed": result.passed,
+            "stage": result.stage,
+            "comparison": result.comparison,
+            "logs": result.logs,
+            "error": result.error,
+        }
+        print(json.dumps(output, indent=2))
 
 
 def cmd_integrate(args):
@@ -461,6 +614,24 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     )
     p_integrate.add_argument("--output-dir", help="Output directory for generated files")
 
+    # map
+    p_map = subparsers.add_parser("map", help="Map a paper specification to repository locations")
+    p_map.add_argument("repo_path", help="Path to repository")
+    p_map.add_argument("spec", help="Paper specification name (e.g., rmsnorm)")
+    p_map.add_argument("--output-json", action="store_true", help="Output JSON")
+
+    # generate
+    p_generate = subparsers.add_parser("generate", help="Generate patch artifacts")
+    p_generate.add_argument("repo_path", help="Path to repository")
+    p_generate.add_argument("spec", help="Paper specification name (e.g., rmsnorm)")
+    p_generate.add_argument("--output-dir", help="Output directory for generated files")
+    p_generate.add_argument("--output-json", action="store_true", help="Output JSON")
+
+    # validate
+    p_validate = subparsers.add_parser("validate", help="Validate tests and benchmark")
+    p_validate.add_argument("repo_path", help="Path to repository")
+    p_validate.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # specs
     p_specs = subparsers.add_parser("specs", help="List paper specifications")
     p_specs.add_argument("--list", action="store_true", help="Detailed list")
@@ -479,6 +650,9 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "analyze": cmd_analyze,
         "search": cmd_search,
         "suggest": cmd_suggest,
+        "map": cmd_map,
+        "generate": cmd_generate,
+        "validate": cmd_validate,
         "integrate": cmd_integrate,
         "specs": cmd_specs,
         "demo": cmd_demo,

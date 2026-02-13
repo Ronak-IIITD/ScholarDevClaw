@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from pathlib import Path
-import json
+from typing import Any, Literal
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..repo_intelligence.parser import PyTorchRepoParser
 from ..research_intelligence.extractor import ResearchExtractor
@@ -18,26 +19,234 @@ app = FastAPI(
 
 
 class RepoAnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     repoPath: str
+
+    @field_validator("repoPath")
+    @classmethod
+    def validate_repo_path(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("repoPath cannot be empty")
+        return value
 
 
 class ResearchExtractRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source: str
-    sourceType: str = "pdf"
+    sourceType: Literal["pdf", "arxiv"] = "pdf"
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("source cannot be empty")
+        return value
 
 
 class MappingRequest(BaseModel):
-    repoAnalysis: dict
-    researchSpec: dict
+    model_config = ConfigDict(extra="forbid")
+
+    repoAnalysis: dict[str, Any]
+    researchSpec: dict[str, Any]
 
 
 class PatchGenerateRequest(BaseModel):
-    mapping: dict
+    model_config = ConfigDict(extra="forbid")
+
+    mapping: dict[str, Any]
+    repoPath: str | None = None
 
 
 class ValidationRequest(BaseModel):
-    patch: dict
+    model_config = ConfigDict(extra="forbid")
+
+    patch: dict[str, Any]
     repoPath: str
+
+
+class ModelEntry(BaseModel):
+    name: str
+    file: str
+    line: int
+    parent: str
+    components: dict[str, Any] = Field(default_factory=dict)
+
+
+class TrainingLoopEntry(BaseModel):
+    file: str
+    line: int
+    optimizer: str
+    lossFn: str
+
+
+class ArchitectureEntry(BaseModel):
+    models: list[ModelEntry]
+    trainingLoop: TrainingLoopEntry | None = None
+
+
+class TestSuiteEntry(BaseModel):
+    runner: str
+    testFiles: list[str]
+
+
+class RepoAnalyzeResponse(BaseModel):
+    repoName: str
+    architecture: ArchitectureEntry
+    dependencies: dict[str, Any]
+    testSuite: TestSuiteEntry
+
+
+class ResearchPaper(BaseModel):
+    title: str
+    authors: list[str]
+    arxiv: str | None = None
+    year: int
+
+
+class ResearchAlgorithm(BaseModel):
+    name: str
+    replaces: str | None = None
+    description: str
+    formula: str | None = None
+
+
+class ResearchImplementation(BaseModel):
+    moduleName: str
+    parentClass: str
+    parameters: list[str]
+    codeTemplate: str | None = None
+
+
+class ResearchChanges(BaseModel):
+    type: str
+    targetPattern: str
+    insertionPoints: list[str]
+    replacement: str | None = None
+    expectedBenefits: list[str] = Field(default_factory=list)
+
+
+class ResearchExtractResponse(BaseModel):
+    paper: ResearchPaper
+    algorithm: ResearchAlgorithm
+    implementation: ResearchImplementation
+    changes: ResearchChanges
+    validation: dict[str, Any] | None = None
+
+
+class MappingTargetResponse(BaseModel):
+    file: str
+    line: int
+    currentCode: str
+    replacementRequired: bool
+
+
+class MappingResponse(BaseModel):
+    targets: list[MappingTargetResponse]
+    strategy: str
+    confidence: int
+
+
+class PatchFileResponse(BaseModel):
+    path: str
+    content: str
+
+
+class TransformationResponse(BaseModel):
+    file: str
+    original: str
+    modified: str
+    changes: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PatchGenerateResponse(BaseModel):
+    newFiles: list[PatchFileResponse]
+    transformations: list[TransformationResponse]
+    branchName: str
+
+
+class MetricsResponse(BaseModel):
+    loss: float
+    perplexity: float
+    tokensPerSecond: float
+    memoryMb: float
+
+
+class ValidationResponse(BaseModel):
+    passed: bool
+    stage: str
+    baselineMetrics: MetricsResponse | None = None
+    newMetrics: MetricsResponse | None = None
+    comparison: dict[str, Any] | None = None
+    logs: str
+    error: str | None = None
+
+
+def _resolve_existing_repo_path(repo_path: str) -> Path:
+    path = Path(repo_path).expanduser().resolve()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Repository path not found")
+    if not path.is_dir():
+        raise HTTPException(status_code=400, detail="Repository path must be a directory")
+    return path
+
+
+def _normalize_research_spec(raw: dict[str, Any]) -> ResearchExtractResponse:
+    paper = raw.get("paper", {})
+    algorithm = raw.get("algorithm", {})
+    implementation = raw.get("implementation", {})
+    changes = raw.get("changes", {})
+
+    target_patterns = changes.get("target_patterns") or []
+    insertion_points = changes.get("insertion_points") or []
+    expected_benefits = changes.get("expected_benefits") or []
+
+    normalized = {
+        "paper": {
+            "title": paper.get("title", "Unknown"),
+            "authors": paper.get("authors") or [],
+            "arxiv": paper.get("arxiv"),
+            "year": int(paper.get("year", 2024)),
+        },
+        "algorithm": {
+            "name": algorithm.get("name", "Unknown"),
+            "replaces": algorithm.get("replaces"),
+            "description": algorithm.get("description", ""),
+            "formula": algorithm.get("formula"),
+        },
+        "implementation": {
+            "moduleName": implementation.get("module_name", implementation.get("moduleName", "")),
+            "parentClass": implementation.get(
+                "parent_class", implementation.get("parentClass", "")
+            ),
+            "parameters": implementation.get("parameters") or [],
+            "codeTemplate": implementation.get(
+                "code_template", implementation.get("codeTemplate")
+            ),
+        },
+        "changes": {
+            "type": changes.get("type", "replace"),
+            "targetPattern": target_patterns[0] if target_patterns else "",
+            "insertionPoints": insertion_points,
+            "replacement": changes.get("replacement"),
+            "expectedBenefits": expected_benefits,
+        },
+        "validation": raw.get("validation"),
+    }
+
+    return ResearchExtractResponse.model_validate(normalized)
+
+
+def _metrics_to_response(metrics: Any) -> MetricsResponse | None:
+    if metrics is None:
+        return None
+    return MetricsResponse(
+        loss=metrics.loss,
+        perplexity=metrics.perplexity,
+        tokensPerSecond=metrics.tokens_per_second,
+        memoryMb=metrics.memory_mb,
+    )
 
 
 @app.get("/health")
@@ -45,13 +254,10 @@ async def health():
     return {"status": "ok"}
 
 
-@app.post("/repo/analyze")
+@app.post("/repo/analyze", response_model=RepoAnalyzeResponse)
 async def analyze_repo(request: RepoAnalyzeRequest):
     try:
-        repo_path = Path(request.repoPath)
-
-        if not repo_path.exists():
-            raise HTTPException(status_code=404, detail="Repository path not found")
+        repo_path = _resolve_existing_repo_path(request.repoPath)
 
         parser = PyTorchRepoParser(repo_path)
         repo_map = parser.parse()
@@ -85,29 +291,36 @@ async def analyze_repo(request: RepoAnalyzeRequest):
             },
         }
 
-        return result
+        return RepoAnalyzeResponse.model_validate(result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/research/extract")
+@app.post("/research/extract", response_model=ResearchExtractResponse)
 async def extract_research(request: ResearchExtractRequest):
     try:
         extractor = ResearchExtractor()
-        result = extractor.extract(request.source, request.sourceType)
+        raw_result = extractor.extract(request.source, request.sourceType)
 
-        return result
+        if not isinstance(raw_result, dict):
+            raise HTTPException(status_code=500, detail="Invalid research extraction result")
+
+        return _normalize_research_spec(raw_result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/mapping/map")
+@app.post("/mapping/map", response_model=MappingResponse)
 async def map_architecture(request: MappingRequest):
     try:
         engine = MappingEngine(request.repoAnalysis, request.researchSpec)
         result = engine.map()
 
-        return {
+        response = {
             "targets": [
                 {
                     "file": t.file,
@@ -120,17 +333,23 @@ async def map_architecture(request: MappingRequest):
             "strategy": result.strategy,
             "confidence": result.confidence,
         }
+        return MappingResponse.model_validate(response)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/patch/generate")
+@app.post("/patch/generate", response_model=PatchGenerateResponse)
 async def generate_patch(request: PatchGenerateRequest):
     try:
-        generator = PatchGenerator(Path("."))
+        generator_repo_path = (
+            _resolve_existing_repo_path(request.repoPath) if request.repoPath else Path(".").resolve()
+        )
+        generator = PatchGenerator(generator_repo_path)
         patch = generator.generate(request.mapping)
 
-        return {
+        response = {
             "newFiles": [{"path": f.path, "content": f.content} for f in patch.new_files],
             "transformations": [
                 {
@@ -143,43 +362,32 @@ async def generate_patch(request: PatchGenerateRequest):
             ],
             "branchName": patch.branch_name,
         }
+        return PatchGenerateResponse.model_validate(response)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/validation/run")
+@app.post("/validation/run", response_model=ValidationResponse)
 async def run_validation(request: ValidationRequest):
     try:
-        repo_path = Path(request.repoPath)
-
-        if not repo_path.exists():
-            raise HTTPException(status_code=404, detail="Repository path not found")
+        repo_path = _resolve_existing_repo_path(request.repoPath)
 
         runner = ValidationRunner(repo_path)
         result = runner.run(request.patch, request.repoPath)
 
-        return {
+        response = {
             "passed": result.passed,
             "stage": result.stage,
-            "baselineMetrics": {
-                "loss": result.baseline_metrics.loss,
-                "perplexity": result.baseline_metrics.perplexity,
-                "tokensPerSecond": result.baseline_metrics.tokens_per_second,
-                "memoryMb": result.baseline_metrics.memory_mb,
-            }
-            if result.baseline_metrics
-            else None,
-            "newMetrics": {
-                "loss": result.new_metrics.loss,
-                "perplexity": result.new_metrics.perplexity,
-                "tokensPerSecond": result.new_metrics.tokens_per_second,
-                "memoryMb": result.new_metrics.memory_mb,
-            }
-            if result.new_metrics
-            else None,
+            "baselineMetrics": _metrics_to_response(result.baseline_metrics),
+            "newMetrics": _metrics_to_response(result.new_metrics),
             "comparison": result.comparison,
             "logs": result.logs,
             "error": result.error,
         }
+        return ValidationResponse.model_validate(response)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
