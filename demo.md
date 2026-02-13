@@ -44,6 +44,7 @@ python -m scholardevclaw.cli analyze /path/to/your/repo --output-json
 ```
 
 This will:
+
 - Parse all Python files using AST
 - Detect `nn.Module` subclasses
 - Find training loops, optimizers, loss functions
@@ -57,6 +58,7 @@ python -m scholardevclaw.cli specs --list
 ```
 
 Currently available integrations:
+
 - **RMSNorm** - Root Mean Square Layer Normalization (1910.07467)
 - **SwiGLU** - Swish-Gated Linear Unit
 - **FlashAttention** - IO-Aware Exact Attention (2205.14135)
@@ -76,6 +78,7 @@ python -m scholardevclaw.cli map /path/to/your/repo rmsnorm
 ```
 
 This will:
+
 - Find where changes need to be made
 - Check compatibility (tensor shapes, parameters)
 - Calculate confidence score (0-100%)
@@ -89,6 +92,7 @@ python -m scholardevclaw.cli generate /path/to/your/repo rmsnorm --output-dir ./
 ```
 
 This will:
+
 - Create new module files (e.g., `rmsnorm.py`)
 - Generate code transformations
 - Create a branch: `integration/<paper-name>`
@@ -102,6 +106,7 @@ python -m scholardevclaw.cli validate /path/to/your/repo
 ```
 
 This will:
+
 - Run your existing test suite
 - Execute lightweight training benchmark
 - Compare metrics (loss, speed, memory)
@@ -131,12 +136,12 @@ python -m scholardevclaw.cli generate . rmsnorm --output-dir ./rmsnorm-integrati
 
 ### Confidence Scores
 
-| Score | Meaning |
-|-------|---------|
-| 90-100% | High confidence - direct replacement |
-| 70-89% | Good confidence - some manual review needed |
-| 50-69% | Moderate - manual inspection recommended |
-| <50% | Low - significant changes required |
+| Score   | Meaning                                     |
+| ------- | ------------------------------------------- |
+| 90-100% | High confidence - direct replacement        |
+| 70-89%  | Good confidence - some manual review needed |
+| 50-69%  | Moderate - manual inspection recommended    |
+| <50%    | Low - significant changes required          |
 
 ### Patch Strategy Types
 
@@ -149,18 +154,21 @@ python -m scholardevclaw.cli generate . rmsnorm --output-dir ./rmsnorm-integrati
 ### "No models found"
 
 Your repo might use a different pattern. Check:
+
 - Are you using `nn.Module`?
 - Is the model class in a `.py` file?
 
 ### "Targets: 0"
 
 The spec might not match your code. Try:
+
 - `python -m scholardevclaw.cli specs --list` to see available specs
 - Map different paper that matches your architecture
 
 ### "Validation failed"
 
 Check:
+
 - Are there existing tests? (`pytest` should run)
 - Does your training script work independently?
 
@@ -192,19 +200,19 @@ print(f"Files: {[f.path for f in patch.new_files]}")
 ## Programmatic Usage (TypeScript/Agent)
 
 ```typescript
-import { ScholarDevClawAgent } from './agent/src/index.js';
+import { ScholarDevClawAgent } from "./agent/src/index.js";
 
 const agent = new ScholarDevClawAgent({
-  pythonCorePath: '../core/src',
+  pythonCorePath: "../core/src",
   maxRetries: 2,
   benchmarkTimeout: 300,
 });
 
 const result = await agent.runIntegration(
-  '/path/to/repo',      // Repository
-  '',                   // Paper source (optional)
-  'rmsnorm',           // Spec name
-  'autonomous'         // or 'step_approval'
+  "/path/to/repo", // Repository
+  "", // Paper source (optional)
+  "rmsnorm", // Spec name
+  "autonomous", // or 'step_approval'
 );
 
 console.log(result);
@@ -235,5 +243,5 @@ console.log(result);
 
 ## Getting Help
 
-- GitHub Issues: https://github.com/Ronak-IIITD/ScholarDevClaw/issues
+- GitHub Issues: <https://github.com/Ronak-IIITD/ScholarDevClaw/issues>
 - Check `AGENTS.md` for full architecture details
