@@ -9,7 +9,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Button, Footer, Header, Input, Label, Pretty, Select, TextArea
+from textual.widgets import Button, Checkbox, Footer, Header, Input, Label, Pretty, Select, TextArea
 
 from scholardevclaw.application.pipeline import (
     run_analyze,
@@ -110,10 +110,18 @@ class ScholarDevClawApp(App[None]):
                 yield Input(value=str(Path.cwd()), placeholder="/path/to/repository", id="repo-path")
                 yield Label("Search query")
                 yield Input(value="layer normalization", id="query")
+                with Horizontal(classes="spaced"):
+                    yield Checkbox("Include arXiv", value=False, id="search-arxiv")
+                    yield Checkbox("Include web", value=False, id="search-web")
+                yield Label("Search language filter")
+                yield Input(value="python", id="search-language")
+                yield Label("Search max results")
+                yield Input(value="10", id="search-max-results")
                 yield Label("Spec name (for map/generate/integrate)")
                 yield Input(value="rmsnorm", id="spec")
                 yield Label("Output directory (generate only, optional)")
                 yield Input(value="", placeholder="/tmp/sdclaw-patch", id="output-dir")
+                yield Label("Status: Idle", id="run-status")
                 with Horizontal(classes="spaced"):
                     yield Button("Run", id="run", variant="success")
                     yield Button("Clear output", id="clear", variant="default")
@@ -154,8 +162,21 @@ class ScholarDevClawApp(App[None]):
         action = self.query_one("#action", Select).value
         repo_path = self.query_one("#repo-path", Input).value.strip()
         query = self.query_one("#query", Input).value.strip()
+        include_arxiv = self.query_one("#search-arxiv", Checkbox).value
+        include_web = self.query_one("#search-web", Checkbox).value
+        search_language = self.query_one("#search-language", Input).value.strip() or "python"
+        max_results_raw = self.query_one("#search-max-results", Input).value.strip() or "10"
         spec = self.query_one("#spec", Input).value.strip()
         output_dir = self.query_one("#output-dir", Input).value.strip() or None
+
+        try:
+            max_results = max(1, int(max_results_raw))
+        except ValueError:
+            max_results = 10
+
+        run_button = self.query_one("#run", Button)
+        run_button.disabled = True
+        self.query_one("#run-status", Label).update(f"Status: Running '{action}'...")
 
         def _runner() -> None:
             if action == "analyze":
@@ -163,7 +184,13 @@ class ScholarDevClawApp(App[None]):
             elif action == "suggest":
                 result = run_suggest(repo_path)
             elif action == "search":
-                result = run_search(query or "layer normalization")
+                result = run_search(
+                    query or "layer normalization",
+                    include_arxiv=include_arxiv,
+                    include_web=include_web,
+                    language=search_language,
+                    max_results=max_results,
+                )
             elif action == "map":
                 result = run_map(repo_path, spec or "rmsnorm")
             elif action == "generate":
@@ -196,6 +223,9 @@ class ScholarDevClawApp(App[None]):
         }
         self.query_one("#result", Pretty).update(payload)
         self._append_logs("logs", message.logs)
+        self.query_one("#run", Button).disabled = False
+        status = "Done" if message.error is None else "Failed"
+        self.query_one("#run-status", Label).update(f"Status: {status} ({message.title})")
 
     @on(Button.Pressed, "#launch-agent")
     def on_launch_agent(self) -> None:
