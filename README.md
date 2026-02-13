@@ -1,138 +1,249 @@
-# ScholarDevClaw
+# ScholarDevClaw v2 🚀
 
-Autonomous Research-to-Production ML Integration Engine
+**Autonomous Research-to-Code AI Agent for All Developers**
 
-## Overview
+ScholarDevClaw analyzes your codebase, researches relevant papers and implementations, and automatically generates improvements - supporting any programming language.
 
-ScholarDevClaw is an autonomous AI agent that integrates cutting-edge ML research papers into existing PyTorch codebases. It analyzes repository architecture, extracts paper specifications, maps changes, generates patches, and validates with benchmarks.
+## 🌟 What's New in v2
 
-## Architecture
+- **Multi-Language Support**: Python, JavaScript/TypeScript, Go, Rust, Java, and more
+- **Real-Time Research**: arXiv API integration for live paper search
+- **Web Research**: GitHub, Papers with Code, Stack Overflow search
+- **Smart Matching**: Automatically matches research to your code patterns
+- **OpenClaw Integration**: Full orchestration with heartbeat and state management
+- **Flexible Deployment**: Self-hosted or cloud
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                 OpenClaw Gateway (TypeScript)                │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  ScholarDevClaw Agent                                │   │
-│  │  • 6-phase orchestration                            │   │
-│  │  • Convex state management                          │   │
-│  │  • GitHub PR creation                               │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 Python ML Core                               │
-│  ┌──────────────┬──────────────┬───────────────────────┐  │
-│  │ Repo Intel   │ Research     │ Mapping Engine         │  │
-│  │ (libcst)     │ (specs)      │ (compatibility)        │  │
-│  └──────────────┴──────────────┴───────────────────────┘  │
-│  ┌──────────────┬──────────────┬───────────────────────┐  │
-│  │ Patch Gen    │ Validation   │ CLI                    │  │
-│  │ (libcst)     │ (pytest)     │ (Typer)                │  │
-│  └──────────────┴──────────────┴───────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Installation
+## 🚀 Quick Start
 
 ```bash
 # Clone repository
-git clone https://github.com/scholardevclaw/scholardevclaw.git
-cd scholardevclaw
+git clone https://github.com/Ronak-IIITD/ScholarDevClaw.git
+cd ScholarDevClaw
 
-# Install Python core
+# Setup Python core
 cd core
-pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[arxiv,ml]"
 
-# Install Node.js agent
-cd ../agent
-npm install
-```
-
-## Quick Start
-
-```bash
-# Clone test repository (nanoGPT)
-git clone https://github.com/karpathy/nanoGPT.git test_repos/nanogpt
-
-# Run demo
+# Test installation
+scholardevclaw --help
 scholardevclaw demo
 ```
 
-## CLI Commands
+## 📖 Usage
+
+### Analyze Any Codebase
 
 ```bash
-# Analyze repository
-scholardevclaw analyze test_repos/nanogpt
+# Analyze your repository
+scholardevclaw analyze /path/to/your/repo
 
-# List available paper specs
-scholardevclaw specs --list
-
-# Extract research spec
-scholardevclaw extract rmsnorm
-
-# Map changes to repository
-scholardevclaw map test_repos/nanogpt rmsnorm
-
-# Generate patch
-scholardevclaw generate test_repos/nanogpt rmsnorm
-
-# Validate changes
-scholardevclaw validate test_repos/nanogpt
+# Output:
+# Languages detected: python, javascript
+# Frameworks: flask, react
+# Patterns found: normalization (3), attention (2)
 ```
 
-## Available Paper Specifications
-
-- **RMSNorm** (1910.07467) - Root Mean Square Layer Normalization
-- **SwiGLU** - Swish-Gated Linear Unit
-- **FlashAttention** (2205.14135) - IO-Aware Exact Attention
-- **RoPE** (2104.09864) - Rotary Position Embedding
-- **GQA** (2305.13245) - Grouped Query Attention
-
-## Project Structure
-
-```
-scholardevclaw/
-├── agent/                    # TypeScript/OpenClaw agent
-│   ├── src/
-│   │   ├── orchestrator.ts   # Main workflow controller
-│   │   ├── phases/           # 6 phase executors
-│   │   ├── bridges/          # Python subprocess + HTTP bridges
-│   │   └── api/              # Convex & GitHub clients
-│   └── workspace/            # OpenClaw workspace files
-│
-├── core/                     # Python ML engines
-│   └── src/scholardewclaw/
-│       ├── repo_intelligence/   # AST parsing (libcst)
-│       ├── research_intelligence/  # Paper specs
-│       ├── mapping/             # Architecture mapping
-│       ├── patch_generation/    # Code generation
-│       ├── validation/          # Test & benchmark runner
-│       └── cli.py              # Command-line interface
-│
-├── convex/                   # Database schema & functions
-├── docker/                   # Dockerfiles & compose
-└── test_repos/               # Test repositories
-```
-
-## Docker Deployment
+### Search for Research
 
 ```bash
-cd docker
-docker-compose up
+# Search for papers and implementations
+scholardevclaw search "layer normalization" --arxiv --web
+
+# Searches:
+# - Local paper specs
+# - arXiv papers
+# - GitHub repos
+# - Papers with Code
 ```
 
-## Safety Features
+### Get Improvement Suggestions
 
-- **Never writes to main branch** - Always creates feature branches
-- **User approval required** - Stops before PR creation
-- **Max 2 retries** - Prevents infinite loops
-- **Sandboxed execution** - Runs in Docker containers
+```bash
+# Analyze code and suggest improvements
+scholardevclaw suggest /path/to/your/repo
 
-## License
+# Output:
+# 1. RMSNorm (90% confidence)
+#    Pattern: normalization
+#    Found in: 3 locations
+# 2. FlashAttention (85% confidence)
+#    Pattern: attention
+```
 
-MIT
+### Full Integration Workflow
 
-## Contributing
+```bash
+# Complete integration workflow
+scholardevclaw integrate /path/to/your/repo rmsnorm --output-dir ./patch
 
-See CONTRIBUTING.md for guidelines.
+# Steps:
+# 1. Analyzes repository
+# 2. Researches improvements
+# 3. Maps changes
+# 4. Generates patch
+# 5. Validates
+# 6. Creates report
+```
+
+## 🛠️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ScholarDevClaw v2                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
+│  │  Code Analyzer  │  │ Research Engine │  │  Generator  │ │
+│  │  (tree-sitter) │  │  (arXiv + Web) │  │  (multi-lang)│ │
+│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
+│                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
+│  │ Pattern Matcher │  │  Validator      │  │  Reporter   │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                    OpenClaw Integration                     │
+│  • Heartbeat Scheduling                                    │
+│  • State Management (Convex)                              │
+│  • Workspace & Memory                                     │
+│  • GitHub PR Creation                                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 🌍 Supported Languages
+
+| Language | Status | Frameworks |
+|----------|--------|------------|
+| Python | ✅ Full | PyTorch, TensorFlow, Django, Flask, FastAPI |
+| JavaScript | ✅ Full | Express, React, Vue, Angular |
+| TypeScript | ✅ Full | Next.js, NestJS |
+| Go | ✅ Basic | Gin, Echo |
+| Rust | ✅ Basic | Actix, Rocket |
+| Java | ✅ Basic | Spring, Maven |
+| C/C++ | 🚧 Planned | - |
+| Ruby | 🚧 Planned | Rails |
+
+## 📚 Research Sources
+
+- **arXiv**: 2.4M+ papers in CS, ML, Physics
+- **GitHub**: Search for implementations
+- **Papers with Code**: ML implementations
+- **Stack Overflow**: Technical discussions
+- **Technical Blogs**: Coming soon
+
+## 🏗️ Deployment Options
+
+### Self-Hosted (Local)
+
+```bash
+# Docker Compose
+docker-compose up -d
+
+# Systemd service
+sudo systemctl start scholardevclaw
+
+# PM2
+pm2 start ecosystem.config.js
+```
+
+### Cloud
+
+- **Fly.io**: `fly deploy`
+- **Railway**: `railway up`
+- **AWS EC2**: See docs/DEPLOYMENT.md
+
+## 📖 Documentation
+
+- [Quick Start Guide](demo.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
+- [Architecture Overview](AGENTS.md)
+- [API Reference](docs/API.md)
+
+## 🎯 Example Workflows
+
+### Improve a Python ML Project
+
+```bash
+# 1. Analyze
+cd my-ml-project
+scholardevclaw analyze .
+
+# 2. Get suggestions
+scholardevclaw suggest .
+
+# 3. Integrate RMSNorm
+scholardevclaw integrate . rmsnorm
+```
+
+### Improve a JavaScript Backend
+
+```bash
+# Analyze Express.js app
+scholardevclaw analyze ./my-api
+
+# Search for caching papers
+scholardevclaw search "api caching" --web
+
+# Get suggestions
+scholardevclaw suggest ./my-api
+```
+
+## 🔧 Configuration
+
+```bash
+# Environment variables
+cat > .env << 'EOF'
+SCHOLARDEVCLAW_WORKSPACE=~/.scholardevclaw/workspace
+SCHOLARDEVCLAW_LOG_PATH=~/.scholardevclaw/logs
+GITHUB_TOKEN=your_github_token
+ANTHROPIC_API_KEY=your_anthropic_key
+EOF
+```
+
+## 🧪 Testing
+
+```bash
+# Run tests
+cd core
+pytest
+
+# Run demo
+scholardevclaw demo
+
+# Test with your repo
+scholardevclaw analyze /path/to/repo
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests
+5. Submit a PR
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE)
+
+## 🙏 Acknowledgments
+
+- OpenClaw framework for agent orchestration
+- tree-sitter for multi-language parsing
+- arXiv for paper access
+- Papers with Code for implementations
+
+## 📞 Support
+
+- GitHub Issues: https://github.com/Ronak-IIITD/ScholarDevClaw/issues
+- Discussions: https://github.com/Ronak-IIITD/ScholarDevClaw/discussions
+
+---
+
+**Built with ❤️ for researchers and developers**
+
+Transform your codebase with cutting-edge research automatically. 🚀
