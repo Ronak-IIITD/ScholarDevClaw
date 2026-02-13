@@ -56,6 +56,10 @@ scholardevclaw specs --list
 
 # Run demo
 scholardevclaw demo
+
+# Optional: install and launch TUI
+pip install -e ".[tui]"
+scholardevclaw tui
 ```
 
 ## 🛠️ Architecture

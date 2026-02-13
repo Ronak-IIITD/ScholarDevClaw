@@ -10,6 +10,7 @@ Commands:
   search      - Search for research papers and implementations
   suggest     - Get AI-powered improvement suggestions
   integrate   - Full integration workflow
+    tui         - Interactive terminal UI workflow
   specs       - List available paper specifications
   demo        - Run demo with nanoGPT
 
@@ -556,6 +557,19 @@ def cmd_demo(args):
     print("\nYour repository is ready for research-driven improvements.")
 
 
+def cmd_tui(args):
+    """Launch interactive terminal UI (wizard mode)"""
+    try:
+        from scholardevclaw.tui import run_tui
+    except ImportError as e:
+        print("Error: TUI dependencies are not installed.", file=sys.stderr)
+        print('Install with: pip install -e ".[tui]"', file=sys.stderr)
+        print(f"Details: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    run_tui()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="ScholarDevClaw - Autonomous Research-to-Code Agent v2.0",
@@ -579,6 +593,9 @@ Examples:
 
   # List available paper specifications
   scholardevclaw specs --list
+
+    # Launch interactive terminal UI
+    scholardevclaw tui
 
   # Run demo with nanoGPT
   scholardevclaw demo
@@ -637,6 +654,9 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_specs.add_argument("--list", action="store_true", help="Detailed list")
     p_specs.add_argument("--categories", action="store_true", help="Show categories")
 
+    # tui
+    subparsers.add_parser("tui", help="Launch interactive terminal UI")
+
     # demo
     p_demo = subparsers.add_parser("demo", help="Run demo with nanoGPT")
 
@@ -654,6 +674,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "generate": cmd_generate,
         "validate": cmd_validate,
         "integrate": cmd_integrate,
+        "tui": cmd_tui,
         "specs": cmd_specs,
         "demo": cmd_demo,
     }

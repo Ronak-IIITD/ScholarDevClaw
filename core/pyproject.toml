@@ -47,6 +47,7 @@ dependencies = [
 torch = ["torch>=2.0.0"]
 arxiv = ["arxiv>=1.4.0"]
 ml = ["torch>=2.0.0", "transformers>=4.35.0", "datasets>=2.14.0"]
+tui = ["textual>=0.82.0"]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
