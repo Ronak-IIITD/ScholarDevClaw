@@ -359,3 +359,7 @@ def demo() -> None:
 
 if __name__ == "__main__":
     app()
+
+
+def main():
+    app()
