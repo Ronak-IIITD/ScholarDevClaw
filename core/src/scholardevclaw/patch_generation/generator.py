@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Dict, Optional
 import libcst as cst
-from libcst import parse_module, ReplacementCSTTransformer
+from libcst import parse_module, CSTTransformer
 
 
 @dataclass
@@ -28,7 +28,7 @@ class Patch:
     paper_reference: str
 
 
-class RMSNormTransformer(ReplacementCSTTransformer):
+class RMSNormTransformer(CSTTransformer):
     def __init__(self, original_name: str = "LayerNorm", replacement_name: str = "RMSNorm"):
         self.original_name = original_name
         self.replacement_name = replacement_name
@@ -63,7 +63,7 @@ class RMSNormTransformer(ReplacementCSTTransformer):
         return updated_node
 
 
-class SwiGLUTransformer(ReplacementCSTTransformer):
+class SwiGLUTransformer(CSTTransformer):
     def __init__(self):
         self.changes = []
         self.in_mlp_class = False
@@ -242,8 +242,9 @@ class SwiGLU(nn.Module):
             try:
                 original = file_path.read_text()
 
-                replacement = target.context.get("replacement", "")
-                original_name = target.context.get("original", "")
+                context = target.get("context", {})
+                replacement = context.get("replacement", "") if isinstance(context, dict) else ""
+                original_name = context.get("original", "") if isinstance(context, dict) else ""
 
                 if replacement and original_name:
                     modified = self._apply_transformation(

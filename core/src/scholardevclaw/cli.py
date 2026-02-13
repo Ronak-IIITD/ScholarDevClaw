@@ -283,7 +283,7 @@ def demo() -> None:
     console.print("[bold cyan]ScholarDevClaw Demo[/bold cyan]")
     console.print("Testing RMSNorm integration on nanoGPT...\n")
 
-    demo_path = Path(__file__).parent.parent.parent / "test_repos" / "nanogpt"
+    demo_path = Path(__file__).parent.parent.parent.parent / "test_repos" / "nanogpt"
 
     if not demo_path.exists():
         console.print(f"[yellow]nanoGPT not found at {demo_path}[/yellow]")

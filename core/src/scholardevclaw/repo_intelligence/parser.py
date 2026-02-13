@@ -227,20 +227,28 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
 
     def visit_Import(self, node: cst.Import) -> None:
         for alias in node.names:
+            alias_name = alias.name.value if hasattr(alias.name, "value") else alias.name
+            alias_value = (
+                alias.asname.name.value if alias.asname and hasattr(alias.asname, "name") else None
+            )
             self.imports.append(
                 ImportInfo(
-                    name=alias.name.value,
-                    alias=alias.asname.value if alias.asname else None,
+                    name=alias_name,
+                    alias=alias_value,
                 )
             )
 
     def visit_ImportFrom(self, node: cst.ImportFrom) -> None:
         module = node.module.value if node.module else None
         for alias in node.names:
+            alias_name = alias.name.value if hasattr(alias.name, "value") else alias.name
+            alias_value = (
+                alias.asname.name.value if alias.asname and hasattr(alias.asname, "name") else None
+            )
             self.imports.append(
                 ImportInfo(
-                    name=alias.name.value,
-                    alias=alias.asname.value if alias.asname else None,
+                    name=alias_name,
+                    alias=alias_value,
                     from_module=module,
                 )
             )
@@ -278,7 +286,7 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
             ClassInfo(
                 name=node.name.value,
                 bases=bases,
-                line_number=node.lineno or 0,
+                line_number=getattr(node, "lineno", None) or 0,
                 methods=methods,
                 is_nn_module=is_nn_module,
                 is_custom_norm=is_custom_norm,
@@ -294,7 +302,7 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
         self.functions.append(
             FunctionInfo(
                 name=node.name.value,
-                line_number=node.lineno or 0,
+                line_number=getattr(node, "lineno", None) or 0,
                 parameters=params,
             )
         )
