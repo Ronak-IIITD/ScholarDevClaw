@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 import json
 
 
@@ -18,6 +18,7 @@ PAPER_SPECS: Dict[str, Dict] = {
             "description": "Simplified layer normalization without mean-centering",
             "formula": "x / sqrt(mean(x^2) + eps) * gamma",
             "complexity": "O(n)",
+            "category": "normalization",
         },
         "implementation": {
             "module_name": "RMSNorm",
@@ -54,6 +55,7 @@ PAPER_SPECS: Dict[str, Dict] = {
             "replaces": "MLP (GELU)",
             "description": "Swish-Gated Linear Unit - combines Swish activation with gated linear units",
             "formula": "Swish(x @ W) * (x @ V) / gate",
+            "category": "activation",
         },
         "implementation": {
             "module_name": "SwiGLU",
@@ -92,6 +94,7 @@ PAPER_SPECS: Dict[str, Dict] = {
             "replaces": "CausalSelfAttention (slow)",
             "description": "IO-aware exact attention algorithm that reduces memory complexity from O(N^2) to O(N)",
             "formula": "Softmax(QK^T / sqrt(d))V with tiling and recomputation",
+            "category": "attention",
         },
         "implementation": {
             "module_name": "FlashAttention",
@@ -131,6 +134,7 @@ PAPER_SPECS: Dict[str, Dict] = {
             "replaces": "Positional Encoding",
             "description": "Rotary Position Embedding - encodes position information through rotation matrices",
             "formula": "RoPE(x_m, x_n) = f(x_m, m) * f(x_n, n)^conj where f(x, k) = x * e^(ikθ)",
+            "category": "position_encoding",
         },
         "implementation": {
             "module_name": "RoPE",
@@ -154,243 +158,173 @@ PAPER_SPECS: Dict[str, Dict] = {
             "max_benchmark_time": 300,
         },
     },
-    "grouped_query_attention": {
-        "paper": {
-            "title": "GQA: Training Generalized Multi-Query Transformer with Multi-Query Key-Value Cache",
-            "authors": [
-                "Joshua Ainslie",
-                "James Lee-Thorp",
-                "Mojtaba Valipour",
-                "Gabriel V. de la Cruz",
-                "Yicheng Li",
-                "Wang Zhou",
-            ],
-            "arxiv": "2305.13245",
-            "year": 2023,
-        },
-        "algorithm": {
-            "name": "GroupedQueryAttention",
-            "replaces": "MultiHeadAttention",
-            "description": "Grouped Query Attention - shares key/value heads across query groups for efficiency",
-            "formula": "Similar to MHA but with fewer KV heads grouped by GQA ratio",
-        },
-        "implementation": {
-            "module_name": "GroupedQueryAttention",
-            "parent_class": "nn.Module",
-            "parameters": ["n_heads", "n_kv_heads", "dim"],
-            "forward_signature": "(x: Tensor) -> Tensor",
-        },
-        "changes": {
-            "type": "replace",
-            "target_patterns": ["class CausalSelfAttention"],
-            "replacement": "GroupedQueryAttention",
-            "insertion_points": ["CausalSelfAttention class"],
-            "expected_benefits": ["Reduced KV cache", "Faster inference"],
-        },
-        "validation": {
-            "test_type": "benchmark",
-            "metrics": ["inference_speed", "memory_usage"],
-            "max_benchmark_time": 300,
-        },
-    },
-    "preln_transformer": {
-        "paper": {
-            "title": "On Layer Normalization in the Pre-Training Transformer",
-            "authors": [
-                "Jinliang Du",
-                "Jiangang Du",
-                "Yujia Bao",
-                "Haoyu Wang",
-                "Xue wen",
-                "Dacheng Tao",
-            ],
-            "arxiv": "2203.17056",
-            "year": 2022,
-        },
-        "algorithm": {
-            "name": "Pre-LN Transformer",
-            "replaces": "Post-LN",
-            "description": "Apply LayerNorm before attention/MLP sublayers instead of after",
-            "formula": "LayerNorm(x + Sublayer(x)) instead of x + Sublayer(LayerNorm(x))",
-        },
-        "implementation": {
-            "module_name": "PreLNBlock",
-            "parent_class": "nn.Module",
-            "parameters": ["config"],
-            "forward_signature": "(x: Tensor) -> Tensor",
-        },
-        "changes": {
-            "type": "replace",
-            "target_patterns": ["self.ln_1", "self.ln_2", "LayerNorm"],
-            "replacement": "Move LayerNorm before attention/MLP",
-            "insertion_points": ["Block class forward"],
-            "expected_benefits": ["More stable training", "No warmup needed", "Better convergence"],
-        },
-        "validation": {
-            "test_type": "training_comparison",
-            "metrics": ["loss", "training_stability"],
-            "max_benchmark_time": 300,
-        },
-    },
-    "qknorm": {
-        "paper": {
-            "title": "Query-Key Normalization for Transformers",
-            "authors": [
-                "Namgyu Ho",
-                "Sangmin Bae",
-                "Hyunwoo Kim",
-                "Seungryul Baek",
-                "Seehwan Yoo",
-                "Taesup Kim",
-            ],
-            "arxiv": "2210.07440",
-            "year": 2022,
-        },
-        "algorithm": {
-            "name": "QKNorm",
-            "replaces": "QK without normalization",
-            "description": "Normalize query and key projections to have unit variance",
-            "formula": "Q = Q / ||Q||_2, K = K / ||K||_2",
-        },
-        "implementation": {
-            "module_name": "QKNorm",
-            "parent_class": "nn.Module",
-            "parameters": ["dim", "eps"],
-            "forward_signature": "(q: Tensor, k: Tensor) -> Tuple[Tensor, Tensor]",
-        },
-        "changes": {
-            "type": "extend",
-            "target_patterns": ["self.c_attn", "CausalSelfAttention"],
-            "replacement": "Add QKNorm to attention",
-            "insertion_points": ["CausalSelfAttention forward"],
-            "expected_benefits": ["More stable attention", "Better gradient flow"],
-        },
-        "validation": {
-            "test_type": "training_comparison",
-            "metrics": ["loss", "attention_scores"],
-            "max_benchmark_time": 300,
-        },
-    },
-    "weight_decay_fused": {
-        "paper": {
-            "title": "Decoupled Weight Decay Regularization",
-            "authors": ["Ilya Loshchilov", "Frank Hutter"],
-            "arxiv": "1711.05101",
-            "year": 2017,
-        },
-        "algorithm": {
-            "name": "AdamW",
-            "replaces": "Adam with L2",
-            "description": "Decoupled weight decay for proper regularization",
-            "formula": "θ = θ - η * (grad / (1-β₁ᵗ) + wd * θ)",
-        },
-        "implementation": {
-            "module_name": "AdamW",
-            "parent_class": "torch.optim.Optimizer",
-            "parameters": ["params", "lr", "weight_decay"],
-            "forward_signature": "(params, lr, betas, weight_decay)",
-        },
-        "changes": {
-            "type": "replace",
-            "target_patterns": ["torch.optim.Adam", "optimizer = torch.optim.Adam"],
-            "replacement": "torch.optim.AdamW",
-            "insertion_points": ["train.py optimizer setup"],
-            "expected_benefits": ["Better generalization", "Proper weight decay"],
-        },
-        "validation": {
-            "test_type": "training_comparison",
-            "metrics": ["loss", "perplexity", "weight_norm"],
-            "max_benchmark_time": 300,
-        },
-    },
-    "fused_flashattention": {
-        "paper": {
-            "title": "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning",
-            "authors": ["Tri Dao"],
-            "arxiv": "2307.08691",
-            "year": 2023,
-        },
-        "algorithm": {
-            "name": "FlashAttention-2",
-            "replaces": "FlashAttention",
-            "description": "Improved FlashAttention with better CUDA kernels",
-            "formula": "Online softmax with tiling and recomputation",
-        },
-        "implementation": {
-            "module_name": "FlashAttention2",
-            "parent_class": "nn.Module",
-            "parameters": ["config"],
-            "forward_signature": "(q, k, v: Tensor) -> Tensor",
-        },
-        "changes": {
-            "type": "replace",
-            "target_patterns": ["flash_attn_func", "flash_attn_v2"],
-            "replacement": "FlashAttention2",
-            "insertion_points": ["CausalSelfAttention forward"],
-            "expected_benefits": ["2x speedup", "Better parallelism"],
-        },
-        "validation": {
-            "test_type": "benchmark",
-            "metrics": ["tokens_per_second", "memory_usage"],
-            "max_benchmark_time": 300,
-        },
-    },
-    "mistral": {
-        "paper": {
-            "title": "Mixtral of Experts",
-            "authors": [
-                "Albert Q. Jiang",
-                "Alexandre Sablayrolles",
-                "Arthur Mensch",
-                "Chris Bamford",
-                "Devendra Singh Chaplot",
-                "Guillaume Bress",
-            ],
-            "arxiv": "2401.04088",
-            "year": 2024,
-        },
-        "algorithm": {
-            "name": "MoE",
-            "replaces": "Dense MLP",
-            "description": "Mixtral-style Sparse Mixture of Experts - select top-k experts per token",
-            "formula": "y = Σᵢ Gᵢ(x) * Eᵢ(x) where G is gating and E are experts",
-        },
-        "implementation": {
-            "module_name": "MoE",
-            "parent_class": "nn.Module",
-            "parameters": ["num_experts", "top_k", "dim"],
-            "forward_signature": "(x: Tensor) -> Tensor",
-        },
-        "changes": {
-            "type": "replace",
-            "target_patterns": ["class MLP", "self.mlp"],
-            "replacement": "MoE",
-            "insertion_points": ["Block class"],
-            "expected_benefits": ["Same compute, better quality", "Sparse activation"],
-        },
-        "validation": {
-            "test_type": "training_comparison",
-            "metrics": ["loss", "perplexity", "active_experts"],
-            "max_benchmark_time": 300,
-        },
-    },
 }
 
 
 @dataclass
-class ResearchSpec:
-    paper: Dict
-    algorithm: Dict
-    implementation: Dict
-    changes: Dict
-    validation: Dict
+class Paper:
+    """Represents a research paper"""
+
+    id: str
+    title: str
+    authors: List[str]
+    abstract: str
+    arxiv_id: Optional[str] = None
+    pdf_url: Optional[str] = None
+    published: Optional[str] = None
+    categories: List[str] = field(default_factory=list)
+    year: int = 2024
+
+
+@dataclass
+class ResearchQuery:
+    """Search query for research papers"""
+
+    keywords: List[str]
+    domain: str = "cs.AI"
+    max_results: int = 10
+    year_from: Optional[int] = None
+
+
+@dataclass
+class ImplementationSpec:
+    """Specification for implementing a paper"""
+
+    paper: Paper
+    target_language: str
+    target_patterns: List[str]
+    code_template: str
+    expected_benefits: List[str]
+    risks: List[str] = field(default_factory=list)
+    confidence: float = 0.0
 
 
 class ResearchExtractor:
+    """Handles research paper extraction and search"""
+
     def __init__(self):
         self.specs = PAPER_SPECS
+        self._arxiv_client = None
+
+    def _get_arxiv_client(self):
+        """Lazy load arxiv client"""
+        if self._arxiv_client is None:
+            try:
+                import arxiv
+
+                self._arxiv_client = arxiv.Client()
+            except ImportError:
+                return None
+        return self._arxiv_client
+
+    async def search_arxiv(self, query: ResearchQuery) -> List[Paper]:
+        """Search arXiv for papers matching the query"""
+        client = self._get_arxiv_client()
+
+        if client is None:
+            return []
+
+        try:
+            search_query = " AND ".join(query.keywords)
+            search = arxiv.Search(
+                query=search_query,
+                max_results=query.max_results,
+                sort_by=arxiv.SortCriterion.Relevance,
+            )
+
+            papers = []
+            for result in client.results(search):
+                papers.append(
+                    Paper(
+                        id=result.entry_id,
+                        title=result.title,
+                        authors=[a.name for a in result.authors],
+                        abstract=result.summary,
+                        arxiv_id=result.get_short_id(),
+                        pdf_url=result.pdf_url,
+                        published=str(result.published) if result.published else None,
+                        categories=result.categories,
+                        year=result.published.year if result.published else 2024,
+                    )
+                )
+
+            return papers
+        except Exception as e:
+            print(f"arXiv search error: {e}")
+            return []
+
+    def search_by_keyword(self, keyword: str, max_results: int = 10) -> List[Dict]:
+        """Search papers by keyword - simplified version"""
+        return self._search_local(keyword, max_results)
+
+    def _search_local(self, query: str, max_results: int = 10) -> List[Dict]:
+        """Local search in predefined specs"""
+        query_lower = query.lower()
+        results = []
+
+        for name, spec in self.specs.items():
+            title = spec.get("paper", {}).get("title", "").lower()
+            category = spec.get("algorithm", {}).get("category", "").lower()
+
+            if query_lower in title or query_lower in category:
+                results.append(
+                    {
+                        "name": name,
+                        "title": spec["paper"]["title"],
+                        "authors": spec["paper"]["authors"],
+                        "arxiv": spec["paper"].get("arxiv", ""),
+                        "year": spec["paper"]["year"],
+                        "category": spec["algorithm"]["category"],
+                        "replaces": spec["algorithm"]["replaces"],
+                        "description": spec["algorithm"]["description"],
+                    }
+                )
+
+                if len(results) >= max_results:
+                    break
+
+        return results
+
+    def find_papers_for_code_pattern(
+        self, code_pattern: str, language: str = "python"
+    ) -> List[Dict]:
+        """Find papers relevant to a code pattern"""
+        pattern_lower = code_pattern.lower()
+
+        mapping = {
+            "norm": ["rmsnorm", "preln_transformer", "qknorm"],
+            "normalization": ["rmsnorm", "preln_transformer", "qknorm"],
+            "layer": ["rmsnorm", "preln_transformer"],
+            "attention": ["flashattention", "flashattention2", "rope", "grouped_query_attention"],
+            "mlp": ["swiglu", "mistral"],
+            "feedforward": ["swiglu", "mistral"],
+            "position": ["rope"],
+            "positional": ["rope"],
+            "optimizer": ["weight_decay_fused"],
+            "adam": ["weight_decay_fused"],
+            "expert": ["mistral"],
+            "moe": ["mistral"],
+        }
+
+        results = []
+        for key, spec_names in mapping.items():
+            if key in pattern_lower:
+                for spec_name in spec_names:
+                    if spec_name in self.specs:
+                        spec = self.specs[spec_name]
+                        results.append(
+                            {
+                                "name": spec_name,
+                                "title": spec["paper"]["title"],
+                                "match_reason": f"Matches '{key}' pattern",
+                                "category": spec["algorithm"]["category"],
+                            }
+                        )
+
+        return results
 
     def extract(self, source: str, source_type: str = "pdf") -> Dict:
+        """Extract research specification (backward compatible)"""
         if source_type == "pdf":
             return self._extract_from_pdf(source)
         elif source_type == "arxiv":
@@ -434,12 +368,9 @@ class ResearchExtractor:
     def _extract_from_arxiv(self, arxiv_id: str) -> Dict:
         arxiv_id_clean = arxiv_id.strip().lower()
 
-        if "1910.07467" in arxiv_id_clean:
-            return self.specs.get("rmsnorm", self._extract_from_pdf(arxiv_id))
-        elif "2205.14135" in arxiv_id_clean:
-            return self.specs.get("flashattention", self._extract_from_pdf(arxiv_id))
-        elif "2104.09864" in arxiv_id_clean:
-            return self.specs.get("rope", self._extract_from_pdf(arxiv_id))
+        for key, spec in self.specs.items():
+            if key in arxiv_id_clean or spec["paper"].get("arxiv", "") in arxiv_id_clean:
+                return spec
 
         return self._extract_from_pdf(arxiv_id)
 
@@ -467,20 +398,6 @@ class ResearchExtractor:
         return norm * self.weight
 """
 
-    def _get_swiglu_template(self) -> str:
-        return """class SwiGLU(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        hidden_dim = 4 * config.n_embd
-        self.w1 = nn.Linear(config.n_embd, hidden_dim, bias=False)
-        self.w3 = nn.Linear(config.n_embd, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, config.n_embd, bias=False)
-        self.dropout = nn.Dropout(config.dropout)
-    
-    def forward(self, x):
-        return self.dropout(self.w2(F.silu(self.w1(x)) * self.w3(x)))
-"""
-
     def get_spec(self, name: str) -> Optional[Dict]:
         return self.specs.get(name.lower())
 
@@ -496,7 +413,16 @@ class ResearchExtractor:
 
         templates = {
             "rmsnorm": self._get_rmsnorm_template(),
-            "swiglu": self._get_swiglu_template(),
         }
 
         return templates.get(name)
+
+    def get_categories(self) -> Dict[str, List[str]]:
+        """Get all available categories for filtering"""
+        categories = {}
+        for name, spec in self.specs.items():
+            cat = spec.get("algorithm", {}).get("category", "other")
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append(name)
+        return categories
