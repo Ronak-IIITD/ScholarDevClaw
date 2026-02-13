@@ -1,10 +1,10 @@
-import typer
-from pathlib import Path
+#!/usr/bin/env python3
+"""ScholarDevClaw CLI - Command-line interface for the ML Research Integration Engine"""
+
+import argparse
 import json
-from typing import Optional, List
-from rich.console import Console
-from rich.table import Table
-from rich import print as rprint
+import sys
+from pathlib import Path
 
 from scholardevclaw.repo_intelligence.parser import PyTorchRepoParser
 from scholardevclaw.research_intelligence.extractor import ResearchExtractor
@@ -12,131 +12,100 @@ from scholardevclaw.mapping.engine import MappingEngine
 from scholardevclaw.patch_generation.generator import PatchGenerator
 from scholardevclaw.validation.runner import ValidationRunner
 
-app = typer.Typer(
-    name="scholardevclaw",
-    help="ScholarDevClaw - Autonomous ML Research Integration Engine",
-    add_completion=False,
-)
 
-console = Console()
-
-
-@app.command()
-def analyze(
-    repo_path: str = typer.Argument(..., help="Path to repository"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output JSON file"),
-) -> None:
-    """Analyze a PyTorch repository structure."""
-    console.print(f"[bold blue]Analyzing repository:[/bold blue] {repo_path}")
-
-    path = Path(repo_path)
+def cmd_analyze(args):
+    """Analyze a repository"""
+    path = Path(args.repo_path)
     if not path.exists():
-        console.print(f"[bold red]Error:[/bold red] Repository path does not exist: {repo_path}")
-        raise typer.Exit(1)
+        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
+        sys.exit(1)
 
     parser = PyTorchRepoParser(path)
     result = parser.parse()
 
-    console.print(
-        f"[bold green]Found:[/bold green] {len(result.models)} models, {len(result.modules)} modules"
-    )
-
-    if result.models:
-        console.print("\n[bold]Models:[/bold]")
-        for model in result.models:
-            console.print(f"  - {model.name} ({model.file}:{model.line})")
-            if model.components:
-                for key, value in model.components.items():
-                    console.print(f"    - {key}: {value}")
-
-    if output:
-        output_data = {
-            "repo_name": result.repo_name,
-            "architecture": {
-                "models": [
-                    {
-                        "name": m.name,
-                        "file": m.file,
-                        "line": m.line,
-                        "parent": m.parent,
-                        "components": m.components,
-                    }
-                    for m in result.models
-                ],
-                "training_loop": {
-                    "file": result.training_loop.file,
-                    "line": result.training_loop.line,
-                    "optimizer": result.training_loop.optimizer,
-                    "loss_fn": result.training_loop.loss_fn,
+    output = {
+        "repo_name": result.repo_name,
+        "architecture": {
+            "models": [
+                {
+                    "name": m.name,
+                    "file": m.file,
+                    "line": m.line,
+                    "parent": m.parent,
+                    "components": m.components,
                 }
-                if result.training_loop
-                else None,
-            },
-            "test_files": result.test_files,
-        }
+                for m in result.models
+            ],
+            "training_loop": {
+                "file": result.training_loop.file,
+                "line": result.training_loop.line,
+                "optimizer": result.training_loop.optimizer,
+                "loss_fn": result.training_loop.loss_fn,
+            }
+            if result.training_loop
+            else None,
+        },
+        "test_files": result.test_files,
+    }
 
-        Path(output).write_text(json.dumps(output_data, indent=2))
-        console.print(f"[bold green]Output saved to:[/bold green] {output}")
-
-
-@app.command()
-def specs(
-    list_all: bool = typer.Option(False, "--list", "-l", help="List all available paper specs"),
-) -> None:
-    """List available research paper specifications."""
-    extractor = ResearchExtractor()
-
-    if list_all:
-        available = extractor.list_available_specs()
-        console.print("[bold]Available paper specifications:[/bold]")
-        for spec in available:
-            info = extractor.get_spec(spec)
-            if info:
-                console.print(f"\n[bold cyan]{spec.upper()}[/bold cyan]")
-                console.print(f"  Paper: {info['paper']['title']}")
-                console.print(f"  Authors: {', '.join(info['paper']['authors'])}")
-                if info["paper"].get("arxiv"):
-                    console.print(f"  arXiv: {info['paper']['arxiv']}")
-                console.print(f"  Replaces: {info['algorithm']['replaces']}")
+    if args.output_json:
+        print(json.dumps(output, indent=2))
     else:
-        console.print("[bold]Usage:[/bold] scholardevclaw specs --list")
+        print(f"Repository: {result.repo_name}")
+        print(f"Models found: {len(result.models)}")
+        print(f"Modules: {len(result.modules)}")
+        for model in result.models:
+            print(f"  - {model.name} ({model.file})")
 
 
-@app.command()
-def extract(
-    source: str = typer.Argument(..., help="Paper source (name, arxiv ID, or pdf path)"),
-    source_type: str = typer.Option("name", "--type", "-t", help="Source type: name, arxiv, pdf"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output JSON file"),
-) -> None:
-    """Extract research specification from paper."""
-    console.print(f"[bold blue]Extracting research:[/bold blue] {source}")
-
+def cmd_specs(args):
+    """List available paper specifications"""
     extractor = ResearchExtractor()
-    result = extractor.extract(source, source_type)
+    specs = extractor.list_available_specs()
 
-    console.print(f"[bold green]Algorithm:[/bold green] {result['algorithm']['name']}")
-    console.print(f"[bold green]Replaces:[/bold green] {result['algorithm']['replaces']}")
-    console.print(f"[bold green]Description:[/bold green] {result['algorithm']['description']}")
+    if args.list:
+        for spec_name in specs:
+            spec = extractor.get_spec(spec_name)
+            if spec:
+                print(f"\n{spec_name.upper()}")
+                print(f"  Paper: {spec['paper']['title']}")
+                print(f"  Authors: {', '.join(spec['paper']['authors'])}")
+                if spec["paper"].get("arxiv"):
+                    print(f"  arXiv: {spec['paper']['arxiv']}")
+                print(f"  Replaces: {spec['algorithm']['replaces']}")
+    else:
+        print("Available specs:", ", ".join(specs))
 
-    if output:
-        Path(output).write_text(json.dumps(result, indent=2))
-        console.print(f"[bold green]Output saved to:[/bold green] {output}")
+
+def cmd_extract(args):
+    """Extract research specification"""
+    extractor = ResearchExtractor()
+
+    if args.spec:
+        spec = extractor.get_spec(args.spec)
+        if spec:
+            if args.output_json:
+                print(json.dumps(spec, indent=2))
+            else:
+                print(f"Algorithm: {spec['algorithm']['name']}")
+                print(f"Replaces: {spec['algorithm']['replaces']}")
+                print(f"Description: {spec['algorithm']['description']}")
+        else:
+            print(f"Error: Unknown spec '{args.spec}'", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print("Available specs:", ", ".join(extractor.list_available_specs()))
 
 
-@app.command()
-def map(
-    repo_path: str = typer.Argument(..., help="Path to repository"),
-    spec_name: str = typer.Argument(..., help="Research specification name (e.g., rmsnorm)"),
-) -> None:
-    """Map research changes to repository."""
-    console.print(f"[bold blue]Mapping:[/bold blue] {spec_name} -> {repo_path}")
+def cmd_map(args):
+    """Map research to repository"""
+    repo_path = Path(args.repo_path)
+    if not repo_path.exists():
+        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
+        sys.exit(1)
 
-    repo = Path(repo_path)
-    if not repo.exists():
-        console.print(f"[bold red]Error:[/bold red] Repository not found")
-        raise typer.Exit(1)
-
-    parser = PyTorchRepoParser(repo)
+    # Analyze repo
+    parser = PyTorchRepoParser(repo_path)
     repo_analysis = parser.parse()
 
     repo_data = {
@@ -155,41 +124,52 @@ def map(
         },
     }
 
+    # Get spec
     extractor = ResearchExtractor()
-    spec = extractor.get_spec(spec_name)
+    spec = extractor.get_spec(args.spec)
 
     if not spec:
-        console.print(f"[bold red]Error:[/bold red] Unknown spec: {spec_name}")
-        available = extractor.list_available_specs()
-        console.print(f"Available: {', '.join(available)}")
-        raise typer.Exit(1)
+        print(f"Error: Unknown spec '{args.spec}'", file=sys.stderr)
+        sys.exit(1)
 
+    # Map
     engine = MappingEngine(repo_data, spec)
     result = engine.map()
 
-    console.print(f"\n[bold]Targets found:[/bold] {len(result.targets)}")
-    console.print(f"[bold]Strategy:[/bold] {result.strategy}")
-    console.print(f"[bold]Confidence:[/bold] {result.confidence}%")
+    if args.output_json:
+        print(
+            json.dumps(
+                {
+                    "targets": [
+                        {
+                            "file": t.file,
+                            "line": t.line,
+                            "current_code": t.current_code,
+                            "replacement_required": t.replacement_required,
+                        }
+                        for t in result.targets
+                    ],
+                    "strategy": result.strategy,
+                    "confidence": result.confidence,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"Targets: {len(result.targets)}")
+        print(f"Strategy: {result.strategy}")
+        print(f"Confidence: {result.confidence}%")
 
-    for target in result.targets:
-        console.print(f"\n  File: {target.file}:{target.line}")
-        console.print(f"    Current: {target.current_code}")
-        console.print(f"    Replacement: {target.context.get('replacement', 'N/A')}")
 
+def cmd_generate(args):
+    """Generate patch"""
+    repo_path = Path(args.repo_path)
+    if not repo_path.exists():
+        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
+        sys.exit(1)
 
-@app.command()
-def generate(
-    repo_path: str = typer.Argument(..., help="Path to repository"),
-    spec_name: str = typer.Argument(..., help="Research specification name"),
-    output_dir: Optional[str] = typer.Option(
-        None, "--output-dir", "-d", help="Output directory for patch"
-    ),
-) -> None:
-    """Generate patch for research integration."""
-    console.print(f"[bold blue]Generating patch:[/bold blue] {spec_name} -> {repo_path}")
-
-    repo = Path(repo_path)
-    parser = PyTorchRepoParser(repo)
+    # Analyze repo
+    parser = PyTorchRepoParser(repo_path)
     repo_analysis = parser.parse()
 
     repo_data = {
@@ -208,17 +188,20 @@ def generate(
         },
     }
 
+    # Get spec
     extractor = ResearchExtractor()
-    spec = extractor.get_spec(spec_name)
+    spec = extractor.get_spec(args.spec)
 
     if not spec:
-        console.print(f"[bold red]Error:[/bold red] Unknown spec: {spec_name}")
-        raise typer.Exit(1)
+        print(f"Error: Unknown spec '{args.spec}'", file=sys.stderr)
+        sys.exit(1)
 
+    # Map
     engine = MappingEngine(repo_data, spec)
     mapping = engine.map()
 
-    generator = PatchGenerator(repo)
+    # Generate
+    generator = PatchGenerator(repo_path)
     patch = generator.generate(
         {
             "targets": [
@@ -234,79 +217,97 @@ def generate(
         }
     )
 
-    console.print(f"\n[bold]Branch:[/bold] {patch.branch_name}")
-    console.print(f"[bold]New files:[/bold] {len(patch.new_files)}")
-    console.print(f"[bold]Transformations:[/bold] {len(patch.transformations)}")
-
-    if output_dir:
-        out_path = Path(output_dir)
-        out_path.mkdir(parents=True, exist_ok=True)
+    # Write new files
+    if args.output_dir:
+        out_dir = Path(args.output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
 
         for nf in patch.new_files:
-            (out_path / nf.path).write_text(nf.content)
-            console.print(f"  Created: {out_path / nf.path}")
+            out_file = out_dir / nf.path
+            out_file.write_text(nf.content)
+            print(f"Created: {out_file}")
 
-        console.print(f"[bold green]Patch files written to:[/bold green] {output_dir}")
+        print(f"\nPatch written to: {out_dir}")
+    else:
+        if args.output_json:
+            print(
+                json.dumps(
+                    {
+                        "branch_name": patch.branch_name,
+                        "new_files": [f.path for f in patch.new_files],
+                        "transformations": [t.file for t in patch.transformations],
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print(f"Branch: {patch.branch_name}")
+            print(f"New files: {len(patch.new_files)}")
+            print(f"Transformations: {len(patch.transformations)}")
 
 
-@app.command()
-def validate(
-    repo_path: str = typer.Argument(..., help="Path to repository"),
-) -> None:
-    """Run validation tests and benchmarks."""
-    console.print(f"[bold blue]Validating:[/bold blue] {repo_path}")
+def cmd_validate(args):
+    """Run validation"""
+    repo_path = Path(args.repo_path)
+    if not repo_path.exists():
+        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
+        sys.exit(1)
 
-    repo = Path(repo_path)
-    runner = ValidationRunner(repo)
+    runner = ValidationRunner(repo_path)
+    result = runner.run({}, str(repo_path))
 
-    result = runner.run({}, str(repo))
-
-    console.print(f"\n[bold]Stage:[/bold] {result.stage}")
-    console.print(
-        f"[bold]Passed:[/bold] {'[green]Yes[/green]' if result.passed else '[red]No[/red]'}"
-    )
-
-    if result.comparison:
-        console.print(f"[bold]Speedup:[/bold] {result.comparison.get('speedup', 'N/A'):.2f}x")
-        console.print(
-            f"[bold]Loss change:[/bold] {result.comparison.get('loss_change', 'N/A'):.2f}%"
+    if args.output_json:
+        print(
+            json.dumps(
+                {
+                    "passed": result.passed,
+                    "stage": result.stage,
+                    "comparison": result.comparison,
+                    "logs": result.logs[:500],
+                },
+                indent=2,
+            )
         )
+    else:
+        print(f"Stage: {result.stage}")
+        print(f"Passed: {'Yes' if result.passed else 'No'}")
+        if result.comparison:
+            print(f"Speedup: {result.comparison.get('speedup', 'N/A'):.2f}x")
+            print(f"Loss change: {result.comparison.get('loss_change', 'N/A'):.2f}%")
 
-    if result.logs:
-        console.print(f"\n[bold]Logs:[/bold]")
-        console.print(result.logs[:500])
 
-
-@app.command()
-def demo() -> None:
-    """Run a demo with nanoGPT and RMSNorm."""
-    console.print("[bold cyan]ScholarDevClaw Demo[/bold cyan]")
-    console.print("Testing RMSNorm integration on nanoGPT...\n")
-
-    demo_path = Path(__file__).parent.parent.parent.parent / "test_repos" / "nanogpt"
+def cmd_demo(args):
+    """Run demo with nanoGPT"""
+    # Find project root (two levels up from core/src/scholardevclaw/cli.py)
+    cli_dir = Path(__file__).parent
+    project_root = cli_dir.parent.parent.parent
+    demo_path = project_root / "test_repos" / "nanogpt"
 
     if not demo_path.exists():
-        console.print(f"[yellow]nanoGPT not found at {demo_path}[/yellow]")
-        console.print("Run: git clone https://github.com/karpathy/nanoGPT.git test_repos/nanogpt")
-        raise typer.Exit(1)
+        print(f"Error: nanoGPT not found at {demo_path}", file=sys.stderr)
+        print("Run: git clone https://github.com/karpathy/nanoGPT.git test_repos/nanogpt")
+        sys.exit(1)
 
-    console.print(f"[bold]Repository:[/bold] {demo_path}")
+    print("ScholarDevClaw Demo")
+    print("=" * 40)
+    print(f"Repository: {demo_path}")
+    print()
 
-    console.print("\n[bold cyan]Step 1: Analyzing repository...[/bold cyan]")
+    # Step 1: Analyze
+    print("Step 1: Analyzing repository...")
     parser = PyTorchRepoParser(demo_path)
     result = parser.parse()
-    console.print(f"  Found {len(result.models)} models, {len(result.modules)} modules")
+    print(f"  Found {len(result.models)} models, {len(result.modules)} modules")
 
-    console.print("\n[bold cyan]Step 2: Extracting RMSNorm specification...[/bold cyan]")
+    # Step 2: Extract
+    print("\nStep 2: Extracting RMSNorm specification...")
     extractor = ResearchExtractor()
     spec = extractor.get_spec("rmsnorm")
-    if spec is None:
-        console.print("[bold red]Error:[/bold red] RMSNorm spec not found")
-        raise typer.Exit(1)
-    console.print(f"  Algorithm: {spec['algorithm']['name']}")
-    console.print(f"  Replaces: {spec['algorithm']['replaces']}")
+    print(f"  Algorithm: {spec['algorithm']['name']}")
+    print(f"  Replaces: {spec['algorithm']['replaces']}")
 
-    console.print("\n[bold cyan]Step 3: Mapping to repository...[/bold cyan]")
+    # Step 3: Map
+    print("\nStep 3: Mapping to repository...")
     repo_data = {
         "repo_name": result.repo_name,
         "architecture": {
@@ -324,11 +325,12 @@ def demo() -> None:
     }
     engine = MappingEngine(repo_data, spec)
     mapping = engine.map()
-    console.print(f"  Targets: {len(mapping.targets)}")
-    console.print(f"  Strategy: {mapping.strategy}")
-    console.print(f"  Confidence: {mapping.confidence}%")
+    print(f"  Targets: {len(mapping.targets)}")
+    print(f"  Strategy: {mapping.strategy}")
+    print(f"  Confidence: {mapping.confidence}%")
 
-    console.print("\n[bold cyan]Step 4: Generating patch...[/bold cyan]")
+    # Step 4: Generate
+    print("\nStep 4: Generating patch...")
     generator = PatchGenerator(demo_path)
     patch = generator.generate(
         {
@@ -344,22 +346,88 @@ def demo() -> None:
             "research_spec": spec,
         }
     )
-    console.print(f"  Branch: {patch.branch_name}")
-    console.print(f"  New files: {len(patch.new_files)}")
-    console.print(f"  Transformations: {len(patch.transformations)}")
+    print(f"  Branch: {patch.branch_name}")
+    print(f"  New files: {len(patch.new_files)}")
+    print(f"  Transformations: {len(patch.transformations)}")
 
-    console.print("\n[bold cyan]Step 5: Validation...[/bold cyan]")
+    # Step 5: Validate
+    print("\nStep 5: Running validation...")
     runner = ValidationRunner(demo_path)
     validation = runner.run({}, str(demo_path))
-    console.print(f"  Stage: {validation.stage}")
-    console.print(f"  Passed: {'[green]Yes[/green]' if validation.passed else '[red]No[/red]'}")
+    print(f"  Stage: {validation.stage}")
+    print(f"  Passed: {'Yes' if validation.passed else 'No'}")
 
-    console.print("\n[bold green]Demo complete![/bold green]")
-
-
-if __name__ == "__main__":
-    app()
+    print("\n" + "=" * 40)
+    print("Demo complete!")
 
 
 def main():
-    app()
+    parser = argparse.ArgumentParser(
+        description="ScholarDevClaw - Autonomous ML Research Integration Engine",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # analyze
+    p_analyze = subparsers.add_parser("analyze", help="Analyze a repository")
+    p_analyze.add_argument("repo_path", help="Path to repository")
+    p_analyze.add_argument("--output-json", action="store_true", help="Output JSON")
+
+    # specs
+    p_specs = subparsers.add_parser("specs", help="List paper specifications")
+    p_specs.add_argument("--list", action="store_true", help="List all specs")
+
+    # extract
+    p_extract = subparsers.add_parser("extract", help="Extract research specification")
+    p_extract.add_argument("--spec", help="Specification name")
+    p_extract.add_argument("--output-json", action="store_true", help="Output JSON")
+
+    # map
+    p_map = subparsers.add_parser("map", help="Map research to repository")
+    p_map.add_argument("repo_path", help="Path to repository")
+    p_map.add_argument("spec", help="Research specification name")
+    p_map.add_argument("--output-json", action="store_true", help="Output JSON")
+
+    # generate
+    p_generate = subparsers.add_parser("generate", help="Generate patch")
+    p_generate.add_argument("repo_path", help="Path to repository")
+    p_generate.add_argument("spec", help="Research specification name")
+    p_generate.add_argument("--output-dir", help="Output directory for patch files")
+    p_generate.add_argument("--output-json", action="store_true", help="Output JSON")
+
+    # validate
+    p_validate = subparsers.add_parser("validate", help="Run validation")
+    p_validate.add_argument("repo_path", help="Path to repository")
+    p_validate.add_argument("--output-json", action="store_true", help="Output JSON")
+
+    # demo
+    p_demo = subparsers.add_parser("demo", help="Run demo with nanoGPT")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    if args.command == "analyze":
+        cmd_analyze(args)
+    elif args.command == "specs":
+        cmd_specs(args)
+    elif args.command == "extract":
+        cmd_extract(args)
+    elif args.command == "map":
+        cmd_map(args)
+    elif args.command == "generate":
+        cmd_generate(args)
+    elif args.command == "validate":
+        cmd_validate(args)
+    elif args.command == "demo":
+        cmd_demo(args)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

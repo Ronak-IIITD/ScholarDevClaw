@@ -1,26 +1,29 @@
 {
   "name": "scholardevclaw-agent",
   "version": "0.1.0",
-  "description": "ScholarDevClaw - Autonomous ML Research Integration Agent",
+  "description": "ScholarDevClaw - Autonomous ML Research Integration Agent for OpenClaw",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "bun run --watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "bun run src/index.ts",
     "test": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
-    "@anthropic-ai/claude-code": "workspace:*",
     "convex": "^1.8.0",
     "octokit": "^3.1.0",
     "dotenv": "^16.3.1",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "ora": "^5.4.1",
+    "chalk": "^5.3.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "tsx": "^4.7.0",
     "typescript": "^5.3.0",
     "vitest": "^1.1.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }
