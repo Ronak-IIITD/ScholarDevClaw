@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 import libcst as cst
 
 
@@ -12,6 +12,7 @@ class ClassInfo:
     methods: List[str] = field(default_factory=list)
     is_nn_module: bool = False
     attributes: List[str] = field(default_factory=list)
+    is_custom_norm: bool = False
 
 
 @dataclass
@@ -22,12 +23,19 @@ class FunctionInfo:
 
 
 @dataclass
+class ImportInfo:
+    name: str
+    alias: Optional[str] = None
+    from_module: Optional[str] = None
+
+
+@dataclass
 class ModuleInfo:
     path: Path
     relative_path: Path
     classes: List[ClassInfo] = field(default_factory=list)
     functions: List[FunctionInfo] = field(default_factory=list)
-    imports: List[str] = field(default_factory=list)
+    imports: List[ImportInfo] = field(default_factory=list)
 
 
 @dataclass
@@ -92,8 +100,25 @@ class PyTorchRepoParser:
         return [f for f in python_files if not self._should_ignore(f)]
 
     def _should_ignore(self, path: Path) -> bool:
-        ignore_dirs = {".git", "__pycache__", "venv", ".venv", "node_modules", "tests/fixtures"}
-        return any(part in ignore_dirs for part in path.parts)
+        ignore_dirs = {
+            ".git",
+            "__pycache__",
+            "venv",
+            ".venv",
+            "node_modules",
+            "tests/fixtures",
+            "data",
+            "config",
+        }
+        ignore_patterns = {".ipynb_checkpoints"}
+
+        if any(part in ignore_dirs for part in path.parts):
+            return True
+        if any(part.startswith(ignore) for part in path.parts for ignore in ignore_patterns):
+            return True
+        if path.name.startswith("."):
+            return True
+        return False
 
     def _parse_file(self, file_path: Path) -> Optional[ModuleInfo]:
         try:
@@ -128,39 +153,51 @@ class PyTorchRepoParser:
                         file=str(module.relative_path),
                         line=cls.line_number,
                         parent="nn.Module",
-                        components=self._extract_components(cls),
+                        components=self._extract_components(cls, module),
                     )
                     models.append(model)
 
         return models
 
-    def _extract_components(self, cls: ClassInfo) -> Dict:
+    def _extract_components(self, cls: ClassInfo, module: ModuleInfo) -> Dict:
         components = {}
 
         for attr in cls.attributes:
-            if "layer" in attr.lower() or "block" in attr.lower():
+            attr_lower = attr.lower()
+            if "layer" in attr_lower or "block" in attr_lower:
                 components["layers"] = attr
-            elif "norm" in attr.lower():
+            elif "norm" in attr_lower:
                 components["normalization"] = attr
-            elif "attention" in attr.lower():
+            elif "attention" in attr_lower:
                 components["attention"] = attr
-            elif "embed" in attr.lower():
+            elif "embed" in attr_lower:
                 components["embeddings"] = attr
+            elif "mlp" in attr_lower or "feedforward" in attr_lower:
+                components["mlp"] = attr
+
+        for imp in module.imports:
+            if "transformer" in imp.name.lower():
+                components["transformer"] = imp.name
+
+        norm_classes = [c.name for c in module.classes if c.is_custom_norm]
+        if norm_classes:
+            components["custom_norms"] = norm_classes
 
         return components
 
     def _detect_training_loop(self) -> Optional[TrainingLoopInfo]:
         for module in self.modules:
-            for func in module.functions:
-                if func.name in ["train", "training_loop", "fit"]:
-                    for cls in module.classes:
-                        if any("optimizer" in imp.lower() for imp in module.imports):
-                            return TrainingLoopInfo(
-                                file=str(module.relative_path),
-                                line=func.line_number,
-                                optimizer="AdamW",
-                                loss_fn="cross_entropy",
-                            )
+            if "train" in module.relative_path.stem.lower():
+                for func in module.functions:
+                    if "train" in func.name.lower():
+                        for imp in module.imports:
+                            if "torch.optim" in (imp.from_module or ""):
+                                return TrainingLoopInfo(
+                                    file=str(module.relative_path),
+                                    line=func.line_number,
+                                    optimizer="AdamW",
+                                    loss_fn="cross_entropy",
+                                )
 
         return TrainingLoopInfo(
             file="train.py",
@@ -185,15 +222,28 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
     def __init__(self):
         self.classes: List[ClassInfo] = []
         self.functions: List[FunctionInfo] = []
-        self.imports: List[str] = []
+        self.imports: List[ImportInfo] = []
+        self._current_class_bases: List[str] = []
 
     def visit_Import(self, node: cst.Import) -> None:
         for alias in node.names:
-            self.imports.append(alias.name.value)
+            self.imports.append(
+                ImportInfo(
+                    name=alias.name.value,
+                    alias=alias.asname.value if alias.asname else None,
+                )
+            )
 
     def visit_ImportFrom(self, node: cst.ImportFrom) -> None:
-        if node.module:
-            self.imports.append(node.module.value)
+        module = node.module.value if node.module else None
+        for alias in node.names:
+            self.imports.append(
+                ImportInfo(
+                    name=alias.name.value,
+                    alias=alias.asname.value if alias.asname else None,
+                    from_module=module,
+                )
+            )
 
     def visit_ClassDef(self, node: cst.ClassDef) -> None:
         bases = []
@@ -201,9 +251,15 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
             if isinstance(base, cst.Name):
                 bases.append(base.value)
             elif isinstance(base, cst.Attribute):
-                bases.append(f"{base.value.value}.{base.attr.value}")
+                value = base.value
+                if isinstance(value, cst.Name):
+                    bases.append(f"{value.value}.{base.attr.value}")
+                elif isinstance(value, cst.Attribute):
+                    bases.append(f"{base.attr.value}")
 
-        is_nn_module = any("nn.Module" in base or "Module" in base for base in bases)
+        is_nn_module = any("nn.Module" in base or base == "Module" for base in bases)
+
+        is_custom_norm = any("Norm" in node.name.value and "nn." not in base for base in bases)
 
         methods = []
         attributes = []
@@ -213,6 +269,10 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
                 methods.append(item.name.value)
             elif isinstance(item, cst.AnnAssign) and isinstance(item.target, cst.Name):
                 attributes.append(item.target.id)
+            elif isinstance(item, cst.Assign):
+                for target in item.targets:
+                    if isinstance(target, cst.Name):
+                        attributes.append(target.id)
 
         self.classes.append(
             ClassInfo(
@@ -221,6 +281,7 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
                 line_number=node.lineno or 0,
                 methods=methods,
                 is_nn_module=is_nn_module,
+                is_custom_norm=is_custom_norm,
                 attributes=attributes,
             )
         )

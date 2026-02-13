@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional
 
 
@@ -29,6 +30,7 @@ class MappingResult:
     targets: List[InsertionPoint]
     strategy: str
     confidence: int
+    research_spec: Dict
 
 
 class MappingEngine:
@@ -47,14 +49,15 @@ class MappingEngine:
             targets=targets,
             strategy=strategy,
             confidence=confidence,
+            research_spec=self.research_spec,
         )
 
     def _find_target_locations(self) -> List[InsertionPoint]:
         targets = []
 
         changes = self.research_spec.get("changes", {})
-        target_pattern = changes.get("target_pattern", "")
-        insertion_points = changes.get("insertion_points", [])
+        target_patterns = changes.get("target_patterns", [])
+        replacement = changes.get("replacement", "")
 
         models = self.repo_analysis.get("architecture", {}).get("models", [])
 
@@ -62,28 +65,75 @@ class MappingEngine:
             model_file = model.get("file", "")
             components = model.get("components", {})
 
-            if target_pattern in ["nn.LayerNorm", "LayerNorm"]:
-                for key, value in components.items():
-                    if "norm" in key.lower() or "layer" in key.lower():
+            if "custom_norms" in components:
+                for norm in components["custom_norms"]:
+                    for pattern in target_patterns:
+                        if pattern.lower() in norm.lower():
+                            targets.append(
+                                InsertionPoint(
+                                    file=model_file,
+                                    line=1,
+                                    current_code=norm,
+                                    replacement_required=True,
+                                    context={
+                                        "component_type": "custom_norm",
+                                        "replacement": replacement,
+                                        "original": norm,
+                                    },
+                                )
+                            )
+
+            if "normalization" in components:
+                norm = components["normalization"]
+                for pattern in target_patterns:
+                    if pattern.lower() in norm.lower():
                         targets.append(
                             InsertionPoint(
                                 file=model_file,
                                 line=1,
-                                current_code=value,
+                                current_code=norm,
                                 replacement_required=True,
-                                context={"component": key, "value": value},
+                                context={
+                                    "component_type": "normalization",
+                                    "replacement": replacement,
+                                    "original": norm,
+                                },
                             )
                         )
 
-        if not targets and insertion_points:
-            for point in insertion_points:
+        if not targets:
+            modules = self.repo_analysis.get("modules", [])
+            for module in modules:
+                for cls in module.get("classes", []):
+                    for pattern in target_patterns:
+                        if pattern in cls.get("name", ""):
+                            targets.append(
+                                InsertionPoint(
+                                    file=module.get("file", "model.py"),
+                                    line=cls.get("line", 1),
+                                    current_code=cls.get("name", ""),
+                                    replacement_required=True,
+                                    context={
+                                        "component_type": "class",
+                                        "replacement": replacement,
+                                        "original": cls.get("name", ""),
+                                    },
+                                )
+                            )
+
+        if not targets and target_patterns:
+            for pattern in target_patterns:
                 targets.append(
                     InsertionPoint(
                         file="model.py",
                         line=1,
-                        current_code="nn.LayerNorm",
+                        current_code=pattern,
                         replacement_required=True,
-                        context={"insertion_point": point},
+                        context={
+                            "component_type": "import",
+                            "replacement": replacement,
+                            "original": pattern,
+                        },
                     )
                 )
 
@@ -92,11 +142,21 @@ class MappingEngine:
     def _validate_compatibility(self, targets: List[InsertionPoint]) -> ValidationResult:
         issues = []
 
+        changes = self.research_spec.get("changes", {})
+
         for target in targets:
             if target.replacement_required:
-                changes = self.research_spec.get("changes", {})
-                if changes.get("type") == "replace":
-                    pass
+                original = target.context.get("original", "")
+                replacement = target.context.get("replacement", "")
+
+                if original == replacement:
+                    issues.append(
+                        CompatibilityIssue(
+                            location=f"{target.file}:{target.line}",
+                            issue=f"Same replacement: {original} -> {replacement}",
+                            severity="error",
+                        )
+                    )
 
         return ValidationResult(
             passed=len(issues) == 0,
@@ -107,10 +167,13 @@ class MappingEngine:
         if not targets:
             return "none"
 
-        if validation.passed:
-            return "replace"
+        if not validation.passed:
+            return "manual_review"
 
-        return "extend"
+        changes = self.research_spec.get("changes", {})
+        change_type = changes.get("type", "replace")
+
+        return change_type
 
     def _calculate_confidence(
         self, validation: ValidationResult, targets: List[InsertionPoint]
@@ -127,3 +190,30 @@ class MappingEngine:
             confidence += 10
 
         return min(confidence, 100)
+
+
+def analyze_repo_for_pattern(repo_path: str, pattern: str) -> List[Dict]:
+    results = []
+    path = Path(repo_path)
+
+    for py_file in path.rglob("*.py"):
+        if "__pycache__" in str(py_file):
+            continue
+
+        try:
+            content = py_file.read_text()
+            lines = content.split("\n")
+
+            for i, line in enumerate(lines, 1):
+                if pattern.lower() in line.lower():
+                    results.append(
+                        {
+                            "file": str(py_file.relative_to(path)),
+                            "line": i,
+                            "content": line.strip(),
+                        }
+                    )
+        except Exception:
+            continue
+
+    return results
