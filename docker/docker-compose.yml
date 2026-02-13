@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  core-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.core
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../test_repos:/repos:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+    depends_on:
+      - core-api
+    environment:
+      - CORE_API_URL=http://core-api:8000
+      - OPENCLAW_TOKEN=${OPENCLAW_TOKEN}
+      - CONVEX_URL=${CONVEX_URL}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+  convex:
+    image: ghcr.io/getconvex/dev:latest
+    ports:
+      - "3210:3210"
+    volumes:
+      - convex-data:/data
+
+volumes:
+  convex-data:
