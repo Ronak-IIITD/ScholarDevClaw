@@ -33,58 +33,29 @@ scholardevclaw demo
 
 ## 📖 Usage
 
-### Analyze Any Codebase
+All commands work through the unified `scholardevclaw` CLI:
 
 ```bash
-# Analyze your repository
+# See all commands
+scholardevclaw --help
+
+# Analyze any codebase (auto-detects language)
 scholardevclaw analyze /path/to/your/repo
 
-# Output:
-# Languages detected: python, javascript
-# Frameworks: flask, react
-# Patterns found: normalization (3), attention (2)
-```
-
-### Search for Research
-
-```bash
-# Search for papers and implementations
+# Search for research papers
 scholardevclaw search "layer normalization" --arxiv --web
 
-# Searches:
-# - Local paper specs
-# - arXiv papers
-# - GitHub repos
-# - Papers with Code
-```
-
-### Get Improvement Suggestions
-
-```bash
-# Analyze code and suggest improvements
+# Get AI-powered improvement suggestions
 scholardevclaw suggest /path/to/your/repo
 
-# Output:
-# 1. RMSNorm (90% confidence)
-#    Pattern: normalization
-#    Found in: 3 locations
-# 2. FlashAttention (85% confidence)
-#    Pattern: attention
-```
+# Full integration workflow
+scholardevclaw integrate /path/to/your/repo rmsnorm
 
-### Full Integration Workflow
+# List available paper specs
+scholardevclaw specs --list
 
-```bash
-# Complete integration workflow
-scholardevclaw integrate /path/to/your/repo rmsnorm --output-dir ./patch
-
-# Steps:
-# 1. Analyzes repository
-# 2. Researches improvements
-# 3. Maps changes
-# 4. Generates patch
-# 5. Validates
-# 6. Creates report
+# Run demo
+scholardevclaw demo
 ```
 
 ## 🛠️ Architecture
@@ -93,24 +64,23 @@ scholardevclaw integrate /path/to/your/repo rmsnorm --output-dir ./patch
 ┌─────────────────────────────────────────────────────────────┐
 │                    ScholarDevClaw v2                        │
 ├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │  Code Analyzer  │  │ Research Engine │  │  Generator  │ │
-│  │  (tree-sitter) │  │  (arXiv + Web) │  │  (multi-lang)│ │
-│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
-│                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │ Pattern Matcher │  │  Validator      │  │  Reporter   │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
-│                                                             │
+│  Unified CLI Interface                                      │
+│  • One command for all operations                          │
+│  • Multi-language support                                   │
+│  • Web + arXiv research                                    │
 └─────────────────────────────────────────────────────────────┘
-
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+│  Code        │   │ Research     │   │  Code        │
+│  Analyzer    │   │ Engine       │   │  Generator   │
+│ (tree-sitter)│   │(arXiv + Web)│   │ (multi-lang) │
+└───────────────┘   └───────────────┘   └───────────────┘
+                              │
 ┌─────────────────────────────────────────────────────────────┐
 │                    OpenClaw Integration                     │
-│  • Heartbeat Scheduling                                    │
-│  • State Management (Convex)                              │
-│  • Workspace & Memory                                     │
-│  • GitHub PR Creation                                     │
+│  • Heartbeat Scheduling • State Management • GitHub PRs    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
