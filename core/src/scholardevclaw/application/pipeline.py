@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass(slots=True)
@@ -14,6 +14,15 @@ class PipelineResult:
     error: str | None = None
 
 
+LogCallback = Callable[[str], None]
+
+
+def _log(logs: list[str], message: str, log_callback: LogCallback | None = None) -> None:
+    logs.append(message)
+    if log_callback is not None:
+        log_callback(message)
+
+
 def _ensure_repo(repo_path: str) -> Path:
     path = Path(repo_path).expanduser().resolve()
     if not path.exists():
@@ -23,10 +32,11 @@ def _ensure_repo(repo_path: str) -> Path:
     return path
 
 
-def run_analyze(repo_path: str) -> PipelineResult:
+def run_analyze(repo_path: str, *, log_callback: LogCallback | None = None) -> PipelineResult:
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
 
-    logs = [f"Analyzing repository: {repo_path}"]
+    logs: list[str] = []
+    _log(logs, f"Analyzing repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
         analyzer = TreeSitterAnalyzer(path)
@@ -48,11 +58,19 @@ def run_analyze(repo_path: str) -> PipelineResult:
             "test_files": result.test_files,
             "patterns": result.patterns,
         }
-        logs.append(f"Detected languages: {', '.join(result.languages) if result.languages else 'None'}")
-        logs.append(f"Detected frameworks: {', '.join(result.frameworks) if result.frameworks else 'None'}")
+        _log(
+            logs,
+            f"Detected languages: {', '.join(result.languages) if result.languages else 'None'}",
+            log_callback,
+        )
+        _log(
+            logs,
+            f"Detected frameworks: {', '.join(result.frameworks) if result.frameworks else 'None'}",
+            log_callback,
+        )
         return PipelineResult(ok=True, title="Repository Analysis", payload=payload, logs=logs)
     except Exception as exc:
-        logs.append(f"Failed: {exc}")
+        _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(
             ok=False,
             title="Repository Analysis",
@@ -62,16 +80,17 @@ def run_analyze(repo_path: str) -> PipelineResult:
         )
 
 
-def run_suggest(repo_path: str) -> PipelineResult:
+def run_suggest(repo_path: str, *, log_callback: LogCallback | None = None) -> PipelineResult:
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
 
-    logs = [f"Scanning for improvement opportunities: {repo_path}"]
+    logs: list[str] = []
+    _log(logs, f"Scanning for improvement opportunities: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
         analyzer = TreeSitterAnalyzer(path)
         suggestions = analyzer.suggest_research_papers()
 
-        logs.append(f"Suggestions found: {len(suggestions)}")
+        _log(logs, f"Suggestions found: {len(suggestions)}", log_callback)
         return PipelineResult(
             ok=True,
             title="Research Suggestions",
@@ -79,7 +98,7 @@ def run_suggest(repo_path: str) -> PipelineResult:
             logs=logs,
         )
     except Exception as exc:
-        logs.append(f"Failed: {exc}")
+        _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(
             ok=False,
             title="Research Suggestions",
@@ -96,10 +115,12 @@ def run_search(
     include_web: bool = False,
     language: str = "python",
     max_results: int = 10,
+    log_callback: LogCallback | None = None,
 ) -> PipelineResult:
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
-    logs = [f"Searching for: {query}"]
+    logs: list[str] = []
+    _log(logs, f"Searching for: {query}", log_callback)
     try:
         extractor = ResearchExtractor()
         local_results = extractor.search_by_keyword(query, max_results=max_results)
@@ -110,7 +131,7 @@ def run_search(
             "arxiv": [],
             "web": {},
         }
-        logs.append(f"Local specs found: {len(local_results)}")
+        _log(logs, f"Local specs found: {len(local_results)}", log_callback)
 
         if include_arxiv:
             import asyncio
@@ -131,7 +152,7 @@ def run_search(
                 }
                 for p in arxiv_papers
             ]
-            logs.append(f"arXiv papers found: {len(arxiv_papers)}")
+            _log(logs, f"arXiv papers found: {len(arxiv_papers)}", log_callback)
 
         if include_web:
             from scholardevclaw.research_intelligence.web_research import SyncWebResearchEngine
@@ -159,15 +180,17 @@ def run_search(
                     for p in web_results.get("papers_with_code", [])
                 ],
             }
-            logs.append(
+            _log(
+                logs,
                 "Web sources found: "
                 f"{len(payload['web'].get('github_repos', []))} repos, "
-                f"{len(payload['web'].get('papers_with_code', []))} papers"
+                f"{len(payload['web'].get('papers_with_code', []))} papers",
+                log_callback,
             )
 
         return PipelineResult(ok=True, title="Research Search", payload=payload, logs=logs)
     except Exception as exc:
-        logs.append(f"Failed: {exc}")
+        _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(
             ok=False,
             title="Research Search",
@@ -177,10 +200,13 @@ def run_search(
         )
 
 
-def run_specs(*, detailed: bool = False, by_category: bool = False) -> PipelineResult:
+def run_specs(
+    *, detailed: bool = False, by_category: bool = False, log_callback: LogCallback | None = None
+) -> PipelineResult:
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
-    logs = ["Loading specification index"]
+    logs: list[str] = []
+    _log(logs, "Loading specification index", log_callback)
     try:
         extractor = ResearchExtractor()
 
@@ -201,12 +227,12 @@ def run_specs(*, detailed: bool = False, by_category: bool = False) -> PipelineR
             payload["details"] = detailed_specs
 
         payload["view"] = "categories" if by_category else "detailed" if detailed else "simple"
-        logs.append(f"Total specs: {len(specs)}")
-        logs.append(f"Categories: {len(categories)}")
+        _log(logs, f"Total specs: {len(specs)}", log_callback)
+        _log(logs, f"Categories: {len(categories)}", log_callback)
 
         return PipelineResult(ok=True, title="Specifications", payload=payload, logs=logs)
     except Exception as exc:
-        logs.append(f"Failed: {exc}")
+        _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(
             ok=False,
             title="Specifications",
@@ -216,20 +242,31 @@ def run_specs(*, detailed: bool = False, by_category: bool = False) -> PipelineR
         )
 
 
-def _build_mapping_result(repo_path: Path, spec_name: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def _build_mapping_result(
+    repo_path: Path,
+    spec_name: str,
+    *,
+    log_callback: LogCallback | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     from scholardevclaw.mapping.engine import MappingEngine
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
     analyzer = TreeSitterAnalyzer(repo_path)
+    if log_callback is not None:
+        log_callback("Analyzing repository structure for mapping")
     analysis = analyzer.analyze()
 
     extractor = ResearchExtractor()
+    if log_callback is not None:
+        log_callback(f"Resolving specification: {spec_name}")
     spec = extractor.get_spec(spec_name)
     if spec is None:
         raise ValueError(f"Unknown spec: {spec_name}")
 
     engine = MappingEngine(analysis.__dict__, spec)
+    if log_callback is not None:
+        log_callback("Running mapping engine")
     mapping = engine.map()
 
     mapping_result = {
@@ -251,11 +288,12 @@ def _build_mapping_result(repo_path: Path, spec_name: str) -> tuple[dict[str, An
     return mapping_result, spec
 
 
-def run_map(repo_path: str, spec_name: str) -> PipelineResult:
-    logs = [f"Mapping spec '{spec_name}' to repository: {repo_path}"]
+def run_map(repo_path: str, spec_name: str, *, log_callback: LogCallback | None = None) -> PipelineResult:
+    logs: list[str] = []
+    _log(logs, f"Mapping spec '{spec_name}' to repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
-        mapping_result, spec = _build_mapping_result(path, spec_name)
+        mapping_result, spec = _build_mapping_result(path, spec_name, log_callback=log_callback)
         targets = mapping_result.get("targets", [])
 
         payload = {
@@ -268,25 +306,41 @@ def run_map(repo_path: str, spec_name: str) -> PipelineResult:
             "mapping": mapping_result,
         }
 
-        logs.append(f"Algorithm: {payload['algorithm']}")
-        logs.append(f"Targets found: {len(targets)}")
-        logs.append(f"Strategy: {payload['strategy']}, confidence: {payload['confidence']}%")
+        _log(logs, f"Algorithm: {payload['algorithm']}", log_callback)
+        _log(logs, f"Targets found: {len(targets)}", log_callback)
+        _log(
+            logs,
+            f"Strategy: {payload['strategy']}, confidence: {payload['confidence']}%",
+            log_callback,
+        )
 
         return PipelineResult(ok=True, title="Mapping", payload=payload, logs=logs)
     except Exception as exc:
-        logs.append(f"Failed: {exc}")
+        _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(ok=False, title="Mapping", payload={}, logs=logs, error=str(exc))
 
 
-def run_generate(repo_path: str, spec_name: str, *, output_dir: str | None = None) -> PipelineResult:
+def run_generate(
+    repo_path: str,
+    spec_name: str,
+    *,
+    output_dir: str | None = None,
+    log_callback: LogCallback | None = None,
+) -> PipelineResult:
     from scholardevclaw.patch_generation.generator import PatchGenerator
 
-    logs = [f"Generating patch for spec '{spec_name}' in repository: {repo_path}"]
+    logs: list[str] = []
+    _log(
+        logs,
+        f"Generating patch for spec '{spec_name}' in repository: {repo_path}",
+        log_callback,
+    )
     try:
         path = _ensure_repo(repo_path)
-        mapping_result, spec = _build_mapping_result(path, spec_name)
+        mapping_result, spec = _build_mapping_result(path, spec_name, log_callback=log_callback)
 
         generator = PatchGenerator(path)
+        _log(logs, "Generating patch artifacts", log_callback)
         patch = generator.generate(mapping_result)
 
         written_files: list[str] = []
@@ -299,6 +353,7 @@ def run_generate(repo_path: str, spec_name: str, *, output_dir: str | None = Non
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_text(new_file.content)
                 written_files.append(str(destination))
+                _log(logs, f"Wrote file: {destination}", log_callback)
 
         payload = {
             "spec": spec_name,
@@ -318,15 +373,15 @@ def run_generate(repo_path: str, spec_name: str, *, output_dir: str | None = Non
             "written_files": written_files,
         }
 
-        logs.append(f"Branch: {patch.branch_name}")
-        logs.append(f"New files: {len(patch.new_files)}")
-        logs.append(f"Transformations: {len(patch.transformations)}")
+        _log(logs, f"Branch: {patch.branch_name}", log_callback)
+        _log(logs, f"New files: {len(patch.new_files)}", log_callback)
+        _log(logs, f"Transformations: {len(patch.transformations)}", log_callback)
         if output_dir_path:
-            logs.append(f"Patch artifacts written to: {output_dir_path}")
+            _log(logs, f"Patch artifacts written to: {output_dir_path}", log_callback)
 
         return PipelineResult(ok=True, title="Patch Generation", payload=payload, logs=logs)
     except Exception as exc:
-        logs.append(f"Failed: {exc}")
+        _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(
             ok=False,
             title="Patch Generation",
@@ -336,10 +391,11 @@ def run_generate(repo_path: str, spec_name: str, *, output_dir: str | None = Non
         )
 
 
-def run_validate(repo_path: str) -> PipelineResult:
+def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> PipelineResult:
     from scholardevclaw.validation.runner import ValidationRunner
 
-    logs = [f"Running validation in repository: {repo_path}"]
+    logs: list[str] = []
+    _log(logs, f"Running validation in repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
         runner = ValidationRunner(path)
@@ -352,28 +408,38 @@ def run_validate(repo_path: str) -> PipelineResult:
             "logs": result.logs,
             "error": result.error,
         }
-        logs.append(f"Stage: {result.stage}")
-        logs.append(f"Passed: {result.passed}")
+        _log(logs, f"Stage: {result.stage}", log_callback)
+        _log(logs, f"Passed: {result.passed}", log_callback)
         if result.error:
-            logs.append(f"Error: {result.error}")
+            _log(logs, f"Error: {result.error}", log_callback)
 
         return PipelineResult(ok=result.passed, title="Validation", payload=payload, logs=logs)
     except Exception as exc:
-        logs.append(f"Failed: {exc}")
+        _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(ok=False, title="Validation", payload={}, logs=logs, error=str(exc))
 
 
-def run_integrate(repo_path: str, spec_name: str | None = None) -> PipelineResult:
+def run_integrate(
+    repo_path: str,
+    spec_name: str | None = None,
+    *,
+    log_callback: LogCallback | None = None,
+) -> PipelineResult:
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
-    logs = [f"Starting integration workflow for repository: {repo_path}"]
+    logs: list[str] = []
+    _log(logs, f"Starting integration workflow for repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
 
         analyzer = TreeSitterAnalyzer(path)
         analysis = analyzer.analyze()
-        logs.append(f"Analyze: {len(analysis.languages)} languages, {len(analysis.elements)} elements")
+        _log(
+            logs,
+            f"Analyze: {len(analysis.languages)} languages, {len(analysis.elements)} elements",
+            log_callback,
+        )
 
         extractor = ResearchExtractor()
         selected_spec_name = spec_name
@@ -383,7 +449,7 @@ def run_integrate(repo_path: str, spec_name: str | None = None) -> PipelineResul
             selected_spec = extractor.get_spec(selected_spec_name)
             if not selected_spec:
                 raise ValueError(f"Unknown spec: {selected_spec_name}")
-            logs.append(f"Research: selected explicit spec '{selected_spec_name}'")
+            _log(logs, f"Research: selected explicit spec '{selected_spec_name}'", log_callback)
         else:
             suggestions = analyzer.suggest_research_papers()
             if not suggestions:
@@ -393,17 +459,28 @@ def run_integrate(repo_path: str, spec_name: str | None = None) -> PipelineResul
             if not selected_spec:
                 raise ValueError(f"Suggested spec is unavailable: {selected_spec_name}")
             confidence = suggestions[0].get("confidence", 0)
-            logs.append(
+            _log(
+                logs,
                 f"Research: auto-selected spec '{selected_spec_name}' ({confidence:.0f}% confidence)"
+                ,
+                log_callback,
             )
 
         if selected_spec_name is None:
             raise ValueError("Failed to resolve integration spec")
 
-        mapping_result, _ = _build_mapping_result(path, selected_spec_name)
-        logs.append(f"Mapping: {len(mapping_result.get('targets', []))} targets")
+        mapping_result, _ = _build_mapping_result(
+            path,
+            selected_spec_name,
+            log_callback=log_callback,
+        )
+        _log(logs, f"Mapping: {len(mapping_result.get('targets', []))} targets", log_callback)
 
-        generate_result = run_generate(str(path), selected_spec_name)
+        generate_result = run_generate(
+            str(path),
+            selected_spec_name,
+            log_callback=log_callback,
+        )
         logs.extend(generate_result.logs)
         if not generate_result.ok:
             return PipelineResult(
@@ -414,7 +491,7 @@ def run_integrate(repo_path: str, spec_name: str | None = None) -> PipelineResul
                 error=generate_result.error,
             )
 
-        validate_result = run_validate(str(path))
+        validate_result = run_validate(str(path), log_callback=log_callback)
         logs.extend(validate_result.logs)
 
         payload = {
@@ -438,5 +515,5 @@ def run_integrate(repo_path: str, spec_name: str | None = None) -> PipelineResul
             error=validate_result.error,
         )
     except Exception as exc:
-        logs.append(f"Failed: {exc}")
+        _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(ok=False, title="Integration", payload={}, logs=logs, error=str(exc))

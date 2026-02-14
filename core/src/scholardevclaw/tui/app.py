@@ -32,6 +32,12 @@ class TaskCompleted(Message):
         self.error = error
 
 
+class TaskLog(Message):
+    def __init__(self, line: str):
+        super().__init__()
+        self.line = line
+
+
 class AgentLog(Message):
     def __init__(self, line: str):
         super().__init__()
@@ -99,6 +105,7 @@ class ScholarDevClawApp(App[None]):
     def __init__(self) -> None:
         super().__init__()
         self._agent_process: subprocess.Popen[str] | None = None
+        self._live_logs_enabled = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -146,6 +153,23 @@ class ScholarDevClawApp(App[None]):
         merged = (current + "\n" if current else "") + "\n".join(lines)
         area.load_text(merged)
 
+    def _refresh_action_input_state(self) -> None:
+        action = self.query_one("#action", Select).value
+        is_search = action == "search"
+        needs_spec = action in {"map", "generate", "integrate"}
+        supports_output_dir = action == "generate"
+
+        self.query_one("#query", Input).disabled = not is_search
+        self.query_one("#search-arxiv", Checkbox).disabled = not is_search
+        self.query_one("#search-web", Checkbox).disabled = not is_search
+        self.query_one("#search-language", Input).disabled = not is_search
+        self.query_one("#search-max-results", Input).disabled = not is_search
+        self.query_one("#spec", Input).disabled = not needs_spec
+        self.query_one("#output-dir", Input).disabled = not supports_output_dir
+
+    def on_mount(self) -> None:
+        self._refresh_action_input_state()
+
     def action_run_selected(self) -> None:
         self._run_selected_workflow()
 
@@ -157,6 +181,10 @@ class ScholarDevClawApp(App[None]):
     def on_clear_button(self) -> None:
         self.query_one("#result", Pretty).update({})
         self.query_one("#logs", TextArea).load_text("")
+
+    @on(Select.Changed, "#action")
+    def on_action_changed(self) -> None:
+        self._refresh_action_input_state()
 
     def _run_selected_workflow(self) -> None:
         action = self.query_one("#action", Select).value
@@ -177,12 +205,16 @@ class ScholarDevClawApp(App[None]):
         run_button = self.query_one("#run", Button)
         run_button.disabled = True
         self.query_one("#run-status", Label).update(f"Status: Running '{action}'...")
+        self._live_logs_enabled = True
 
         def _runner() -> None:
+            def _emit(line: str) -> None:
+                self.post_message(TaskLog(line))
+
             if action == "analyze":
-                result = run_analyze(repo_path)
+                result = run_analyze(repo_path, log_callback=_emit)
             elif action == "suggest":
-                result = run_suggest(repo_path)
+                result = run_suggest(repo_path, log_callback=_emit)
             elif action == "search":
                 result = run_search(
                     query or "layer normalization",
@@ -190,17 +222,23 @@ class ScholarDevClawApp(App[None]):
                     include_web=include_web,
                     language=search_language,
                     max_results=max_results,
+                    log_callback=_emit,
                 )
             elif action == "map":
-                result = run_map(repo_path, spec or "rmsnorm")
+                result = run_map(repo_path, spec or "rmsnorm", log_callback=_emit)
             elif action == "generate":
-                result = run_generate(repo_path, spec or "rmsnorm", output_dir=output_dir)
+                result = run_generate(
+                    repo_path,
+                    spec or "rmsnorm",
+                    output_dir=output_dir,
+                    log_callback=_emit,
+                )
             elif action == "validate":
-                result = run_validate(repo_path)
+                result = run_validate(repo_path, log_callback=_emit)
             elif action == "integrate":
-                result = run_integrate(repo_path, spec or None)
+                result = run_integrate(repo_path, spec or None, log_callback=_emit)
             else:
-                result = run_specs(detailed=True)
+                result = run_specs(detailed=True, log_callback=_emit)
 
             self.post_message(
                 TaskCompleted(
@@ -222,10 +260,16 @@ class ScholarDevClawApp(App[None]):
             "result": message.result,
         }
         self.query_one("#result", Pretty).update(payload)
-        self._append_logs("logs", message.logs)
+        if not self._live_logs_enabled:
+            self._append_logs("logs", message.logs)
+        self._live_logs_enabled = False
         self.query_one("#run", Button).disabled = False
         status = "Done" if message.error is None else "Failed"
         self.query_one("#run-status", Label).update(f"Status: {status} ({message.title})")
+
+    @on(TaskLog)
+    def on_task_log(self, message: TaskLog) -> None:
+        self._append_logs("logs", [message.line])
 
     @on(Button.Pressed, "#launch-agent")
     def on_launch_agent(self) -> None:
