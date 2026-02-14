@@ -46,40 +46,145 @@ class AgentLog(Message):
 
 
 class ScholarDevClawApp(App[None]):
+    TITLE = "ScholarDevClaw"
+    SUB_TITLE = "Research-driven programming assistant"
+
     CSS = """
     Screen {
         layout: vertical;
+        background: #020617;
+        color: #dbeafe;
+    }
+
+    Header {
+        background: #0b1b3b;
+        color: #dbeafe;
+    }
+
+    Footer {
+        background: #081124;
+        color: #93c5fd;
+    }
+
+    #hero {
+        dock: top;
+        background: #0b1220;
+        color: #93c5fd;
+        border-bottom: solid #1d4ed8;
+        padding: 0 1;
+        height: 1;
+        text-style: bold;
     }
 
     #main-row {
         height: 1fr;
+        padding: 0 1;
     }
 
     #wizard {
         width: 45%;
-        border: solid $primary;
+        border: tall #1d4ed8;
+        background: #0b1220;
         padding: 1;
+        margin-right: 1;
     }
 
     #output {
         width: 55%;
-        border: solid $secondary;
+        border: tall #2563eb;
+        background: #0b1220;
         padding: 1;
     }
 
     #agent-row {
-        height: 14;
-        border: solid $accent;
+        height: 16;
+        border: tall #0ea5e9;
+        background: #030712;
         padding: 1;
+        margin: 0 1;
     }
 
     #agent-logs {
         height: 1fr;
+        border: round #1e40af;
+    }
+
+    #result {
+        height: 14;
+        border: round #1d4ed8;
+        background: #020617;
+        padding: 0 1;
+    }
+
+    #logs {
+        height: 10;
+        border: round #1e40af;
+    }
+
+    #history {
+        height: 8;
+        border: round #1e3a8a;
+    }
+
+    #run-status {
+        margin-top: 1;
+        background: #082f49;
+        color: #bfdbfe;
+        border: round #0ea5e9;
+        padding: 0 1;
+        text-style: bold;
+    }
+
+    Input,
+    Select,
+    TextArea,
+    Pretty {
+        background: #020617;
+        color: #dbeafe;
+    }
+
+    Input,
+    Select {
+        border: round #1d4ed8;
+    }
+
+    Input:focus,
+    Select:focus,
+    TextArea:focus {
+        border: round #38bdf8;
+    }
+
+    Checkbox {
+        color: #bfdbfe;
+    }
+
+    Button {
+        border: round #1e40af;
+    }
+
+    Button.-primary {
+        background: #1d4ed8;
+        color: #eff6ff;
+    }
+
+    Button.-success {
+        background: #0369a1;
+        color: #eff6ff;
+    }
+
+    Button.-error {
+        background: #1e3a8a;
+        color: #eff6ff;
+    }
+
+    Button:hover {
+        border: round #38bdf8;
     }
 
     .section-title {
         text-style: bold;
         margin-bottom: 1;
+        color: #93c5fd;
     }
 
     .spaced {
@@ -115,6 +220,7 @@ class ScholarDevClawApp(App[None]):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
+        yield Label("ScholarDevClaw TUI · Research → Code", id="hero")
         with Horizontal(id="main-row"):
             with Vertical(id="wizard"):
                 yield Label("Workflow Wizard", classes="section-title")
