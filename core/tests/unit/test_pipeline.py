@@ -149,3 +149,44 @@ def test_run_integrate_and_validate(monkeypatch, tmp_path):
     validation_only = pipeline.run_validate(str(tmp_path))
     assert validation_only.ok is True
     assert validation_only.payload["stage"] == "benchmark"
+
+
+def test_run_preflight_require_clean_blocks_dirty_repo(monkeypatch, tmp_path):
+    pipeline = _pipeline_module()
+    (tmp_path / ".git").mkdir()
+
+    def _fake_git_status(*args, **kwargs):
+        return SimpleNamespace(returncode=0, stdout=" M model.py\n", stderr="")
+
+    monkeypatch.setattr(pipeline.subprocess, "run", _fake_git_status)
+
+    result = pipeline.run_preflight(str(tmp_path), require_clean=True)
+
+    assert result.ok is False
+    assert "require_clean=True" in (result.error or "")
+    assert result.payload["is_clean"] is False
+
+
+def test_run_integrate_dry_run_skips_generate_and_validate(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+
+    pipeline = _pipeline_module()
+
+    def _fake_mapping_result(repo_path, spec_name, *, log_callback=None):
+        return {"algorithm": "RMSNorm", "targets": [{"file": "model.py"}]}, {"name": "RMSNorm"}
+
+    def _should_not_be_called(*args, **kwargs):
+        raise AssertionError("Generation/validation should not run during dry-run")
+
+    monkeypatch.setattr(pipeline, "_build_mapping_result", _fake_mapping_result)
+    monkeypatch.setattr(pipeline, "run_generate", _should_not_be_called)
+    monkeypatch.setattr(pipeline, "run_validate", _should_not_be_called)
+
+    result = pipeline.run_integrate(str(tmp_path), "rmsnorm", dry_run=True, output_dir="/tmp/out")
+
+    assert result.ok is True
+    assert result.payload["dry_run"] is True
+    assert result.payload["generation"] is None
+    assert result.payload["validation"] is None
+    assert result.payload["output_dir"] == "/tmp/out"

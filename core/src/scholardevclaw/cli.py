@@ -341,102 +341,48 @@ def cmd_validate(args):
 
 def cmd_integrate(args):
     """Full integration workflow"""
-    path = Path(args.repo_path)
-    if not path.exists():
-        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
-        sys.exit(1)
+    from scholardevclaw.application.pipeline import run_integrate
 
-    print(f"Starting integration workflow for: {path}")
+    def _print_log(line: str) -> None:
+        print(f"  • {line}")
+
+    print(f"Starting integration workflow for: {args.repo_path}")
     print(f"Target: {args.spec or 'auto-detect'}")
     print("=" * 60)
 
-    # Step 1: Analyze
-    print("\n[1/5] Analyzing repository...")
-    from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+    result = run_integrate(
+        args.repo_path,
+        args.spec,
+        dry_run=args.dry_run,
+        require_clean=args.require_clean,
+        output_dir=args.output_dir,
+        log_callback=_print_log,
+    )
 
-    analyzer = TreeSitterAnalyzer(path)
-    analysis = analyzer.analyze()
-
-    print(f"  ✓ Found {len(analysis.languages)} languages")
-    print(f"  ✓ {len(analysis.elements)} code elements")
-    print(f"  ✓ {len(analysis.patterns)} improvement patterns")
-
-    # Step 2: Research
-    print("\n[2/5] Researching improvements...")
-    from scholardevclaw.research_intelligence.extractor import ResearchExtractor
-
-    extractor = ResearchExtractor()
-
-    if args.spec:
-        spec = extractor.get_spec(args.spec)
-        if not spec:
-            print(f"  ✗ Unknown spec: {args.spec}")
-            sys.exit(1)
-        print(f"  ✓ Using spec: {spec['algorithm']['name']}")
-    else:
-        # Auto-suggest based on patterns
-        suggestions = analyzer.suggest_research_papers()
-        if suggestions:
-            best = suggestions[0]
-            spec_name = best["paper"]["name"]
-            spec = extractor.get_spec(spec_name)
-            print(
-                f"  ✓ Auto-selected: {spec['algorithm']['name']} ({best['confidence']:.0f}% confidence)"
-            )
-        else:
-            print("  ✗ No suitable improvements found")
-            sys.exit(1)
-
-    # Step 3: Map
-    print("\n[3/5] Mapping changes...")
-    # TODO: Implement multi-language mapping
-    print("  ✓ Changes mapped")
-
-    # Step 4: Generate
-    print("\n[4/5] Generating patch...")
-    from scholardevclaw.patch_generation.generator import PatchGenerator
-
-    # Create mapping result
-    mapping_result = {
-        "targets": [],
-        "research_spec": spec,
-    }
-
-    generator = PatchGenerator(path)
-    patch = generator.generate(mapping_result)
-
-    print(f"  ✓ Branch: {patch.branch_name}")
-    print(f"  ✓ New files: {len(patch.new_files)}")
-    print(f"  ✓ Transformations: {len(patch.transformations)}")
-
-    # Write output
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        for nf in patch.new_files:
-            out_file = output_dir / nf.path
-            out_file.write_text(nf.content)
-            print(f"  ✓ Created: {out_file}")
-
-        print(f"\n  Patch written to: {output_dir}")
-
-    # Step 5: Validate
-    print("\n[5/5] Validating...")
-    from scholardevclaw.validation.runner import ValidationRunner
-
-    runner = ValidationRunner(path)
-    validation = runner.run({}, str(path))
-
-    print(f"  ✓ Stage: {validation.stage}")
-    print(f"  ✓ Passed: {'Yes' if validation.passed else 'No'}")
+    if not result.ok:
+        print("\nIntegration failed.", file=sys.stderr)
+        if result.error:
+            print(f"Error: {result.error}", file=sys.stderr)
+        sys.exit(1)
 
     print("\n" + "=" * 60)
-    print("Integration complete!")
-    print(f"\nNext steps:")
-    print(f"  1. Review the generated files")
-    print(f"  2. Run tests: cd {path} && pytest")
-    print(f"  3. Create PR with branch: {patch.branch_name}")
+    if result.payload.get("dry_run"):
+        print("Dry-run complete (no patch generation/validation executed).")
+    else:
+        print("Integration complete!")
+
+    print(f"Selected spec: {result.payload.get('spec')}")
+    preflight = result.payload.get("preflight") or {}
+    if preflight:
+        print(f"Preflight clean state: {preflight.get('is_clean', 'unknown')}")
+
+    validation = result.payload.get("validation")
+    if validation:
+        print(f"Validation stage: {validation.get('stage')}")
+        print(f"Validation passed: {'Yes' if validation.get('passed') else 'No'}")
+
+    if args.output_json:
+        print(json.dumps(result.payload, indent=2))
 
 
 def cmd_specs(args):
@@ -630,6 +576,17 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "spec", nargs="?", help="Paper specification (auto-detect if not provided)"
     )
     p_integrate.add_argument("--output-dir", help="Output directory for generated files")
+    p_integrate.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run integration planning without generation and validation",
+    )
+    p_integrate.add_argument(
+        "--require-clean",
+        action="store_true",
+        help="Fail integration when git working tree has uncommitted changes",
+    )
+    p_integrate.add_argument("--output-json", action="store_true", help="Output JSON")
 
     # map
     p_map = subparsers.add_parser("map", help="Map a paper specification to repository locations")

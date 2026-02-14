@@ -240,6 +240,9 @@ class ScholarDevClawApp(App[None]):
                 yield Input(value="rmsnorm", id="spec")
                 yield Label("Output directory (generate only, optional)")
                 yield Input(value="", placeholder="/tmp/sdclaw-patch", id="output-dir")
+                with Horizontal(classes="spaced"):
+                    yield Checkbox("Integrate dry-run", value=False, id="integrate-dry-run")
+                    yield Checkbox("Require clean git", value=False, id="integrate-require-clean")
                 yield Label("Status: Idle", id="run-status")
                 with Horizontal(classes="spaced"):
                     yield Button("Run", id="run", variant="success")
@@ -281,6 +284,8 @@ class ScholarDevClawApp(App[None]):
             "max_results_raw": self.query_one("#search-max-results", Input).value.strip() or "10",
             "spec": self.query_one("#spec", Input).value.strip(),
             "output_dir": self.query_one("#output-dir", Input).value.strip() or None,
+            "integrate_dry_run": self.query_one("#integrate-dry-run", Checkbox).value,
+            "integrate_require_clean": self.query_one("#integrate-require-clean", Checkbox).value,
         }
 
     def _apply_run_request(self, request: dict[str, Any]) -> None:
@@ -293,6 +298,12 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#search-max-results", Input).value = request.get("max_results_raw", "10")
         self.query_one("#spec", Input).value = request.get("spec", "")
         self.query_one("#output-dir", Input).value = request.get("output_dir") or ""
+        self.query_one("#integrate-dry-run", Checkbox).value = bool(
+            request.get("integrate_dry_run", False)
+        )
+        self.query_one("#integrate-require-clean", Checkbox).value = bool(
+            request.get("integrate_require_clean", False)
+        )
         self._refresh_action_input_state()
 
     def _render_history(self) -> None:
@@ -326,6 +337,7 @@ class ScholarDevClawApp(App[None]):
         is_search = action == "search"
         needs_spec = action in {"map", "generate", "integrate"}
         supports_output_dir = action == "generate"
+        is_integrate = action == "integrate"
 
         self.query_one("#query", Input).disabled = not is_search
         self.query_one("#search-arxiv", Checkbox).disabled = not is_search
@@ -334,6 +346,8 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#search-max-results", Input).disabled = not is_search
         self.query_one("#spec", Input).disabled = not needs_spec
         self.query_one("#output-dir", Input).disabled = not supports_output_dir
+        self.query_one("#integrate-dry-run", Checkbox).disabled = not is_integrate
+        self.query_one("#integrate-require-clean", Checkbox).disabled = not is_integrate
 
     def on_mount(self) -> None:
         self._refresh_action_input_state()
@@ -392,6 +406,8 @@ class ScholarDevClawApp(App[None]):
         max_results_raw = request.get("max_results_raw", "10")
         spec = request.get("spec", "")
         output_dir = request.get("output_dir")
+        integrate_dry_run = bool(request.get("integrate_dry_run", False))
+        integrate_require_clean = bool(request.get("integrate_require_clean", False))
 
         try:
             max_results = max(1, int(max_results_raw))
@@ -437,7 +453,14 @@ class ScholarDevClawApp(App[None]):
             elif action == "validate":
                 result = run_validate(repo_path, log_callback=_emit)
             elif action == "integrate":
-                result = run_integrate(repo_path, spec or None, log_callback=_emit)
+                result = run_integrate(
+                    repo_path,
+                    spec or None,
+                    dry_run=integrate_dry_run,
+                    require_clean=integrate_require_clean,
+                    output_dir=output_dir,
+                    log_callback=_emit,
+                )
             else:
                 result = run_specs(detailed=True, log_callback=_emit)
 

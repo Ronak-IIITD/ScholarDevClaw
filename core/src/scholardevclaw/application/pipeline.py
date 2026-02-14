@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 from typing import Any, Callable
 
 
@@ -30,6 +31,89 @@ def _ensure_repo(repo_path: str) -> Path:
     if not path.is_dir():
         raise NotADirectoryError(f"Repository is not a directory: {repo_path}")
     return path
+
+
+def run_preflight(
+    repo_path: str,
+    *,
+    require_clean: bool = False,
+    log_callback: LogCallback | None = None,
+) -> PipelineResult:
+    logs: list[str] = []
+    _log(logs, f"Running preflight checks for: {repo_path}", log_callback)
+
+    try:
+        path = _ensure_repo(repo_path)
+    except Exception as exc:
+        _log(logs, f"Failed: {exc}", log_callback)
+        return PipelineResult(
+            ok=False,
+            title="Preflight",
+            payload={"repo_path": repo_path},
+            logs=logs,
+            error=str(exc),
+        )
+
+    is_writable = path.exists() and path.is_dir()
+    has_git_dir = (path / ".git").exists()
+    python_file_count = len(list(path.rglob("*.py")))
+
+    git_available = False
+    is_clean = True
+    changed_files: list[str] = []
+    git_error: str | None = None
+
+    if has_git_dir:
+        try:
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            git_available = status.returncode == 0
+            if git_available:
+                lines = [line for line in status.stdout.splitlines() if line.strip()]
+                changed_files = lines
+                is_clean = len(lines) == 0
+        except Exception as exc:
+            git_error = str(exc)
+            git_available = False
+
+    checks = {
+        "repo_exists": True,
+        "repo_is_writable": is_writable,
+        "python_file_count": python_file_count,
+        "has_git_dir": has_git_dir,
+        "git_available": git_available,
+        "is_clean": is_clean,
+        "changed_file_entries": changed_files,
+        "git_error": git_error,
+    }
+
+    _log(logs, f"Preflight: python files detected = {python_file_count}", log_callback)
+    if has_git_dir:
+        if git_available:
+            _log(logs, f"Preflight: git working tree clean = {is_clean}", log_callback)
+        else:
+            _log(logs, "Preflight: git check unavailable, continuing", log_callback)
+    else:
+        _log(logs, "Preflight: .git not found, continuing", log_callback)
+
+    if require_clean and has_git_dir and git_available and not is_clean:
+        error = "Repository has uncommitted changes; require_clean=True blocked execution"
+        _log(logs, f"Failed: {error}", log_callback)
+        return PipelineResult(
+            ok=False,
+            title="Preflight",
+            payload=checks,
+            logs=logs,
+            error=error,
+        )
+
+    return PipelineResult(ok=True, title="Preflight", payload=checks, logs=logs)
 
 
 def run_analyze(repo_path: str, *, log_callback: LogCallback | None = None) -> PipelineResult:
@@ -423,6 +507,9 @@ def run_integrate(
     repo_path: str,
     spec_name: str | None = None,
     *,
+    dry_run: bool = False,
+    require_clean: bool = False,
+    output_dir: str | None = None,
     log_callback: LogCallback | None = None,
 ) -> PipelineResult:
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
@@ -432,6 +519,21 @@ def run_integrate(
     _log(logs, f"Starting integration workflow for repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
+
+        preflight = run_preflight(
+            str(path),
+            require_clean=require_clean,
+            log_callback=log_callback,
+        )
+        logs.extend(preflight.logs)
+        if not preflight.ok:
+            return PipelineResult(
+                ok=False,
+                title="Integration",
+                payload={"step": "preflight", "preflight": preflight.payload},
+                logs=logs,
+                error=preflight.error,
+            )
 
         analyzer = TreeSitterAnalyzer(path)
         analysis = analyzer.analyze()
@@ -461,8 +563,7 @@ def run_integrate(
             confidence = suggestions[0].get("confidence", 0)
             _log(
                 logs,
-                f"Research: auto-selected spec '{selected_spec_name}' ({confidence:.0f}% confidence)"
-                ,
+                f"Research: auto-selected spec '{selected_spec_name}' ({confidence:.0f}% confidence)",
                 log_callback,
             )
 
@@ -476,9 +577,34 @@ def run_integrate(
         )
         _log(logs, f"Mapping: {len(mapping_result.get('targets', []))} targets", log_callback)
 
+        if dry_run:
+            _log(logs, "Dry run enabled: skipping patch generation and validation", log_callback)
+            payload = {
+                "dry_run": True,
+                "spec": selected_spec_name,
+                "analysis": {
+                    "languages": analysis.languages,
+                    "frameworks": analysis.frameworks,
+                    "entry_points": analysis.entry_points,
+                    "patterns": analysis.patterns,
+                },
+                "preflight": preflight.payload,
+                "mapping": mapping_result,
+                "generation": None,
+                "validation": None,
+                "output_dir": output_dir,
+            }
+            return PipelineResult(
+                ok=True,
+                title="Integration",
+                payload=payload,
+                logs=logs,
+            )
+
         generate_result = run_generate(
             str(path),
             selected_spec_name,
+            output_dir=output_dir,
             log_callback=log_callback,
         )
         logs.extend(generate_result.logs)
@@ -495,6 +621,7 @@ def run_integrate(
         logs.extend(validate_result.logs)
 
         payload = {
+            "dry_run": False,
             "spec": selected_spec_name,
             "analysis": {
                 "languages": analysis.languages,
@@ -502,6 +629,7 @@ def run_integrate(
                 "entry_points": analysis.entry_points,
                 "patterns": analysis.patterns,
             },
+            "preflight": preflight.payload,
             "mapping": mapping_result,
             "generation": generate_result.payload,
             "validation": validate_result.payload,
