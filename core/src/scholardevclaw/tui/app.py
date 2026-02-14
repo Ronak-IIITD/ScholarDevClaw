@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +107,11 @@ class ScholarDevClawApp(App[None]):
         super().__init__()
         self._agent_process: subprocess.Popen[str] | None = None
         self._live_logs_enabled = False
+        self._run_history: list[dict[str, Any]] = []
+        self._history_limit = 15
+        self._next_run_id = 1
+        self._active_run_request: dict[str, Any] | None = None
+        self._active_run_started_at = 0.0
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -137,6 +143,11 @@ class ScholarDevClawApp(App[None]):
                 yield Pretty({}, id="result")
                 yield Label("Execution logs", classes="section-title")
                 yield TextArea("", id="logs", read_only=True)
+                yield Label("Run History", classes="section-title")
+                yield TextArea("No runs yet.", id="history", read_only=True)
+                with Horizontal(classes="spaced"):
+                    yield Input(value="", placeholder="Run ID (blank = last)", id="history-id")
+                    yield Button("Rerun", id="rerun-history", variant="primary")
 
         with Vertical(id="agent-row"):
             yield Label("Agent Mode (Launcher)", classes="section-title")
@@ -152,6 +163,57 @@ class ScholarDevClawApp(App[None]):
         current = area.text
         merged = (current + "\n" if current else "") + "\n".join(lines)
         area.load_text(merged)
+
+    def _capture_run_request(self) -> dict[str, Any]:
+        return {
+            "action": self.query_one("#action", Select).value,
+            "repo_path": self.query_one("#repo-path", Input).value.strip(),
+            "query": self.query_one("#query", Input).value.strip(),
+            "include_arxiv": self.query_one("#search-arxiv", Checkbox).value,
+            "include_web": self.query_one("#search-web", Checkbox).value,
+            "search_language": self.query_one("#search-language", Input).value.strip() or "python",
+            "max_results_raw": self.query_one("#search-max-results", Input).value.strip() or "10",
+            "spec": self.query_one("#spec", Input).value.strip(),
+            "output_dir": self.query_one("#output-dir", Input).value.strip() or None,
+        }
+
+    def _apply_run_request(self, request: dict[str, Any]) -> None:
+        self.query_one("#action", Select).value = request.get("action", "analyze")
+        self.query_one("#repo-path", Input).value = request.get("repo_path", "")
+        self.query_one("#query", Input).value = request.get("query", "")
+        self.query_one("#search-arxiv", Checkbox).value = bool(request.get("include_arxiv", False))
+        self.query_one("#search-web", Checkbox).value = bool(request.get("include_web", False))
+        self.query_one("#search-language", Input).value = request.get("search_language", "python")
+        self.query_one("#search-max-results", Input).value = request.get("max_results_raw", "10")
+        self.query_one("#spec", Input).value = request.get("spec", "")
+        self.query_one("#output-dir", Input).value = request.get("output_dir") or ""
+        self._refresh_action_input_state()
+
+    def _render_history(self) -> None:
+        if not self._run_history:
+            self.query_one("#history", TextArea).load_text("No runs yet.")
+            return
+
+        lines: list[str] = []
+        for item in self._run_history:
+            lines.append(
+                f"#{item['id']} | {item['action']} | {item['status']} | {item['duration_s']:.2f}s"
+            )
+        self.query_one("#history", TextArea).load_text("\n".join(lines))
+
+    def _append_history(self, action: str, status: str, duration_s: float, request: dict[str, Any]) -> None:
+        record = {
+            "id": self._next_run_id,
+            "action": action,
+            "status": status,
+            "duration_s": duration_s,
+            "request": request,
+        }
+        self._next_run_id += 1
+        self._run_history.insert(0, record)
+        self._run_history = self._run_history[: self._history_limit]
+        self.query_one("#history-id", Input).value = str(record["id"])
+        self._render_history()
 
     def _refresh_action_input_state(self) -> None:
         action = self.query_one("#action", Select).value
@@ -186,16 +248,44 @@ class ScholarDevClawApp(App[None]):
     def on_action_changed(self) -> None:
         self._refresh_action_input_state()
 
-    def _run_selected_workflow(self) -> None:
-        action = self.query_one("#action", Select).value
-        repo_path = self.query_one("#repo-path", Input).value.strip()
-        query = self.query_one("#query", Input).value.strip()
-        include_arxiv = self.query_one("#search-arxiv", Checkbox).value
-        include_web = self.query_one("#search-web", Checkbox).value
-        search_language = self.query_one("#search-language", Input).value.strip() or "python"
-        max_results_raw = self.query_one("#search-max-results", Input).value.strip() or "10"
-        spec = self.query_one("#spec", Input).value.strip()
-        output_dir = self.query_one("#output-dir", Input).value.strip() or None
+    @on(Button.Pressed, "#rerun-history")
+    def on_rerun_history(self) -> None:
+        history_id_raw = self.query_one("#history-id", Input).value.strip()
+
+        if not self._run_history:
+            self._append_logs("logs", ["No history available to rerun."])
+            return
+
+        if history_id_raw:
+            try:
+                history_id = int(history_id_raw)
+            except ValueError:
+                self._append_logs("logs", [f"Invalid run id: {history_id_raw}"])
+                return
+            record = next((entry for entry in self._run_history if entry["id"] == history_id), None)
+            if record is None:
+                self._append_logs("logs", [f"Run id not found: {history_id}"])
+                return
+        else:
+            record = self._run_history[0]
+
+        request = record["request"]
+        self._apply_run_request(request)
+        self._append_logs("logs", [f"Rerunning from history #{record['id']} ({record['action']})"])
+        self._run_selected_workflow(override_request=request)
+
+    def _run_selected_workflow(self, override_request: dict[str, Any] | None = None) -> None:
+        request = override_request or self._capture_run_request()
+
+        action = request.get("action", "analyze")
+        repo_path = request.get("repo_path", "")
+        query = request.get("query", "")
+        include_arxiv = bool(request.get("include_arxiv", False))
+        include_web = bool(request.get("include_web", False))
+        search_language = request.get("search_language", "python")
+        max_results_raw = request.get("max_results_raw", "10")
+        spec = request.get("spec", "")
+        output_dir = request.get("output_dir")
 
         try:
             max_results = max(1, int(max_results_raw))
@@ -203,9 +293,14 @@ class ScholarDevClawApp(App[None]):
             max_results = 10
 
         run_button = self.query_one("#run", Button)
+        if run_button.disabled:
+            return
         run_button.disabled = True
+        self.query_one("#rerun-history", Button).disabled = True
         self.query_one("#run-status", Label).update(f"Status: Running '{action}'...")
         self._live_logs_enabled = True
+        self._active_run_request = request
+        self._active_run_started_at = time.perf_counter()
 
         def _runner() -> None:
             def _emit(line: str) -> None:
@@ -264,8 +359,15 @@ class ScholarDevClawApp(App[None]):
             self._append_logs("logs", message.logs)
         self._live_logs_enabled = False
         self.query_one("#run", Button).disabled = False
+        self.query_one("#rerun-history", Button).disabled = False
         status = "Done" if message.error is None else "Failed"
         self.query_one("#run-status", Label).update(f"Status: {status} ({message.title})")
+        action = (self._active_run_request or {}).get("action", "unknown")
+        duration_s = max(0.0, time.perf_counter() - self._active_run_started_at)
+        if self._active_run_request is not None:
+            self._append_history(action, status, duration_s, self._active_run_request)
+        self._active_run_request = None
+        self._active_run_started_at = 0.0
 
     @on(TaskLog)
     def on_task_log(self, message: TaskLog) -> None:
