@@ -47,6 +47,8 @@ htmlcov/
 *.log
 .env
 .env.local
+UPDATES.md
+demo.md
 
 # Test repositories
 test_repos/
