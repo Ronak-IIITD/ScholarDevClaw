@@ -66,6 +66,7 @@ What you get in TUI right now:
 - Run status (`Running`, `Done`, `Failed`)
 - Run history with run ID, action, duration, and quick rerun
 - Run details inspector for any history run (inputs, outputs, artifacts, errors, timing)
+- Artifact viewer to inspect generated files and transformation summaries from history runs
 
 ### 4) Example TUI workflow (real project)
 

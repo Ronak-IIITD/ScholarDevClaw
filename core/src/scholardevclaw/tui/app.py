@@ -132,6 +132,12 @@ class ScholarDevClawApp(App[None]):
         background: #03151a;
     }
 
+    #artifact-view {
+        height: 12;
+        border: round #155e75;
+        background: #041018;
+    }
+
     #run-status {
         margin-top: 1;
         background: #082f49;
@@ -266,6 +272,11 @@ class ScholarDevClawApp(App[None]):
                     yield Button("View run", id="view-history", variant="default")
                 yield Label("Run Details", classes="section-title")
                 yield TextArea("No run details yet.", id="run-details", read_only=True)
+                with Horizontal(classes="spaced"):
+                    yield Input(value="", placeholder="Artifact # (blank = 1)", id="artifact-id")
+                    yield Button("View artifact", id="view-artifact", variant="default")
+                yield Label("Artifact Viewer", classes="section-title")
+                yield TextArea("No artifacts yet.", id="artifact-view", read_only=True)
 
         with Vertical(id="agent-row"):
             yield Label("Agent Mode (Launcher)", classes="section-title")
@@ -281,6 +292,100 @@ class ScholarDevClawApp(App[None]):
         current = area.text
         merged = (current + "\n" if current else "") + "\n".join(lines)
         area.load_text(merged)
+
+    def _extract_artifacts(self, record: dict[str, Any]) -> list[dict[str, str]]:
+        result = record.get("result", {})
+        if not isinstance(result, dict):
+            return []
+
+        generation = result.get("generation")
+        if not isinstance(generation, dict):
+            if any(key in result for key in ("new_files", "transformations", "written_files")):
+                generation = result
+            else:
+                generation = {}
+
+        artifacts: list[dict[str, str]] = []
+
+        for item in generation.get("new_files", []) or []:
+            path = item.get("path") if isinstance(item, dict) else None
+            content = item.get("content") if isinstance(item, dict) else None
+            if not path:
+                continue
+            artifacts.append(
+                {
+                    "label": f"new_file:{path}",
+                    "content": content or f"No in-memory content available for {path}.",
+                }
+            )
+
+        for file_path in generation.get("written_files", []) or []:
+            artifacts.append(
+                {
+                    "label": f"written_file:{file_path}",
+                    "content": f"Artifact written to disk at:\n{file_path}",
+                }
+            )
+
+        for item in generation.get("transformations", []) or []:
+            if not isinstance(item, dict):
+                continue
+            file_name = item.get("file") or "unknown"
+            changes = item.get("changes") or []
+            summary_lines = [
+                f"Transformation target: {file_name}",
+                f"Declared changes: {len(changes)}",
+                "",
+                "Original snippet:",
+                str(item.get("original", ""))[:1200] or "(none)",
+                "",
+                "Modified snippet:",
+                str(item.get("modified", ""))[:1200] or "(none)",
+            ]
+            artifacts.append(
+                {
+                    "label": f"transformation:{file_name}",
+                    "content": "\n".join(summary_lines),
+                }
+            )
+
+        return artifacts
+
+    def _render_artifact_preview(self, record: dict[str, Any] | None, artifact_id_raw: str = "") -> None:
+        artifact_view = self.query_one("#artifact-view", TextArea)
+        artifact_input = self.query_one("#artifact-id", Input)
+
+        if record is None:
+            artifact_view.load_text("No artifacts yet.")
+            artifact_input.value = ""
+            return
+
+        artifacts = self._extract_artifacts(record)
+        if not artifacts:
+            artifact_view.load_text("No artifacts available for this run.")
+            artifact_input.value = ""
+            return
+
+        if artifact_id_raw:
+            try:
+                artifact_index = int(artifact_id_raw)
+            except ValueError:
+                self._append_logs("logs", [f"Invalid artifact id: {artifact_id_raw}"])
+                artifact_index = 1
+        else:
+            artifact_index = 1
+
+        artifact_index = max(1, min(artifact_index, len(artifacts)))
+        artifact_input.value = str(artifact_index)
+
+        artifact = artifacts[artifact_index - 1]
+        body = [
+            f"Run #{record.get('id')} artifact {artifact_index}/{len(artifacts)}",
+            f"Label: {artifact.get('label', 'unknown')}",
+            "",
+            artifact.get("content", ""),
+        ]
+        artifact_view.load_text("\n".join(body))
 
     def _capture_run_request(self) -> dict[str, Any]:
         return {
@@ -444,6 +549,7 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#history-id", Input).value = str(record["id"])
         self._render_history()
         self._render_run_details(record)
+        self._render_artifact_preview(record)
 
     def _refresh_action_input_state(self) -> None:
         action = self.query_one("#action", Select).value
@@ -476,6 +582,9 @@ class ScholarDevClawApp(App[None]):
     def on_clear_button(self) -> None:
         self.query_one("#result", Pretty).update({})
         self.query_one("#logs", TextArea).load_text("")
+        self.query_one("#run-details", TextArea).load_text("No run details yet.")
+        self.query_one("#artifact-view", TextArea).load_text("No artifacts yet.")
+        self.query_one("#artifact-id", Input).value = ""
 
     @on(Select.Changed, "#action")
     def on_action_changed(self) -> None:
@@ -496,6 +605,7 @@ class ScholarDevClawApp(App[None]):
         request = record["request"]
         self._apply_run_request(request)
         self._render_run_details(record)
+        self._render_artifact_preview(record)
         self._append_logs("logs", [f"Rerunning from history #{record['id']} ({record['action']})"])
         self._run_selected_workflow(override_request=request)
 
@@ -509,7 +619,21 @@ class ScholarDevClawApp(App[None]):
             return
 
         self._render_run_details(record)
+        self._render_artifact_preview(record)
         self._append_logs("logs", [f"Showing details for run #{record['id']} ({record['action']})"])
+
+    @on(Button.Pressed, "#view-artifact")
+    def on_view_artifact(self) -> None:
+        history_id_raw = self.query_one("#history-id", Input).value.strip()
+        artifact_id_raw = self.query_one("#artifact-id", Input).value.strip()
+        record = self._resolve_history_record(history_id_raw)
+        if record is None:
+            if not self._run_history:
+                self._append_logs("logs", ["No history available to inspect artifacts."])
+            return
+
+        self._render_artifact_preview(record, artifact_id_raw=artifact_id_raw)
+        self._append_logs("logs", [f"Showing artifact for run #{record['id']}"])
 
     def _run_selected_workflow(self, override_request: dict[str, Any] | None = None) -> None:
         request = override_request or self._capture_run_request()
@@ -537,6 +661,7 @@ class ScholarDevClawApp(App[None]):
         run_button.disabled = True
         self.query_one("#rerun-history", Button).disabled = True
         self.query_one("#view-history", Button).disabled = True
+        self.query_one("#view-artifact", Button).disabled = True
         self.query_one("#run-status", Label).update(f"Status: Running '{action}'...")
         self._live_logs_enabled = True
         self._active_run_request = request
@@ -608,6 +733,7 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#run", Button).disabled = False
         self.query_one("#rerun-history", Button).disabled = False
         self.query_one("#view-history", Button).disabled = False
+        self.query_one("#view-artifact", Button).disabled = False
         status = "Done" if message.error is None else "Failed"
         self.query_one("#run-status", Label).update(f"Status: {status} ({message.title})")
         action = (self._active_run_request or {}).get("action", "unknown")
