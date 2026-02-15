@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import subprocess
 from typing import Any, Callable
@@ -54,9 +55,11 @@ def run_preflight(
             error=str(exc),
         )
 
-    is_writable = path.exists() and path.is_dir()
+    is_writable = os.access(path, os.W_OK)
     has_git_dir = (path / ".git").exists()
     python_file_count = len(list(path.rglob("*.py")))
+    warnings: list[str] = []
+    recommendations: list[str] = []
 
     git_available = False
     is_clean = True
@@ -82,6 +85,26 @@ def run_preflight(
             git_error = str(exc)
             git_available = False
 
+    if not is_writable:
+        warnings.append("Repository directory is not writable")
+        recommendations.append("Grant write permission for the repository before running integrate")
+
+    if python_file_count == 0:
+        warnings.append("No Python files detected")
+        recommendations.append("Verify repository path and project language before integration")
+
+    if has_git_dir and not git_available:
+        warnings.append("Git repository detected but git status check failed")
+        recommendations.append("Ensure git is installed and repository permissions allow status checks")
+
+    if require_clean:
+        if not has_git_dir:
+            warnings.append("Clean-check requested but .git directory is missing")
+            recommendations.append("Run integration inside a git clone or disable --require-clean")
+        elif not git_available:
+            warnings.append("Clean-check requested but git status is unavailable")
+            recommendations.append("Fix git availability or disable --require-clean to continue")
+
     checks = {
         "repo_exists": True,
         "repo_is_writable": is_writable,
@@ -91,6 +114,8 @@ def run_preflight(
         "is_clean": is_clean,
         "changed_file_entries": changed_files,
         "git_error": git_error,
+        "warnings": warnings,
+        "recommendations": recommendations,
     }
 
     _log(logs, f"Preflight: python files detected = {python_file_count}", log_callback)
@@ -101,6 +126,42 @@ def run_preflight(
             _log(logs, "Preflight: git check unavailable, continuing", log_callback)
     else:
         _log(logs, "Preflight: .git not found, continuing", log_callback)
+
+    for warning in warnings:
+        _log(logs, f"Preflight warning: {warning}", log_callback)
+
+    if not is_writable:
+        error = "Repository is not writable; integration cannot proceed"
+        _log(logs, f"Failed: {error}", log_callback)
+        return PipelineResult(
+            ok=False,
+            title="Preflight",
+            payload=checks,
+            logs=logs,
+            error=error,
+        )
+
+    if require_clean and not has_git_dir:
+        error = "Repository is not a git checkout; require_clean=True cannot be enforced"
+        _log(logs, f"Failed: {error}", log_callback)
+        return PipelineResult(
+            ok=False,
+            title="Preflight",
+            payload=checks,
+            logs=logs,
+            error=error,
+        )
+
+    if require_clean and has_git_dir and not git_available:
+        error = "Git status check failed; require_clean=True cannot be enforced"
+        _log(logs, f"Failed: {error}", log_callback)
+        return PipelineResult(
+            ok=False,
+            title="Preflight",
+            payload=checks,
+            logs=logs,
+            error=error,
+        )
 
     if require_clean and has_git_dir and git_available and not is_clean:
         error = "Repository has uncommitted changes; require_clean=True blocked execution"
@@ -530,7 +591,11 @@ def run_integrate(
             return PipelineResult(
                 ok=False,
                 title="Integration",
-                payload={"step": "preflight", "preflight": preflight.payload},
+                payload={
+                    "step": "preflight",
+                    "preflight": preflight.payload,
+                    "guidance": preflight.payload.get("recommendations", []),
+                },
                 logs=logs,
                 error=preflight.error,
             )

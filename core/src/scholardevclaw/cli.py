@@ -363,6 +363,11 @@ def cmd_integrate(args):
         print("\nIntegration failed.", file=sys.stderr)
         if result.error:
             print(f"Error: {result.error}", file=sys.stderr)
+        guidance = result.payload.get("guidance") if isinstance(result.payload, dict) else None
+        if isinstance(guidance, list) and guidance:
+            print("Guidance:", file=sys.stderr)
+            for item in guidance:
+                print(f"  - {item}", file=sys.stderr)
         sys.exit(1)
 
     print("\n" + "=" * 60)

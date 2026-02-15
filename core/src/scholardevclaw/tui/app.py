@@ -388,6 +388,8 @@ class ScholarDevClawApp(App[None]):
         lines.append("")
         lines.append("Outputs:")
         if isinstance(result, dict):
+            if result.get("step"):
+                lines.append(f"  failed_step: {result.get('step')}")
             if "spec" in result:
                 lines.append(f"  selected_spec: {result.get('spec')}")
             mapping = result.get("mapping")
@@ -408,6 +410,10 @@ class ScholarDevClawApp(App[None]):
                     if new_files:
                         lines.append("  generated_files:")
                         lines.extend([f"    - {item.get('path')}" for item in new_files[:8]])
+            guidance = result.get("guidance")
+            if isinstance(guidance, list) and guidance:
+                lines.append("  guidance:")
+                lines.extend([f"    - {item}" for item in guidance[:8]])
 
         details.load_text("\n".join(lines))
 

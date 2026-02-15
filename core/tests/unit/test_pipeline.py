@@ -165,6 +165,18 @@ def test_run_preflight_require_clean_blocks_dirty_repo(monkeypatch, tmp_path):
     assert result.ok is False
     assert "require_clean=True" in (result.error or "")
     assert result.payload["is_clean"] is False
+    assert result.payload["recommendations"]
+
+
+def test_run_preflight_require_clean_blocks_non_git_repo(tmp_path):
+    pipeline = _pipeline_module()
+
+    result = pipeline.run_preflight(str(tmp_path), require_clean=True)
+
+    assert result.ok is False
+    assert "not a git checkout" in (result.error or "")
+    assert result.payload["has_git_dir"] is False
+    assert result.payload["recommendations"]
 
 
 def test_run_integrate_dry_run_skips_generate_and_validate(monkeypatch, tmp_path):
@@ -190,3 +202,14 @@ def test_run_integrate_dry_run_skips_generate_and_validate(monkeypatch, tmp_path
     assert result.payload["generation"] is None
     assert result.payload["validation"] is None
     assert result.payload["output_dir"] == "/tmp/out"
+
+
+def test_run_integrate_returns_preflight_guidance(monkeypatch, tmp_path):
+    pipeline = _pipeline_module()
+
+    result = pipeline.run_integrate(str(tmp_path), "rmsnorm", require_clean=True)
+
+    assert result.ok is False
+    assert result.payload["step"] == "preflight"
+    assert isinstance(result.payload.get("guidance"), list)
+    assert result.payload["guidance"]
