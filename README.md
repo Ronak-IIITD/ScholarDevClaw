@@ -65,6 +65,7 @@ What you get in TUI right now:
 - Live execution logs while a workflow runs
 - Run status (`Running`, `Done`, `Failed`)
 - Run history with run ID, action, duration, and quick rerun
+- Run details inspector for any history run (inputs, outputs, artifacts, errors, timing)
 
 ### 4) Example TUI workflow (real project)
 

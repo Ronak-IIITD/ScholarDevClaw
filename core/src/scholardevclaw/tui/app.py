@@ -126,6 +126,12 @@ class ScholarDevClawApp(App[None]):
         border: round #1e3a8a;
     }
 
+    #run-details {
+        height: 12;
+        border: round #0f766e;
+        background: #03151a;
+    }
+
     #run-status {
         margin-top: 1;
         background: #082f49;
@@ -257,6 +263,9 @@ class ScholarDevClawApp(App[None]):
                 with Horizontal(classes="spaced"):
                     yield Input(value="", placeholder="Run ID (blank = last)", id="history-id")
                     yield Button("Rerun", id="rerun-history", variant="primary")
+                    yield Button("View run", id="view-history", variant="default")
+                yield Label("Run Details", classes="section-title")
+                yield TextArea("No run details yet.", id="run-details", read_only=True)
 
         with Vertical(id="agent-row"):
             yield Label("Agent Mode (Launcher)", classes="section-title")
@@ -318,19 +327,117 @@ class ScholarDevClawApp(App[None]):
             )
         self.query_one("#history", TextArea).load_text("\n".join(lines))
 
-    def _append_history(self, action: str, status: str, duration_s: float, request: dict[str, Any]) -> None:
+    def _resolve_history_record(self, history_id_raw: str) -> dict[str, Any] | None:
+        if not self._run_history:
+            return None
+
+        if not history_id_raw:
+            return self._run_history[0]
+
+        try:
+            history_id = int(history_id_raw)
+        except ValueError:
+            self._append_logs("logs", [f"Invalid run id: {history_id_raw}"])
+            return None
+
+        record = next((entry for entry in self._run_history if entry["id"] == history_id), None)
+        if record is None:
+            self._append_logs("logs", [f"Run id not found: {history_id}"])
+            return None
+        return record
+
+    def _render_run_details(self, record: dict[str, Any] | None) -> None:
+        details = self.query_one("#run-details", TextArea)
+        if record is None:
+            details.load_text("No run details yet.")
+            return
+
+        request = record.get("request", {})
+        result = record.get("result", {})
+
+        lines = [
+            f"Run #{record.get('id')}",
+            f"Action: {record.get('action')}",
+            f"Status: {record.get('status')}",
+            f"Duration: {record.get('duration_s', 0.0):.2f}s",
+            f"Title: {record.get('title') or 'n/a'}",
+            f"Error: {record.get('error') or 'none'}",
+            "",
+            "Inputs:",
+            f"  repo_path: {request.get('repo_path', '')}",
+            f"  spec: {request.get('spec', '') or 'auto'}",
+        ]
+
+        if request.get("action") == "search":
+            lines.extend(
+                [
+                    f"  query: {request.get('query', '')}",
+                    f"  include_arxiv: {bool(request.get('include_arxiv', False))}",
+                    f"  include_web: {bool(request.get('include_web', False))}",
+                    f"  max_results: {request.get('max_results_raw', '10')}",
+                ]
+            )
+        if request.get("action") == "integrate":
+            lines.extend(
+                [
+                    f"  dry_run: {bool(request.get('integrate_dry_run', False))}",
+                    f"  require_clean: {bool(request.get('integrate_require_clean', False))}",
+                ]
+            )
+
+        lines.append("")
+        lines.append("Outputs:")
+        if isinstance(result, dict):
+            if "spec" in result:
+                lines.append(f"  selected_spec: {result.get('spec')}")
+            mapping = result.get("mapping")
+            if isinstance(mapping, dict):
+                lines.append(f"  mapping_targets: {len(mapping.get('targets', []))}")
+            validation = result.get("validation")
+            if isinstance(validation, dict):
+                lines.append(f"  validation_stage: {validation.get('stage')}")
+                lines.append(f"  validation_passed: {validation.get('passed')}")
+            generation = result.get("generation")
+            if isinstance(generation, dict):
+                written_files = generation.get("written_files") or []
+                if written_files:
+                    lines.append("  written_files:")
+                    lines.extend([f"    - {item}" for item in written_files[:8]])
+                else:
+                    new_files = generation.get("new_files") or []
+                    if new_files:
+                        lines.append("  generated_files:")
+                        lines.extend([f"    - {item.get('path')}" for item in new_files[:8]])
+
+        details.load_text("\n".join(lines))
+
+    def _append_history(
+        self,
+        action: str,
+        status: str,
+        duration_s: float,
+        request: dict[str, Any],
+        *,
+        title: str,
+        result: dict[str, Any],
+        error: str | None,
+    ) -> None:
         record = {
             "id": self._next_run_id,
             "action": action,
             "status": status,
             "duration_s": duration_s,
             "request": request,
+            "title": title,
+            "result": result,
+            "error": error,
         }
         self._next_run_id += 1
         self._run_history.insert(0, record)
         self._run_history = self._run_history[: self._history_limit]
         self.query_one("#history-id", Input).value = str(record["id"])
         self._render_history()
+        self._render_run_details(record)
 
     def _refresh_action_input_state(self) -> None:
         action = self.query_one("#action", Select).value
@@ -376,23 +483,27 @@ class ScholarDevClawApp(App[None]):
             self._append_logs("logs", ["No history available to rerun."])
             return
 
-        if history_id_raw:
-            try:
-                history_id = int(history_id_raw)
-            except ValueError:
-                self._append_logs("logs", [f"Invalid run id: {history_id_raw}"])
-                return
-            record = next((entry for entry in self._run_history if entry["id"] == history_id), None)
-            if record is None:
-                self._append_logs("logs", [f"Run id not found: {history_id}"])
-                return
-        else:
-            record = self._run_history[0]
+        record = self._resolve_history_record(history_id_raw)
+        if record is None:
+            return
 
         request = record["request"]
         self._apply_run_request(request)
+        self._render_run_details(record)
         self._append_logs("logs", [f"Rerunning from history #{record['id']} ({record['action']})"])
         self._run_selected_workflow(override_request=request)
+
+    @on(Button.Pressed, "#view-history")
+    def on_view_history(self) -> None:
+        history_id_raw = self.query_one("#history-id", Input).value.strip()
+        record = self._resolve_history_record(history_id_raw)
+        if record is None:
+            if not self._run_history:
+                self._append_logs("logs", ["No history available to inspect."])
+            return
+
+        self._render_run_details(record)
+        self._append_logs("logs", [f"Showing details for run #{record['id']} ({record['action']})"])
 
     def _run_selected_workflow(self, override_request: dict[str, Any] | None = None) -> None:
         request = override_request or self._capture_run_request()
@@ -419,6 +530,7 @@ class ScholarDevClawApp(App[None]):
             return
         run_button.disabled = True
         self.query_one("#rerun-history", Button).disabled = True
+        self.query_one("#view-history", Button).disabled = True
         self.query_one("#run-status", Label).update(f"Status: Running '{action}'...")
         self._live_logs_enabled = True
         self._active_run_request = request
@@ -489,12 +601,21 @@ class ScholarDevClawApp(App[None]):
         self._live_logs_enabled = False
         self.query_one("#run", Button).disabled = False
         self.query_one("#rerun-history", Button).disabled = False
+        self.query_one("#view-history", Button).disabled = False
         status = "Done" if message.error is None else "Failed"
         self.query_one("#run-status", Label).update(f"Status: {status} ({message.title})")
         action = (self._active_run_request or {}).get("action", "unknown")
         duration_s = max(0.0, time.perf_counter() - self._active_run_started_at)
         if self._active_run_request is not None:
-            self._append_history(action, status, duration_s, self._active_run_request)
+            self._append_history(
+                action,
+                status,
+                duration_s,
+                self._active_run_request,
+                title=message.title,
+                result=message.result,
+                error=message.error,
+            )
         self._active_run_request = None
         self._active_run_started_at = 0.0
 
