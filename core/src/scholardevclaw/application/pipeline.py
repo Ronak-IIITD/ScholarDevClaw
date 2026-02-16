@@ -539,22 +539,111 @@ def run_generate(
 def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> PipelineResult:
     from scholardevclaw.validation.runner import ValidationRunner
 
+    def _metric_dict(metric: Any) -> dict[str, float] | None:
+        if metric is None:
+            return None
+        return {
+            "loss": float(getattr(metric, "loss", 0.0)),
+            "perplexity": float(getattr(metric, "perplexity", 0.0)),
+            "tokens_per_second": float(getattr(metric, "tokens_per_second", 0.0)),
+            "memory_mb": float(getattr(metric, "memory_mb", 0.0)),
+            "runtime_seconds": float(getattr(metric, "runtime_seconds", 0.0)),
+        }
+
+    def _build_scorecard(
+        *,
+        passed: bool,
+        stage: str,
+        comparison: dict[str, Any] | None,
+        baseline: dict[str, float] | None,
+        new: dict[str, float] | None,
+    ) -> dict[str, Any]:
+        speedup = None
+        loss_change = None
+        if comparison:
+            speedup = comparison.get("speedup")
+            loss_change = comparison.get("loss_change")
+
+        checks = [
+            {
+                "name": "validation_passed",
+                "status": "pass" if passed else "fail",
+                "value": bool(passed),
+            }
+        ]
+        if speedup is not None:
+            checks.append(
+                {
+                    "name": "speedup",
+                    "status": "pass" if float(speedup) >= 1.0 else "warn",
+                    "value": float(speedup),
+                }
+            )
+        if loss_change is not None:
+            checks.append(
+                {
+                    "name": "loss_change_pct",
+                    "status": "pass" if abs(float(loss_change)) <= 5.0 else "warn",
+                    "value": float(loss_change),
+                }
+            )
+
+        highlights: list[str] = []
+        if passed:
+            highlights.append(f"Validation passed at stage '{stage}'")
+        else:
+            highlights.append(f"Validation failed at stage '{stage}'")
+        if speedup is not None:
+            highlights.append(f"Speedup: {float(speedup):.3f}x")
+        if loss_change is not None:
+            highlights.append(f"Loss change: {float(loss_change):.3f}%")
+
+        return {
+            "version": "1.0",
+            "summary": "pass" if passed else "fail",
+            "stage": stage,
+            "checks": checks,
+            "deltas": {
+                "speedup": float(speedup) if speedup is not None else None,
+                "loss_change_pct": float(loss_change) if loss_change is not None else None,
+            },
+            "baseline_metrics": baseline,
+            "new_metrics": new,
+            "highlights": highlights,
+        }
+
     logs: list[str] = []
     _log(logs, f"Running validation in repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
         runner = ValidationRunner(path)
         result = runner.run({}, str(path))
+        baseline_metrics = _metric_dict(getattr(result, "baseline_metrics", None))
+        new_metrics = _metric_dict(getattr(result, "new_metrics", None))
+        scorecard = _build_scorecard(
+            passed=bool(result.passed),
+            stage=str(result.stage),
+            comparison=result.comparison if isinstance(result.comparison, dict) else None,
+            baseline=baseline_metrics,
+            new=new_metrics,
+        )
 
         payload = {
             "passed": result.passed,
             "stage": result.stage,
             "comparison": result.comparison,
+            "baseline_metrics": baseline_metrics,
+            "new_metrics": new_metrics,
+            "scorecard": scorecard,
             "logs": result.logs,
             "error": result.error,
         }
         _log(logs, f"Stage: {result.stage}", log_callback)
         _log(logs, f"Passed: {result.passed}", log_callback)
+        if scorecard["deltas"].get("speedup") is not None:
+            _log(logs, f"Speedup: {scorecard['deltas']['speedup']:.3f}x", log_callback)
+        if scorecard["deltas"].get("loss_change_pct") is not None:
+            _log(logs, f"Loss change: {scorecard['deltas']['loss_change_pct']:.3f}%", log_callback)
         if result.error:
             _log(logs, f"Error: {result.error}", log_callback)
 

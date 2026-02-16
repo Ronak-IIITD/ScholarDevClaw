@@ -304,39 +304,38 @@ def cmd_generate(args):
 
 def cmd_validate(args):
     """Run validation on a repository"""
-    path = Path(args.repo_path)
-    if not path.exists():
-        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
-        sys.exit(1)
+    from scholardevclaw.application.pipeline import run_validate
 
-    print(f"Validating repository: {path}")
+    print(f"Validating repository: {args.repo_path}")
     print("-" * 50)
 
-    from scholardevclaw.validation.runner import ValidationRunner
+    result = run_validate(args.repo_path)
+    if not result.ok and not result.payload:
+        print(f"Error: {result.error or 'Validation failed'}", file=sys.stderr)
+        sys.exit(1)
 
-    runner = ValidationRunner(path)
-    result = runner.run({}, str(path))
+    payload = result.payload
+    print(f"Stage: {payload.get('stage')}")
+    print(f"Passed: {'Yes' if payload.get('passed') else 'No'}")
 
-    print(f"Stage: {result.stage}")
-    print(f"Passed: {'Yes' if result.passed else 'No'}")
-
-    if result.comparison:
+    comparison = payload.get("comparison")
+    if comparison:
         print("Comparison:")
-        for key, value in result.comparison.items():
+        for key, value in comparison.items():
             print(f"  {key}: {value}")
 
-    if result.error:
-        print(f"Error: {result.error}")
+    scorecard = payload.get("scorecard")
+    if isinstance(scorecard, dict):
+        print("Scorecard:")
+        print(f"  Summary: {scorecard.get('summary')}")
+        for highlight in scorecard.get("highlights", [])[:4]:
+            print(f"  - {highlight}")
+
+    if payload.get("error"):
+        print(f"Error: {payload.get('error')}")
 
     if args.output_json:
-        output = {
-            "passed": result.passed,
-            "stage": result.stage,
-            "comparison": result.comparison,
-            "logs": result.logs,
-            "error": result.error,
-        }
-        print(json.dumps(output, indent=2))
+        print(json.dumps(payload, indent=2))
 
 
 def cmd_integrate(args):
@@ -385,6 +384,11 @@ def cmd_integrate(args):
     if validation:
         print(f"Validation stage: {validation.get('stage')}")
         print(f"Validation passed: {'Yes' if validation.get('passed') else 'No'}")
+        scorecard = validation.get("scorecard")
+        if isinstance(scorecard, dict):
+            print(f"Validation summary: {scorecard.get('summary')}")
+            for highlight in scorecard.get("highlights", [])[:3]:
+                print(f"  - {highlight}")
 
     if args.output_json:
         print(json.dumps(result.payload, indent=2))

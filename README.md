@@ -67,6 +67,7 @@ What you get in TUI right now:
 - Run history with run ID, action, duration, and quick rerun
 - Run details inspector for any history run (inputs, outputs, artifacts, errors, timing)
 - Artifact viewer to inspect generated files and transformation summaries from history runs
+- Validation scorecard highlights (pass/fail summary, speedup/loss deltas) in run details
 
 ### 4) Example TUI workflow (real project)
 

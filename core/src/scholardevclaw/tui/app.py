@@ -504,6 +504,13 @@ class ScholarDevClawApp(App[None]):
             if isinstance(validation, dict):
                 lines.append(f"  validation_stage: {validation.get('stage')}")
                 lines.append(f"  validation_passed: {validation.get('passed')}")
+                scorecard = validation.get("scorecard")
+                if isinstance(scorecard, dict):
+                    lines.append(f"  validation_summary: {scorecard.get('summary')}")
+                    highlights = scorecard.get("highlights") or []
+                    if highlights:
+                        lines.append("  validation_highlights:")
+                        lines.extend([f"    - {item}" for item in highlights[:4]])
             generation = result.get("generation")
             if isinstance(generation, dict):
                 written_files = generation.get("written_files") or []
