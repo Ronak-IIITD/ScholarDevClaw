@@ -60,3 +60,6 @@ Thumbs.db
 
 # OpenClaw vendor
 vendor/openclaw/
+
+# Node.js dependencies
+node_modules/
