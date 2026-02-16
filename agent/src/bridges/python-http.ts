@@ -85,6 +85,7 @@ export class PythonHttpBridge {
 
   async healthCheck(): Promise<boolean> {
     const result = await this.request<{ status: string }>('/health', 'GET');
-    return result.success && result.data?.status === 'ok';
+    const data = result.data as { status?: string } | undefined;
+    return result.success && data?.status === 'ok';
   }
 }

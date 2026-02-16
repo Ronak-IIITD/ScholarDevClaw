@@ -39,6 +39,7 @@ type RunIntegrationOptions = {
   runId?: string;
   integrationId?: string;
   startPhase?: number;
+  retryCount?: number;
   phaseResults?: Record<number, unknown>;
   contextOverrides?: Partial<OrchestrationContext>;
 };
@@ -77,6 +78,8 @@ export class ScholarDevClawOrchestrator {
     const executionMode = (mode || config.execution.defaultMode) as ExecutionMode;
     const runId = options.runId || this.generateRunId();
     const startPhase = options.startPhase || 1;
+    const existingSnapshot = options.runId ? await this.runStore.get(options.runId) : null;
+    const retryCount = options.retryCount ?? existingSnapshot?.retryCount ?? 0;
 
     let integrationId = options.integrationId;
     if (!integrationId && this.convex) {
@@ -90,6 +93,7 @@ export class ScholarDevClawOrchestrator {
       paperUrl,
       mode: executionMode,
       startPhase,
+      retryCount,
     });
 
     const context: OrchestrationContext = {
@@ -108,6 +112,7 @@ export class ScholarDevClawOrchestrator {
       mode: executionMode,
       status: startPhase > 1 ? 'running' : 'pending',
       currentPhase: Math.max(0, startPhase - 1),
+      retryCount,
       phaseResults,
       context,
     });
@@ -122,9 +127,28 @@ export class ScholarDevClawOrchestrator {
         }
         context.repoAnalysis = result.data;
         phaseResults[1] = result.data;
-        await this.finalizePhase(runId, integrationId, input, executionMode, context, phaseResults, 1, result.data);
+        await this.finalizePhase(
+          runId,
+          integrationId,
+          input,
+          executionMode,
+          context,
+          phaseResults,
+          1,
+          result.data,
+          retryCount,
+        );
         if (executionMode === 'step_approval') {
-          await this.waitForApproval(runId, integrationId, input, executionMode, context, phaseResults, 1);
+          await this.waitForApproval(
+            runId,
+            integrationId,
+            input,
+            executionMode,
+            context,
+            phaseResults,
+            1,
+            retryCount,
+          );
         }
       }
 
@@ -143,9 +167,28 @@ export class ScholarDevClawOrchestrator {
         }
         context.researchSpec = result.data;
         phaseResults[2] = result.data;
-        await this.finalizePhase(runId, integrationId, input, executionMode, context, phaseResults, 2, result.data);
+        await this.finalizePhase(
+          runId,
+          integrationId,
+          input,
+          executionMode,
+          context,
+          phaseResults,
+          2,
+          result.data,
+          retryCount,
+        );
         if (executionMode === 'step_approval') {
-          await this.waitForApproval(runId, integrationId, input, executionMode, context, phaseResults, 2);
+          await this.waitForApproval(
+            runId,
+            integrationId,
+            input,
+            executionMode,
+            context,
+            phaseResults,
+            2,
+            retryCount,
+          );
         }
       }
 
@@ -165,9 +208,28 @@ export class ScholarDevClawOrchestrator {
         }
         context.mapping = result.data;
         phaseResults[3] = result.data;
-        await this.finalizePhase(runId, integrationId, input, executionMode, context, phaseResults, 3, result.data);
+        await this.finalizePhase(
+          runId,
+          integrationId,
+          input,
+          executionMode,
+          context,
+          phaseResults,
+          3,
+          result.data,
+          retryCount,
+        );
         if (executionMode === 'step_approval') {
-          await this.waitForApproval(runId, integrationId, input, executionMode, context, phaseResults, 3);
+          await this.waitForApproval(
+            runId,
+            integrationId,
+            input,
+            executionMode,
+            context,
+            phaseResults,
+            3,
+            retryCount,
+          );
         }
       }
 
@@ -186,11 +248,31 @@ export class ScholarDevClawOrchestrator {
         if (!result.success || !result.data) {
           throw new Error(`Phase 4 failed: ${result.error || 'No data'}`);
         }
+        this.enforcePatchSafety(result.data);
         context.patch = result.data;
         phaseResults[4] = result.data;
-        await this.finalizePhase(runId, integrationId, input, executionMode, context, phaseResults, 4, result.data);
+        await this.finalizePhase(
+          runId,
+          integrationId,
+          input,
+          executionMode,
+          context,
+          phaseResults,
+          4,
+          result.data,
+          retryCount,
+        );
         if (executionMode === 'step_approval') {
-          await this.waitForApproval(runId, integrationId, input, executionMode, context, phaseResults, 4);
+          await this.waitForApproval(
+            runId,
+            integrationId,
+            input,
+            executionMode,
+            context,
+            phaseResults,
+            4,
+            retryCount,
+          );
         }
       }
 
@@ -208,15 +290,35 @@ export class ScholarDevClawOrchestrator {
           patch: context.patch,
         }, repoUrl);
         if (!result.success || !result.data) {
-          if (this.shouldRetry()) {
-            logger.warn('Phase 5 failed, will retry...');
+          const retried = await this.retryPhaseWithBackoff(
+            5,
+            result.error || 'Unknown phase 5 error',
+            retryCount,
+            runId,
+            integrationId,
+            input,
+            executionMode,
+            context,
+            phaseResults,
+          );
+          if (retried) {
             return;
           }
           throw new Error(`Phase 5 failed: ${result.error || 'No data'}`);
         }
         context.validation = result.data;
         phaseResults[5] = result.data;
-        await this.finalizePhase(runId, integrationId, input, executionMode, context, phaseResults, 5, result.data);
+        await this.finalizePhase(
+          runId,
+          integrationId,
+          input,
+          executionMode,
+          context,
+          phaseResults,
+          5,
+          result.data,
+          retryCount,
+        );
       }
 
       if (startPhase <= 6) {
@@ -237,7 +339,17 @@ export class ScholarDevClawOrchestrator {
           throw new Error(`Phase 6 failed: ${result.error || 'No data'}`);
         }
         phaseResults[6] = result.data;
-        await this.finalizePhase(runId, integrationId, input, executionMode, context, phaseResults, 6, result.data);
+        await this.finalizePhase(
+          runId,
+          integrationId,
+          input,
+          executionMode,
+          context,
+          phaseResults,
+          6,
+          result.data,
+          retryCount,
+        );
 
         logger.info('Integration completed successfully', {
           runId,
@@ -251,6 +363,7 @@ export class ScholarDevClawOrchestrator {
           mode: executionMode,
           status: 'completed',
           currentPhase: 6,
+          retryCount,
           phaseResults,
           context,
         });
@@ -271,6 +384,8 @@ export class ScholarDevClawOrchestrator {
         mode: executionMode,
         status: 'failed',
         currentPhase: this.highestCompletedPhase(phaseResults),
+        retryCount,
+        lastErrorPhase: startPhase,
         phaseResults,
         context,
         errorMessage: message,
@@ -313,6 +428,7 @@ export class ScholarDevClawOrchestrator {
         integrationId: snapshot.integrationId,
         startPhase: Math.max(1, snapshot.currentPhase + 1),
         phaseResults: snapshot.phaseResults,
+        retryCount: snapshot.retryCount,
         contextOverrides: snapshot.context as Partial<OrchestrationContext>,
       },
     );
@@ -389,6 +505,7 @@ export class ScholarDevClawOrchestrator {
             integrationId: integration._id,
             startPhase: Math.max(1, (integration.currentPhase || 0) + 1),
             phaseResults,
+            retryCount: integration.retryCount || 0,
             contextOverrides,
           },
         );
@@ -433,6 +550,7 @@ export class ScholarDevClawOrchestrator {
     context: OrchestrationContext,
     phaseResults: Record<number, unknown>,
     phase: number,
+    retryCount: number,
   ): Promise<void> {
     logger.info(`Waiting for approval after Phase ${phase}...`, { runId });
 
@@ -443,6 +561,7 @@ export class ScholarDevClawOrchestrator {
       mode,
       status: 'awaiting_approval',
       currentPhase: phase,
+      retryCount,
       phaseResults,
       context,
     });
@@ -467,6 +586,7 @@ export class ScholarDevClawOrchestrator {
     phaseResults: Record<number, unknown>,
     phase: number,
     data: unknown,
+    retryCount: number,
   ): Promise<void> {
     if (integrationId && this.convex) {
       await this.convex.savePhaseResult(integrationId, phase, data);
@@ -479,9 +599,104 @@ export class ScholarDevClawOrchestrator {
       mode,
       status: 'running',
       currentPhase: phase,
+      retryCount,
       phaseResults,
       context,
     });
+  }
+
+  private enforcePatchSafety(patch: PatchResult): void {
+    const branchName = (patch.branchName || '').trim();
+    const protectedBranches = new Set(['main', 'master', 'develop', 'dev', 'release']);
+
+    if (!branchName) {
+      throw new Error('Phase 4 safety check failed: patch branchName is empty');
+    }
+    if (protectedBranches.has(branchName.toLowerCase())) {
+      throw new Error(`Phase 4 safety check failed: unsafe target branch '${branchName}'`);
+    }
+    if (!branchName.startsWith('integration/')) {
+      throw new Error(
+        `Phase 4 safety check failed: branch '${branchName}' must start with 'integration/'`,
+      );
+    }
+
+    const newFiles = patch.newFiles?.length || 0;
+    const transformations = patch.transformations?.length || 0;
+    if (newFiles === 0 && transformations === 0) {
+      throw new Error('Phase 4 safety check failed: patch has no generated changes');
+    }
+  }
+
+  private async retryPhaseWithBackoff(
+    phase: number,
+    errorMessage: string,
+    retryCount: number,
+    runId: string,
+    integrationId: string | undefined,
+    input: IntegrationCreate,
+    mode: ExecutionMode,
+    context: OrchestrationContext,
+    phaseResults: Record<number, unknown>,
+  ): Promise<boolean> {
+    const nextRetry = retryCount + 1;
+    if (nextRetry > config.execution.maxRetries) {
+      logger.error('Retry budget exhausted', {
+        runId,
+        phase,
+        retryCount,
+        maxRetries: config.execution.maxRetries,
+        error: errorMessage,
+      });
+      return false;
+    }
+
+    const delayMs = this.computeRetryDelayMs(nextRetry);
+    logger.warn('Scheduling deterministic retry', {
+      runId,
+      phase,
+      nextRetry,
+      delayMs,
+      error: errorMessage,
+    });
+
+    if (integrationId && this.convex) {
+      await this.convex.incrementRetry(integrationId);
+    }
+
+    await this.saveSnapshot({
+      runId,
+      integrationId,
+      input,
+      mode,
+      status: 'running',
+      currentPhase: Math.max(phase - 1, 0),
+      retryCount: nextRetry,
+      lastErrorPhase: phase,
+      phaseResults,
+      context,
+      errorMessage,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+    await this.runIntegration(input, {
+      runId,
+      integrationId,
+      startPhase: phase,
+      retryCount: nextRetry,
+      phaseResults,
+      contextOverrides: context,
+    });
+
+    return true;
+  }
+
+  private computeRetryDelayMs(retryAttempt: number): number {
+    const normalizedAttempt = Math.max(1, retryAttempt);
+    const baseMs = 1000;
+    const maxMs = 30000;
+    return Math.min(baseMs * (2 ** (normalizedAttempt - 1)), maxMs);
   }
 
   private async updateExternalPhase(
@@ -520,6 +735,8 @@ export class ScholarDevClawOrchestrator {
     mode: ExecutionMode;
     status: RunSnapshot['status'];
     currentPhase: number;
+    retryCount: number;
+    lastErrorPhase?: number;
     phaseResults: Record<number, unknown>;
     context: OrchestrationContext;
     errorMessage?: string;
@@ -534,6 +751,8 @@ export class ScholarDevClawOrchestrator {
       mode: args.mode,
       status: args.status,
       currentPhase: args.currentPhase,
+      retryCount: args.retryCount,
+      lastErrorPhase: args.lastErrorPhase,
       phaseResults: args.phaseResults,
       context: args.context,
       createdAt: existing?.createdAt || new Date().toISOString(),
@@ -541,9 +760,5 @@ export class ScholarDevClawOrchestrator {
       errorMessage: args.errorMessage,
     };
     await this.runStore.save(snapshot);
-  }
-
-  private shouldRetry(): boolean {
-    return false;
   }
 }

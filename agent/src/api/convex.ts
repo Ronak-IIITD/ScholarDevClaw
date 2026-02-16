@@ -1,4 +1,4 @@
-import { ConvexClient } from 'convex';
+import { ConvexHttpClient } from 'convex/browser';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 
@@ -46,19 +46,33 @@ export interface IntegrationCreate {
 }
 
 export class ConvexClientWrapper {
-  private client: ConvexClient;
+  private client: ConvexHttpClient;
+
+  private async callMutation<T = unknown>(name: string, args: Record<string, unknown>): Promise<T> {
+    const client = this.client as unknown as {
+      mutation: (fn: string, payload: Record<string, unknown>) => Promise<T>;
+    };
+    return await client.mutation(name, args);
+  }
+
+  private async callQuery<T = unknown>(name: string, args: Record<string, unknown> = {}): Promise<T> {
+    const client = this.client as unknown as {
+      query: (fn: string, payload: Record<string, unknown>) => Promise<T>;
+    };
+    return await client.query(name, args);
+  }
 
   constructor(deploymentUrl?: string) {
     const url = deploymentUrl || config.convex.deploymentUrl;
     if (!url) {
       throw new Error('Convex deployment URL not configured');
     }
-    this.client = new ConvexClient(url);
+    this.client = new ConvexHttpClient(url);
     logger.info('Convex client initialized', { deploymentUrl: url });
   }
 
   async createIntegration(input: IntegrationCreate): Promise<string> {
-    const id = await this.client.mutation('integrations:create', {
+    const id = await this.callMutation<string>('integrations:create', {
       repoUrl: input.repoUrl,
       paperUrl: input.paperUrl,
       paperPdfPath: input.paperPdfPath,
@@ -69,18 +83,18 @@ export class ConvexClientWrapper {
   }
 
   async getIntegration(id: string): Promise<Integration | null> {
-    return await this.client.query('integrations:get', { id });
+    return await this.callQuery<Integration | null>('integrations:get', { id });
   }
 
   async listIntegrations(status?: IntegrationStatus): Promise<Integration[]> {
     if (status) {
-      return await this.client.query('integrations:listByStatus', { status });
+      return await this.callQuery<Integration[]>('integrations:listByStatus', { status });
     }
-    return await this.client.query('integrations:list');
+    return await this.callQuery<Integration[]>('integrations:list');
   }
 
   async updateStatus(id: string, status: IntegrationStatus, phase?: number): Promise<void> {
-    await this.client.mutation('integrations:updateStatus', {
+    await this.callMutation('integrations:updateStatus', {
       id,
       status,
       currentPhase: phase,
@@ -91,7 +105,7 @@ export class ConvexClientWrapper {
 
   async savePhaseResult(id: string, phase: number, result: unknown): Promise<void> {
     const field = `phase${phase}Result`;
-    await this.client.mutation('integrations:savePhaseResult', {
+    await this.callMutation('integrations:savePhaseResult', {
       id,
       field,
       result,
@@ -100,7 +114,7 @@ export class ConvexClientWrapper {
   }
 
   async setConfidence(id: string, confidence: number): Promise<void> {
-    await this.client.mutation('integrations:setConfidence', {
+    await this.callMutation('integrations:setConfidence', {
       id,
       confidence,
       updatedAt: Date.now(),
@@ -108,7 +122,7 @@ export class ConvexClientWrapper {
   }
 
   async setError(id: string, errorMessage: string): Promise<void> {
-    await this.client.mutation('integrations:setError', {
+    await this.callMutation('integrations:setError', {
       id,
       errorMessage,
       status: 'failed',
@@ -117,7 +131,7 @@ export class ConvexClientWrapper {
   }
 
   async incrementRetry(id: string): Promise<number> {
-    const result = await this.client.mutation('integrations:incrementRetry', {
+    const result = await this.callMutation<{ retryCount: number }>('integrations:incrementRetry', {
       id,
     });
     return result.retryCount;

@@ -71,6 +71,7 @@ What you get in TUI right now:
 - Payload schema metadata and compatibility warnings across integrate/validate flows
 - Deterministic schema policy (major mismatch blocks compatibility; minor/patch drift emits migration notes)
 - Agent orchestration run persistence with resumable phase checkpoints and heartbeat recovery
+- Agent phase guardrails: protected-branch blocking in patch phase + deterministic retry/backoff budgeting in validation phase
 
 ### 4) Example TUI workflow (real project)
 

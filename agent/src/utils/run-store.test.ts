@@ -20,6 +20,7 @@ describe('RunStore', () => {
       context: { repoPath: '/tmp/repo' },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      retryCount: 0,
     };
 
     await store.save(snapshot);
@@ -46,6 +47,7 @@ describe('RunStore', () => {
       context: {},
       createdAt: now,
       updatedAt: now,
+      retryCount: 0,
     });
 
     await store.save({
@@ -58,6 +60,7 @@ describe('RunStore', () => {
       context: {},
       createdAt: now,
       updatedAt: now,
+      retryCount: 1,
     });
 
     const running = await store.listByStatus(['running']);

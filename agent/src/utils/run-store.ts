@@ -21,6 +21,8 @@ export interface RunSnapshot {
   context: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  retryCount: number;
+  lastErrorPhase?: number;
   errorMessage?: string;
 }
 
