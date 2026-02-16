@@ -220,6 +220,8 @@ class ScholarDevClawApp(App[None]):
         ("Integrate workflow", "integrate"),
     ]
 
+    _supported_schema_major = 1
+
     def __init__(self) -> None:
         super().__init__()
         self._agent_process: subprocess.Popen[str] | None = None
@@ -292,6 +294,36 @@ class ScholarDevClawApp(App[None]):
         current = area.text
         merged = (current + "\n" if current else "") + "\n".join(lines)
         area.load_text(merged)
+
+    def _payload_compat_warnings(
+        self, payload: dict[str, Any], *, expected_types: set[str] | None = None
+    ) -> list[str]:
+        warnings: list[str] = []
+        meta = payload.get("_meta") if isinstance(payload, dict) else None
+        if not isinstance(meta, dict):
+            return ["Missing payload metadata (_meta)."]
+
+        schema_version = str(meta.get("schema_version", "")).strip()
+        payload_type = str(meta.get("payload_type", "")).strip()
+
+        if schema_version:
+            try:
+                major = int(schema_version.split(".", 1)[0])
+                if major != self._supported_schema_major:
+                    warnings.append(
+                        f"Unsupported payload schema major version: {schema_version}"
+                    )
+            except ValueError:
+                warnings.append(f"Invalid schema_version format: {schema_version}")
+        else:
+            warnings.append("Missing schema_version in payload metadata.")
+
+        if not payload_type:
+            warnings.append("Missing payload_type in payload metadata.")
+        elif expected_types and payload_type not in expected_types:
+            warnings.append(f"Unexpected payload_type: {payload_type}")
+
+        return warnings
 
     def _extract_artifacts(self, record: dict[str, Any]) -> list[dict[str, str]]:
         result = record.get("result", {})
@@ -472,6 +504,15 @@ class ScholarDevClawApp(App[None]):
             f"  repo_path: {request.get('repo_path', '')}",
             f"  spec: {request.get('spec', '') or 'auto'}",
         ]
+
+        meta = result.get("_meta") if isinstance(result, dict) else None
+        if isinstance(meta, dict):
+            lines.extend(
+                [
+                    f"  schema_version: {meta.get('schema_version')}",
+                    f"  payload_type: {meta.get('payload_type')}",
+                ]
+            )
 
         if request.get("action") == "search":
             lines.extend(
@@ -734,6 +775,13 @@ class ScholarDevClawApp(App[None]):
             "result": message.result,
         }
         self.query_one("#result", Pretty).update(payload)
+        expected_types = {"integration"} if message.title == "Integration" else {"validation"} if message.title == "Validation" else None
+        compat_warnings = self._payload_compat_warnings(message.result, expected_types=expected_types)
+        if compat_warnings:
+            self._append_logs(
+                "logs",
+                [f"Compatibility warning: {warning}" for warning in compat_warnings],
+            )
         if not self._live_logs_enabled:
             self._append_logs("logs", message.logs)
         self._live_logs_enabled = False

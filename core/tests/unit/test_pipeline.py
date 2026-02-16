@@ -146,12 +146,16 @@ def test_run_integrate_and_validate(monkeypatch, tmp_path):
     assert result.payload["spec"] == "rmsnorm"
     assert result.payload["validation"]["passed"] is True
     assert result.payload["validation"]["scorecard"]["summary"] == "pass"
+    assert result.payload["_meta"]["payload_type"] == "integration"
+    assert result.payload["_meta"]["schema_version"]
 
     validation_only = pipeline.run_validate(str(tmp_path))
     assert validation_only.ok is True
     assert validation_only.payload["stage"] == "benchmark"
     assert validation_only.payload["scorecard"]["summary"] == "pass"
     assert isinstance(validation_only.payload["scorecard"].get("checks"), list)
+    assert validation_only.payload["_meta"]["payload_type"] == "validation"
+    assert validation_only.payload["_meta"]["schema_version"]
 
 
 def test_run_preflight_require_clean_blocks_dirty_repo(monkeypatch, tmp_path):
@@ -216,3 +220,4 @@ def test_run_integrate_returns_preflight_guidance(monkeypatch, tmp_path):
     assert result.payload["step"] == "preflight"
     assert isinstance(result.payload.get("guidance"), list)
     assert result.payload["guidance"]
+    assert result.payload["_meta"]["payload_type"] == "integration"

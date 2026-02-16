@@ -68,6 +68,7 @@ What you get in TUI right now:
 - Run details inspector for any history run (inputs, outputs, artifacts, errors, timing)
 - Artifact viewer to inspect generated files and transformation summaries from history runs
 - Validation scorecard highlights (pass/fail summary, speedup/loss deltas) in run details
+- Payload schema metadata and compatibility warnings across integrate/validate flows
 
 ### 4) Example TUI workflow (real project)
 

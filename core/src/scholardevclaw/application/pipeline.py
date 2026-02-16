@@ -17,6 +17,16 @@ class PipelineResult:
 
 
 LogCallback = Callable[[str], None]
+PIPELINE_SCHEMA_VERSION = "1.0.0"
+
+
+def _with_meta(payload: dict[str, Any], payload_type: str) -> dict[str, Any]:
+    merged = dict(payload)
+    merged["_meta"] = {
+        "schema_version": PIPELINE_SCHEMA_VERSION,
+        "payload_type": payload_type,
+    }
+    return merged
 
 
 def _log(logs: list[str], message: str, log_callback: LogCallback | None = None) -> None:
@@ -628,7 +638,8 @@ def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> 
             new=new_metrics,
         )
 
-        payload = {
+        payload = _with_meta(
+            {
             "passed": result.passed,
             "stage": result.stage,
             "comparison": result.comparison,
@@ -637,7 +648,9 @@ def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> 
             "scorecard": scorecard,
             "logs": result.logs,
             "error": result.error,
-        }
+            },
+            "validation",
+        )
         _log(logs, f"Stage: {result.stage}", log_callback)
         _log(logs, f"Passed: {result.passed}", log_callback)
         if scorecard["deltas"].get("speedup") is not None:
@@ -650,7 +663,13 @@ def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> 
         return PipelineResult(ok=result.passed, title="Validation", payload=payload, logs=logs)
     except Exception as exc:
         _log(logs, f"Failed: {exc}", log_callback)
-        return PipelineResult(ok=False, title="Validation", payload={}, logs=logs, error=str(exc))
+        return PipelineResult(
+            ok=False,
+            title="Validation",
+            payload=_with_meta({}, "validation"),
+            logs=logs,
+            error=str(exc),
+        )
 
 
 def run_integrate(
@@ -680,11 +699,14 @@ def run_integrate(
             return PipelineResult(
                 ok=False,
                 title="Integration",
-                payload={
-                    "step": "preflight",
-                    "preflight": preflight.payload,
-                    "guidance": preflight.payload.get("recommendations", []),
-                },
+                payload=_with_meta(
+                    {
+                        "step": "preflight",
+                        "preflight": preflight.payload,
+                        "guidance": preflight.payload.get("recommendations", []),
+                    },
+                    "integration",
+                ),
                 logs=logs,
                 error=preflight.error,
             )
@@ -733,21 +755,24 @@ def run_integrate(
 
         if dry_run:
             _log(logs, "Dry run enabled: skipping patch generation and validation", log_callback)
-            payload = {
-                "dry_run": True,
-                "spec": selected_spec_name,
-                "analysis": {
-                    "languages": analysis.languages,
-                    "frameworks": analysis.frameworks,
-                    "entry_points": analysis.entry_points,
-                    "patterns": analysis.patterns,
+            payload = _with_meta(
+                {
+                    "dry_run": True,
+                    "spec": selected_spec_name,
+                    "analysis": {
+                        "languages": analysis.languages,
+                        "frameworks": analysis.frameworks,
+                        "entry_points": analysis.entry_points,
+                        "patterns": analysis.patterns,
+                    },
+                    "preflight": preflight.payload,
+                    "mapping": mapping_result,
+                    "generation": None,
+                    "validation": None,
+                    "output_dir": output_dir,
                 },
-                "preflight": preflight.payload,
-                "mapping": mapping_result,
-                "generation": None,
-                "validation": None,
-                "output_dir": output_dir,
-            }
+                "integration",
+            )
             return PipelineResult(
                 ok=True,
                 title="Integration",
@@ -766,7 +791,7 @@ def run_integrate(
             return PipelineResult(
                 ok=False,
                 title="Integration",
-                payload={"step": "generate"},
+                payload=_with_meta({"step": "generate"}, "integration"),
                 logs=logs,
                 error=generate_result.error,
             )
@@ -774,20 +799,23 @@ def run_integrate(
         validate_result = run_validate(str(path), log_callback=log_callback)
         logs.extend(validate_result.logs)
 
-        payload = {
-            "dry_run": False,
-            "spec": selected_spec_name,
-            "analysis": {
-                "languages": analysis.languages,
-                "frameworks": analysis.frameworks,
-                "entry_points": analysis.entry_points,
-                "patterns": analysis.patterns,
+        payload = _with_meta(
+            {
+                "dry_run": False,
+                "spec": selected_spec_name,
+                "analysis": {
+                    "languages": analysis.languages,
+                    "frameworks": analysis.frameworks,
+                    "entry_points": analysis.entry_points,
+                    "patterns": analysis.patterns,
+                },
+                "preflight": preflight.payload,
+                "mapping": mapping_result,
+                "generation": generate_result.payload,
+                "validation": validate_result.payload,
             },
-            "preflight": preflight.payload,
-            "mapping": mapping_result,
-            "generation": generate_result.payload,
-            "validation": validate_result.payload,
-        }
+            "integration",
+        )
 
         return PipelineResult(
             ok=validate_result.ok,
@@ -798,4 +826,10 @@ def run_integrate(
         )
     except Exception as exc:
         _log(logs, f"Failed: {exc}", log_callback)
-        return PipelineResult(ok=False, title="Integration", payload={}, logs=logs, error=str(exc))
+        return PipelineResult(
+            ok=False,
+            title="Integration",
+            payload=_with_meta({}, "integration"),
+            logs=logs,
+            error=str(exc),
+        )

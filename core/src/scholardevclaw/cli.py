@@ -30,6 +30,38 @@ from pathlib import Path
 from typing import Optional
 
 
+SUPPORTED_SCHEMA_MAJOR = 1
+
+
+def _payload_compat_warnings(payload: dict, expected_type: str) -> list[str]:
+    warnings: list[str] = []
+    meta = payload.get("_meta") if isinstance(payload, dict) else None
+    if not isinstance(meta, dict):
+        return ["Missing payload metadata (_meta)."]
+
+    schema_version = str(meta.get("schema_version", "")).strip()
+    payload_type = str(meta.get("payload_type", "")).strip()
+
+    if not schema_version:
+        warnings.append("Missing schema_version in payload metadata.")
+    else:
+        try:
+            major = int(schema_version.split(".", 1)[0])
+            if major != SUPPORTED_SCHEMA_MAJOR:
+                warnings.append(
+                    f"Unsupported payload schema major version: {schema_version} (expected {SUPPORTED_SCHEMA_MAJOR}.x)"
+                )
+        except ValueError:
+            warnings.append(f"Invalid schema_version format: {schema_version}")
+
+    if payload_type and payload_type != expected_type:
+        warnings.append(f"Unexpected payload_type: {payload_type} (expected {expected_type})")
+    elif not payload_type:
+        warnings.append("Missing payload_type in payload metadata.")
+
+    return warnings
+
+
 def _build_mapping_result(repo_path: Path, spec_name: str) -> tuple[dict, dict]:
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
@@ -315,6 +347,7 @@ def cmd_validate(args):
         sys.exit(1)
 
     payload = result.payload
+    compat_warnings = _payload_compat_warnings(payload, expected_type="validation")
     print(f"Stage: {payload.get('stage')}")
     print(f"Passed: {'Yes' if payload.get('passed') else 'No'}")
 
@@ -333,6 +366,11 @@ def cmd_validate(args):
 
     if payload.get("error"):
         print(f"Error: {payload.get('error')}")
+
+    if compat_warnings:
+        print("Compatibility warnings:")
+        for warning in compat_warnings:
+            print(f"  - {warning}")
 
     if args.output_json:
         print(json.dumps(payload, indent=2))
@@ -367,9 +405,15 @@ def cmd_integrate(args):
             print("Guidance:", file=sys.stderr)
             for item in guidance:
                 print(f"  - {item}", file=sys.stderr)
+        compat_warnings = _payload_compat_warnings(result.payload, expected_type="integration")
+        if compat_warnings:
+            print("Compatibility warnings:", file=sys.stderr)
+            for warning in compat_warnings:
+                print(f"  - {warning}", file=sys.stderr)
         sys.exit(1)
 
     print("\n" + "=" * 60)
+    compat_warnings = _payload_compat_warnings(result.payload, expected_type="integration")
     if result.payload.get("dry_run"):
         print("Dry-run complete (no patch generation/validation executed).")
     else:
@@ -389,6 +433,11 @@ def cmd_integrate(args):
             print(f"Validation summary: {scorecard.get('summary')}")
             for highlight in scorecard.get("highlights", [])[:3]:
                 print(f"  - {highlight}")
+
+    if compat_warnings:
+        print("Compatibility warnings:")
+        for warning in compat_warnings:
+            print(f"  - {warning}")
 
     if args.output_json:
         print(json.dumps(result.payload, indent=2))
