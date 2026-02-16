@@ -70,6 +70,7 @@ What you get in TUI right now:
 - Validation scorecard highlights (pass/fail summary, speedup/loss deltas) in run details
 - Payload schema metadata and compatibility warnings across integrate/validate flows
 - Deterministic schema policy (major mismatch blocks compatibility; minor/patch drift emits migration notes)
+- Agent orchestration run persistence with resumable phase checkpoints and heartbeat recovery
 
 ### 4) Example TUI workflow (real project)
 
