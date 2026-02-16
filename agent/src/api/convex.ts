@@ -47,6 +47,15 @@ export interface IntegrationCreate {
   mode?: ExecutionMode;
 }
 
+export interface Approval {
+  _id: string;
+  integrationId: string;
+  phase: number;
+  action: 'approved' | 'rejected';
+  notes?: string;
+  createdAt: number;
+}
+
 export class ConvexClientWrapper {
   private client: ConvexHttpClient;
 
@@ -181,5 +190,24 @@ export class ConvexClientWrapper {
         }
       }, 5000);
     });
+  }
+
+  async createApproval(
+    integrationId: string,
+    phase: number,
+    action: 'approved' | 'rejected',
+    notes?: string,
+  ): Promise<void> {
+    await this.callMutation('integrations:createApproval', {
+      integrationId,
+      phase,
+      action,
+      notes,
+    });
+    logger.info('Created approval record', { integrationId, phase, action });
+  }
+
+  async listApprovals(integrationId: string): Promise<Approval[]> {
+    return await this.callQuery<Approval[]>('integrations:listApprovals', { integrationId });
   }
 }

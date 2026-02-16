@@ -85,3 +85,18 @@ export const incrementRetry: Mutation = async ({ db }, args: { id: string }) => 
   
   return { retryCount };
 };
+
+export const createApproval: Mutation = async ({ db }, args: {
+  integrationId: string;
+  phase: number;
+  action: "approved" | "rejected";
+  notes?: string;
+}) => {
+  await db.insert("approvals", {
+    integrationId: args.integrationId as any,
+    phase: args.phase,
+    action: args.action,
+    notes: args.notes,
+    createdAt: Date.now(),
+  });
+};

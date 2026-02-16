@@ -14,7 +14,7 @@ import {
   type IntegrationCreate,
 } from './api/convex.js';
 import { GitHubClient } from './api/github.js';
-import { RunStore, type RunSnapshot } from './utils/run-store.js';
+import { RunStore, type RunSnapshot, type ApprovalRecord } from './utils/run-store.js';
 import {
   evaluateMappingGuardrails,
   evaluateValidationGuardrails,
@@ -611,18 +611,29 @@ export class ScholarDevClawOrchestrator {
       context,
     });
 
+    let approved = false;
+
     if (integrationId && this.convex) {
       await this.convex.updateStatus(integrationId, 'awaiting_approval', phase, {
         awaitingReason: reason,
         guardrailReasons,
       });
-      const approved = await this.convex.waitForApproval(integrationId, phase);
+      approved = await this.convex.waitForApproval(integrationId, phase);
       if (!approved) {
+        await this.runStore.addApproval(runId, phase, 'rejected', reason);
+        if (this.convex) {
+          await this.convex.createApproval(integrationId, phase, 'rejected', reason);
+        }
         throw new Error(`Approval rejected or timed out for phase ${phase}`);
+      }
+      await this.runStore.addApproval(runId, phase, 'approved');
+      if (this.convex) {
+        await this.convex.createApproval(integrationId, phase, 'approved');
       }
       await this.convex.updateStatus(integrationId, 'pending', phase);
     } else {
       await new Promise((resolve) => setTimeout(resolve, 1000));
+      await this.runStore.addApproval(runId, phase, 'approved');
     }
 
     logger.info('Approval received (or simulated)');
@@ -847,6 +858,7 @@ export class ScholarDevClawOrchestrator {
       createdAt: existing?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       errorMessage: args.errorMessage,
+      approvals: existing?.approvals || [],
     };
     await this.runStore.save(snapshot);
   }

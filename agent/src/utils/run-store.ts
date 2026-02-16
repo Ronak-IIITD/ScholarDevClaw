@@ -8,6 +8,13 @@ export type RunSnapshotStatus =
   | 'completed'
   | 'failed';
 
+export interface ApprovalRecord {
+  phase: number;
+  action: 'approved' | 'rejected';
+  notes?: string;
+  createdAt: string;
+}
+
 export interface RunSnapshot {
   runId: string;
   integrationId?: string;
@@ -26,6 +33,7 @@ export interface RunSnapshot {
   awaitingReason?: string;
   guardrailReasons?: string[];
   errorMessage?: string;
+  approvals: ApprovalRecord[];
 }
 
 export class RunStore {
@@ -79,5 +87,35 @@ export class RunStore {
   async listByStatus(statuses: RunSnapshotStatus[]): Promise<RunSnapshot[]> {
     const all = await this.list();
     return all.filter((snapshot) => statuses.includes(snapshot.status));
+  }
+
+  async addApproval(
+    runId: string,
+    phase: number,
+    action: 'approved' | 'rejected',
+    notes?: string,
+  ): Promise<void> {
+    const snapshot = await this.get(runId);
+    if (!snapshot) {
+      throw new Error(`Run snapshot not found: ${runId}`);
+    }
+
+    const approval: ApprovalRecord = {
+      phase,
+      action,
+      notes,
+      createdAt: new Date().toISOString(),
+    };
+
+    snapshot.approvals = snapshot.approvals || [];
+    snapshot.approvals.push(approval);
+    snapshot.updatedAt = new Date().toISOString();
+
+    await this.save(snapshot);
+  }
+
+  async getApprovals(runId: string): Promise<ApprovalRecord[]> {
+    const snapshot = await this.get(runId);
+    return snapshot?.approvals || [];
   }
 }
