@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable
 
+from .schema_contract import SCHEMA_VERSION, with_meta
+
 
 @dataclass(slots=True)
 class PipelineResult:
@@ -17,16 +19,7 @@ class PipelineResult:
 
 
 LogCallback = Callable[[str], None]
-PIPELINE_SCHEMA_VERSION = "1.0.0"
-
-
-def _with_meta(payload: dict[str, Any], payload_type: str) -> dict[str, Any]:
-    merged = dict(payload)
-    merged["_meta"] = {
-        "schema_version": PIPELINE_SCHEMA_VERSION,
-        "payload_type": payload_type,
-    }
-    return merged
+PIPELINE_SCHEMA_VERSION = SCHEMA_VERSION
 
 
 def _log(logs: list[str], message: str, log_callback: LogCallback | None = None) -> None:
@@ -638,7 +631,7 @@ def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> 
             new=new_metrics,
         )
 
-        payload = _with_meta(
+        payload = with_meta(
             {
             "passed": result.passed,
             "stage": result.stage,
@@ -666,7 +659,7 @@ def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> 
         return PipelineResult(
             ok=False,
             title="Validation",
-            payload=_with_meta({}, "validation"),
+            payload=with_meta({}, "validation"),
             logs=logs,
             error=str(exc),
         )
@@ -699,7 +692,7 @@ def run_integrate(
             return PipelineResult(
                 ok=False,
                 title="Integration",
-                payload=_with_meta(
+                payload=with_meta(
                     {
                         "step": "preflight",
                         "preflight": preflight.payload,
@@ -755,7 +748,7 @@ def run_integrate(
 
         if dry_run:
             _log(logs, "Dry run enabled: skipping patch generation and validation", log_callback)
-            payload = _with_meta(
+            payload = with_meta(
                 {
                     "dry_run": True,
                     "spec": selected_spec_name,
@@ -791,7 +784,7 @@ def run_integrate(
             return PipelineResult(
                 ok=False,
                 title="Integration",
-                payload=_with_meta({"step": "generate"}, "integration"),
+                payload=with_meta({"step": "generate"}, "integration"),
                 logs=logs,
                 error=generate_result.error,
             )
@@ -799,7 +792,7 @@ def run_integrate(
         validate_result = run_validate(str(path), log_callback=log_callback)
         logs.extend(validate_result.logs)
 
-        payload = _with_meta(
+        payload = with_meta(
             {
                 "dry_run": False,
                 "spec": selected_spec_name,
@@ -829,7 +822,7 @@ def run_integrate(
         return PipelineResult(
             ok=False,
             title="Integration",
-            payload=_with_meta({}, "integration"),
+            payload=with_meta({}, "integration"),
             logs=logs,
             error=str(exc),
         )

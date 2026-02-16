@@ -12,6 +12,8 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Button, Checkbox, Footer, Header, Input, Label, Pretty, Select, TextArea
 
+from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
+
 from scholardevclaw.application.pipeline import (
     run_analyze,
     run_generate,
@@ -220,8 +222,6 @@ class ScholarDevClawApp(App[None]):
         ("Integrate workflow", "integrate"),
     ]
 
-    _supported_schema_major = 1
-
     def __init__(self) -> None:
         super().__init__()
         self._agent_process: subprocess.Popen[str] | None = None
@@ -295,35 +295,15 @@ class ScholarDevClawApp(App[None]):
         merged = (current + "\n" if current else "") + "\n".join(lines)
         area.load_text(merged)
 
-    def _payload_compat_warnings(
+    def _payload_compat_messages(
         self, payload: dict[str, Any], *, expected_types: set[str] | None = None
     ) -> list[str]:
-        warnings: list[str] = []
-        meta = payload.get("_meta") if isinstance(payload, dict) else None
-        if not isinstance(meta, dict):
-            return ["Missing payload metadata (_meta)."]
-
-        schema_version = str(meta.get("schema_version", "")).strip()
-        payload_type = str(meta.get("payload_type", "")).strip()
-
-        if schema_version:
-            try:
-                major = int(schema_version.split(".", 1)[0])
-                if major != self._supported_schema_major:
-                    warnings.append(
-                        f"Unsupported payload schema major version: {schema_version}"
-                    )
-            except ValueError:
-                warnings.append(f"Invalid schema_version format: {schema_version}")
-        else:
-            warnings.append("Missing schema_version in payload metadata.")
-
-        if not payload_type:
-            warnings.append("Missing payload_type in payload metadata.")
-        elif expected_types and payload_type not in expected_types:
-            warnings.append(f"Unexpected payload_type: {payload_type}")
-
-        return warnings
+        report = evaluate_payload_compatibility(payload, expected_types=expected_types)
+        lines: list[str] = []
+        lines.extend([f"Compatibility issue: {item}" for item in report.issues])
+        lines.extend([f"Compatibility warning: {item}" for item in report.warnings])
+        lines.extend([f"Compatibility note: {item}" for item in report.notes])
+        return lines
 
     def _extract_artifacts(self, record: dict[str, Any]) -> list[dict[str, str]]:
         result = record.get("result", {})
@@ -776,12 +756,9 @@ class ScholarDevClawApp(App[None]):
         }
         self.query_one("#result", Pretty).update(payload)
         expected_types = {"integration"} if message.title == "Integration" else {"validation"} if message.title == "Validation" else None
-        compat_warnings = self._payload_compat_warnings(message.result, expected_types=expected_types)
-        if compat_warnings:
-            self._append_logs(
-                "logs",
-                [f"Compatibility warning: {warning}" for warning in compat_warnings],
-            )
+        compat_messages = self._payload_compat_messages(message.result, expected_types=expected_types)
+        if compat_messages:
+            self._append_logs("logs", compat_messages)
         if not self._live_logs_enabled:
             self._append_logs("logs", message.logs)
         self._live_logs_enabled = False

@@ -9,7 +9,7 @@ from ..research_intelligence.extractor import ResearchExtractor
 from ..mapping.engine import MappingEngine
 from ..patch_generation.generator import PatchGenerator
 from ..validation.runner import ValidationRunner
-from ..application.pipeline import PIPELINE_SCHEMA_VERSION
+from ..application.schema_contract import SCHEMA_VERSION
 
 
 app = FastAPI(
@@ -388,7 +388,7 @@ async def run_validation(request: ValidationRequest):
             "comparison": result.comparison,
             "logs": result.logs,
             "error": result.error,
-            "schemaVersion": PIPELINE_SCHEMA_VERSION,
+            "schemaVersion": SCHEMA_VERSION,
             "payloadType": "validation",
         }
         return ValidationResponse.model_validate(response)

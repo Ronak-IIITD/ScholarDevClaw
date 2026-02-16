@@ -69,6 +69,7 @@ What you get in TUI right now:
 - Artifact viewer to inspect generated files and transformation summaries from history runs
 - Validation scorecard highlights (pass/fail summary, speedup/loss deltas) in run details
 - Payload schema metadata and compatibility warnings across integrate/validate flows
+- Deterministic schema policy (major mismatch blocks compatibility; minor/patch drift emits migration notes)
 
 ### 4) Example TUI workflow (real project)
 
