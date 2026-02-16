@@ -72,6 +72,7 @@ What you get in TUI right now:
 - Deterministic schema policy (major mismatch blocks compatibility; minor/patch drift emits migration notes)
 - Agent orchestration run persistence with resumable phase checkpoints and heartbeat recovery
 - Agent phase guardrails: protected-branch blocking in patch phase + deterministic retry/backoff budgeting in validation phase
+- Mandatory approval gates on low-confidence mapping or risky validation deltas with persisted guardrail reasons
 
 ### 4) Example TUI workflow (real project)
 

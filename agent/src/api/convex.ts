@@ -34,6 +34,8 @@ export interface Integration {
   createdAt: number;
   updatedAt: number;
   errorMessage?: string;
+  awaitingReason?: string;
+  guardrailReasons?: string[];
   retryCount: number;
   branchName?: string;
 }
@@ -93,14 +95,21 @@ export class ConvexClientWrapper {
     return await this.callQuery<Integration[]>('integrations:list');
   }
 
-  async updateStatus(id: string, status: IntegrationStatus, phase?: number): Promise<void> {
+  async updateStatus(
+    id: string,
+    status: IntegrationStatus,
+    phase?: number,
+    details?: { awaitingReason?: string; guardrailReasons?: string[] },
+  ): Promise<void> {
     await this.callMutation('integrations:updateStatus', {
       id,
       status,
       currentPhase: phase,
+      awaitingReason: details?.awaitingReason,
+      guardrailReasons: details?.guardrailReasons,
       updatedAt: Date.now(),
     });
-    logger.info('Updated integration status', { id, status, phase });
+    logger.info('Updated integration status', { id, status, phase, ...details });
   }
 
   async savePhaseResult(id: string, phase: number, result: unknown): Promise<void> {
@@ -139,27 +148,36 @@ export class ConvexClientWrapper {
 
   async waitForApproval(id: string, phase: number): Promise<boolean> {
     logger.info('Waiting for approval', { id, phase });
-    
+
+    const startedAt = Date.now();
+    const timeoutMs = 30 * 60 * 1000;
+
     return new Promise((resolve) => {
       const checkInterval = setInterval(async () => {
         const integration = await this.getIntegration(id);
-        
+
         if (!integration) {
           clearInterval(checkInterval);
           resolve(false);
           return;
         }
 
-        if (integration.status === 'awaiting_approval') {
+        if (integration.status === 'failed') {
+          clearInterval(checkInterval);
+          resolve(false);
+          return;
+        }
+
+        if (integration.status !== 'awaiting_approval') {
           resolve(true);
           clearInterval(checkInterval);
           return;
         }
 
-        if (integration.status === 'failed') {
-          resolve(false);
+        if (Date.now() - startedAt > timeoutMs) {
+          logger.warn('Approval wait timed out', { id, phase, timeoutMs });
           clearInterval(checkInterval);
-          return;
+          resolve(false);
         }
       }, 5000);
     });

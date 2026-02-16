@@ -25,11 +25,15 @@ export const updateStatus: Mutation = async ({ db }, args: {
   id: string;
   status: string;
   currentPhase?: number;
+  awaitingReason?: string;
+  guardrailReasons?: string[];
   updatedAt: number;
 }) => {
   await db.patch(args.id as any, {
     status: args.status,
     currentPhase: args.currentPhase,
+    awaitingReason: args.awaitingReason,
+    guardrailReasons: args.guardrailReasons,
     updatedAt: args.updatedAt,
   });
 };

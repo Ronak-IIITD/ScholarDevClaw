@@ -23,6 +23,8 @@ export interface RunSnapshot {
   updatedAt: string;
   retryCount: number;
   lastErrorPhase?: number;
+  awaitingReason?: string;
+  guardrailReasons?: string[];
   errorMessage?: string;
 }
 

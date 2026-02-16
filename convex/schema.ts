@@ -30,6 +30,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     errorMessage: v.optional(v.string()),
+    awaitingReason: v.optional(v.string()),
+    guardrailReasons: v.optional(v.array(v.string())),
     retryCount: v.number(),
     branchName: v.optional(v.string()),
   })

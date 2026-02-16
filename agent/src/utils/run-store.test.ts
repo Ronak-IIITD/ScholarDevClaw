@@ -21,6 +21,7 @@ describe('RunStore', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       retryCount: 0,
+      guardrailReasons: [],
     };
 
     await store.save(snapshot);
@@ -48,6 +49,7 @@ describe('RunStore', () => {
       createdAt: now,
       updatedAt: now,
       retryCount: 0,
+      guardrailReasons: [],
     });
 
     await store.save({
@@ -61,6 +63,7 @@ describe('RunStore', () => {
       createdAt: now,
       updatedAt: now,
       retryCount: 1,
+      guardrailReasons: ['example'],
     });
 
     const running = await store.listByStatus(['running']);

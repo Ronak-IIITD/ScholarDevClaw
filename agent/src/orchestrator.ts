@@ -15,6 +15,10 @@ import {
 } from './api/convex.js';
 import { GitHubClient } from './api/github.js';
 import { RunStore, type RunSnapshot } from './utils/run-store.js';
+import {
+  evaluateMappingGuardrails,
+  evaluateValidationGuardrails,
+} from './utils/guardrails.js';
 import * as Phase1 from './phases/phase1-repo.js';
 import * as Phase2 from './phases/phase2-research.js';
 import * as Phase3 from './phases/phase3-mapping.js';
@@ -231,6 +235,24 @@ export class ScholarDevClawOrchestrator {
             retryCount,
           );
         }
+
+        const mappingGuardrails = evaluateMappingGuardrails(
+          result.data,
+          config.execution.guardrails.mappingMinConfidence,
+        );
+        if (mappingGuardrails.triggered) {
+          await this.enforceGuardrailApproval(
+            runId,
+            integrationId,
+            input,
+            executionMode,
+            context,
+            phaseResults,
+            3,
+            retryCount,
+            mappingGuardrails.reasons,
+          );
+        }
       }
 
       if (startPhase <= 4) {
@@ -319,6 +341,25 @@ export class ScholarDevClawOrchestrator {
           result.data,
           retryCount,
         );
+
+        const validationGuardrails = evaluateValidationGuardrails(
+          result.data,
+          config.execution.guardrails.validationMinSpeedup,
+          config.execution.guardrails.validationMaxLossChangePct,
+        );
+        if (validationGuardrails.triggered) {
+          await this.enforceGuardrailApproval(
+            runId,
+            integrationId,
+            input,
+            executionMode,
+            context,
+            phaseResults,
+            5,
+            retryCount,
+            validationGuardrails.reasons,
+          );
+        }
       }
 
       if (startPhase <= 6) {
@@ -551,6 +592,8 @@ export class ScholarDevClawOrchestrator {
     phaseResults: Record<number, unknown>,
     phase: number,
     retryCount: number,
+    reason?: string,
+    guardrailReasons?: string[],
   ): Promise<void> {
     logger.info(`Waiting for approval after Phase ${phase}...`, { runId });
 
@@ -562,13 +605,21 @@ export class ScholarDevClawOrchestrator {
       status: 'awaiting_approval',
       currentPhase: phase,
       retryCount,
+      awaitingReason: reason,
+      guardrailReasons,
       phaseResults,
       context,
     });
 
     if (integrationId && this.convex) {
-      await this.convex.updateStatus(integrationId, 'awaiting_approval', phase);
-      await this.convex.waitForApproval(integrationId, phase);
+      await this.convex.updateStatus(integrationId, 'awaiting_approval', phase, {
+        awaitingReason: reason,
+        guardrailReasons,
+      });
+      const approved = await this.convex.waitForApproval(integrationId, phase);
+      if (!approved) {
+        throw new Error(`Approval rejected or timed out for phase ${phase}`);
+      }
       await this.convex.updateStatus(integrationId, 'pending', phase);
     } else {
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -600,9 +651,43 @@ export class ScholarDevClawOrchestrator {
       status: 'running',
       currentPhase: phase,
       retryCount,
+      awaitingReason: undefined,
+      guardrailReasons: [],
       phaseResults,
       context,
     });
+  }
+
+  private async enforceGuardrailApproval(
+    runId: string,
+    integrationId: string | undefined,
+    input: IntegrationCreate,
+    mode: ExecutionMode,
+    context: OrchestrationContext,
+    phaseResults: Record<number, unknown>,
+    phase: number,
+    retryCount: number,
+    reasons: string[],
+  ): Promise<void> {
+    const reason = `Guardrail policy triggered at phase ${phase}`;
+    logger.warn(reason, {
+      runId,
+      phase,
+      reasons,
+    });
+
+    await this.waitForApproval(
+      runId,
+      integrationId,
+      input,
+      mode,
+      context,
+      phaseResults,
+      phase,
+      retryCount,
+      reason,
+      reasons,
+    );
   }
 
   private enforcePatchSafety(patch: PatchResult): void {
@@ -737,6 +822,8 @@ export class ScholarDevClawOrchestrator {
     currentPhase: number;
     retryCount: number;
     lastErrorPhase?: number;
+    awaitingReason?: string;
+    guardrailReasons?: string[];
     phaseResults: Record<number, unknown>;
     context: OrchestrationContext;
     errorMessage?: string;
@@ -753,6 +840,8 @@ export class ScholarDevClawOrchestrator {
       currentPhase: args.currentPhase,
       retryCount: args.retryCount,
       lastErrorPhase: args.lastErrorPhase,
+      awaitingReason: args.awaitingReason,
+      guardrailReasons: args.guardrailReasons,
       phaseResults: args.phaseResults,
       context: args.context,
       createdAt: existing?.createdAt || new Date().toISOString(),
