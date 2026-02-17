@@ -574,6 +574,126 @@ def cmd_specs(args):
         print("\nUse --list for detailed info or --categories for category view")
 
 
+def cmd_context(args):
+    """Manage project context and memory"""
+    from scholardevclaw.context_engine import ContextEngine, get_agent_brain
+    from scholardevclaw.research_intelligence.extractor import ResearchExtractor
+
+    engine = ContextEngine()
+
+    if args.context_action == "init":
+        from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+
+        print(f"Initializing context for: {args.repo_path}")
+
+        analyzer = TreeSitterAnalyzer(Path(args.repo_path))
+        analysis = analyzer.analyze()
+
+        context_data = {
+            "languages": analysis.languages,
+            "frameworks": analysis.frameworks,
+            "entry_points": analysis.entry_points,
+            "patterns": analysis.patterns,
+        }
+
+        engine.initialize_project(args.repo_path, context_data)
+        print("Context initialized!")
+        print(f"  Languages: {', '.join(context_data['languages'])}")
+        print(f"  Frameworks: {', '.join(context_data['frameworks'])}")
+
+    elif args.context_action == "history":
+        history = engine.get_integration_history(args.repo_path)
+
+        if not history:
+            print("No integration history found.")
+            return
+
+        print(f"Integration history for: {args.repo_path}")
+        print("-" * 50)
+
+        for record in history[-10:]:
+            status_icon = (
+                "✓"
+                if record.get("validation_passed")
+                else "✗"
+                if record.get("status") == "failed"
+                else "?"
+            )
+            print(f"  {status_icon} {record['spec']} - {record['status']}")
+            print(f"    {record['timestamp'][:10]}")
+
+    elif args.context_action == "summary":
+        summary = engine.get_context_summary(args.repo_path)
+
+        print(f"Context summary for: {summary['repo_path']}")
+        print("=" * 50)
+
+        print(f"\nLanguages: {', '.join(summary['languages']) or 'None'}")
+        print(f"Frameworks: {', '.join(summary['frameworks']) or 'None'}")
+
+        stats = summary.get("stats", {})
+        print(f"\nStatistics:")
+        print(f"  Total runs: {stats.get('total_runs', 0)}")
+        print(f"  Successful: {stats.get('successful_runs', 0)}")
+        print(f"  Success rate: {stats.get('success_rate', 0):.0%}")
+
+        print(f"\nSuccessful specs: {', '.join(stats.get('successful_specs', [])) or 'None'}")
+        print(f"Failed specs: {', '.join(stats.get('failed_specs', [])) or 'None'}")
+
+        prefs = summary.get("preferences", {})
+        print(f"\nPreferences:")
+        print(f"  Preferred specs: {', '.join(prefs.get('preferred_specs', [])) or 'None'}")
+        print(
+            f"  Preferred categories: {', '.join(prefs.get('preferred_categories', [])) or 'None'}"
+        )
+        print(f"  Require validation: {prefs.get('require_validation', True)}")
+
+    elif args.context_action == "recommend":
+        extractor = ResearchExtractor()
+        available_specs = extractor.list_available_specs()
+
+        result = engine.get_recommendation(args.repo_path, available_specs)
+
+        print(f"Agent Brain Recommendation for: {args.repo_path}")
+        print("=" * 50)
+
+        print(f"\n{result.recommendation}")
+        print(f"Confidence: {result.confidence:.0%}")
+
+        if result.reasoning:
+            print("\nReasoning:")
+            for reason in result.reasoning:
+                print(f"  • {reason}")
+
+        context_used = result.context_used
+        print(f"\nContext used:")
+        print(f"  Total runs: {context_used.get('total_runs', 0)}")
+        print(f"  Success rate: {context_used.get('success_rate', 0):.0%}")
+
+    elif args.context_action == "set":
+        engine.set_preference(args.repo_path, args.pref_type, args.pref_value)
+        print(f"Set preference: {args.pref_type} = {args.pref_value}")
+
+    elif args.context_action == "clear":
+        confirm = input(f"Clear all context for {args.repo_path}? (y/n): ")
+        if confirm.lower() == "y":
+            engine.clear_project_memory(args.repo_path)
+            print("Context cleared!")
+        else:
+            print("Cancelled.")
+
+    elif args.context_action == "list":
+        projects = engine.list_tracked_projects()
+
+        if not projects:
+            print("No tracked projects.")
+            return
+
+        print("Tracked projects:")
+        for project in projects:
+            print(f"  - {project}")
+
+
 def cmd_demo(args):
     """Run demo with nanoGPT"""
     # Find project root
@@ -777,6 +897,17 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_critic.add_argument("--patch-json", help="JSON string containing patch result to verify")
     p_critic.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # context
+    p_context = subparsers.add_parser("context", help="Manage project context and memory")
+    p_context.add_argument("repo_path", nargs="?", help="Path to repository")
+    p_context.add_argument(
+        "context_action",
+        choices=["init", "history", "summary", "recommend", "set", "clear", "list"],
+        help="Action to perform",
+    )
+    p_context.add_argument("--pref-type", help="Preference type (for set action)")
+    p_context.add_argument("--pref-value", help="Preference value (for set action)")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -801,6 +932,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "specs": cmd_specs,
         "planner": cmd_planner,
         "critic": cmd_critic,
+        "context": cmd_context,
         "demo": cmd_demo,
     }
 

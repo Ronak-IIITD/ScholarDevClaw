@@ -18,8 +18,22 @@
   - Import validation (detect missing imports)
   - Anti-pattern detection (range(len), bare except, global, etc.)
   - Security checks (eval/exec detection)
-  - Transform safety (balanced brackets)
+  - Transform safety (balanced brackets check)
   - Severity classification (error/warning)
+- Completed Context Engine with Long-horizon Memory:
+  - New `scholardevclaw context` CLI with subcommands:
+    - init: Initialize project context from repo analysis
+    - history: Show integration history
+    - summary: Show project context summary
+    - recommend: Get AI recommendation based on past runs
+    - set: Set user preferences
+    - clear: Clear project memory
+    - list: List tracked projects
+  - Persistent memory store (~/.scholardevclaw/context/)
+  - Integration history tracking
+  - Agent Brain for context-aware recommendations
+  - Auto-approval based on confidence and past success
+  - User preferences learning
 - Completed end-to-end regression suite for key workflows:
   - Created `tests/e2e/` directory with 46 e2e tests covering analyze, map, generate, validate, integrate, preflight, search, specs, and suggest workflows.
   - Tests run against real nanoGPT test repository and use pipeline functions directly.
@@ -280,7 +294,12 @@ To become world-class, ScholarDevClaw should optimize for:
   - Import validation
   - Anti-pattern detection
   - Security checks
-- Next: long-horizon memory for project context.
+- ~~Long-horizon memory with Context Engine:~~ ✅ Implemented
+  - Project context storage
+  - Integration history tracking
+  - Agent Brain for recommendations
+  - User preferences learning
+- Next: experiment loop mode for hypothesis testing.
 
 ---
 
