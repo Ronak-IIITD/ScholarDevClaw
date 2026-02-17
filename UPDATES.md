@@ -12,6 +12,14 @@
   - Combined impact estimation (speedup, memory, benefits)
   - Category filtering support
   - Added to pipeline with `run_planner()` and `run_multi_integrate()`
+- Completed Critic mode for patch verification:
+  - New `scholardevclaw critic` CLI command
+  - Syntax validation for generated code
+  - Import validation (detect missing imports)
+  - Anti-pattern detection (range(len), bare except, global, etc.)
+  - Security checks (eval/exec detection)
+  - Transform safety (balanced brackets)
+  - Severity classification (error/warning)
 - Completed end-to-end regression suite for key workflows:
   - Created `tests/e2e/` directory with 46 e2e tests covering analyze, map, generate, validate, integrate, preflight, search, specs, and suggest workflows.
   - Tests run against real nanoGPT test repository and use pipeline functions directly.
@@ -267,7 +275,12 @@ To become world-class, ScholarDevClaw should optimize for:
 - ~~Explicit approval decision ingestion (approve/reject records).~~ ✅ Implemented.
 - ~~End-to-end orchestration regression suite.~~ ✅ Implemented.
 - ~~Planner mode:~~ ✅ Implemented.
-- Next: critic mode for patch verification.
+- ~~Critic mode:~~ ✅ Implemented.
+  - Syntax validation
+  - Import validation
+  - Anti-pattern detection
+  - Security checks
+- Next: long-horizon memory for project context.
 
 ---
 

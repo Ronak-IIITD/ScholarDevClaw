@@ -474,6 +474,69 @@ def cmd_planner(args):
         print(json.dumps(payload, indent=2))
 
 
+def cmd_critic(args):
+    """Run critic to verify generated patches"""
+    from scholardevclaw.critic import run_critic
+
+    print(f"Running critic for: {args.repo_path}")
+    print("=" * 60)
+
+    patch_result = None
+    if args.patch_json:
+        import json as json_module
+
+        try:
+            patch_result = json_module.loads(args.patch_json)
+        except json_module.JSONDecodeError as e:
+            print(f"Error parsing patch JSON: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    result = run_critic(
+        args.repo_path,
+        spec_name=args.spec,
+        patch_result=patch_result,
+    )
+
+    if not result.ok:
+        print(f"\nCritic found issues!", file=sys.stderr)
+    else:
+        print(f"\nCritic passed!")
+
+    payload = result.payload
+
+    print(f"\nSummary: {payload.get('summary', 'N/A').upper()}")
+
+    severity = payload.get("severity_counts", {})
+    if severity.get("error", 0) > 0:
+        print(f"Errors: {severity.get('error', 0)}")
+    if severity.get("warning", 0) > 0:
+        print(f"Warnings: {severity.get('warning', 0)}")
+
+    issues = payload.get("issues", [])
+    if issues:
+        print("\nIssues:")
+        for issue in issues[:10]:
+            severity_marker = "✗" if issue.get("severity") == "error" else "⚠"
+            print(f"  {severity_marker} [{issue.get('type')}] {issue.get('message')}")
+            if issue.get("file"):
+                print(f"    File: {issue.get('file')}")
+
+    warnings = payload.get("warnings", [])
+    if warnings:
+        print("\nWarnings:")
+        for warning in warnings[:10]:
+            print(f"  ⚠ [{warning.get('type')}] {warning.get('message')}")
+
+    checks = payload.get("checks_passed", [])
+    if checks:
+        print("\nPassed checks:")
+        for check in checks:
+            print(f"  ✓ {check}")
+
+    if args.output_json:
+        print(json.dumps(payload, indent=2))
+
+
 def cmd_specs(args):
     """List available paper specifications"""
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
@@ -707,6 +770,13 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_planner.add_argument("--categories", help="Comma-separated categories to focus on")
     p_planner.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # critic
+    p_critic = subparsers.add_parser("critic", help="Verify generated patches for issues")
+    p_critic.add_argument("repo_path", help="Path to repository")
+    p_critic.add_argument("spec", nargs="?", help="Paper specification to verify")
+    p_critic.add_argument("--patch-json", help="JSON string containing patch result to verify")
+    p_critic.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -730,6 +800,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "tui": cmd_tui,
         "specs": cmd_specs,
         "planner": cmd_planner,
+        "critic": cmd_critic,
         "demo": cmd_demo,
     }
 
