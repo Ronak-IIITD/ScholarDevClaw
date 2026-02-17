@@ -751,6 +751,93 @@ def cmd_experiment(args):
         print(json.dumps(result, indent=2))
 
 
+def cmd_plugin(args):
+    """Manage plugins"""
+    from scholardevclaw.plugins import get_plugin_manager
+
+    manager = get_plugin_manager()
+
+    if args.plugin_action == "list":
+        print("ScholarDevClaw Plugins")
+        print("=" * 50)
+
+        discovered = manager.discover_plugins()
+        loaded = manager.list_plugins()
+
+        print(f"\nDiscovered plugins ({len(discovered)}):")
+        for p in discovered:
+            print(f"  • {p.name} ({p.plugin_type}) - {p.description}")
+            print(f"    Version: {p.version} | Author: {p.author}")
+
+        print(f"\nLoaded plugins ({len(loaded)}):")
+        for p in loaded:
+            print(f"  ✓ {p.name} ({p.plugin_type})")
+
+    elif args.plugin_action == "load":
+        plugin = manager.load_plugin(args.plugin_name)
+        if plugin:
+            print(f"Loaded plugin: {plugin.metadata.name}")
+            print(f"  Type: {plugin.metadata.plugin_type}")
+            print(f"  Version: {plugin.metadata.version}")
+        else:
+            print(f"Failed to load plugin: {args.plugin_name}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.plugin_action == "unload":
+        manager.unload_plugin(args.plugin_name)
+        print(f"Unloaded plugin: {args.plugin_name}")
+
+    elif args.plugin_action == "analyze":
+        analyzer = manager.get_analyzer(args.plugin_name)
+        if analyzer:
+            result = analyzer.analyze(args.repo_path)
+            print(f"Analysis results for: {args.repo_path}")
+            print(f"  Languages: {', '.join(result.get('languages', []))}")
+            print(f"  Frameworks: {', '.join(result.get('frameworks', []))}")
+        else:
+            print(f"Analyzer not found: {args.plugin_name}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.plugin_action == "validate":
+        validator = manager.get_validator(args.plugin_name)
+        if validator:
+            patch_result = {"new_files": [], "transformations": []}
+            result = validator.validate(args.repo_path, patch_result)
+            print(f"Validation results ({validator.get_validation_type()}):")
+            print(f"  Passed: {result.get('passed', False)}")
+            issues = result.get("issues", [])
+            if issues:
+                print(f"  Issues: {len(issues)}")
+                for issue in issues[:5]:
+                    print(f"    - {issue.get('message')}")
+        else:
+            print(f"Validator not found: {args.plugin_name}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.plugin_action == "scaffold":
+        scaffold_file = manager.create_plugin_scaffold(
+            args.plugin_name,
+            args.plugin_type or "custom",
+        )
+        print(f"Created plugin scaffold: {scaffold_file}")
+        print(f"  Edit this file to implement your plugin")
+
+    elif args.plugin_action == "info":
+        plugin = manager.get_plugin(args.plugin_name)
+        if plugin:
+            meta = plugin.metadata
+            print(f"Plugin: {meta.name}")
+            print("=" * 50)
+            print(f"  Version: {meta.version}")
+            print(f"  Type: {meta.plugin_type}")
+            print(f"  Description: {meta.description}")
+            print(f"  Author: {meta.author}")
+            print(f"  Entry point: {meta.entry_point}")
+        else:
+            print(f"Plugin not found: {args.plugin_name}", file=sys.stderr)
+            sys.exit(1)
+
+
 def cmd_demo(args):
     """Run demo with nanoGPT"""
     # Find project root
@@ -977,6 +1064,19 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_experiment.add_argument("--output-dir", help="Output directory for variants")
     p_experiment.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # plugin
+    p_plugin = subparsers.add_parser("plugin", help="Manage plugins")
+    p_plugin.add_argument(
+        "plugin_action",
+        choices=["list", "load", "unload", "analyze", "validate", "scaffold", "info"],
+        help="Action to perform",
+    )
+    p_plugin.add_argument("plugin_name", nargs="?", help="Plugin name")
+    p_plugin.add_argument("repo_path", nargs="?", help="Repository path (for analyze/validate)")
+    p_plugin.add_argument(
+        "--plugin-type", choices=["analyzer", "spec_provider", "validator", "custom"]
+    )
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -1003,6 +1103,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "critic": cmd_critic,
         "context": cmd_context,
         "experiment": cmd_experiment,
+        "plugin": cmd_plugin,
         "demo": cmd_demo,
     }
 

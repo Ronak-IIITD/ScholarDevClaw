@@ -41,6 +41,19 @@
   - Results ranking by score
   - Metrics tracking (speedup, loss change)
   - Best variant recommendation
+- Completed Plugin System:
+  - New `scholardevclaw plugin` CLI with subcommands:
+    - list: List discovered and loaded plugins
+    - load: Load a plugin
+    - unload: Unload a plugin
+    - analyze: Run analyzer plugin
+    - validate: Run validator plugin
+    - scaffold: Create plugin scaffold
+    - info: Show plugin info
+  - PluginManager for plugin discovery and loading
+  - Plugin interfaces (AnalyzerPlugin, SpecProviderPlugin, ValidatorPlugin)
+  - Built-in plugins: javalang, jsts, rustlang, security
+  - Plugin scaffold generator
 - Completed end-to-end regression suite for key workflows:
   - Created `tests/e2e/` directory with 46 e2e tests covering analyze, map, generate, validate, integrate, preflight, search, specs, and suggest workflows.
   - Tests run against real nanoGPT test repository and use pipeline functions directly.
