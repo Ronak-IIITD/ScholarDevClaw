@@ -694,6 +694,63 @@ def cmd_context(args):
             print(f"  - {project}")
 
 
+def cmd_experiment(args):
+    """Run experiment loop for hypothesis testing"""
+    from scholardevclaw.experiment import run_experiment
+
+    print(f"Running experiment for: {args.repo_path}")
+    print(f"Spec: {args.spec}")
+    print(f"Variants: {args.variants}")
+    print("=" * 60)
+
+    def _log(line):
+        print(f"  • {line}")
+
+    result = run_experiment(
+        args.repo_path,
+        args.spec,
+        variant_count=args.variants,
+        output_dir=args.output_dir,
+        log_callback=_log,
+    )
+
+    if not result.get("ok"):
+        print(f"\nExperiment failed: {result.get('error')}", file=sys.stderr)
+        sys.exit(1)
+
+    print("\n" + "=" * 60)
+    print("EXPERIMENT RESULTS")
+    print("=" * 60)
+
+    summary = result.get("summary", {})
+    print(f"\nTotal variants: {summary.get('total_variants', 0)}")
+    print(f"Completed: {summary.get('completed', 0)}")
+    print(f"Failed: {summary.get('failed', 0)}")
+
+    if summary.get("best_variant"):
+        print(f"\n🏆 Best variant: {summary.get('best_variant')}")
+        print(f"   Score: {summary.get('best_score', 0):.2f}")
+        print(f"   {summary.get('recommendation', '')}")
+
+    print("\nRanked Results:")
+    print("-" * 50)
+    for r in result.get("results", []):
+        rank = r.get("rank", "?")
+        name = r.get("variant_name", "unknown")
+        score = r.get("score", 0)
+        status = r.get("status", "unknown")
+
+        if status == "completed":
+            metrics = r.get("metrics", {})
+            speedup = metrics.get("speedup", 0)
+            print(f"  {rank}. {name} - score: {score:.2f}, speedup: {speedup:.2f}x")
+        else:
+            print(f"  {rank}. {name} - {status}")
+
+    if args.output_json:
+        print(json.dumps(result, indent=2))
+
+
 def cmd_demo(args):
     """Run demo with nanoGPT"""
     # Find project root
@@ -908,6 +965,18 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_context.add_argument("--pref-type", help="Preference type (for set action)")
     p_context.add_argument("--pref-value", help="Preference value (for set action)")
 
+    # experiment
+    p_experiment = subparsers.add_parser(
+        "experiment", help="Run experiment loop for hypothesis testing"
+    )
+    p_experiment.add_argument("repo_path", help="Path to repository")
+    p_experiment.add_argument("spec", help="Paper specification to experiment with")
+    p_experiment.add_argument(
+        "--variants", type=int, default=3, help="Number of variants to generate"
+    )
+    p_experiment.add_argument("--output-dir", help="Output directory for variants")
+    p_experiment.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -933,6 +1002,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "planner": cmd_planner,
         "critic": cmd_critic,
         "context": cmd_context,
+        "experiment": cmd_experiment,
         "demo": cmd_demo,
     }
 

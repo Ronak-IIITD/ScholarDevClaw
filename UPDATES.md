@@ -34,6 +34,13 @@
   - Agent Brain for context-aware recommendations
   - Auto-approval based on confidence and past success
   - User preferences learning
+- Completed Experiment Loop Mode:
+  - New `scholardevclaw experiment` CLI command
+  - Variant generation with different parameters
+  - A/B comparison with validation
+  - Results ranking by score
+  - Metrics tracking (speedup, loss change)
+  - Best variant recommendation
 - Completed end-to-end regression suite for key workflows:
   - Created `tests/e2e/` directory with 46 e2e tests covering analyze, map, generate, validate, integrate, preflight, search, specs, and suggest workflows.
   - Tests run against real nanoGPT test repository and use pipeline functions directly.
@@ -299,6 +306,11 @@ To become world-class, ScholarDevClaw should optimize for:
   - Integration history tracking
   - Agent Brain for recommendations
   - User preferences learning
+- ~~Experiment loop mode:~~ ✅ Implemented
+  - Variant generation with different parameters
+  - A/B comparison with validation
+  - Results ranking by score
+  - Best variant recommendation
 - Next: experiment loop mode for hypothesis testing.
 
 ---
