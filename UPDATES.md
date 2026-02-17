@@ -14,6 +14,11 @@
   - Cycle detection
   - Phase nodes factory functions (analyze, research, mapping, patch, validation, report)
   - Integration with Planner, Critic, Experiment nodes
+  - Workflow persistence store for resumability
+  - Workflow templates library (6 templates)
+  - Metrics collector for performance monitoring
+  - Webhook notifier for external integrations
+  - Dynamic workflow builder with quick workflow creation
 - Completed performance optimizations and agent tools:
   - Added parallel processing utilities (parallel_map, LazyFileScanner, ParallelGit)
   - Added improved error handling (ErrorContext, RetryConfig, OperationTimer)
