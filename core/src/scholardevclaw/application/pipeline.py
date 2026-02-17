@@ -98,7 +98,9 @@ def run_preflight(
 
     if has_git_dir and not git_available:
         warnings.append("Git repository detected but git status check failed")
-        recommendations.append("Ensure git is installed and repository permissions allow status checks")
+        recommendations.append(
+            "Ensure git is installed and repository permissions allow status checks"
+        )
 
     if require_clean:
         if not has_git_dir:
@@ -436,7 +438,9 @@ def _build_mapping_result(
     return mapping_result, spec
 
 
-def run_map(repo_path: str, spec_name: str, *, log_callback: LogCallback | None = None) -> PipelineResult:
+def run_map(
+    repo_path: str, spec_name: str, *, log_callback: LogCallback | None = None
+) -> PipelineResult:
     logs: list[str] = []
     _log(logs, f"Mapping spec '{spec_name}' to repository: {repo_path}", log_callback)
     try:
@@ -633,14 +637,14 @@ def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> 
 
         payload = with_meta(
             {
-            "passed": result.passed,
-            "stage": result.stage,
-            "comparison": result.comparison,
-            "baseline_metrics": baseline_metrics,
-            "new_metrics": new_metrics,
-            "scorecard": scorecard,
-            "logs": result.logs,
-            "error": result.error,
+                "passed": result.passed,
+                "stage": result.stage,
+                "comparison": result.comparison,
+                "baseline_metrics": baseline_metrics,
+                "new_metrics": new_metrics,
+                "scorecard": scorecard,
+                "logs": result.logs,
+                "error": result.error,
             },
             "validation",
         )
@@ -823,6 +827,147 @@ def run_integrate(
             ok=False,
             title="Integration",
             payload=with_meta({}, "integration"),
+            logs=logs,
+            error=str(exc),
+        )
+
+
+def run_planner(
+    repo_path: str,
+    *,
+    max_specs: int = 5,
+    target_categories: list[str] | None = None,
+    log_callback: LogCallback | None = None,
+):
+    from scholardevclaw.planner import run_planner as _run_planner
+
+    return _run_planner(
+        repo_path,
+        max_specs=max_specs,
+        target_categories=target_categories,
+        log_callback=log_callback,
+    )
+
+
+def run_multi_integrate(
+    repo_path: str,
+    spec_names: list[str],
+    *,
+    output_dir: str | None = None,
+    require_clean: bool = False,
+    log_callback: LogCallback | None = None,
+) -> PipelineResult:
+    from .schema_contract import with_meta
+
+    logs: list[str] = []
+    _log(
+        logs,
+        f"Starting multi-spec integration for: {repo_path} with {len(spec_names)} specs",
+        log_callback,
+    )
+
+    try:
+        path = _ensure_repo(repo_path)
+
+        preflight = run_preflight(
+            str(path),
+            require_clean=require_clean,
+            log_callback=log_callback,
+        )
+        logs.extend(preflight.logs)
+        if not preflight.ok:
+            return PipelineResult(
+                ok=False,
+                title="Multi-Integration",
+                payload=with_meta(
+                    {
+                        "step": "preflight",
+                        "preflight": preflight.payload,
+                        "guidance": preflight.payload.get("recommendations", []),
+                    },
+                    "multi_integration",
+                ),
+                logs=logs,
+                error=preflight.error,
+            )
+
+        from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+
+        analyzer = TreeSitterAnalyzer(path)
+        analysis = analyzer.analyze()
+        _log(
+            logs,
+            f"Analyze: {len(analysis.languages)} languages, {len(analysis.elements)} elements",
+            log_callback,
+        )
+
+        results: list[dict[str, Any]] = []
+
+        for i, spec_name in enumerate(spec_names, 1):
+            _log(logs, f"\n--- Spec {i}/{len(spec_names)}: {spec_name} ---", log_callback)
+
+            mapping_result, spec = _build_mapping_result(path, spec_name, log_callback=log_callback)
+            _log(
+                logs,
+                f"Mapping: {len(mapping_result.get('targets', []))} targets",
+                log_callback,
+            )
+
+            generate_result = run_generate(
+                str(path),
+                spec_name,
+                output_dir=output_dir,
+                log_callback=log_callback,
+            )
+            logs.extend(generate_result.logs)
+
+            if generate_result.ok:
+                results.append(
+                    {
+                        "spec": spec_name,
+                        "mapping": mapping_result,
+                        "generation": generate_result.payload,
+                    }
+                )
+            else:
+                _log(
+                    logs,
+                    f"Generation failed for {spec_name}: {generate_result.error}",
+                    log_callback,
+                )
+
+        validate_result = run_validate(str(path), log_callback=log_callback)
+        logs.extend(validate_result.logs)
+
+        payload = with_meta(
+            {
+                "specs": spec_names,
+                "specs_applied": len(results),
+                "analysis": {
+                    "languages": analysis.languages,
+                    "frameworks": analysis.frameworks,
+                },
+                "preflight": preflight.payload,
+                "spec_results": results,
+                "validation": validate_result.payload,
+                "output_dir": output_dir,
+            },
+            "multi_integration",
+        )
+
+        return PipelineResult(
+            ok=validate_result.ok,
+            title="Multi-Integration",
+            payload=payload,
+            logs=logs,
+            error=validate_result.error,
+        )
+    except Exception as exc:
+        _log(logs, f"Failed: {exc}", log_callback)
+        return PipelineResult(
+            ok=False,
+            title="Multi-Integration",
+            payload=with_meta({}, "multi_integration"),
             logs=logs,
             error=str(exc),
         )

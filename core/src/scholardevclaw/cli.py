@@ -31,6 +31,7 @@ from typing import Optional
 
 from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
 
+
 def _print_compatibility_report(payload: dict, expected_type: str, *, stderr: bool = False) -> None:
     report = evaluate_payload_compatibility(payload, expected_types={expected_type})
     stream = sys.stderr if stderr else sys.stdout
@@ -421,6 +422,58 @@ def cmd_integrate(args):
         print(json.dumps(result.payload, indent=2))
 
 
+def cmd_planner(args):
+    """Plan multi-spec migration strategy"""
+    from scholardevclaw.planner import run_planner
+
+    print(f"Planning multi-spec migration for: {args.repo_path}")
+    print("=" * 60)
+
+    result = run_planner(
+        args.repo_path,
+        max_specs=args.max_specs,
+        target_categories=args.categories.split(",") if args.categories else None,
+    )
+
+    if not result.ok:
+        print(f"\nPlanning failed: {result.error}", file=sys.stderr)
+        sys.exit(1)
+
+    payload = result.payload
+
+    print(f"\nRepository: {payload.get('repo_path')}")
+    print(f"Languages: {', '.join(payload.get('languages', []))}")
+    print(f"Frameworks: {', '.join(payload.get('frameworks', []))}")
+    print(f"\nOpportunities found: {payload.get('opportunities_found', 0)}")
+
+    selected = payload.get("selected_specs", [])
+    if selected:
+        print(f"\nSelected specs ({len(selected)}):")
+        for i, spec in enumerate(selected, 1):
+            print(f"  {i}. {spec['name']} ({spec['category']})")
+            print(f"     Confidence: {spec['confidence']:.0f}%")
+            print(f"     Replaces: {spec['replaces']}")
+            if spec.get("expected_benefits"):
+                print(f"     Benefits: {', '.join(spec['expected_benefits'][:2])}")
+
+        print(f"\nExecution order: {' -> '.join(payload.get('dependency_order', []))}")
+
+        reasoning = payload.get("dependency_reasoning", [])
+        if reasoning:
+            print("\nDependency reasoning:")
+            for r in reasoning:
+                print(f"  • {r}")
+
+        print(f"\n{payload.get('total_expected_improvement', 'N/A')}")
+
+    available_cats = payload.get("available_categories", {})
+    if available_cats and args.categories is None:
+        print(f"\nAvailable categories: {', '.join(available_cats.keys())}")
+
+    if args.output_json:
+        print(json.dumps(payload, indent=2))
+
+
 def cmd_specs(args):
     """List available paper specifications"""
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
@@ -647,6 +700,13 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_specs.add_argument("--list", action="store_true", help="Detailed list")
     p_specs.add_argument("--categories", action="store_true", help="Show categories")
 
+    # planner
+    p_planner = subparsers.add_parser("planner", help="Plan multi-spec migration strategy")
+    p_planner.add_argument("repo_path", help="Path to repository")
+    p_planner.add_argument("--max-specs", type=int, default=5, help="Maximum specs to recommend")
+    p_planner.add_argument("--categories", help="Comma-separated categories to focus on")
+    p_planner.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -669,6 +729,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "integrate": cmd_integrate,
         "tui": cmd_tui,
         "specs": cmd_specs,
+        "planner": cmd_planner,
         "demo": cmd_demo,
     }
 

@@ -5,6 +5,13 @@
 **Last updated:** 2026-02-17
 
 ### 2026-02-17
+- Completed Planner mode for multi-spec migration strategies:
+  - New `scholardevclaw planner` CLI command
+  - Analyzes repo and suggests multiple compatible specs
+  - Dependency ordering (normalization -> activation -> attention)
+  - Combined impact estimation (speedup, memory, benefits)
+  - Category filtering support
+  - Added to pipeline with `run_planner()` and `run_multi_integrate()`
 - Completed end-to-end regression suite for key workflows:
   - Created `tests/e2e/` directory with 46 e2e tests covering analyze, map, generate, validate, integrate, preflight, search, specs, and suggest workflows.
   - Tests run against real nanoGPT test repository and use pipeline functions directly.
@@ -194,13 +201,31 @@ Below is a prioritized roadmap to make ScholarDevClaw category-defining.
 1. Unified run records across CLI/TUI/API for observability.
 2. Optional cloud execution mode with secure remote runners.
 3. Team collaboration features (review queues, run sharing, approvals).
+   - Shared run history across team members
+   - Patch review workflows
+   - Multi-user approval gates
 4. Reusable plugin system for custom analyzers/spec providers/validators.
+   - Custom analyzers for new languages/frameworks
+   - External spec providers (beyond built-in papers)
+   - Domain-specific validators
 
 ### F) AI-native enhancements
 1. Planner mode: propose multi-step migration strategy before writing changes.
+   - Propose coherent multi-paper migration strategies (e.g., RMSNorm + SwiGLU + RoPE together)
+   - Show dependency ordering between changes
+   - Estimate combined impact of multiple techniques
 2. Critic mode: independent verifier to challenge generated patches.
+   - Check for common bugs (typos, missing imports, syntax errors)
+   - Validate against known anti-patterns
+   - Pre-execution safety review
 3. Long-horizon memory for project context and prior integration decisions.
+   - Project context retention across sessions
+   - Prior integration decisions history
+   - Learned preferences (preferred specs, validation thresholds)
 4. Experiment loop mode: generate hypotheses, run validation, rank outcomes.
+   - Generate variants of patches with different parameters
+   - Run A/B validation comparisons
+   - Rank outcomes by metrics
 
 ---
 
@@ -226,10 +251,12 @@ To become world-class, ScholarDevClaw should optimize for:
 - ~~Add artifact browser + richer validation scorecards.~~ ✅ Implemented.
 - ~~Add payload schema versioning + compatibility checks.~~ ✅ Implemented.
 - ~~Add end-to-end regression suite for key workflows.~~ ✅ Implemented.
-- Add planner/critic dual-agent execution model.
+- Add planner mode for multi-spec migration strategies. 🚧 In Progress
+- Add critic mode for patch verification.
 
 ### Phase 3
-- Add planner/critic dual-agent execution model.
+- Add long-horizon memory for project context.
+- Add experiment loop mode for hypothesis testing.
 - Add plugin system and team collaboration review layer.
 - Add cloud-ready execution profiles.
 
@@ -239,7 +266,8 @@ To become world-class, ScholarDevClaw should optimize for:
 - ~~Policy-based approval gates with persisted guardrail reasons.~~ ✅ Implemented.
 - ~~Explicit approval decision ingestion (approve/reject records).~~ ✅ Implemented.
 - ~~End-to-end orchestration regression suite.~~ ✅ Implemented.
-- Next: planner/critic dual-agent execution model.
+- ~~Planner mode:~~ ✅ Implemented.
+- Next: critic mode for patch verification.
 
 ---
 
