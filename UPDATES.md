@@ -5,6 +5,15 @@
 **Last updated:** 2026-02-17
 
 ### 2026-02-17
+- Completed Workflow DAG Engine for agent orchestration:
+  - DAG-based execution with parallel node support
+  - Node dependencies and topological sorting
+  - Conditional branching (on_success, on_failure, always)
+  - Event streaming for real-time progress
+  - Retry with exponential backoff
+  - Cycle detection
+  - Phase nodes factory functions (analyze, research, mapping, patch, validation, report)
+  - Integration with Planner, Critic, Experiment nodes
 - Completed performance optimizations and agent tools:
   - Added parallel processing utilities (parallel_map, LazyFileScanner, ParallelGit)
   - Added improved error handling (ErrorContext, RetryConfig, OperationTimer)
