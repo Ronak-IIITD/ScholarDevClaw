@@ -5,6 +5,14 @@
 **Last updated:** 2026-02-17
 
 ### 2026-02-17
+- Added reliability and stability layer:
+  - Health check system (memory, disk, environment, filesystem)
+  - Liveness and readiness probes
+  - Circuit breaker pattern for external calls
+  - Input validation layer (path, spec, string, enum, range validators)
+  - Graceful shutdown with cleanup handlers
+  - Resource manager for cleanup
+  - Health API endpoints (/health, /health/live, /health/ready)
 - Completed Workflow DAG Engine for agent orchestration:
   - DAG-based execution with parallel node support
   - Node dependencies and topological sorting
