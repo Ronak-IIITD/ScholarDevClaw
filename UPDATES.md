@@ -5,6 +5,11 @@
 **Last updated:** 2026-02-17
 
 ### 2026-02-17
+- Completed performance optimizations and agent tools:
+  - Added parallel processing utilities (parallel_map, LazyFileScanner, ParallelGit)
+  - Added improved error handling (ErrorContext, RetryConfig, OperationTimer)
+  - Colored console logging with timestamps
+  - Added AgentTools class for TypeScript agent with better tool wrappers
 - Completed Planner mode for multi-spec migration strategies:
   - New `scholardevclaw planner` CLI command
   - Analyzes repo and suggests multiple compatible specs
