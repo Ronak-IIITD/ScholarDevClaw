@@ -2,7 +2,31 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-02-17
+**Last updated:** 2026-02-20
+
+### 2026-02-20
+- Added production-ready features:
+  - **Prometheus Metrics Collection** (41 tests):
+    - Counter, Gauge, Histogram metric types
+    - MetricsRegistry for managing all metrics
+    - Pre-defined metrics for requests, integrations, patches, validations, errors, workflows
+    - FastAPI middleware for automatic HTTP request tracking
+    - /metrics endpoint for Prometheus scraping
+    - Path normalization for high-cardinality routes
+  - **Structured Logging** (16 tests):
+    - JSON output mode for production
+    - Trace ID, Request ID, User ID context
+    - LogContext for timing operations
+    - Standard field injection
+  - **API Rate Limiting** (19 tests):
+    - Token bucket algorithm for burst handling
+    - Sliding window algorithm for precise limiting
+    - FastAPI middleware with IP-based rate limiting
+    - Per-minute, per-hour, burst limits
+  - **OpenAPI/Swagger Documentation**:
+    - Custom OpenAPI schema with examples
+    - Tagged endpoints with descriptions
+    - /docs/json and /docs/version routes
 
 ### 2026-02-17
 - Added reliability and stability layer:
