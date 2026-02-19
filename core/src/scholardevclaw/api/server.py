@@ -10,13 +10,21 @@ from ..mapping.engine import MappingEngine
 from ..patch_generation.generator import PatchGenerator
 from ..validation.runner import ValidationRunner
 from ..application.schema_contract import SCHEMA_VERSION
+from .docs import setup_openapi, setup_docs_routes, setup_exception_handlers
 
 
 app = FastAPI(
-    title="ScholarDevClaw Core API",
-    description="Autonomous ML Research Integration Engine - Core API",
-    version="0.1.0",
+    title="ScholarDevClaw API",
+    description="Autonomous ML Research Integration Engine",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
+
+setup_openapi(app)
+setup_docs_routes(app)
+setup_exception_handlers(app)
 
 
 class RepoAnalyzeRequest(BaseModel):
@@ -224,9 +232,7 @@ def _normalize_research_spec(raw: dict[str, Any]) -> ResearchExtractResponse:
                 "parent_class", implementation.get("parentClass", "")
             ),
             "parameters": implementation.get("parameters") or [],
-            "codeTemplate": implementation.get(
-                "code_template", implementation.get("codeTemplate")
-            ),
+            "codeTemplate": implementation.get("code_template", implementation.get("codeTemplate")),
         },
         "changes": {
             "type": changes.get("type", "replace"),
@@ -252,12 +258,24 @@ def _metrics_to_response(metrics: Any) -> MetricsResponse | None:
     )
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["health"],
+    summary="Health check",
+    description="Check if the API is healthy and responsive",
+)
 async def health():
+    """Basic health check endpoint."""
     return {"status": "ok"}
 
 
-@app.post("/repo/analyze", response_model=RepoAnalyzeResponse)
+@app.post(
+    "/repo/analyze",
+    response_model=RepoAnalyzeResponse,
+    tags=["repo"],
+    summary="Analyze repository",
+    description="Analyze repository structure to identify models, training loops, and patterns",
+)
 async def analyze_repo(request: RepoAnalyzeRequest):
     try:
         repo_path = _resolve_existing_repo_path(request.repoPath)
@@ -301,7 +319,13 @@ async def analyze_repo(request: RepoAnalyzeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/research/extract", response_model=ResearchExtractResponse)
+@app.post(
+    "/research/extract",
+    response_model=ResearchExtractResponse,
+    tags=["research"],
+    summary="Extract research spec",
+    description="Extract implementation specification from a research paper",
+)
 async def extract_research(request: ResearchExtractRequest):
     try:
         extractor = ResearchExtractor()
@@ -317,7 +341,13 @@ async def extract_research(request: ResearchExtractRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/mapping/map", response_model=MappingResponse)
+@app.post(
+    "/mapping/map",
+    response_model=MappingResponse,
+    tags=["mapping"],
+    summary="Map spec to code",
+    description="Map a research specification to specific code locations in the repository",
+)
 async def map_architecture(request: MappingRequest):
     try:
         engine = MappingEngine(request.repoAnalysis, request.researchSpec)
@@ -343,11 +373,19 @@ async def map_architecture(request: MappingRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/patch/generate", response_model=PatchGenerateResponse)
+@app.post(
+    "/patch/generate",
+    response_model=PatchGenerateResponse,
+    tags=["patch"],
+    summary="Generate patch",
+    description="Generate code patches implementing the research specification",
+)
 async def generate_patch(request: PatchGenerateRequest):
     try:
         generator_repo_path = (
-            _resolve_existing_repo_path(request.repoPath) if request.repoPath else Path(".").resolve()
+            _resolve_existing_repo_path(request.repoPath)
+            if request.repoPath
+            else Path(".").resolve()
         )
         generator = PatchGenerator(generator_repo_path)
         patch = generator.generate(request.mapping)
@@ -372,7 +410,13 @@ async def generate_patch(request: PatchGenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/validation/run", response_model=ValidationResponse)
+@app.post(
+    "/validation/run",
+    response_model=ValidationResponse,
+    tags=["validation"],
+    summary="Run validation",
+    description="Run tests and benchmarks to validate the generated patches",
+)
 async def run_validation(request: ValidationRequest):
     try:
         repo_path = _resolve_existing_repo_path(request.repoPath)
