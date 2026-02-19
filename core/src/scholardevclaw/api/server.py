@@ -11,6 +11,7 @@ from ..patch_generation.generator import PatchGenerator
 from ..validation.runner import ValidationRunner
 from ..application.schema_contract import SCHEMA_VERSION
 from .docs import setup_openapi, setup_docs_routes, setup_exception_handlers
+from .metrics_middleware import setup_metrics
 
 
 app = FastAPI(
@@ -25,6 +26,7 @@ app = FastAPI(
 setup_openapi(app)
 setup_docs_routes(app)
 setup_exception_handlers(app)
+setup_metrics(app)
 
 
 class RepoAnalyzeRequest(BaseModel):
