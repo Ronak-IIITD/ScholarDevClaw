@@ -364,6 +364,65 @@ scholardevclaw <command> --help
 
 ---
 
+## 8. Production Deployment
+
+### Docker Deployment
+
+For production deployment, use Docker:
+
+```bash
+# Development
+docker compose -f docker/docker-compose.yml up -d
+
+# Production (with monitoring)
+docker compose -f docker/docker-compose.prod.yml up -d
+```
+
+### Production Features
+
+ScholarDevClaw includes production-ready features:
+
+| Feature | Description |
+|---------|-------------|
+| **Prometheus Metrics** | `/metrics` endpoint for monitoring |
+| **Health Checks** | `/health`, `/health/live`, `/health/ready` |
+| **Rate Limiting** | Built-in API rate limiting |
+| **Request Tracing** | Distributed tracing with trace IDs |
+| **Structured Logging** | JSON logging for production |
+| **Error Codes** | Standardized error codes with remediation |
+
+### API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Basic health check |
+| `GET /health/ready` | Readiness probe |
+| `GET /health/live` | Liveness probe |
+| `GET /metrics` | Prometheus metrics |
+| `GET /docs` | Swagger UI |
+| `POST /repo/analyze` | Analyze repository |
+| `POST /research/extract` | Extract research spec |
+| `POST /mapping/map` | Map spec to code |
+| `POST /patch/generate` | Generate patches |
+| `POST /validation/run` | Run validation |
+
+### Monitoring Stack
+
+Production setup includes:
+- **Prometheus** (port 9090) - Metrics collection
+- **Grafana** (port 3000) - Dashboards and visualization
+- **Nginx** (port 80/443) - Reverse proxy with SSL
+
+```bash
+# Access Grafana
+open http://localhost:3000
+
+# Access Prometheus
+open http://localhost:9090
+```
+
+---
+
 ## Next Steps
 
 1. Run `scholardevclaw demo` to see it in action

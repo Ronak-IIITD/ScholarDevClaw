@@ -27,6 +27,37 @@
     - Custom OpenAPI schema with examples
     - Tagged endpoints with descriptions
     - /docs/json and /docs/version routes
+  - **Connection Pooling** (24 tests):
+    - Generic ConnectionPool with acquire/release pattern
+    - Connection validation and idle timeout
+    - HTTPConnectionPool singleton with httpx
+    - AsyncHTTPConnectionPool for async clients
+    - Connection stats tracking
+  - **CLI Progress Bars** (18 tests):
+    - ProgressBar with ETA, rate, and percentage
+    - ProgressConfig for customization
+    - progress_iter for iterable progress
+    - Spinner for indeterminate operations
+    - MultiProgress for parallel bars
+  - **Standardized Error Codes** (27 tests):
+    - ErrorCategory enum (VAL, REP, RES, MAP, PAT, VRU, INT, NET, CFG, SYS, PRM, RSC, TIM, RTL, PLG, WRK)
+    - ErrorSeverity enum (info, warning, error, critical)
+    - ErrorCode dataclass with code, message, http_status, remediation
+    - ErrorCodes class with 40+ predefined error codes
+    - AppException for structured error handling
+  - **Distributed Request Tracing** (35 tests):
+    - Span class for timing operations
+    - TraceContext for managing spans and baggage
+    - @span decorator for function tracing
+    - Tracer class with export callbacks
+    - Header extraction/injection for distributed traces
+    - TraceMiddleware for FastAPI/Starlette
+  - **Production Docker Setup**:
+    - Multi-stage Dockerfiles for core and agent
+    - Non-root user, health checks
+    - Production docker-compose with resource limits
+    - Nginx reverse proxy with SSL, rate limiting
+    - Prometheus + Grafana for monitoring
 
 ### 2026-02-17
 - Added reliability and stability layer:
