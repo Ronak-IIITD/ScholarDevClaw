@@ -1,0 +1,138 @@
+version: '3.8'
+
+services:
+  core-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.core
+      target: production
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - repos-data:/repos:ro
+      - logs-data:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=json
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - scholardevclaw-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      target: production
+    restart: unless-stopped
+    depends_on:
+      core-api:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - CORE_API_URL=http://core-api:8000
+      - OPENCLAW_TOKEN=${OPENCLAW_TOKEN}
+      - CONVEX_URL=${CONVEX_URL}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - agent-data:/app/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    networks:
+      - scholardevclaw-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - core-api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - scholardevclaw-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - scholardevclaw-network
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    networks:
+      - scholardevclaw-network
+
+networks:
+  scholardevclaw-network:
+    driver: bridge
+
+volumes:
+  repos-data:
+  logs-data:
+  agent-data:
+  prometheus-data:
+  grafana-data:
