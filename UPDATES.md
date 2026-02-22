@@ -2,7 +2,30 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-02-20
+**Last updated:** 2026-02-23
+
+### 2026-02-23
+- Added **Rollback Support** (P1 feature):
+  - **Rollback Module** (`core/src/scholardevclaw/rollback/`):
+    - `RollbackStore`: Persistent storage for rollback snapshots (~/.scholardevclaw/rollbacks/)
+    - `RollbackManager`: Manages snapshot creation, file change recording, and rollback execution
+    - `RollbackSnapshot`: Captures git state, file states, and change history
+    - Support for file modifications, creations, deletions, branch creations, and commit tracking
+  - **CLI Commands**:
+    - `scholardevclaw rollback list <repo>`: List all rollback snapshots
+    - `scholardevclaw rollback show <repo> --snapshot-id <id>`: View snapshot details
+    - `scholardevclaw rollback run <repo> [--snapshot-id <id>] [--force]`: Execute rollback
+    - `scholardevclaw rollback status <repo>`: Check current rollback state
+    - `scholardevclaw rollback delete <repo> --snapshot-id <id>`: Remove snapshot
+  - **Integration with Integrate Workflow**:
+    - Automatic snapshot creation before integration changes
+    - Snapshot marked as 'applied' after successful integration
+    - Rollback snapshot ID included in integration result payload
+  - **Unit Tests** (24 tests):
+    - RollbackStore tests (save, load, delete, list, cleanup)
+    - RollbackManager tests (create, record changes, rollback)
+    - Type serialization tests
+    - Convenience function tests
 
 ### 2026-02-20
 - Added production-ready features:
@@ -470,7 +493,7 @@ ScholarDevClaw is becoming a **research-to-engineering operating system**:
 - **Webhook triggers**: Trigger runs on git push, PR creation
 - **Auto-apply safe patches**: Low-risk changes auto-merged with config
 - **Batch processing**: Process multiple repos/specs in parallel
-- **Rollback support**: One-click revert of applied changes
+- ~~**Rollback support**: One-click revert of applied changes~~ ✅ Implemented 2026-02-23
 
 ### H) AI/ML Enhancements
 - **Fine-tuned models**: Domain-specific models for ML research
@@ -481,13 +504,13 @@ ScholarDevClaw is becoming a **research-to-engineering operating system**:
 
 ### I) Quick Wins (Lower Effort, High Impact)
 
-| Feature | Effort | Impact | Priority |
-|---------|--------|--------|----------|
-| GitHub App for PR reviews | Medium | High | P1 |
-| Bandit/Semgrep security integration | Low | High | P1 |
-| Slack/Discord notifications | Low | Medium | P2 |
-| Rollback support | Medium | High | P1 |
-| Benchmark suite | Medium | High | P2 |
-| VSCode extension | Medium | High | P2 |
-| Web UI dashboard | High | High | P3 |
-| SSO/SAML auth | High | Medium | P3 |
+| Feature | Effort | Impact | Priority | Status |
+|---------|--------|--------|----------|--------|
+| GitHub App for PR reviews | Medium | High | P1 | |
+| Bandit/Semgrep security integration | Low | High | P1 | |
+| Slack/Discord notifications | Low | Medium | P2 | |
+| Rollback support | Medium | High | P1 | ✅ Done |
+| Benchmark suite | Medium | High | P2 | |
+| VSCode extension | Medium | High | P2 | |
+| Web UI dashboard | High | High | P3 | |
+| SSO/SAML auth | High | Medium | P3 | |

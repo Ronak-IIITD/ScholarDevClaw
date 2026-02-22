@@ -838,6 +838,180 @@ def cmd_plugin(args):
             sys.exit(1)
 
 
+def cmd_rollback(args):
+    """Manage rollback snapshots and revert integrations"""
+    from scholardevclaw.rollback import (
+        RollbackManager,
+        RollbackStatus,
+        get_rollback_status,
+        list_rollback_snapshots,
+    )
+
+    manager = RollbackManager()
+
+    if args.rollback_action == "list":
+        status_filter = None
+        if args.status:
+            status_filter = RollbackStatus(args.status)
+
+        snapshots = list_rollback_snapshots(args.repo_path, status=status_filter)
+
+        if not snapshots:
+            print("No rollback snapshots found.")
+            return
+
+        print("Rollback Snapshots")
+        print("=" * 70)
+        print(f"{'ID':<30} {'Spec':<15} {'Status':<12} {'Changes':<8} {'Timestamp'}")
+        print("-" * 70)
+
+        for s in snapshots:
+            print(
+                f"{s['id']:<30} {s['spec']:<15} {s['status']:<12} {s['changes_count']:<8} {s['timestamp'][:19]}"
+            )
+
+        if args.output_json:
+            print(json.dumps(snapshots, indent=2))
+
+    elif args.rollback_action == "show":
+        if not args.snapshot_id:
+            print("Error: --snapshot-id is required for 'show' action", file=sys.stderr)
+            sys.exit(1)
+
+        snapshot = manager.get_snapshot(args.repo_path, args.snapshot_id)
+        if not snapshot:
+            print(f"Snapshot not found: {args.snapshot_id}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Rollback Snapshot: {snapshot.id}")
+        print("=" * 70)
+        print(f"  Spec: {snapshot.spec}")
+        print(f"  Status: {snapshot.status.value}")
+        print(f"  Timestamp: {snapshot.timestamp}")
+        print(f"  Description: {snapshot.description or 'N/A'}")
+
+        if snapshot.git_snapshot:
+            print(f"\nGit State:")
+            print(f"  Branch: {snapshot.git_snapshot.branch or 'N/A'}")
+            print(
+                f"  Commit: {snapshot.git_snapshot.commit_sha[:8] if snapshot.git_snapshot.commit_sha else 'N/A'}"
+            )
+            print(f"  Was clean: {snapshot.git_snapshot.is_clean}")
+            if snapshot.git_snapshot.created_branch:
+                print(f"  Created branch: {snapshot.git_snapshot.created_branch}")
+
+        if snapshot.changes:
+            print(f"\nChanges ({len(snapshot.changes)}):")
+            for change in snapshot.changes:
+                print(f"  • {change.change_type.value}: {change.path}")
+
+        if snapshot.rolled_back_at:
+            print(f"\nRolled back at: {snapshot.rolled_back_at}")
+
+        if args.output_json:
+            print(json.dumps(snapshot.to_dict(), indent=2))
+
+    elif args.rollback_action == "run":
+
+        def _log(line):
+            print(f"  • {line}")
+
+        result = manager.rollback(
+            args.repo_path,
+            args.snapshot_id,
+            force=args.force,
+            log_callback=_log,
+        )
+
+        print("\nRollback Result")
+        print("=" * 70)
+        print(f"  Status: {'SUCCESS' if result.ok else 'FAILED'}")
+        print(f"  Snapshot: {result.snapshot_id}")
+        print(f"  Changes reverted: {result.changes_reverted}")
+        print(f"  Files restored: {len(result.files_restored)}")
+
+        if result.files_restored:
+            print("\nRestored files:")
+            for f in result.files_restored[:10]:
+                print(f"  • {f}")
+
+        if result.branches_deleted:
+            print("\nDeleted branches:")
+            for b in result.branches_deleted:
+                print(f"  • {b}")
+
+        if result.error:
+            print(f"\nError: {result.error}")
+
+        if args.output_json:
+            print(
+                json.dumps(
+                    {
+                        "ok": result.ok,
+                        "snapshot_id": result.snapshot_id,
+                        "status": result.status.value,
+                        "changes_reverted": result.changes_reverted,
+                        "files_restored": result.files_restored,
+                        "branches_deleted": result.branches_deleted,
+                        "error": result.error,
+                    },
+                    indent=2,
+                )
+            )
+
+        if not result.ok:
+            sys.exit(1)
+
+    elif args.rollback_action == "status":
+        status_info = get_rollback_status(args.repo_path, args.snapshot_id)
+
+        if not status_info.get("found"):
+            print("No active rollback snapshot found.")
+            return
+
+        print("Rollback Status")
+        print("=" * 70)
+        print(f"  Snapshot ID: {status_info['id']}")
+        print(f"  Spec: {status_info['spec']}")
+        print(f"  Status: {status_info['status']}")
+        print(f"  Timestamp: {status_info['timestamp']}")
+        print(f"  Description: {status_info.get('description', 'N/A')}")
+        print(f"  Changes: {status_info['changes_count']}")
+
+        if status_info.get("git_branch"):
+            print(f"  Git branch: {status_info['git_branch']}")
+
+        if status_info.get("rolled_back_at"):
+            print(f"  Rolled back at: {status_info['rolled_back_at']}")
+
+        if args.output_json:
+            print(json.dumps(status_info, indent=2))
+
+    elif args.rollback_action == "delete":
+        if not args.snapshot_id:
+            print("Error: --snapshot-id is required for 'delete' action", file=sys.stderr)
+            sys.exit(1)
+
+        snapshot = manager.get_snapshot(args.repo_path, args.snapshot_id)
+        if not snapshot:
+            print(f"Snapshot not found: {args.snapshot_id}", file=sys.stderr)
+            sys.exit(1)
+
+        if snapshot.status == RollbackStatus.APPLIED:
+            print(f"Warning: Snapshot '{args.snapshot_id}' is in 'applied' state.")
+            print("  Consider running 'rollback run' first to revert the changes.")
+            if not args.force:
+                print("  Use --force to delete anyway.")
+                sys.exit(1)
+
+        deleted = manager.delete_snapshot(args.repo_path, args.snapshot_id)
+        if deleted:
+            print(f"Deleted snapshot: {args.snapshot_id}")
+        else:
+            print(f"Failed to delete snapshot: {args.snapshot_id}", file=sys.stderr)
+            sys.exit(1)
+
+
 def cmd_demo(args):
     """Run demo with nanoGPT"""
     # Find project root
@@ -1077,6 +1251,25 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "--plugin-type", choices=["analyzer", "spec_provider", "validator", "custom"]
     )
 
+    # rollback
+    p_rollback = subparsers.add_parser(
+        "rollback", help="Manage rollback snapshots and revert integrations"
+    )
+    p_rollback.add_argument(
+        "rollback_action",
+        choices=["list", "show", "run", "status", "delete"],
+        help="Action to perform",
+    )
+    p_rollback.add_argument("repo_path", nargs="?", help="Path to repository")
+    p_rollback.add_argument("--snapshot-id", help="Snapshot ID to show/run/delete")
+    p_rollback.add_argument(
+        "--status",
+        choices=["pending", "applied", "rolled_back", "failed", "partial"],
+        help="Filter by status (for list)",
+    )
+    p_rollback.add_argument("--force", action="store_true", help="Force rollback/delete")
+    p_rollback.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -1104,6 +1297,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "context": cmd_context,
         "experiment": cmd_experiment,
         "plugin": cmd_plugin,
+        "rollback": cmd_rollback,
         "demo": cmd_demo,
     }
 

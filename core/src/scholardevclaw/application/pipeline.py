@@ -676,12 +676,14 @@ def run_integrate(
     dry_run: bool = False,
     require_clean: bool = False,
     output_dir: str | None = None,
+    create_rollback: bool = True,
     log_callback: LogCallback | None = None,
 ) -> PipelineResult:
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
     logs: list[str] = []
+    rollback_snapshot_id: str | None = None
     _log(logs, f"Starting integration workflow for repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
@@ -750,6 +752,19 @@ def run_integrate(
         )
         _log(logs, f"Mapping: {len(mapping_result.get('targets', []))} targets", log_callback)
 
+        if create_rollback and not dry_run:
+            from scholardevclaw.rollback import RollbackManager
+
+            rollback_manager = RollbackManager()
+            rollback_snapshot = rollback_manager.create_snapshot(
+                str(path),
+                selected_spec_name,
+                description=f"Pre-integration snapshot for {selected_spec_name}",
+                log_callback=log_callback,
+            )
+            rollback_snapshot_id = rollback_snapshot.id
+            _log(logs, f"Created rollback snapshot: {rollback_snapshot_id}", log_callback)
+
         if dry_run:
             _log(logs, "Dry run enabled: skipping patch generation and validation", log_callback)
             payload = with_meta(
@@ -810,9 +825,17 @@ def run_integrate(
                 "mapping": mapping_result,
                 "generation": generate_result.payload,
                 "validation": validate_result.payload,
+                "rollback_snapshot_id": rollback_snapshot_id,
             },
             "integration",
         )
+
+        if rollback_snapshot_id and validate_result.ok:
+            from scholardevclaw.rollback import RollbackManager
+
+            rollback_manager = RollbackManager()
+            rollback_manager.mark_applied(str(path), rollback_snapshot_id)
+            _log(logs, f"Marked rollback snapshot as applied: {rollback_snapshot_id}", log_callback)
 
         return PipelineResult(
             ok=validate_result.ok,
