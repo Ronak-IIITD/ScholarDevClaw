@@ -1,0 +1,27 @@
+{
+  "name": "ScholarDevClaw",
+  "url": "https://github.com/apps/scholardevclaw",
+  "description": "AI-powered research-to-code integration for your repositories",
+  "hook_attributes": {
+    "url": "https://your-server.com/webhook",
+    "active": true,
+    "events": [
+      "pull_request",
+      "push",
+      "check_run",
+      "check_suite",
+      "issue_comment"
+    ]
+  },
+  "permissions": {
+    "contents": "write",
+    "issues": "write",
+    "pull_requests": "write",
+    "statuses": "write",
+    "checks": "write",
+    "members": "read",
+    "metadata": "read"
+  },
+  "oauth_callback_url": "https://your-server.com/oauth/callback",
+  "redirect_url": "https://your-server.com/install"
+}

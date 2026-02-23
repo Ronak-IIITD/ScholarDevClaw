@@ -21,11 +21,34 @@
     - Automatic snapshot creation before integration changes
     - Snapshot marked as 'applied' after successful integration
     - Rollback snapshot ID included in integration result payload
-  - **Unit Tests** (24 tests):
-    - RollbackStore tests (save, load, delete, list, cleanup)
-    - RollbackManager tests (create, record changes, rollback)
-    - Type serialization tests
-    - Convenience function tests
+  - **Unit Tests** (24 tests): All passing
+
+- Added **GitHub App for PR Reviews** (P1 feature):
+  - **GitHub App Module** (`core/src/scholardevclaw/github_app/`):
+    - `GitHubAppClient`: JWT-based authentication, installation tokens, full GitHub API support
+    - `WebhookHandler`: Processes PR events, runs integrations, posts results
+    - `create_app()` / `create_router()`: FastAPI integration
+    - `manifest.json`: GitHub App manifest for easy setup
+  - **Features**:
+    - Automatic analysis on PR open/reopen/update
+    - Check Run status updates (queued → in_progress → completed)
+    - PR comments with validation results, speedup metrics, change summaries
+    - Support for custom integration handlers
+    - Configurable auto-apply and approval requirements
+  - **CLI Commands**:
+    - `scholardevclaw github-app setup`: Show setup instructions
+    - `scholardevclaw github-app manifest [--server-url URL]`: Generate app manifest
+    - `scholardevclaw github-app server [--port PORT]`: Start webhook server
+    - `scholardevclaw github-app status`: Check configuration status
+    - `scholardevclaw github-app test-webhook`: Test webhook signature
+  - **Environment Variables**:
+    - `GITHUB_APP_ID`: App ID from GitHub
+    - `GITHUB_APP_PRIVATE_KEY`: Path to private key PEM file
+    - `GITHUB_APP_WEBHOOK_SECRET`: Webhook secret
+    - `GITHUB_APP_REPOS`: Comma-separated allowed repos
+    - `GITHUB_APP_AUTO_APPLY`: Auto-apply safe patches
+    - `GITHUB_APP_REQUIRE_APPROVAL`: Require approval before apply
+  - **Unit Tests** (16 tests): All passing
 
 ### 2026-02-20
 - Added production-ready features:
@@ -506,7 +529,7 @@ ScholarDevClaw is becoming a **research-to-engineering operating system**:
 
 | Feature | Effort | Impact | Priority | Status |
 |---------|--------|--------|----------|--------|
-| GitHub App for PR reviews | Medium | High | P1 | |
+| GitHub App for PR reviews | Medium | High | P1 | ✅ Done |
 | Bandit/Semgrep security integration | Low | High | P1 | |
 | Slack/Discord notifications | Low | Medium | P2 | |
 | Rollback support | Medium | High | P1 | ✅ Done |

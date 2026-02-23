@@ -1093,6 +1093,133 @@ def cmd_demo(args):
     print("\nYour repository is ready for research-driven improvements.")
 
 
+def cmd_github_app(args):
+    """Manage GitHub App and webhooks"""
+    from scholardevclaw.github_app import GitHubAppClient, create_app
+    from scholardevclaw.github_app.types import GitHubAppConfig
+
+    if args.github_action == "setup":
+        print("GitHub App Setup")
+        print("=" * 50)
+
+        config = GitHubAppConfig.from_env()
+
+        if config.is_configured():
+            print("GitHub App is already configured!")
+            print(f"  App ID: {config.app_id}")
+            if config.allowed_repositories:
+                print(f"  Allowed repos: {', '.join(config.allowed_repositories)}")
+            print("\nTo update configuration, set environment variables:")
+            print("  GITHUB_APP_ID")
+            print("  GITHUB_APP_PRIVATE_KEY")
+            print("  GITHUB_APP_WEBHOOK_SECRET")
+        else:
+            print("GitHub App is not configured.")
+            print("\nTo configure, set these environment variables:")
+            print("  GITHUB_APP_ID=your_app_id")
+            print("  GITHUB_APP_PRIVATE_KEY=/path/to/private-key.pem")
+            print("  GITHUB_APP_WEBHOOK_SECRET=your_webhook_secret")
+            print("\nThen create a GitHub App using the manifest:")
+            print("  scholardevclaw github-app manifest")
+
+    elif args.github_action == "manifest":
+        from pathlib import Path
+
+        manifest_path = Path(__file__).parent.parent / "github_app" / "manifest.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+            if args.server_url:
+                manifest["hook_attributes"]["url"] = f"{args.server_url}/webhook"
+
+            print("GitHub App Manifest")
+            print("=" * 50)
+            print(json.dumps(manifest, indent=2))
+            print("\nTo create the GitHub App:")
+            print("1. Go to https://github.com/settings/apps/new")
+            print("2. Paste the manifest JSON above")
+            print("3. Install the app on your repositories")
+        else:
+            print("Manifest file not found", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.github_action == "server":
+        config = GitHubAppConfig.from_env()
+
+        if not config.is_configured():
+            print("Error: GitHub App is not configured", file=sys.stderr)
+            print("Run 'scholardevclaw github-app setup' for instructions")
+            sys.exit(1)
+
+        print(f"Starting GitHub App webhook server on port {args.port}...")
+        print("Press Ctrl+C to stop")
+
+        import uvicorn
+
+        app = create_app(config)
+        uvicorn.run(app, host="0.0.0.0", port=args.port)
+
+    elif args.github_action == "status":
+        config = GitHubAppConfig.from_env()
+
+        print("GitHub App Status")
+        print("=" * 50)
+        print(f"Configured: {'Yes' if config.is_configured() else 'No'}")
+
+        if config.is_configured():
+            print(f"App ID: {config.app_id}")
+            print(f"Auto-apply safe patches: {config.auto_apply_safe_patches}")
+            print(f"Require approval: {config.require_approval}")
+            print(f"Notify on complete: {config.notify_on_complete}")
+
+            if config.allowed_repositories:
+                print(f"Allowed repositories: {', '.join(config.allowed_repositories)}")
+
+            client = GitHubAppClient(config)
+            print(f"\nWebhook endpoint: /webhook")
+            print(f"Health check: /health")
+
+        if args.output_json:
+            print(
+                json.dumps(
+                    {
+                        "configured": config.is_configured(),
+                        "app_id": config.app_id,
+                        "auto_apply": config.auto_apply_safe_patches,
+                        "require_approval": config.require_approval,
+                        "allowed_repos": config.allowed_repositories,
+                    },
+                    indent=2,
+                )
+            )
+
+    elif args.github_action == "test-webhook":
+        config = GitHubAppConfig.from_env()
+
+        if not config.is_configured():
+            print("Error: GitHub App is not configured", file=sys.stderr)
+            sys.exit(1)
+
+        print("Testing webhook signature verification...")
+
+        import hmac
+        import hashlib
+
+        test_payload = b'{"action": "opened", "repository": {"name": "test"}}'
+        signature = (
+            "sha256="
+            + hmac.new(config.webhook_secret.encode(), test_payload, hashlib.sha256).hexdigest()
+        )
+
+        client = GitHubAppClient(config)
+        is_valid = client.verify_webhook_signature(test_payload, signature)
+
+        if is_valid:
+            print("✓ Webhook signature verification working!")
+        else:
+            print("✗ Webhook signature verification failed!")
+            sys.exit(1)
+
+
 def cmd_tui(args):
     """Launch interactive terminal UI (wizard mode)"""
     try:
@@ -1270,6 +1397,17 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_rollback.add_argument("--force", action="store_true", help="Force rollback/delete")
     p_rollback.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # github-app
+    p_github = subparsers.add_parser("github-app", help="Manage GitHub App and webhooks")
+    p_github.add_argument(
+        "github_action",
+        choices=["setup", "server", "status", "test-webhook", "manifest"],
+        help="Action to perform",
+    )
+    p_github.add_argument("--server-url", help="Server URL for webhook (for setup)")
+    p_github.add_argument("--port", type=int, default=8000, help="Server port (for server)")
+    p_github.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -1298,6 +1436,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "experiment": cmd_experiment,
         "plugin": cmd_plugin,
         "rollback": cmd_rollback,
+        "github-app": cmd_github_app,
         "demo": cmd_demo,
     }
 
