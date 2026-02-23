@@ -1220,6 +1220,63 @@ def cmd_github_app(args):
             sys.exit(1)
 
 
+def cmd_security(args):
+    """Run security scans on repository"""
+    from scholardevclaw.security import SecurityScanner, Severity
+
+    print(f"Running security scan on: {args.repo_path}")
+    print("=" * 50)
+
+    scanner = SecurityScanner()
+
+    availability = scanner.is_available()
+    if args.security_action == "check":
+        print("Security Scanner Availability")
+        print("-" * 50)
+        print(f"Bandit (Python):  {'✓ Available' if availability['bandit'] else '✗ Not installed'}")
+        print(
+            f"Semgrep (Multi):  {'✓ Available' if availability['semgrep'] else '✗ Not installed'}"
+        )
+
+        if args.output_json:
+            print(json.dumps(availability, indent=2))
+        return
+
+    tools = None
+    if args.tools:
+        tools = args.tools.split(",")
+        print(f"Running tools: {', '.join(tools)}")
+    else:
+        print("Running all available tools...")
+
+    result = scanner.scan(args.repo_path, tools=tools)
+
+    print(f"\nSecurity Scan Results")
+    print("=" * 50)
+    print(f"Status: {'✓ PASSED' if result.passed else '✗ FAILED'}")
+
+    for scan in result.scans:
+        print(f"\n{scan.tool.value.upper()}:")
+        print(f"  Scan time: {scan.scan_time_seconds:.2f}s")
+        print(f"  Findings: {len(scan.findings)}")
+        print(f"    High:   {scan.high_severity_count}")
+        print(f"    Medium: {scan.medium_severity_count}")
+        print(f"    Low:    {scan.low_severity_count}")
+
+        if scan.findings and args.verbose:
+            print("\n  Top findings:")
+            for f in scan.findings[:5]:
+                print(
+                    f"    [{f.severity.value.upper()}] {f.file_path}:{f.line_number or '?'} - {f.message[:60]}..."
+                )
+
+    if args.output_json:
+        print(json.dumps(result.to_dict(), indent=2))
+
+    if not result.passed:
+        sys.exit(1)
+
+
 def cmd_tui(args):
     """Launch interactive terminal UI (wizard mode)"""
     try:
@@ -1408,6 +1465,23 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_github.add_argument("--port", type=int, default=8000, help="Server port (for server)")
     p_github.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # security
+    p_security = subparsers.add_parser("security", help="Run security scans")
+    p_security.add_argument("repo_path", help="Path to repository")
+    p_security.add_argument(
+        "security_action",
+        nargs="?",
+        default="scan",
+        choices=["scan", "check"],
+        help="Action: scan or check tool availability",
+    )
+    p_security.add_argument(
+        "--tools",
+        help="Comma-separated tools to run (bandit,semgrep)",
+    )
+    p_security.add_argument("--verbose", "-v", action="store_true", help="Show detailed findings")
+    p_security.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -1437,6 +1511,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "plugin": cmd_plugin,
         "rollback": cmd_rollback,
         "github-app": cmd_github_app,
+        "security": cmd_security,
         "demo": cmd_demo,
     }
 

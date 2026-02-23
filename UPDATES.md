@@ -50,6 +50,28 @@
     - `GITHUB_APP_REQUIRE_APPROVAL`: Require approval before apply
   - **Unit Tests** (16 tests): All passing
 
+- Added **Security Scanning** (P1 feature):
+  - **Security Module** (`core/src/scholardevclaw/security/`):
+    - `BanditScanner`: Python-specific security scanning
+    - `SemgrepScanner`: Multi-language security scanning
+    - `SecurityScanner`: Unified scanner combining both tools
+  - **Features**:
+    - Bandit: Detects Python-specific security issues (eval, assert, hardcoded credentials, etc.)
+    - Semgrep: Multi-language scanning (JavaScript, Java, Go, Rust, etc.)
+    - CWE mapping for findings
+    - Severity levels: HIGH, MEDIUM, LOW, INFO
+    - Configurable exclude patterns
+    - JSON output with detailed findings
+  - **CLI Commands**:
+    - `scholardevclaw security <repo>`: Run full security scan
+    - `scholardevclaw security <repo> check`: Check tool availability
+    - `scholardevclaw security <repo> --tools bandit,semgrep`: Run specific tools
+    - `scholardevclaw security <repo> -v`: Verbose output with findings
+  - **Optional Dependencies**:
+    - Install with: `pip install -e ".[security]"`
+    - Installs: bandit>=1.7.0, semgrep>=1.0.0
+  - **Unit Tests** (11 tests): All passing
+
 ### 2026-02-20
 - Added production-ready features:
   - **Prometheus Metrics Collection** (41 tests):
@@ -530,7 +552,7 @@ ScholarDevClaw is becoming a **research-to-engineering operating system**:
 | Feature | Effort | Impact | Priority | Status |
 |---------|--------|--------|----------|--------|
 | GitHub App for PR reviews | Medium | High | P1 | ✅ Done |
-| Bandit/Semgrep security integration | Low | High | P1 | |
+| Bandit/Semgrep security integration | Low | High | P1 | ✅ Done |
 | Slack/Discord notifications | Low | Medium | P2 | |
 | Rollback support | Medium | High | P1 | ✅ Done |
 | Benchmark suite | Medium | High | P2 | |
