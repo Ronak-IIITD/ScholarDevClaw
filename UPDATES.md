@@ -101,6 +101,16 @@
     - Creates launcher script
     - Adds to PATH
 
+- Added **Real-time Streaming Agent**:
+  - `StreamingAgentEngine`: Event-based streaming for real-time UI updates
+  - `StreamEvent`: Progress, output, error, suggestion events
+  - All commands now stream in real-time:
+    - `[progress] 📊 Analyzing...`
+    - `[output] ✅ Found 5 languages`
+    - `[suggestion] 💡 Try: integrate rmsnorm`
+  - Async generator-based streaming for non-blocking output
+  - Better UX with immediate feedback
+
 ### 2026-02-20
 - Added production-ready features:
   - **Prometheus Metrics Collection** (41 tests):

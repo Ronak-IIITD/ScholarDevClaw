@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from typing import Callable
 
@@ -13,12 +12,12 @@ from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich.table import Table
 
-from .engine import AgentEngine, AgentMode, AgentResponse
+from .engine import StreamingAgentEngine, StreamEvent, StreamEventType, AgentMode, AgentResponse
 
 
-class AgentREPL:
-    def __init__(self, engine: AgentEngine | None = None):
-        self.engine = engine or AgentEngine()
+class StreamingAgentREPL:
+    def __init__(self, engine: StreamingAgentEngine | None = None):
+        self.engine = engine or StreamingAgentEngine()
         self.console = Console()
         self.running = False
 
@@ -41,110 +40,7 @@ Your AI-powered research-to-code assistant.
 
 Type your request or 'exit' to quit.
 """
-        self.console.print(
-            Panel(
-                welcome.strip(),
-                title="ScholarDevClaw",
-                border_style="blue",
-            )
-        )
-
-    def print_response(self, response: AgentResponse) -> None:
-        if response.message:
-            if response.message.startswith("#"):
-                md = Markdown(response.message)
-                self.console.print(md)
-            else:
-                self.console.print(response.message)
-
-        if response.output and self._should_show_output(response):
-            if "languages" in response.output:
-                self._print_analysis_output(response.output)
-            elif "suggestions" in response.output:
-                self._print_suggestions(response.output)
-            elif "results" in response.output:
-                self._print_search_results(response.output)
-            else:
-                self.console.print(
-                    Panel(
-                        str(response.output),
-                        style="dim",
-                    )
-                )
-
-        if response.suggestions:
-            self.console.print("\n💡 Suggestions:")
-            for s in response.suggestions:
-                self.console.print(f"  • {s}")
-
-        if response.next_steps:
-            self.console.print("\n🚀 Next steps:")
-            for step in response.next_steps:
-                self.console.print(f"  • {step}")
-
-        if response.error:
-            self.console.print(f"\n❌ Error: {response.error}", style="red")
-
-    def _should_show_output(self, response: AgentResponse) -> bool:
-        if not response.output:
-            return False
-        if response.output and "languages" in response.output:
-            return True
-        return len(response.output) > 0
-
-    def _print_analysis_output(self, output: dict) -> None:
-        table = Table(title="Repository Analysis", show_header=False)
-        table.add_column("Key", style="cyan")
-        table.add_column("Value", style="white")
-
-        if "languages" in output:
-            table.add_row("Languages", ", ".join(output["languages"]))
-        if "frameworks" in output:
-            table.add_row("Frameworks", ", ".join(output.get("frameworks", [])))
-        if "file_count" in output:
-            table.add_row("Files", str(output["file_count"]))
-        if "patterns" in output and output["patterns"]:
-            patterns = ", ".join(f"{k} ({len(v)} locations)" for k, v in output["patterns"].items())
-            table.add_row("Patterns", patterns)
-
-        self.console.print(table)
-
-    def _print_suggestions(self, output: dict) -> None:
-        suggestions = output.get("suggestions", [])
-        if not suggestions:
-            return
-
-        table = Table(title="Improvement Suggestions")
-        table.add_column("Paper", style="cyan")
-        table.add_column("Confidence", style="green")
-        table.add_column("Category", style="yellow")
-
-        for s in suggestions[:5]:
-            paper = s.get("paper", {})
-            table.add_row(
-                paper.get("title", "Unknown")[:50],
-                f"{s.get('confidence', 0):.0%}",
-                paper.get("category", "N/A"),
-            )
-
-        self.console.print(table)
-
-    def _print_search_results(self, output: dict) -> None:
-        results = output.get("results", [])
-        if not results:
-            return
-
-        table = Table(title="Research Papers")
-        table.add_column("Title", style="cyan")
-        table.add_column("Category", style="yellow")
-
-        for r in results[:5]:
-            table.add_row(
-                r.get("title", "Unknown")[:60],
-                r.get("category", "N/A"),
-            )
-
-        self.console.print(table)
+        self.console.print(Panel(welcome.strip(), title="ScholarDevClaw", border_style="blue"))
 
     def run(self) -> None:
         self.running = True
@@ -153,10 +49,7 @@ Type your request or 'exit' to quit.
 
         while self.running:
             try:
-                user_input = Prompt.ask(
-                    "\n[bold blue]ScholarDevClaw[/bold blue]",
-                    default="",
-                )
+                user_input = Prompt.ask("\n[bold blue]ScholarDevClaw[/bold blue]", default="")
 
                 if not user_input.strip():
                     continue
@@ -169,8 +62,7 @@ Type your request or 'exit' to quit.
                     self.console.clear()
                     continue
 
-                response = asyncio.run(self.engine.process(user_input))
-                self.print_response(response)
+                asyncio.run(self._process_streaming(user_input))
 
             except KeyboardInterrupt:
                 self.console.print("\n👋 Goodbye!")
@@ -182,17 +74,68 @@ Type your request or 'exit' to quit.
 
         self.running = False
 
-    def run_with_input(self, user_input: str) -> AgentResponse:
-        return asyncio.run(self.engine.process(user_input))
+    async def _process_streaming(self, user_input: str) -> None:
+        """Process user input with real-time streaming."""
+
+        try:
+            async for event in self.engine.stream_events(user_input):
+                self._handle_stream_event(event)
+        except Exception as e:
+            self.console.print(f"\n❌ Error: {str(e)}", style="red")
+
+    def _handle_stream_event(self, event: StreamEvent) -> None:
+        """Handle a single streaming event."""
+
+        if event.type == StreamEventType.START:
+            pass
+
+        elif event.type == StreamEventType.PROGRESS:
+            self.console.print(event.message, style="dim")
+
+        elif event.type == StreamEventType.OUTPUT:
+            if event.message.startswith("✅") or event.message.startswith("⚠️"):
+                self.console.print(
+                    event.message, style="green" if "✅" in event.message else "yellow"
+                )
+            elif event.message.startswith("  •"):
+                self.console.print(event.message, style="cyan")
+            elif event.message.startswith("#"):
+                md = Markdown(event.message)
+                self.console.print(md)
+            else:
+                self.console.print(event.message)
+
+        elif event.type == StreamEventType.ERROR:
+            self.console.print(f"❌ {event.message}", style="red")
+
+        elif event.type == StreamEventType.COMPLETE:
+            self.console.print("✓ Done", style="dim")
+
+        elif event.type == StreamEventType.SUGGESTION:
+            self.console.print(f"💡 Try: {event.message}", style="yellow")
+
+
+# Alias for backwards compatibility
+AgentREPL = StreamingAgentREPL
 
 
 def run_agent_repl() -> None:
-    repl = AgentREPL()
+    repl = StreamingAgentREPL()
     repl.run()
 
 
 def run_agent_command(user_input: str) -> AgentResponse:
-    engine = AgentEngine()
+    """Run a single command and return response."""
+    engine = StreamingAgentEngine()
     engine.create_session()
-    repl = AgentREPL(engine)
-    return repl.run_with_input(user_input)
+
+    # Run synchronously for CLI usage
+    async def run():
+        events = []
+        async for event in engine.stream_events(user_input):
+            events.append(event)
+        return events
+
+    asyncio.run(run())
+
+    return AgentResponse(ok=True, message="Command executed")

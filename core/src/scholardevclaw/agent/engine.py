@@ -2,18 +2,36 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, AsyncGenerator
 
 
 class AgentMode(str, Enum):
     INTERACTIVE = "interactive"
     STREAMING = "streaming"
     BACKGROUND = "background"
+
+
+class StreamEventType(str, Enum):
+    START = "start"
+    PROGRESS = "progress"
+    OUTPUT = "output"
+    ERROR = "error"
+    COMPLETE = "complete"
+    SUGGESTION = "suggestion"
+
+
+@dataclass
+class StreamEvent:
+    type: StreamEventType
+    message: str
+    data: dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass
@@ -64,7 +82,7 @@ class AgentSession:
         }
 
 
-class AgentEngine:
+class StreamingAgentEngine:
     def __init__(self):
         self.sessions: dict[str, AgentSession] = {}
         self.current_session: AgentSession | None = None
@@ -97,6 +115,415 @@ class AgentEngine:
         self.current_session.repo_path = str(path)
         return True
 
+    async def stream_events(
+        self,
+        user_input: str,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """Generator that yields streaming events for real-time UI updates."""
+
+        if not self.current_session:
+            self.create_session()
+
+        session = self.current_session
+        if session:
+            session.add_message("user", user_input)
+
+        # Emit start event
+        yield StreamEvent(
+            type=StreamEventType.START,
+            message="Processing your request...",
+            data={"user_input": user_input},
+        )
+
+        try:
+            command = self._parse_command(user_input)
+
+            if not command:
+                # Handle as natural language
+                async for event in self._handle_nl_streaming(user_input):
+                    yield event
+                return
+
+            action = command["action"]
+            target = command.get("target")
+
+            # Emit command start
+            yield StreamEvent(
+                type=StreamEventType.PROGRESS,
+                message=f"Executing: {action}",
+                data={"action": action, "target": target},
+            )
+
+            # Execute based on action
+            if action == "analyze":
+                async for event in self._stream_analyze(target):
+                    yield event
+            elif action == "integrate":
+                async for event in self._stream_integrate(target):
+                    yield event
+            elif action == "search":
+                async for event in self._stream_search(target or ""):
+                    yield event
+            elif action == "suggest":
+                async for event in self._stream_suggest():
+                    yield event
+            elif action == "validate":
+                async for event in self._stream_validate():
+                    yield event
+            elif action == "security":
+                async for event in self._stream_security(target):
+                    yield event
+            elif action == "help":
+                for event in self._stream_help():
+                    yield event
+            else:
+                yield StreamEvent(
+                    type=StreamEventType.ERROR,
+                    message=f"Unknown command: {action}",
+                )
+
+        except Exception as e:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=str(e),
+                data={"exception": type(e).__name__},
+            )
+
+    async def _stream_analyze(self, repo_path: str | None) -> AsyncGenerator[StreamEvent, None]:
+        from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+
+        if not repo_path:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message="No repository path provided",
+            )
+            return
+
+        path = Path(repo_path).expanduser().resolve()
+
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message=f"📊 Analyzing {path.name}...",
+            data={"path": str(path)},
+        )
+
+        # Simulate some progress
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message="🔍 Scanning files...",
+        )
+
+        try:
+            analyzer = TreeSitterAnalyzer(path)
+            result = analyzer.analyze()
+
+            if self.current_session:
+                self.current_session.add_message(
+                    "assistant", f"Analyzed {path}", {"action": "analyze"}
+                )
+
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=f"✅ Found {len(result.languages)} languages",
+                data={
+                    "languages": result.languages,
+                    "frameworks": result.frameworks,
+                    "file_count": sum(s.file_count for s in result.language_stats),
+                },
+            )
+
+            if result.frameworks:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=f"🔧 Frameworks: {', '.join(result.frameworks)}",
+                )
+
+            # Suggestions
+            yield StreamEvent(
+                type=StreamEventType.SUGGESTION,
+                message="suggest - Get improvement suggestions",
+            )
+            yield StreamEvent(
+                type=StreamEventType.SUGGESTION,
+                message="integrate rmsnorm - Apply RMSNorm optimization",
+            )
+
+        except Exception as e:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=f"Analysis failed: {str(e)}",
+            )
+
+    async def _stream_integrate(self, spec: str | None) -> AsyncGenerator[StreamEvent, None]:
+        from scholardevclaw.application.pipeline import run_integrate
+
+        if not self.current_session or not self.current_session.repo_path:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message="No repository set. Run 'analyze <path>' first.",
+            )
+            return
+
+        if not spec:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message="No spec provided. Use: integrate <rmsnorm|swiglu|flashattention>",
+            )
+            return
+
+        repo_path = self.current_session.repo_path
+
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message=f"🚀 Integrating {spec} into {Path(repo_path).name}...",
+        )
+        yield StreamEvent(type=StreamEventType.PROGRESS, message="📝 Generating patch...")
+
+        try:
+            result = await asyncio.to_thread(run_integrate, repo_path, spec)
+
+            if self.current_session:
+                self.current_session.add_message(
+                    "assistant", f"Integrated {spec}", {"action": "integrate", "spec": spec}
+                )
+
+            if result.ok:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=f"✅ Successfully integrated {spec}!",
+                )
+                yield StreamEvent(
+                    type=StreamEventType.SUGGESTION,
+                    message="validate - Test the changes",
+                )
+            else:
+                yield StreamEvent(
+                    type=StreamEventType.ERROR,
+                    message=f"Integration failed: {result.error}",
+                )
+
+        except Exception as e:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=f"Integration error: {str(e)}",
+            )
+
+    async def _stream_search(self, query: str) -> AsyncGenerator[StreamEvent, None]:
+        from scholardevclaw.research_intelligence.extractor import ResearchExtractor
+
+        if not query:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message="No search query provided",
+            )
+            return
+
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message=f"🔍 Searching for: {query}",
+        )
+
+        try:
+            extractor = ResearchExtractor()
+            results = extractor.search_by_keyword(query, max_results=5)
+
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=f"Found {len(results)} results",
+                data={"results": results},
+            )
+
+            for r in results:
+                yield StreamEvent(type=StreamEventType.OUTPUT, message=f"  • {r['title']}", data=r)
+
+            if results:
+                spec_name = results[0].get("name", "rmsnorm")
+                yield StreamEvent(
+                    type=StreamEventType.SUGGESTION,
+                    message=f"integrate {spec_name}",
+                )
+
+        except Exception as e:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=f"Search failed: {str(e)}",
+            )
+
+    async def _stream_suggest(self) -> AsyncGenerator[StreamEvent, None]:
+        from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+
+        if not self.current_session or not self.current_session.repo_path:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message="No repository set. Run 'analyze <path>' first.",
+            )
+            return
+
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message="💡 Analyzing for improvements...",
+        )
+
+        try:
+            analyzer = TreeSitterAnalyzer(Path(self.current_session.repo_path))
+            suggestions = analyzer.suggest_research_papers()
+
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=f"Found {len(suggestions)} improvement opportunities",
+            )
+
+            for s in suggestions[:3]:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=f"  • {s['paper']['title']} ({s['confidence']:.0%})",
+                    data=s,
+                )
+                yield StreamEvent(
+                    type=StreamEventType.SUGGESTION,
+                    message=f"integrate {s['paper']['name']}",
+                )
+
+        except Exception as e:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=f"Suggestion failed: {str(e)}",
+            )
+
+    async def _stream_validate(self) -> AsyncGenerator[StreamEvent, None]:
+        from scholardevclaw.application.pipeline import run_validate
+
+        if not self.current_session or not self.current_session.repo_path:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message="No repository set",
+            )
+            return
+
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message="🧪 Running validation tests...",
+        )
+
+        try:
+            result = await asyncio.to_thread(run_validate, self.current_session.repo_path)
+
+            if result.ok:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message="✅ Validation passed!",
+                )
+            else:
+                yield StreamEvent(
+                    type=StreamEventType.ERROR,
+                    message=f"❌ Validation failed: {result.error}",
+                )
+
+        except Exception as e:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=f"Validation error: {str(e)}",
+            )
+
+    async def _stream_security(self, repo_path: str | None) -> AsyncGenerator[StreamEvent, None]:
+        from scholardevclaw.security import SecurityScanner
+
+        target_path = repo_path or (
+            self.current_session.repo_path if self.current_session else None
+        )
+
+        if not target_path:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message="No repository set",
+            )
+            return
+
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message="🔒 Running security scan...",
+        )
+
+        try:
+            scanner = SecurityScanner()
+            result = scanner.scan(target_path)
+
+            if result.passed:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message="✅ Security scan passed - no issues found!",
+                )
+            else:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=f"⚠️ Found {result.total_findings} issues",
+                )
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=f"   High: {result.high_severity_count}, Medium: {result.medium_severity_count}, Low: {result.low_severity_count}",
+                )
+
+        except Exception as e:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=f"Security scan error: {str(e)}",
+            )
+
+    def _stream_help(self) -> list[StreamEvent]:
+        help_text = """
+📖 **ScholarDevClaw Commands**
+
+**analyze <path>** - Analyze a repository
+**integrate <spec>** - Apply research improvement
+  - rmsnorm, swiglu, flashattention, rope
+
+**suggest** - Get AI improvement suggestions
+**search <query>** - Search research papers
+
+**validate** - Run validation tests
+**security** - Run security scan
+
+**help** - Show this message
+"""
+        return [
+            StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=help_text.strip(),
+            ),
+            StreamEvent(
+                type=StreamEventType.SUGGESTION,
+                message="analyze ./my-project",
+            ),
+        ]
+
+    async def _handle_nl_streaming(self, user_input: str) -> AsyncGenerator[StreamEvent, None]:
+        user_lower = user_input.lower()
+
+        if any(word in user_lower for word in ["hello", "hi", "hey", "start"]):
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message="""👋 Hello! I'm ScholarDevClaw.
+
+I can help you:
+• Analyze repositories: analyze ./my-project
+• Apply improvements: integrate rmsnorm
+• Find research: search normalization
+• Get suggestions: suggest
+
+What would you like to do?""",
+            )
+            return
+
+        yield StreamEvent(
+            type=StreamEventType.ERROR,
+            message="I didn't understand that. Try 'help' for available commands.",
+        )
+        yield StreamEvent(
+            type=StreamEventType.SUGGESTION,
+            message="help",
+        )
+
+    # Keep old methods for compatibility
     async def process(
         self,
         user_input: str,
@@ -107,50 +534,24 @@ class AgentEngine:
         if not self.current_session:
             self.create_session()
 
-        # Type narrowing - current_session is guaranteed to exist after create_session
         session = self.current_session
         if session:
             session.add_message("user", user_input)
 
         try:
-            if mode == AgentMode.STREAMING and stream_callback:
-                return await self._process_streaming(user_input, stream_callback)
+            command = self._parse_command(user_input)
+
+            if command:
+                result = await self._execute_command(command, stream_callback)
+                return result
             else:
-                return await self._process_normal(user_input)
+                return await self._handle_natural_language(user_input, stream_callback)
         except Exception as e:
             return AgentResponse(
                 ok=False,
                 message="An error occurred",
                 error=str(e),
             )
-
-    async def _process_streaming(
-        self,
-        user_input: str,
-        stream_callback: Callable[[str], None],
-    ) -> AgentResponse:
-        command = self._parse_command(user_input)
-
-        if command:
-            if stream_callback:
-                stream_callback(f"🔧 Running: {command['action']} {command.get('target', '')}\n\n")
-
-            result = await self._execute_command(command, stream_callback)
-            return result
-        else:
-            return await self._process_normal(user_input, stream_callback)
-
-    async def _process_normal(
-        self,
-        user_input: str,
-        stream_callback: Callable[[str], None] | None = None,
-    ) -> AgentResponse:
-        command = self._parse_command(user_input)
-
-        if command:
-            return await self._execute_command(command, stream_callback)
-
-        return await self._handle_natural_language(user_input, stream_callback)
 
     def _parse_command(self, user_input: str) -> dict[str, Any] | None:
         user_input_lower = user_input.lower().strip()
@@ -177,17 +578,12 @@ class AgentEngine:
 
     def _extract_target(self, user_input: str, action: str) -> str | None:
         parts = user_input.split()
-
-        skip_words = {"the", "a", "an", "to", "in", "for", "with", "on", "at"}
         spec_names = {"rmsnorm", "swiglu", "flashattention", "rope", "gqa", "mixture"}
 
-        # For search, everything after "search" is the query
         if action == "search":
-            # Find "search" in parts and return everything after it
             for i, part in enumerate(parts):
                 if part.lower() == "search" and i + 1 < len(parts):
                     query_parts = parts[i + 1 :]
-                    # Remove common leading words
                     while query_parts and query_parts[0].lower() in {"for", "about", "on"}:
                         query_parts = query_parts[1:]
                     if query_parts:
@@ -197,19 +593,14 @@ class AgentEngine:
         for i, part in enumerate(parts):
             if part.lower() in spec_names:
                 return part.lower()
-
-            # Check if it's a path (starts with / or ./ or ~ or .)
             if part.startswith(("/", "./", "../", "~")):
                 path = Path(part).expanduser()
                 if path.exists():
                     return str(path.resolve())
-
-            # Check for "to" or "for" patterns
             if i > 0 and parts[i - 1].lower() in {"to", "for"}:
                 if Path(part).expanduser().exists():
                     return str(Path(part).expanduser().resolve())
 
-        # If no path found, check the last argument as a potential path
         if len(parts) > 1:
             last_arg = parts[-1]
             path = Path(last_arg).expanduser()
@@ -229,7 +620,6 @@ class AgentEngine:
         if action == "help":
             return self._get_help()
 
-        # Commands that don't require a repo
         no_repo_commands = {"search", "help"}
 
         if action not in no_repo_commands:
@@ -238,13 +628,8 @@ class AgentEngine:
                     return AgentResponse(
                         ok=False,
                         message="No repository set",
-                        error="Please specify a repository first (e.g., 'analyze ./my-project')",
-                        suggestions=[
-                            "analyze ./my-project",
-                            "integrate ./repo rmsnorm",
-                            "set repo ./my-project",
-                            "search normalization",
-                        ],
+                        error="Please specify a repository first",
+                        suggestions=["analyze ./my-project"],
                     )
 
         repo_path = self.current_session.repo_path if self.current_session else None
@@ -267,37 +652,19 @@ class AgentEngine:
             elif action == "context":
                 return self._cmd_context()
             else:
-                return AgentResponse(
-                    ok=False,
-                    message=f"Unknown action: {action}",
-                )
+                return AgentResponse(ok=False, message=f"Unknown action: {action}")
         except Exception as e:
-            return AgentResponse(
-                ok=False,
-                message=f"Error executing {action}",
-                error=str(e),
-            )
+            return AgentResponse(ok=False, message=f"Error executing {action}", error=str(e))
 
-    async def _cmd_analyze(
-        self,
-        repo_path: str | None,
-        stream_callback: Callable[[str], None] | None = None,
-    ) -> AgentResponse:
+    async def _cmd_analyze(self, repo_path: str | None, stream_callback) -> AgentResponse:
         from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
 
         if not repo_path:
-            return AgentResponse(
-                ok=False,
-                message="No repository path provided",
-                error="Please specify a repository to analyze",
-            )
+            return AgentResponse(ok=False, message="No repository path provided")
 
         path = Path(repo_path).expanduser().resolve()
         if not path.exists():
-            return AgentResponse(
-                ok=False,
-                message=f"Repository not found: {repo_path}",
-            )
+            return AgentResponse(ok=False, message=f"Repository not found: {repo_path}")
 
         if stream_callback:
             stream_callback(f"📊 Analyzing repository: {path}\n")
@@ -308,355 +675,130 @@ class AgentEngine:
         if self.current_session:
             self.current_session.add_message("assistant", f"Analyzed {path}", {"action": "analyze"})
 
-        response = AgentResponse(
+        return AgentResponse(
             ok=True,
             message=f"Analysis complete! Found {len(result.languages)} languages",
-            output={
-                "languages": result.languages,
-                "frameworks": result.frameworks,
-                "file_count": sum(s.file_count for s in result.language_stats),
-                "patterns": result.patterns,
-            },
-            suggestions=[
-                "suggest improvements for this repo",
-                "integrate rmsnorm to improve performance",
-                "run security scan",
-            ],
-            next_steps=[
-                "suggest - Get improvement suggestions",
-                "integrate <spec> - Apply research improvements",
-                "security - Run security scan",
-            ],
+            output={"languages": result.languages, "frameworks": result.frameworks},
+            suggestions=["suggest - Get improvements", "integrate rmsnorm"],
         )
 
-        if stream_callback:
-            stream_callback(
-                f"✅ Found {len(result.languages)} languages: {', '.join(result.languages)}\n"
-            )
-            if result.frameworks:
-                stream_callback(f"🔧 Frameworks: {', '.join(result.frameworks)}\n")
-
-        return response
-
     async def _cmd_integrate(
-        self,
-        repo_path: str | None,
-        spec: str | None,
-        stream_callback: Callable[[str], None] | None = None,
+        self, repo_path: str | None, spec: str | None, stream_callback
     ) -> AgentResponse:
         from scholardevclaw.application.pipeline import run_integrate
 
         if not repo_path:
-            return AgentResponse(
-                ok=False,
-                message="No repository set",
-                error="Please set a repository first using 'analyze <path>'",
-            )
-
+            return AgentResponse(ok=False, message="No repository set")
         if not spec:
             return AgentResponse(
-                ok=False,
-                message="No spec provided",
-                error="Please specify a spec (e.g., 'integrate rmsnorm')",
-                suggestions=["integrate rmsnorm", "integrate swiglu", "integrate flashattention"],
+                ok=False, message="No spec provided", suggestions=["integrate rmsnorm"]
             )
 
         if stream_callback:
-            stream_callback(f"🚀 Integrating {spec} into {repo_path}\n\n")
+            stream_callback(f"🚀 Integrating {spec}...\n")
 
-        result = await asyncio.to_thread(
-            run_integrate,
-            repo_path,
-            spec,
-            log_callback=stream_callback,
-        )
+        result = await asyncio.to_thread(run_integrate, repo_path, spec)
 
         if self.current_session:
             self.current_session.add_message(
-                "assistant", f"Integrated {spec}", {"action": "integrate", "spec": spec}
+                "assistant", f"Integrated {spec}", {"action": "integrate"}
             )
 
-        if result.ok:
-            return AgentResponse(
-                ok=True,
-                message=f"Successfully integrated {spec}!",
-                output=result.payload,
-                suggestions=[
-                    "validate - Run validation tests",
-                    "rollback - Revert if needed",
-                ],
-                next_steps=[
-                    "validate - Verify changes work",
-                    "rollback - Undo changes",
-                ],
-            )
-        else:
-            return AgentResponse(
-                ok=False,
-                message=f"Integration failed: {spec}",
-                error=result.error,
-            )
+        return AgentResponse(
+            ok=result.ok,
+            message=f"Integration {'successful' if result.ok else 'failed'}",
+            error=result.error,
+        )
 
-    async def _cmd_search(
-        self,
-        query: str,
-        stream_callback: Callable[[str], None] | None = None,
-    ) -> AgentResponse:
+    async def _cmd_search(self, query: str, stream_callback) -> AgentResponse:
         from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
         if not query:
-            return AgentResponse(
-                ok=False,
-                message="No search query provided",
-                error="Please specify what to search for",
-            )
-
-        if stream_callback:
-            stream_callback(f"🔍 Searching for: {query}\n")
+            return AgentResponse(ok=False, message="No search query")
 
         extractor = ResearchExtractor()
         results = extractor.search_by_keyword(query, max_results=5)
 
-        if stream_callback:
-            if results:
-                stream_callback(f"Found {len(results)} results:\n")
-                for r in results:
-                    stream_callback(f"  • {r['title']}\n")
-            else:
-                stream_callback("No results found.\n")
-
         return AgentResponse(
             ok=True,
-            message=f"Found {len(results)} results for '{query}'",
+            message=f"Found {len(results)} results",
             output={"results": results},
-            suggestions=[
-                f"integrate {results[0].get('name', results[0].get('algorithm', {}).get('name', 'rmsnorm'))}"
-                if results
-                else "integrate <spec>",
-            ],
         )
 
-    async def _cmd_suggest(
-        self,
-        repo_path: str | None,
-        stream_callback: Callable[[str], None] | None = None,
-    ) -> AgentResponse:
+    async def _cmd_suggest(self, repo_path: str | None, stream_callback) -> AgentResponse:
         from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
 
         if not repo_path:
-            return AgentResponse(
-                ok=False,
-                message="No repository set",
-                error="Please analyze a repository first",
-            )
-
-        if stream_callback:
-            stream_callback("💡 Generating suggestions...\n")
+            return AgentResponse(ok=False, message="No repository set")
 
         analyzer = TreeSitterAnalyzer(Path(repo_path))
         suggestions = analyzer.suggest_research_papers()
 
-        if stream_callback:
-            if suggestions:
-                stream_callback(f"Found {len(suggestions)} improvement opportunities:\n")
-                for s in suggestions[:3]:
-                    stream_callback(f"  • {s['paper']['title']} ({s['confidence']:.0%})\n")
-            else:
-                stream_callback("No specific improvements found.\n")
-
         return AgentResponse(
             ok=True,
-            message=f"Found {len(suggestions)} improvement opportunities",
+            message=f"Found {len(suggestions)} suggestions",
             output={"suggestions": suggestions},
-            next_steps=[f"integrate {s['paper']['name']}" for s in suggestions[:2]],
         )
 
-    async def _cmd_validate(
-        self,
-        repo_path: str | None,
-        stream_callback: Callable[[str], None] | None = None,
-    ) -> AgentResponse:
+    async def _cmd_validate(self, repo_path: str | None, stream_callback) -> AgentResponse:
         from scholardevclaw.application.pipeline import run_validate
 
         if not repo_path:
-            return AgentResponse(
-                ok=False,
-                message="No repository set",
-            )
+            return AgentResponse(ok=False, message="No repository set")
 
-        if stream_callback:
-            stream_callback("🧪 Running validation...\n")
-
-        result = await asyncio.to_thread(run_validate, repo_path, log_callback=stream_callback)
-
-        if stream_callback:
-            stream_callback(f"Validation: {'✅ Passed' if result.ok else '❌ Failed'}\n")
-
-        return AgentResponse(
-            ok=result.ok,
-            message="Validation passed" if result.ok else "Validation failed",
-            output=result.payload,
-            error=result.error,
-        )
+        result = await asyncio.to_thread(run_validate, repo_path)
+        return AgentResponse(ok=result.ok, message="Validation passed" if result.ok else "Failed")
 
     async def _cmd_rollback(
-        self,
-        repo_path: str | None,
-        snapshot_id: str | None,
-        stream_callback: Callable[[str], None] | None = None,
+        self, repo_path: str | None, snapshot_id: str | None, stream_callback
     ) -> AgentResponse:
         from scholardevclaw.rollback import RollbackManager
 
         if not repo_path:
-            return AgentResponse(
-                ok=False,
-                message="No repository set",
-            )
-
-        if stream_callback:
-            stream_callback("🔄 Rolling back...\n")
+            return AgentResponse(ok=False, message="No repository set")
 
         manager = RollbackManager()
         result = manager.rollback(repo_path, snapshot_id)
+        return AgentResponse(ok=result.ok, message="Rollback done" if result.ok else "Failed")
 
-        if stream_callback:
-            stream_callback(f"Rollback: {'✅ Success' if result.ok else '❌ Failed'}\n")
-
-        return AgentResponse(
-            ok=result.ok,
-            message="Rollback successful" if result.ok else "Rollback failed",
-            error=result.error,
-        )
-
-    async def _cmd_security(
-        self,
-        repo_path: str | None,
-        stream_callback: Callable[[str], None] | None = None,
-    ) -> AgentResponse:
+    async def _cmd_security(self, repo_path: str | None, stream_callback) -> AgentResponse:
         from scholardevclaw.security import SecurityScanner
 
         if not repo_path:
-            return AgentResponse(
-                ok=False,
-                message="No repository set",
-            )
-
-        if stream_callback:
-            stream_callback("🔒 Running security scan...\n")
+            return AgentResponse(ok=False, message="No repository set")
 
         scanner = SecurityScanner()
         result = scanner.scan(repo_path)
-
-        if stream_callback:
-            stream_callback(
-                f"Security scan: {'✅ Passed' if result.passed else '⚠️ Found issues'}\n"
-            )
-            stream_callback(
-                f"  High: {result.high_severity_count}, Medium: {result.medium_severity_count}\n"
-            )
-
-        return AgentResponse(
-            ok=result.passed,
-            message="Security scan passed" if result.passed else "Security issues found",
-            output=result.to_dict(),
-        )
+        return AgentResponse(ok=result.passed, message="Scan done", output=result.to_dict())
 
     def _cmd_context(self) -> AgentResponse:
         if not self.current_session:
-            return AgentResponse(
-                ok=False,
-                message="No active session",
-            )
+            return AgentResponse(ok=False, message="No active session")
+        return AgentResponse(ok=True, message="Session info", output=self.current_session.to_dict())
 
-        session_info = self.current_session.to_dict()
-
-        return AgentResponse(
-            ok=True,
-            message="Current session info",
-            output=session_info,
-            next_steps=[
-                "analyze <path> - Analyze a repository",
-                "help - Show all commands",
-            ],
-        )
-
-    async def _handle_natural_language(
-        self,
-        user_input: str,
-        stream_callback: Callable[[str], None] | None = None,
-    ) -> AgentResponse:
+    async def _handle_natural_language(self, user_input: str, stream_callback) -> AgentResponse:
         user_lower = user_input.lower()
 
-        if any(word in user_lower for word in ["hello", "hi", "hey", "start"]):
+        if any(word in user_lower for word in ["hello", "hi", "hey"]):
             return AgentResponse(
                 ok=True,
-                message="👋 Hello! I'm ScholarDevClaw, your research-to-code assistant.\n\nI can help you:\n- Analyze repositories\n- Apply research improvements (RMSNorm, SwiGLU, etc.)\n- Search for research papers\n- Run security scans\n- Validate changes\n\nJust tell me what you want to do!",
-                suggestions=["analyze ./my-project", "help"],
+                message="👋 Hello! I'm ScholarDevClaw. Try 'analyze ./my-project' or 'help'",
             )
 
-        if "set repo" in user_lower or "cd " in user_lower:
-            parts = user_input.split()
-            if len(parts) >= 2:
-                target = parts[-1]
-                if self.switch_repo(target):
-                    return AgentResponse(
-                        ok=True,
-                        message=f"✅ Switched to repository: {target}",
-                        suggestions=["analyze", "suggest", "integrate rmsnorm"],
-                    )
-
-        return AgentResponse(
-            ok=False,
-            message="I didn't understand that",
-            error="Try a command like 'analyze ./project' or 'help'",
-            suggestions=[
-                "analyze ./my-project - Analyze a repository",
-                "integrate rmsnorm - Apply research improvement",
-                "suggest - Get improvement suggestions",
-                "help - See all commands",
-            ],
-        )
+        return AgentResponse(ok=False, message="Unknown command", suggestions=["help"])
 
     def _get_help(self) -> AgentResponse:
-        help_text = """
-📖 **ScholarDevClaw Agent Commands**
-
-**Repository Operations:**
-- `analyze <path>` - Analyze a repository structure
-- `set repo <path>` - Switch to a different repository
-
-**Research Integration:**
-- `integrate <spec>` - Apply a research improvement
-  - Examples: rmsnorm, swiglu, flashattention, rope
-
-**Analysis:**
-- `suggest` - Get AI-powered improvement suggestions
-- `search <query>` - Search research papers
-
-**Validation & Safety:**
-- `validate` - Run validation tests
-- `security` - Run security scan
-- `rollback [id]` - Revert changes
-
-**General:**
-- `context` - Show current session info
-- `help` - Show this help message
-
-**Examples:**
-- "analyze ./my-project"
-- "integrate rmsnorm"
-- "suggest improvements for this repo"
-- "run security scan"
-"""
         return AgentResponse(
             ok=True,
-            message=help_text.strip(),
-            suggestions=[
-                "analyze ./my-project",
-                "integrate rmsnorm",
-            ],
+            message="""
+📖 Commands: analyze <path>, integrate <spec>, search <query>, suggest, validate, security, help
+            """.strip(),
         )
 
 
-def create_agent_engine() -> AgentEngine:
-    return AgentEngine()
+# Alias for backwards compatibility
+AgentEngine = StreamingAgentEngine
+
+
+def create_agent_engine() -> StreamingAgentEngine:
+    return StreamingAgentEngine()
