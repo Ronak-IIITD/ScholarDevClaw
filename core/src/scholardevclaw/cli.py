@@ -1290,6 +1290,45 @@ def cmd_tui(args):
     run_tui()
 
 
+def cmd_agent(args):
+    """Start interactive AI agent"""
+    from scholardevclaw.agent import AgentREPL, run_agent_command
+    from scholardevclaw.agent.repl import run_agent_repl
+
+    if args.query:
+        result = run_agent_command(args.query)
+
+        if args.output_json:
+            print(
+                json.dumps(
+                    {
+                        "ok": result.ok,
+                        "message": result.message,
+                        "output": result.output,
+                        "error": result.error,
+                        "suggestions": result.suggestions,
+                        "next_steps": result.next_steps,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print(result.message)
+            if result.output and "languages" in result.output:
+                print(f"\nLanguages: {', '.join(result.output['languages'])}")
+                if result.output.get("frameworks"):
+                    print(f"Frameworks: {', '.join(result.output['frameworks'])}")
+            if result.suggestions:
+                print("\n💡 Suggestions:")
+                for s in result.suggestions:
+                    print(f"  • {s}")
+            if result.error:
+                print(f"\n❌ Error: {result.error}", file=sys.stderr)
+                sys.exit(1)
+    else:
+        run_agent_repl()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="ScholarDevClaw - Autonomous Research-to-Code Agent v2.0",
@@ -1482,6 +1521,16 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_security.add_argument("--verbose", "-v", action="store_true", help="Show detailed findings")
     p_security.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # agent
+    p_agent = subparsers.add_parser("agent", help="Start interactive AI agent")
+    p_agent.add_argument(
+        "query",
+        nargs="?",
+        help="Query to process (opens interactive mode if not provided)",
+    )
+    p_agent.add_argument("--repo", help="Set repository path")
+    p_agent.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -1512,6 +1561,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "rollback": cmd_rollback,
         "github-app": cmd_github_app,
         "security": cmd_security,
+        "agent": cmd_agent,
         "demo": cmd_demo,
     }
 

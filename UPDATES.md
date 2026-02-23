@@ -72,6 +72,35 @@
     - Installs: bandit>=1.7.0, semgrep>=1.0.0
   - **Unit Tests** (11 tests): All passing
 
+- Added **Interactive Agent Mode**:
+  - **Agent Module** (`core/src/scholardevclaw/agent/`):
+    - `AgentEngine`: Core processing with natural language understanding
+    - `AgentREPL`: Interactive terminal with Rich UI
+    - Session management with context/history
+  - **Features**:
+    - Natural language command parsing (e.g., "analyze my-project", "search normalization")
+    - Smart context awareness - remembers current repository
+    - Rich terminal UI with colors, tables, panels
+    - Streaming output for long-running operations
+    - Command suggestions and next steps
+    - Error recovery with helpful messages
+  - **CLI Commands**:
+    - `scholardevclaw agent` - Start interactive mode
+    - `scholardevclaw agent "analyze ./repo"` - Run single command
+    - `scholardevclaw agent "search attention"` - Search papers
+  - **Quick Start**:
+    ```
+    $ scholardevclaw agent
+    ScholarDevClaw > analyze ./my-project
+    ScholarDevClaw > integrate rmsnorm
+    ScholarDevClaw > suggest improvements
+    ```
+  - **Installer Script** (`install/install.sh`):
+    - One-command install: `curl -L scholardevclaw.com/install | bash`
+    - Auto-detects OS and Python
+    - Creates launcher script
+    - Adds to PATH
+
 ### 2026-02-20
 - Added production-ready features:
   - **Prometheus Metrics Collection** (41 tests):
