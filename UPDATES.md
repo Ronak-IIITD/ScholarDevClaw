@@ -111,6 +111,22 @@
   - Async generator-based streaming for non-blocking output
   - Better UX with immediate feedback
 
+- Added **Local Auth (API Key) Support** (MVP):
+  - **Auth Module** (`core/src/scholardevclaw/auth/`):
+    - `AuthStore`: Local auth storage (`~/.scholardevclaw/auth.json`)
+    - `AuthConfig`, `APIKey`, `UserProfile`, `AuthStatus`
+  - **Features**:
+    - Bring-your-own API keys (Anthropic, OpenAI, GitHub, Custom)
+    - Local profile storage and default key selection
+    - Environment override: `SCHOLARDEVCLAW_API_KEY`
+  - **CLI Commands**:
+    - `scholardevclaw auth setup` - Interactive setup wizard
+    - `scholardevclaw auth login` - Add API key
+    - `scholardevclaw auth status` - Show auth status
+    - `scholardevclaw auth list` - List keys
+    - `scholardevclaw auth remove --key-id <id>` - Remove key
+    - `scholardevclaw auth default --key-id <id>` - Set default key
+
 ### 2026-02-20
 - Added production-ready features:
   - **Prometheus Metrics Collection** (41 tests):

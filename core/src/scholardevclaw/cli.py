@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
+from scholardevclaw.auth.cli import cmd_auth
 
 
 def _print_compatibility_report(payload: dict, expected_type: str, *, stderr: bool = False) -> None:
@@ -1531,6 +1532,23 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_agent.add_argument("--repo", help="Set repository path")
     p_agent.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # auth
+    p_auth = subparsers.add_parser("auth", help="Manage authentication and API keys")
+    p_auth.add_argument(
+        "auth_action",
+        nargs="?",
+        default="status",
+        choices=["setup", "login", "logout", "status", "list", "add", "remove", "default"],
+        help="Action to perform",
+    )
+    p_auth.add_argument("--key", help="API key value")
+    p_auth.add_argument("--name", help="Key name")
+    p_auth.add_argument("--provider", help="Provider (anthropic, openai, github, custom)")
+    p_auth.add_argument("--default", action="store_true", help="Set as default key")
+    p_auth.add_argument("--force", action="store_true", help="Force action without confirmation")
+    p_auth.add_argument("--key-id", help="Key ID for remove/default actions")
+    p_auth.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -1562,6 +1580,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "github-app": cmd_github_app,
         "security": cmd_security,
         "agent": cmd_agent,
+        "auth": cmd_auth,
         "demo": cmd_demo,
     }
 
