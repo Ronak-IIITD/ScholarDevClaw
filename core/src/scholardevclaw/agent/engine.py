@@ -58,7 +58,8 @@ class AgentSession:
     repo_path: str | None = None
     messages: list[AgentMessage] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    last_active: str = field(default_factory=lambda: datetime.now().isoformat())
+    last_active: str = field(
+        default_factory=lambda: datetime.now().isoformat())
     context: dict[str, Any] = field(default_factory=dict)
 
     def add_message(self, role: str, content: str, metadata: dict | None = None) -> None:
@@ -284,7 +285,8 @@ class StreamingAgentEngine:
 
             if self.current_session:
                 self.current_session.add_message(
-                    "assistant", f"Integrated {spec}", {"action": "integrate", "spec": spec}
+                    "assistant", f"Integrated {spec}", {
+                        "action": "integrate", "spec": spec}
                 )
 
             if result.ok:
@@ -376,7 +378,8 @@ class StreamingAgentEngine:
             for s in suggestions[:3]:
                 yield StreamEvent(
                     type=StreamEventType.OUTPUT,
-                    message=f"  • {s['paper']['title']} ({s['confidence']:.0%})",
+                    message=f"  • {s['paper']['title']
+                                   } ({s['confidence']:.0%})",
                     data=s,
                 )
                 yield StreamEvent(
@@ -460,7 +463,9 @@ class StreamingAgentEngine:
                 )
                 yield StreamEvent(
                     type=StreamEventType.OUTPUT,
-                    message=f"   High: {result.high_severity_count}, Medium: {result.medium_severity_count}, Low: {result.low_severity_count}",
+                    message=f"   High: {result.high_severity_count}, Medium: {
+                        result.medium_severity_count
+                    }, Low: {result.low_severity_count}",
                 )
 
         except Exception as e:
@@ -578,12 +583,13 @@ What would you like to do?""",
 
     def _extract_target(self, user_input: str, action: str) -> str | None:
         parts = user_input.split()
-        spec_names = {"rmsnorm", "swiglu", "flashattention", "rope", "gqa", "mixture"}
+        spec_names = {"rmsnorm", "swiglu",
+                      "flashattention", "rope", "gqa", "mixture"}
 
         if action == "search":
             for i, part in enumerate(parts):
                 if part.lower() == "search" and i + 1 < len(parts):
-                    query_parts = parts[i + 1 :]
+                    query_parts = parts[i + 1:]
                     while query_parts and query_parts[0].lower() in {"for", "about", "on"}:
                         query_parts = query_parts[1:]
                     if query_parts:
@@ -673,12 +679,15 @@ What would you like to do?""",
         result = analyzer.analyze()
 
         if self.current_session:
-            self.current_session.add_message("assistant", f"Analyzed {path}", {"action": "analyze"})
+            self.current_session.add_message("assistant", f"Analyzed {
+                                             path}", {"action": "analyze"})
 
         return AgentResponse(
             ok=True,
-            message=f"Analysis complete! Found {len(result.languages)} languages",
-            output={"languages": result.languages, "frameworks": result.frameworks},
+            message=f"Analysis complete! Found {
+                len(result.languages)} languages",
+            output={"languages": result.languages,
+                    "frameworks": result.frameworks},
             suggestions=["suggest - Get improvements", "integrate rmsnorm"],
         )
 
