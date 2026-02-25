@@ -103,6 +103,96 @@ class TestAPIKey:
         assert api_key.provider == AuthProvider.OPENAI
         assert api_key.to_dict()["name"] == "roundtrip"
 
+    def test_validate_key_format_anthropic_valid(self):
+        is_valid, msg = APIKey.validate_key_format("sk-ant-abcdef", AuthProvider.ANTHROPIC)
+        assert is_valid is True
+
+    def test_validate_key_format_anthropic_invalid(self):
+        is_valid, msg = APIKey.validate_key_format("sk-wrong", AuthProvider.ANTHROPIC)
+        assert is_valid is False
+        assert "sk-ant" in msg
+
+    def test_validate_key_format_openai_valid(self):
+        is_valid, msg = APIKey.validate_key_format("sk-testkey123", AuthProvider.OPENAI)
+        assert is_valid is True
+
+    def test_validate_key_format_openai_invalid(self):
+        is_valid, msg = APIKey.validate_key_format("wrong-key", AuthProvider.OPENAI)
+        assert is_valid is False
+        assert "sk-" in msg
+
+    def test_validate_key_format_github_valid(self):
+        is_valid, msg = APIKey.validate_key_format("ghp_abcdef", AuthProvider.GITHUB)
+        assert is_valid is True
+
+    def test_validate_key_format_github_pat_valid(self):
+        is_valid, msg = APIKey.validate_key_format("github_pat_abcdef", AuthProvider.GITHUB)
+        assert is_valid is True
+
+    def test_validate_key_format_empty(self):
+        is_valid, msg = APIKey.validate_key_format("", AuthProvider.OPENAI)
+        assert is_valid is False
+        assert "empty" in msg.lower()
+
+    def test_validate_key_format_too_short(self):
+        is_valid, msg = APIKey.validate_key_format("abc", AuthProvider.OPENAI)
+        assert is_valid is False
+        assert "short" in msg.lower()
+
+    def test_validate_key_name_valid(self):
+        is_valid, msg = APIKey.is_valid_key_name("my-api-key")
+        assert is_valid is True
+
+    def test_validate_key_name_empty(self):
+        is_valid, msg = APIKey.is_valid_key_name("")
+        assert is_valid is False
+
+    def test_validate_key_name_too_long(self):
+        is_valid, msg = APIKey.is_valid_key_name("a" * 101)
+        assert is_valid is False
+        assert "long" in msg.lower()
+
+    def test_validate_key_name_invalid_chars(self):
+        is_valid, msg = APIKey.is_valid_key_name("key@#$%")
+        assert is_valid is False
+        assert "invalid" in msg.lower()
+
+    def test_validate_email_valid(self):
+        assert APIKey.is_valid_email("test@example.com") is True
+        assert APIKey.is_valid_email("user.name+tag@domain.co.uk") is True
+
+    def test_validate_email_invalid(self):
+        assert APIKey.is_valid_email("") is False
+        assert APIKey.is_valid_email("not-an-email") is False
+        assert APIKey.is_valid_email("@example.com") is False
+        assert APIKey.is_valid_email("test@") is False
+
+    def test_get_fingerprint(self):
+        api_key = APIKey(
+            id="key_1",
+            name="test",
+            provider=AuthProvider.CUSTOM,
+            key="secret_key_12345",
+        )
+        fp = api_key.get_fingerprint()
+        assert len(fp) == 16
+        assert isinstance(fp, str)
+
+    def test_get_fingerprint_unique(self):
+        key1 = APIKey(id="k1", name="n", provider=AuthProvider.CUSTOM, key="secret1")
+        key2 = APIKey(id="k2", name="n", provider=AuthProvider.CUSTOM, key="secret2")
+        assert key1.get_fingerprint() != key2.get_fingerprint()
+
+    def test_is_valid_invalid_expires_at_format(self):
+        api_key = APIKey(
+            id="key_bad",
+            name="bad",
+            provider=AuthProvider.CUSTOM,
+            key="sk_test",
+            expires_at="not-a-date",
+        )
+        assert api_key.is_valid() is False
+
 
 class TestUserProfile:
     def test_profile_roundtrip(self):

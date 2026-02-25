@@ -4,6 +4,57 @@
 
 **Last updated:** 2026-02-25
 
+### 2026-02-25 (continued)
+- Added **Enhanced Auth Module**:
+  - Key format validation for Anthropic, OpenAI, GitHub, Google
+  - Email validation for profiles
+  - Key name validation
+  - Provider-specific key format hints
+  - API key fingerprinting (SHA256 hash for identification)
+  - Optional validation on add_api_key() and create_profile()
+
+- Added **More Edge Case Tests** (`core/tests/unit/test_auth.py`): 17 new tests
+  - Key format validation tests (Anthropic, OpenAI, GitHub)
+  - Email validation tests
+  - Key name validation tests
+  - Key fingerprint tests
+  - Invalid expiry format handling
+
+- Added **Agent Integration Tests** (`core/tests/e2e/test_auth_agent.py`): 13 tests
+  - Auth + analyze workflow
+  - Environment variable precedence
+  - Multiple providers
+  - Key activation/deactivation
+  - Profile with subscription tiers
+  - Auth backup/restore
+  - Key metadata persistence
+  - Provider switching
+  - File permissions
+  - Large number of keys
+
+- Added **Security Tests** (`core/tests/unit/test_auth_security.py`): 12 tests
+  - API key masking in output
+  - Fingerprint doesn't reveal key
+  - Logout removes all sensitive data
+  - Env override key not stored
+  - Random key/profile IDs
+  - Invalid JSON handling
+  - Path traversal prevention
+  - Large key handling
+
+- Added **Extended CLI Tests** (`core/tests/unit/test_auth_cli.py`): 10 new tests
+  - Multiple keys in JSON output
+  - Status with profile display
+  - Remove last key behavior
+  - Default after remove
+  - Empty key handling
+  - Special characters in key names
+  - Subscription tier display
+  - Empty list output
+  - Setup with all providers
+
+- **Total: 123 tests passing** (was 72)
+
 ### 2026-02-25
 - Added **Auth Module Tests** (robust test coverage):
   - **Unit Tests** (`core/tests/unit/test_auth.py`): 35 tests

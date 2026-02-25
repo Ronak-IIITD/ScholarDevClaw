@@ -104,8 +104,19 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
         name: str,
         provider: AuthProvider,
         set_default: bool = True,
+        validate: bool = False,
     ) -> APIKey:
         config = self._load_config()
+
+        if validate:
+            if provider != AuthProvider.CUSTOM and provider != AuthProvider.LOCAL:
+                is_valid, message = APIKey.validate_key_format(key, provider)
+                if not is_valid:
+                    raise ValueError(f"Invalid key format for {provider.value}: {message}")
+
+            is_valid, message = APIKey.is_valid_key_name(name)
+            if not is_valid:
+                raise ValueError(f"Invalid key name: {message}")
 
         api_key = APIKey(
             id=f"key_{secrets.token_hex(8)}",
@@ -160,8 +171,13 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
         self,
         email: str | None = None,
         name: str | None = None,
+        validate: bool = False,
     ) -> UserProfile:
         config = self._load_config()
+
+        if validate and email:
+            if not APIKey.is_valid_email(email):
+                raise ValueError(f"Invalid email format: {email}")
 
         profile = UserProfile(
             id=f"user_{secrets.token_hex(8)}",

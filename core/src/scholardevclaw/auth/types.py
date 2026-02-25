@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
@@ -15,6 +16,28 @@ class AuthProvider(str, Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     CUSTOM = "custom"
+
+    @property
+    def key_prefix(self) -> str | None:
+        prefixes = {
+            AuthProvider.ANTHROPIC: "sk-ant",
+            AuthProvider.OPENAI: "sk-",
+            AuthProvider.GITHUB: "ghp_",
+            AuthProvider.GOOGLE: "ya29.",
+        }
+        return prefixes.get(self)
+
+    @property
+    def key_format_hint(self) -> str:
+        hints = {
+            AuthProvider.ANTHROPIC: "sk-ant-...",
+            AuthProvider.OPENAI: "sk-...",
+            AuthProvider.GITHUB: "ghp_...",
+            AuthProvider.GOOGLE: "ya29...",
+            AuthProvider.CUSTOM: "custom API key format",
+            AuthProvider.LOCAL: "local key",
+        }
+        return hints.get(self, "API key")
 
 
 class SubscriptionTier(str, Enum):
@@ -57,6 +80,52 @@ class APIKey:
         random_bytes = secrets.token_hex(24)
         return f"{prefix}_{random_bytes}"
 
+    @staticmethod
+    def validate_key_format(key: str, provider: AuthProvider) -> tuple[bool, str]:
+        """Validate key format based on provider. Returns (is_valid, message)."""
+        if not key:
+            return False, "API key cannot be empty"
+
+        if len(key) < 8:
+            return False, "API key seems too short"
+
+        if provider == AuthProvider.ANTHROPIC:
+            if not key.startswith("sk-ant"):
+                return False, "Anthropic keys should start with 'sk-ant'"
+
+        elif provider == AuthProvider.OPENAI:
+            if not key.startswith("sk-"):
+                return False, "OpenAI keys should start with 'sk-'"
+
+        elif provider == AuthProvider.GITHUB:
+            if not (key.startswith("ghp_") or key.startswith("github_pat_")):
+                return False, "GitHub tokens should start with 'ghp_' or 'github_pat_'"
+
+        elif provider == AuthProvider.GOOGLE:
+            if not key.startswith("ya29.") and not key.startswith("1//"):
+                return False, "Google tokens typically start with 'ya29.' or '1//'"
+
+        return True, "Valid"
+
+    @staticmethod
+    def is_valid_email(email: str) -> bool:
+        """Validate email format."""
+        if not email:
+            return False
+        pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+        return bool(re.match(pattern, email))
+
+    @staticmethod
+    def is_valid_key_name(name: str) -> tuple[bool, str]:
+        """Validate key name."""
+        if not name:
+            return False, "Key name cannot be empty"
+        if len(name) > 100:
+            return False, "Key name too long (max 100 chars)"
+        if not re.match(r"^[\w\s\-\.]+$", name):
+            return False, "Key name contains invalid characters"
+        return True, "Valid"
+
     def mask(self) -> str:
         if len(self.key) < 8:
             return "***"
@@ -66,10 +135,17 @@ class APIKey:
         if not self.is_active:
             return False
         if self.expires_at:
-            expires = datetime.fromisoformat(self.expires_at)
-            if datetime.now() > expires:
+            try:
+                expires = datetime.fromisoformat(self.expires_at)
+                if datetime.now() > expires:
+                    return False
+            except ValueError:
                 return False
         return True
+
+    def get_fingerprint(self) -> str:
+        """Get a SHA256 hash of the key for identification without revealing it."""
+        return hashlib.sha256(self.key.encode()).hexdigest()[:16]
 
 
 @dataclass

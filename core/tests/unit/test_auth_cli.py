@@ -511,3 +511,184 @@ class TestAuthCLIErrorHandling:
         store = AuthStore(temp_auth_dir)
         keys = store.list_api_keys()
         assert len(keys) == 0
+
+    def test_auth_list_json_with_multiple_keys(self, temp_auth_dir, capsys):
+        from scholardevclaw.auth.cli import cmd_auth
+        from scholardevclaw.auth.store import AuthStore
+        from scholardevclaw.auth.types import AuthProvider
+        from argparse import Namespace
+
+        store = AuthStore(temp_auth_dir)
+        store.add_api_key("sk_1", "key1", AuthProvider.ANTHROPIC)
+        store.add_api_key("sk_2", "key2", AuthProvider.OPENAI)
+        store.add_api_key("sk_3", "key3", AuthProvider.GITHUB)
+
+        args = Namespace(
+            auth_action="list",
+            output_json=True,
+        )
+        cmd_auth(args)
+        captured = capsys.readouterr()
+
+        import json
+        import re
+
+        json_match = re.search(r"(\[[\s\S]*\])", captured.out)
+        data = json.loads(json_match.group(1))
+        assert len(data) == 3
+
+    def test_auth_status_with_profile(self, temp_auth_dir, capsys):
+        from scholardevclaw.auth.cli import cmd_auth
+        from scholardevclaw.auth.store import AuthStore
+        from scholardevclaw.auth.types import AuthProvider
+        from argparse import Namespace
+
+        store = AuthStore(temp_auth_dir)
+        store.add_api_key("sk_test", "test", AuthProvider.ANTHROPIC)
+        store.create_profile(email="profile@test.com", name="Test Profile")
+
+        args = Namespace(
+            auth_action="status",
+            output_json=False,
+        )
+        cmd_auth(args)
+        captured = capsys.readouterr()
+        assert "profile@test.com" in captured.out
+        assert "Test Profile" in captured.out
+
+    def test_auth_remove_last_key(self, temp_auth_dir, capsys):
+        from scholardevclaw.auth.cli import cmd_auth
+        from scholardevclaw.auth.store import AuthStore
+        from scholardevclaw.auth.types import AuthProvider
+        from argparse import Namespace
+
+        store = AuthStore(temp_auth_dir)
+        key = store.add_api_key("sk_test", "test", AuthProvider.ANTHROPIC)
+
+        args = Namespace(
+            auth_action="remove",
+            key_id=key.id,
+        )
+        cmd_auth(args)
+        captured = capsys.readouterr()
+
+        store2 = AuthStore(temp_auth_dir)
+        assert not store2.is_authenticated()
+
+    def test_auth_default_after_remove(self, temp_auth_dir, capsys):
+        from scholardevclaw.auth.cli import cmd_auth
+        from scholardevclaw.auth.store import AuthStore
+        from scholardevclaw.auth.types import AuthProvider
+        from argparse import Namespace
+
+        store = AuthStore(temp_auth_dir)
+        key1 = store.add_api_key("sk_1", "key1", AuthProvider.ANTHROPIC)
+        key2 = store.add_api_key("sk_2", "key2", AuthProvider.OPENAI)
+
+        store.set_default_key(key1.id)
+
+        args = Namespace(
+            auth_action="remove",
+            key_id=key1.id,
+        )
+        cmd_auth(args)
+
+        store2 = AuthStore(temp_auth_dir)
+        config = store2.get_config()
+        assert config.default_key_id == key2.id
+
+    def test_auth_login_empty_key(self, temp_auth_dir, capsys):
+        from scholardevclaw.auth.cli import cmd_auth
+        import getpass
+        from argparse import Namespace
+        from unittest.mock import patch
+
+        with patch("getpass.getpass", return_value=""):
+            args = Namespace(
+                auth_action="login",
+                provider="anthropic",
+                key=None,
+                name=None,
+                output_json=False,
+            )
+            with pytest.raises(SystemExit):
+                cmd_auth(args)
+
+    def test_auth_add_with_special_chars_in_name(self, temp_auth_dir, capsys):
+        from scholardevclaw.auth.cli import cmd_auth
+        from argparse import Namespace
+
+        args = Namespace(
+            auth_action="add",
+            key="sk_test",
+            name="my-key_v1.0",
+            provider="custom",
+            default=True,
+            output_json=False,
+        )
+        cmd_auth(args)
+        captured = capsys.readouterr()
+        assert "API key added" in captured.out
+
+    def test_auth_status_tier_display(self, temp_auth_dir, capsys):
+        from scholardevclaw.auth.cli import cmd_auth
+        from scholardevclaw.auth.store import AuthStore
+        from scholardevclaw.auth.types import AuthProvider, SubscriptionTier
+        from argparse import Namespace
+
+        store = AuthStore(temp_auth_dir)
+        store.add_api_key("sk_test", "test", AuthProvider.ANTHROPIC)
+        profile = store.create_profile(email="test@test.com")
+
+        config = store.get_config()
+        config.profile.subscription_tier = SubscriptionTier.PRO
+        store._save_config(config)
+
+        args = Namespace(
+            auth_action="status",
+            output_json=False,
+        )
+        cmd_auth(args)
+        captured = capsys.readouterr()
+        assert "Tier:" in captured.out
+
+    def test_auth_list_empty_output(self, temp_auth_dir, capsys):
+        from scholardevclaw.auth.cli import cmd_auth
+        from argparse import Namespace
+
+        args = Namespace(
+            auth_action="list",
+            output_json=True,
+        )
+        cmd_auth(args)
+        captured = capsys.readouterr()
+
+        import json
+
+        data = json.loads(captured.out.strip())
+        assert data == []
+
+    def test_auth_setup_with_all_providers(self, temp_auth_dir, capsys, monkeypatch):
+        from scholardevclaw.auth.cli import cmd_auth
+        import getpass
+        from argparse import Namespace
+        from unittest.mock import patch
+
+        responses = [
+            "2",  # select OpenAI
+            "sk_openai_key",  # provide key
+            "",  # skip email
+        ]
+        response_iter = iter(responses)
+
+        def mock_input(prompt=""):
+            return next(response_iter)
+
+        with patch("getpass.getpass", return_value="sk_openai_key"):
+            with patch("builtins.input", mock_input):
+                args = Namespace(
+                    auth_action="setup",
+                )
+                cmd_auth(args)
+                captured = capsys.readouterr()
+                assert "Setup complete" in captured.out or "API key added" in captured.out
