@@ -268,3 +268,62 @@ class TestAuthStore:
 
     def test_update_profile_missing(self, store):
         assert store.update_profile(name="Missing") is None
+
+    def test_empty_key_handling(self, store):
+        key = store.add_api_key("", "empty", AuthProvider.CUSTOM)
+        assert key.key == ""
+
+    def test_unicode_in_key_name(self, store):
+        key = store.add_api_key("sk_test", " ключ 🔑 ", AuthProvider.CUSTOM)
+        assert key.name == " ключ 🔑 "
+
+    def test_get_api_key_no_keys(self, store):
+        assert store.get_api_key() is None
+
+    def test_get_api_key_by_provider(self, store):
+        store.add_api_key("sk_ant", "ant", AuthProvider.ANTHROPIC)
+        store.add_api_key("sk_oi", "openai", AuthProvider.OPENAI)
+
+        # By default returns default key
+        default_key = store.get_api_key()
+        assert default_key is not None
+
+    def test_get_api_key_inactive_provider(self, store):
+        key = store.add_api_key("sk_ant", "ant", AuthProvider.ANTHROPIC, set_default=False)
+        config = store.get_config()
+        config.get_key(key.id).is_active = False
+        store._save_config(config)
+
+        assert store.get_api_key() is None
+
+    def test_auth_config_from_dict_missing_fields(self):
+        data = {"api_keys": []}
+        config = AuthConfig.from_dict(data)
+        assert config.default_key_id is None
+        assert config.api_keys == []
+
+    def test_provider_case_sensitivity(self):
+        assert AuthProvider("anthropic") == AuthProvider.ANTHROPIC
+        assert AuthProvider("openai") == AuthProvider.OPENAI
+        assert AuthProvider("custom") == AuthProvider.CUSTOM
+
+    def test_key_id_uniqueness(self, store):
+        keys = []
+        for i in range(5):
+            key = store.add_api_key(f"sk_{i}", f"key{i}", AuthProvider.CUSTOM)
+            keys.append(key.id)
+
+        assert len(set(keys)) == 5  # All unique
+
+    def test_api_key_serialization_roundtrip(self):
+        key = APIKey(
+            id="test_id",
+            name="test_name",
+            provider=AuthProvider.ANTHROPIC,
+            key="sk_test",
+            metadata={"foo": "bar"},
+        )
+        data = key.to_dict()
+        restored = APIKey.from_dict(data)
+        assert restored.id == key.id
+        assert restored.metadata == key.metadata

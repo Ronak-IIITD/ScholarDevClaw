@@ -2,7 +2,32 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-02-23
+**Last updated:** 2026-02-25
+
+### 2026-02-25
+- Added **Auth Module Tests** (robust test coverage):
+  - **Unit Tests** (`core/tests/unit/test_auth.py`): 35 tests
+    - APIKey tests: generation, masking, validation, expiry, serialization
+    - UserProfile tests: creation, update, serialization
+    - AuthConfig tests: active key selection, provider fallback
+    - AuthStore tests: CRUD operations, env override, profile management, logout
+    - Edge cases: empty keys, unicode names, key uniqueness, invalid JSON recovery
+  - **CLI Tests** (`core/tests/unit/test_auth_cli.py`): 27 tests
+    - Status, list, add, remove, default commands
+    - Login, logout (with confirm + force)
+    - Setup wizard (env key detection, manual key entry)
+    - JSON output parsing
+    - Error handling: invalid provider, missing keys
+  - **Integration Tests** (`core/tests/e2e/test_auth.py`): 10 tests
+    - Full workflow: add key → check status → list → remove
+    - Profile workflow: create, update, retrieve
+    - Environment variable override
+    - Multiple providers
+    - Key rotation
+    - Auth persistence across store instances
+    - Auth file format validation
+    - CLI + store integration
+  - **Total: 72 tests passing**
 
 ### 2026-02-23
 - Added **Rollback Support** (P1 feature):
