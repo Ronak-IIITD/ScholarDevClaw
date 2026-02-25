@@ -46,6 +46,38 @@ class SubscriptionTier(str, Enum):
     ENTERPRISE = "enterprise"
 
 
+class KeyScope(str, Enum):
+    READ_ONLY = "read"
+    READ_WRITE = "write"
+    ADMIN = "admin"
+    CUSTOM = "custom"
+
+
+@dataclass
+class KeyRotationEntry:
+    rotated_at: str
+    previous_fingerprint: str
+    rotated_by: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "rotated_at": self.rotated_at,
+            "previous_fingerprint": self.previous_fingerprint,
+            "rotated_by": self.rotated_by,
+            "reason": self.reason,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "KeyRotationEntry":
+        return cls(
+            rotated_at=data["rotated_at"],
+            previous_fingerprint=data["previous_fingerprint"],
+            rotated_by=data.get("rotated_by"),
+            reason=data.get("reason"),
+        )
+
+
 @dataclass
 class APIKey:
     id: str
@@ -57,12 +89,31 @@ class APIKey:
     expires_at: str | None = None
     is_active: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
+    rotation_history: list[KeyRotationEntry] = field(default_factory=list)
+    scope: KeyScope = KeyScope.READ_WRITE
+    rotation_recommended_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {
+            "id": self.id,
+            "name": self.name,
+            "provider": self.provider.value,
+            "key": self.key,
+            "created_at": self.created_at,
+            "last_used": self.last_used,
+            "expires_at": self.expires_at,
+            "is_active": self.is_active,
+            "metadata": self.metadata,
+            "rotation_history": [r.to_dict() for r in self.rotation_history],
+            "scope": self.scope.value,
+            "rotation_recommended_at": self.rotation_recommended_at,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APIKey":
+        rotation_history = [KeyRotationEntry.from_dict(r) for r in data.get("rotation_history", [])]
+        scope = KeyScope(data.get("scope", "write"))
+
         return cls(
             id=data["id"],
             name=data["name"],
@@ -73,6 +124,9 @@ class APIKey:
             expires_at=data.get("expires_at"),
             is_active=data.get("is_active", True),
             metadata=data.get("metadata", {}),
+            rotation_history=rotation_history,
+            scope=scope,
+            rotation_recommended_at=data.get("rotation_recommended_at"),
         )
 
     @staticmethod

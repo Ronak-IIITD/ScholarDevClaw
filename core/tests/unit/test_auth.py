@@ -12,6 +12,8 @@ from scholardevclaw.auth.types import (
     AuthConfig,
     AuthProvider,
     AuthStatus,
+    KeyRotationEntry,
+    KeyScope,
     SubscriptionTier,
     UserProfile,
 )
@@ -417,3 +419,109 @@ class TestAuthStore:
         restored = APIKey.from_dict(data)
         assert restored.id == key.id
         assert restored.metadata == key.metadata
+
+    def test_key_rotation_entry(self):
+        entry = KeyRotationEntry(
+            rotated_at="2026-02-25T10:00:00",
+            previous_fingerprint="abc123",
+            rotated_by="user@test.com",
+            reason="Scheduled rotation",
+        )
+        data = entry.to_dict()
+        restored = KeyRotationEntry.from_dict(data)
+        assert restored.previous_fingerprint == "abc123"
+        assert restored.reason == "Scheduled rotation"
+
+    def test_api_key_with_rotation_history(self):
+        key = APIKey(
+            id="test_id",
+            name="test",
+            provider=AuthProvider.ANTHROPIC,
+            key="sk_test",
+            rotation_history=[
+                KeyRotationEntry(
+                    rotated_at="2026-01-01T10:00:00",
+                    previous_fingerprint="old_fp",
+                )
+            ],
+        )
+        data = key.to_dict()
+        restored = APIKey.from_dict(data)
+        assert len(restored.rotation_history) == 1
+
+    def test_key_scope(self):
+        key = APIKey(
+            id="test",
+            name="test",
+            provider=AuthProvider.ANTHROPIC,
+            key="sk_test",
+            scope=KeyScope.READ_ONLY,
+        )
+        assert key.scope == KeyScope.READ_ONLY
+
+    def test_key_scope_serialization(self):
+        key = APIKey(
+            id="test",
+            name="test",
+            provider=AuthProvider.ANTHROPIC,
+            key="sk_test",
+            scope=KeyScope.ADMIN,
+        )
+        data = key.to_dict()
+        assert data["scope"] == "admin"
+        restored = APIKey.from_dict(data)
+        assert restored.scope == KeyScope.ADMIN
+
+    def test_rotate_api_key(self, store):
+        key = store.add_api_key("sk_old", "old-key", AuthProvider.CUSTOM)
+        old_fp = key.get_fingerprint()
+
+        rotated = store.rotate_api_key(key.id, "sk_new", reason="Scheduled rotation")
+        assert rotated is not None
+        assert rotated.key == "sk_new"
+        assert rotated.get_fingerprint() != old_fp
+
+    def test_rotate_api_key_missing(self, store):
+        result = store.rotate_api_key("nonexistent", "sk_new")
+        assert result is None
+
+    def test_get_rotation_history(self, store):
+        key = store.add_api_key("sk_1", "key1", AuthProvider.CUSTOM)
+        original_id = key.id
+
+        rotated = store.rotate_api_key(key.id, "sk_2", reason="Scheduled rotation")
+
+        history = store.get_rotation_history(rotated.id)
+        assert len(history) == 1
+        assert history[0].reason == "Scheduled rotation"
+
+    def test_set_key_scope(self, store):
+        key = store.add_api_key("sk_test", "test", AuthProvider.CUSTOM)
+
+        result = store.set_key_scope(key.id, KeyScope.READ_ONLY)
+        assert result is True
+
+        config = store.get_config()
+        assert config.get_key(key.id).scope == KeyScope.READ_ONLY
+
+    def test_set_key_scope_missing(self, store):
+        result = store.set_key_scope("nonexistent", KeyScope.ADMIN)
+        assert result is False
+
+    def test_get_keys_needing_rotation(self, temp_auth_dir):
+        from scholardevclaw.auth.store import AuthStore
+
+        store = AuthStore(temp_auth_dir)
+        store.add_api_key("sk_old", "old", AuthProvider.CUSTOM)
+
+        keys = store.get_keys_needing_rotation(days=0)
+        assert len(keys) == 1
+
+    def test_mark_key_for_rotation(self, store):
+        key = store.add_api_key("sk_test", "test", AuthProvider.CUSTOM)
+
+        result = store.mark_key_for_rotation(key.id)
+        assert result is True
+
+        config = store.get_config()
+        assert config.get_key(key.id).rotation_recommended_at is not None

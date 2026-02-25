@@ -4,6 +4,36 @@
 
 **Last updated:** 2026-02-25
 
+### 2026-02-25 (continued - session 2)
+- Added **Key Rotation Feature** (`core/src/scholardevclaw/auth/types.py`, `store.py`):
+  - `KeyRotationEntry` class to track rotation history
+  - `rotate_api_key()` method with reason tracking
+  - `get_rotation_history()` to retrieve rotation events
+  - `get_keys_needing_rotation()` to find old keys
+  - `mark_key_for_rotation()` to flag keys for rotation
+
+- Added **Key Scopes/Permissions** (`core/src/scholardevclaw/auth/types.py`):
+  - `KeyScope` enum: READ_ONLY, READ_WRITE, ADMIN, CUSTOM
+  - `set_key_scope()` to change key permissions
+  - Scope persisted with API key
+
+- Added **Audit Logging** (`core/src/scholardevclaw/auth/audit.py`):
+  - `AuditLogger` class for tracking all auth events
+  - Events: KEY_ACCESSED, KEY_ADDED, KEY_REMOVED, KEY_ROTATED, LOGIN_SUCCESS, LOGIN_FAILED, etc.
+  - Fingerprint tracking (key not stored in logs)
+  - `get_events()` with filtering by key_id and event_type
+  - `get_failed_logins()` for security monitoring
+  - `clear_old_events()` for retention management
+  - Integrated with AuthStore for automatic logging
+
+- Added **11 Audit Tests** (`core/tests/unit/test_auth_audit.py`):
+  - Logger initialization and event logging
+  - Event filtering and retrieval
+  - Failed login tracking
+  - Store integration tests
+
+- **Total: 145 tests passing** (was 123)
+
 ### 2026-02-25 (continued)
 - Added **Enhanced Auth Module**:
   - Key format validation for Anthropic, OpenAI, GitHub, Google
