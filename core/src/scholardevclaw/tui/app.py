@@ -51,6 +51,12 @@ class ScholarDevClawApp(App[None]):
     TITLE = "ScholarDevClaw"
     SUB_TITLE = "Research-driven programming assistant"
 
+    # Key bindings
+    BINDINGS = [
+        ("ctrl+c", "exit_app", "Exit TUI"),
+        ("escape", "handle_escape", "Stop Agent"),
+    ]
+
     CSS = """
     Screen {
         layout: vertical;
@@ -66,6 +72,20 @@ class ScholarDevClawApp(App[None]):
     Footer {
         background: #081124;
         color: #93c5fd;
+    }
+
+    #warning-bar {
+        dock: bottom;
+        background: #1a0a0a;
+        color: #ef4444;
+        padding: 0 1;
+        height: 1;
+        text-style: bold;
+        display: none;
+    }
+
+    #warning-bar.visible {
+        display: block;
     }
 
     #hero {
@@ -231,6 +251,10 @@ class ScholarDevClawApp(App[None]):
         self._next_run_id = 1
         self._active_run_request: dict[str, Any] | None = None
         self._active_run_started_at = 0.0
+        # Escape key state for agent stop
+        self._escape_pressed_count = 0
+        self._escape_warning_shown = False
+        self._last_escape_time = 0.0
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -240,7 +264,9 @@ class ScholarDevClawApp(App[None]):
                 yield Label("Workflow Wizard", classes="section-title")
                 yield Select(self.action_mode_options, value="analyze", id="action")
                 yield Label("Repository path")
-                yield Input(value=str(Path.cwd()), placeholder="/path/to/repository", id="repo-path")
+                yield Input(
+                    value=str(Path.cwd()), placeholder="/path/to/repository", id="repo-path"
+                )
                 yield Label("Search query")
                 yield Input(value="layer normalization", id="query")
                 with Horizontal(classes="spaced"):
@@ -287,6 +313,7 @@ class ScholarDevClawApp(App[None]):
                 yield Button("Stop agent", id="stop-agent", variant="error")
             yield TextArea("", id="agent-logs", read_only=True)
 
+        yield Label("", id="warning-bar")
         yield Footer()
 
     def _append_logs(self, widget_id: str, lines: list[str]) -> None:
@@ -363,7 +390,9 @@ class ScholarDevClawApp(App[None]):
 
         return artifacts
 
-    def _render_artifact_preview(self, record: dict[str, Any] | None, artifact_id_raw: str = "") -> None:
+    def _render_artifact_preview(
+        self, record: dict[str, Any] | None, artifact_id_raw: str = ""
+    ) -> None:
         artifact_view = self.query_one("#artifact-view", TextArea)
         artifact_input = self.query_one("#artifact-id", Input)
 
@@ -755,8 +784,16 @@ class ScholarDevClawApp(App[None]):
             "result": message.result,
         }
         self.query_one("#result", Pretty).update(payload)
-        expected_types = {"integration"} if message.title == "Integration" else {"validation"} if message.title == "Validation" else None
-        compat_messages = self._payload_compat_messages(message.result, expected_types=expected_types)
+        expected_types = (
+            {"integration"}
+            if message.title == "Integration"
+            else {"validation"}
+            if message.title == "Validation"
+            else None
+        )
+        compat_messages = self._payload_compat_messages(
+            message.result, expected_types=expected_types
+        )
         if compat_messages:
             self._append_logs("logs", compat_messages)
         if not self._live_logs_enabled:
@@ -838,6 +875,66 @@ class ScholarDevClawApp(App[None]):
     def on_unmount(self) -> None:
         if self._agent_process and self._agent_process.poll() is None:
             self._agent_process.terminate()
+
+    def action_exit_app(self) -> None:
+        """Handle Ctrl+C to exit the TUI."""
+        self.exit()
+
+    def action_handle_escape(self) -> None:
+        """Handle Esc key - first press shows warning, second stops agent."""
+        import time
+
+        current_time = time.time()
+
+        # Reset if more than 2 seconds since last escape
+        if current_time - self._last_escape_time > 2.0:
+            self._escape_pressed_count = 0
+            self._escape_warning_shown = False
+
+        self._last_escape_time = current_time
+        self._escape_pressed_count += 1
+
+        if self._escape_pressed_count == 1:
+            # First Esc - show warning
+            self._show_warning_bar("⚠️  Press ESC again to stop running agent...")
+            self._escape_warning_shown = True
+        elif self._escape_pressed_count >= 2 and self._escape_warning_shown:
+            # Second Esc - stop agent
+            self._hide_warning_bar()
+            self._stop_agent()
+            self._escape_pressed_count = 0
+            self._escape_warning_shown = False
+
+    def _show_warning_bar(self, message: str) -> None:
+        """Show the warning bar with a message."""
+        try:
+            warning_bar = self.query_one("#warning-bar", Label)
+            warning_bar.update(message)
+            warning_bar.add_class("visible")
+        except Exception:
+            pass
+
+    def _hide_warning_bar(self) -> None:
+        """Hide the warning bar."""
+        try:
+            warning_bar = self.query_one("#warning-bar", Label)
+            warning_bar.update("")
+            warning_bar.remove_class("visible")
+        except Exception:
+            pass
+
+    def _stop_agent(self) -> None:
+        """Stop the running agent process."""
+        if not self._agent_process or self._agent_process.poll() is not None:
+            self._append_logs("agent-logs", ["No running agent to stop."])
+            return
+
+        self._agent_process.terminate()
+        try:
+            self._agent_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self._agent_process.kill()
+        self._append_logs("agent-logs", ["🛑 Agent stopped by user."])
 
 
 def run_tui() -> None:

@@ -5,6 +5,13 @@
 **Last updated:** 2026-02-27
 
 ### 2026-02-27
+- **TUI Keyboard Shortcuts** (`core/src/scholardevclaw/tui/app.py`):
+  - **Ctrl+C**: Exit the TUI (single press)
+  - **Esc (double-press)**: Stop running agent
+    - First Esc: Shows warning bar in light red below input
+    - Second Esc: Stops the agent process
+  - Warning bar component with visual feedback
+
 - **TUI Clipboard & Image Support** (`core/src/scholardevclaw/tui/clipboard.py` — NEW, 315 lines):
   - `ClipboardManager`: Cross-platform clipboard support (macOS/Linux/Windows)
   - Read/write text from system clipboard
