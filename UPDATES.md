@@ -2,7 +2,7 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-02-26
+**Last updated:** 2026-02-27
 
 ### 2026-02-26
 - **Encryption at Rest** (`core/src/scholardevclaw/auth/encryption.py` — NEW, 191 lines):
@@ -57,6 +57,61 @@
   - `test_auth_cli_extended.py` — 71 tests: rotate, audit, export, import, encrypt, profiles, usage, expiry CLI commands
 
 - **Total: 688 tests passing** (was 145 auth tests + existing suite)
+
+### 2026-02-26 (advanced features)
+- **OAuth 2.0 Flows** (`core/src/scholardevclaw/auth/oauth.py` — NEW, 410 lines):
+  - `OAuthProvider` base class with authorization code + PKCE flow
+  - `GoogleOAuthProvider` and `GitHubOAuthProvider` implementations
+  - `OAuthToken` with auto-refresh capability
+  - `OAuthTokenStore` for secure token persistence
+  - `OAuthManager` for high-level flow management
+  - Token exchange, refresh, user info retrieval
+
+- **Hardware Key Support** (`core/src/scholardevclaw/auth/hardware_keys.py` — NEW, 271 lines):
+  - `HardwareKeyManager` for YubiKey/PKCS#11
+  - YubiKey PIV slot detection and key generation
+  - Sign/encrypt operations with hardware keys
+  - PKCS#11 module support for external HSMs
+  - Hardware key reference storage in config
+
+- **Team / Multi-User Support** (`core/src/scholardevclaw/auth/team.py` — NEW, 389 lines):
+  - `Team`, `TeamMember`, `TeamInvite` classes
+  - Role-based access: ADMIN, DEVELOPER, VIEWER
+  - Granular permissions: READ_KEYS, WRITE_KEYS, ROTATE_KEYS, DELETE_KEYS, MANAGE_USERS, etc.
+  - `TeamStore` for team CRUD operations
+  - `TeamAccessControl` for permission checking
+  - Invite system with expiry
+
+- **API Usage Analytics** (`core/src/scholardevclaw/auth/analytics.py` — NEW, 415 lines):
+  - `UsageTracker` for recording API calls with cost estimation
+  - Provider pricing (Anthropic, OpenAI, Google, GitHub)
+  - `UsageAnalytics` with daily/provider/endpoint breakdown
+  - `UsageDashboard` for summary views
+  - Cost alerts and budget warnings
+
+- **Secret Rotation Automation** (`core/src/scholardevclaw/auth/rotation.py` — NEW, 397 lines):
+  - `RotationPolicy` for automated rotation scheduling
+  - `AnthropicRotationProvider` and `OpenAIRotationProvider` implementations
+  - `RotationScheduler` with policy management
+  - Auto-rotation for due keys
+  - Rotation history logging
+
+- **Key Request/Approval Workflow** (`core/src/scholardevclaw/auth/approval.py` — NEW, 371 lines):
+  - `KeyRequest` with types: NEW_KEY, KEY_ROTATION, KEY_RENEWAL
+  - `ApprovalWorkflow` for request lifecycle
+  - Approve/reject with notifications
+  - Request validation and rate limiting
+  - `RequestValidator` for policy enforcement
+
+- **New Tests** (94 new tests):
+  - `test_auth_oauth.py` — 18 tests: OAuth flow, token store, provider implementations
+  - `test_auth_hardware_keys.py` — 9 tests: YubiKey detection, PKCS#11, key management
+  - `test_auth_team.py` — 18 tests: team CRUD, roles, permissions, invites
+  - `test_auth_analytics.py` — 17 tests: usage tracking, cost estimation, dashboards
+  - `test_auth_rotation.py` — 16 tests: rotation policies, scheduler, providers
+  - `test_auth_approval.py` — 16 tests: workflow, approvals, validation
+
+- **Total: 782 tests passing** (was 688)
 
 ### 2026-02-25 (continued - session 2)
 - Added **Key Rotation Feature** (`core/src/scholardevclaw/auth/types.py`, `store.py`):
