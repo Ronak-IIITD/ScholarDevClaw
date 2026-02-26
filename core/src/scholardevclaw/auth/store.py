@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import stat
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,10 +18,33 @@ from .types import (
     UserProfile,
 )
 from .audit import AuditLogger, AuditEventType
+from .rate_limit import RateLimiter, RateLimitConfig
 
 
 class AuthStore:
-    def __init__(self, store_dir: str | None = None, enable_audit: bool = True):
+    """Production-grade local credential store.
+
+    Features:
+    - CRUD for API keys with provider detection
+    - Multi-profile support with workspace switching
+    - Key rotation with history tracking
+    - Key scoping (read/write/admin)
+    - Audit logging for all operations
+    - Per-key rate limiting and usage tracking
+    - File permission hardening (chmod 600)
+    - Encryption at rest (optional, via EncryptionManager)
+    - Import/export (JSON, env, 1Password CSV)
+    - Expiration alerts and auto-deactivation
+    """
+
+    PROFILES_DIR = "profiles"
+
+    def __init__(
+        self,
+        store_dir: str | None = None,
+        enable_audit: bool = True,
+        enable_rate_limit: bool = True,
+    ):
         if store_dir:
             self.store_dir = Path(store_dir)
         else:
@@ -34,18 +58,21 @@ class AuthStore:
         self.auth_file = self.store_dir / "auth.json"
         self._config: AuthConfig | None = None
         self._audit: AuditLogger | None = AuditLogger(str(self.store_dir)) if enable_audit else None
-        if store_dir:
-            self.store_dir = Path(store_dir)
-        else:
-            default_dir = os.environ.get("SCHOLARDEVCLAW_AUTH_DIR")
-            if default_dir:
-                self.store_dir = Path(default_dir)
-            else:
-                self.store_dir = Path.home() / ".scholardevclaw"
+        self._rate_limiter: RateLimiter | None = (
+            RateLimiter(str(self.store_dir)) if enable_rate_limit else None
+        )
+        self._encryption: Any | None = None  # lazy-loaded
 
-        self.store_dir.mkdir(parents=True, exist_ok=True)
-        self.auth_file = self.store_dir / "auth.json"
-        self._config: AuthConfig | None = None
+    # ------------------------------------------------------------------
+    # Internal persistence
+    # ------------------------------------------------------------------
+
+    def _harden_file(self, path: Path) -> None:
+        """Set file permissions to owner-only read/write (0600)."""
+        try:
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass  # Windows / permission error — best effort
 
     def _load_config(self) -> AuthConfig:
         if self._config is not None:
@@ -56,18 +83,36 @@ class AuthStore:
             return self._config
 
         try:
-            with open(self.auth_file) as f:
-                data = json.load(f)
+            raw = self.auth_file.read_text().strip()
+
+            # If encryption is enabled, try to decrypt
+            if self._encryption and self._encryption.is_enabled:
+                try:
+                    data = self._encryption.decrypt_dict(raw)
+                except Exception:
+                    # Could be plaintext migration scenario
+                    data = json.loads(raw)
+            else:
+                data = json.loads(raw)
+
             self._config = AuthConfig.from_dict(data)
-        except (json.JSONDecodeError, KeyError):
+        except (json.JSONDecodeError, KeyError, ValueError):
             self._config = AuthConfig()
 
         return self._config
 
     def _save_config(self, config: AuthConfig) -> None:
         self._config = config
-        with open(self.auth_file, "w") as f:
-            json.dump(config.to_dict(), f, indent=2)
+        data = config.to_dict()
+
+        if self._encryption and self._encryption.is_enabled:
+            encrypted = self._encryption.encrypt_dict(data)
+            self.auth_file.write_text(encrypted)
+        else:
+            with open(self.auth_file, "w") as f:
+                json.dump(data, f, indent=2)
+
+        self._harden_file(self.auth_file)
 
     def _write_env_file(self, api_key: APIKey) -> None:
         env_file = self.store_dir / ".env"
@@ -80,6 +125,90 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
 """
         with open(env_file, "w") as f:
             f.write(env_content)
+        self._harden_file(env_file)
+
+    # ------------------------------------------------------------------
+    # Encryption support
+    # ------------------------------------------------------------------
+
+    def enable_encryption(self, password: str) -> None:
+        """Enable encryption at rest. Encrypts existing auth data."""
+        from .encryption import get_encryption_manager
+
+        mgr = get_encryption_manager(str(self.store_dir))
+        mgr.enable(password)
+        self._encryption = mgr
+
+        # Re-save current config encrypted
+        config = self._load_config()
+        self._save_config(config)
+
+        if self._audit:
+            self._audit.log(
+                event_type=AuditEventType.CONFIG_CHANGED,
+                details={"action": "encryption_enabled"},
+            )
+
+    def unlock_encryption(self, password: str) -> bool:
+        """Unlock encrypted auth store."""
+        from .encryption import get_encryption_manager
+
+        mgr = get_encryption_manager(str(self.store_dir))
+        if not mgr.is_enabled:
+            return False
+        ok = mgr.unlock(password)
+        if ok:
+            self._encryption = mgr
+            self._config = None  # Force reload
+        return ok
+
+    def disable_encryption(self, password: str) -> bool:
+        """Disable encryption and store data in plaintext.
+
+        Verifies the password by attempting to decrypt existing data before
+        disabling. Returns False if the password is wrong or encryption is
+        not enabled.
+        """
+        from .encryption import get_encryption_manager
+
+        mgr = get_encryption_manager(str(self.store_dir))
+        if not mgr.is_enabled:
+            return False
+
+        if not mgr.unlock(password):
+            return False
+
+        # Verify the password actually decrypts the auth file. unlock()
+        # only derives a key — it does NOT validate correctness.
+        if self.auth_file.exists():
+            raw = self.auth_file.read_text().strip()
+            if raw:
+                try:
+                    mgr.decrypt_dict(raw)
+                except Exception:
+                    # Wrong password — decrypt failed
+                    return False
+
+        self._encryption = mgr
+        self._config = None
+        config = self._load_config()
+
+        # Disable and re-save as plaintext
+        mgr.disable()
+        self._encryption = None
+        self._save_config(config)
+        return True
+
+    def is_encryption_enabled(self) -> bool:
+        """Check if encryption is currently enabled."""
+        from .encryption import get_encryption_manager
+
+        mgr = get_encryption_manager(str(self.store_dir))
+        return mgr.is_enabled
+
+    # ------------------------------------------------------------------
+    # Auth status
+    # ------------------------------------------------------------------
 
     def is_authenticated(self) -> bool:
         config = self._load_config()
@@ -99,11 +228,17 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
             provider=default_key.provider.value if default_key else None,
             key_count=len(config.api_keys),
             active_keys=active_keys,
-            subscription_tier=config.profile.subscription_tier.value if config.profile else "free",
+            subscription_tier=(
+                config.profile.subscription_tier.value if config.profile else "free"
+            ),
         )
 
     def get_config(self) -> AuthConfig:
         return self._load_config()
+
+    # ------------------------------------------------------------------
+    # API key CRUD
+    # ------------------------------------------------------------------
 
     def get_api_key(self, provider: AuthProvider | None = None) -> str | None:
         env_key = os.environ.get("SCHOLARDEVCLAW_API_KEY")
@@ -129,6 +264,43 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
 
         return None
 
+    def get_api_key_with_rate_check(
+        self, provider: AuthProvider | None = None
+    ) -> tuple[str | None, str]:
+        """Get API key with rate limit check.
+
+        Returns (key, status_message). If rate-limited, key is None.
+        """
+        env_key = os.environ.get("SCHOLARDEVCLAW_API_KEY")
+        if env_key:
+            return env_key, "OK"
+
+        config = self._load_config()
+        key_obj = config.get_active_key(provider)
+
+        if not key_obj:
+            return None, "No active key found"
+
+        # Check rate limit
+        if self._rate_limiter:
+            allowed, reason = self._rate_limiter.check_rate_limit(key_obj.id)
+            if not allowed:
+                return None, reason
+            self._rate_limiter.record_usage(key_obj.id, key_obj.provider.value)
+
+        key_obj.last_used = datetime.now().isoformat()
+        self._save_config(config)
+
+        if self._audit:
+            self._audit.log(
+                event_type=AuditEventType.KEY_ACCESSED,
+                key_id=key_obj.id,
+                key=key_obj.key,
+                provider=key_obj.provider.value,
+            )
+
+        return key_obj.key, "OK"
+
     def add_api_key(
         self,
         key: str,
@@ -136,6 +308,9 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
         provider: AuthProvider,
         set_default: bool = True,
         validate: bool = False,
+        expires_at: str | None = None,
+        scope: KeyScope = KeyScope.READ_WRITE,
+        metadata: dict[str, Any] | None = None,
     ) -> APIKey:
         config = self._load_config()
 
@@ -154,6 +329,9 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
             name=name,
             provider=provider,
             key=key,
+            expires_at=expires_at,
+            scope=scope,
+            metadata=metadata or {},
         )
 
         config.api_keys.append(api_key)
@@ -171,7 +349,7 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
                 key_id=api_key.id,
                 key=key,
                 provider=provider.value,
-                details={"name": name},
+                details={"name": name, "scope": scope.value},
             )
 
         return api_key
@@ -221,6 +399,10 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
         config = self._load_config()
         return config.api_keys
 
+    # ------------------------------------------------------------------
+    # Profile management
+    # ------------------------------------------------------------------
+
     def create_profile(
         self,
         email: str | None = None,
@@ -241,6 +423,13 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
 
         config.profile = profile
         self._save_config(config)
+
+        if self._audit:
+            self._audit.log(
+                event_type=AuditEventType.PROFILE_CREATED,
+                user_email=email,
+                details={"name": name},
+            )
 
         return profile
 
@@ -263,17 +452,91 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
             config.profile.preferences.update(preferences)
 
         self._save_config(config)
+
+        if self._audit:
+            self._audit.log(
+                event_type=AuditEventType.PROFILE_UPDATED,
+                user_email=config.profile.email,
+            )
+
         return config.profile
 
     def get_profile(self) -> UserProfile | None:
         config = self._load_config()
         return config.profile
 
+    # ------------------------------------------------------------------
+    # Multi-profile / workspace support
+    # ------------------------------------------------------------------
+
+    def list_profiles(self) -> list[str]:
+        """List all saved profile names (workspaces)."""
+        profiles_dir = self.store_dir / self.PROFILES_DIR
+        if not profiles_dir.exists():
+            return []
+        return [p.stem for p in profiles_dir.iterdir() if p.suffix == ".json" and p.is_file()]
+
+    def save_profile_as(self, profile_name: str) -> Path:
+        """Save current config as a named profile."""
+        profiles_dir = self.store_dir / self.PROFILES_DIR
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+
+        config = self._load_config()
+        profile_path = profiles_dir / f"{profile_name}.json"
+
+        with open(profile_path, "w") as f:
+            json.dump(config.to_dict(), f, indent=2)
+
+        self._harden_file(profile_path)
+        return profile_path
+
+    def load_profile(self, profile_name: str) -> bool:
+        """Switch to a saved profile."""
+        profiles_dir = self.store_dir / self.PROFILES_DIR
+        profile_path = profiles_dir / f"{profile_name}.json"
+
+        if not profile_path.exists():
+            return False
+
+        try:
+            with open(profile_path) as f:
+                data = json.load(f)
+            config = AuthConfig.from_dict(data)
+            self._save_config(config)
+
+            if self._audit:
+                self._audit.log(
+                    event_type=AuditEventType.CONFIG_CHANGED,
+                    details={"action": "profile_switched", "profile": profile_name},
+                )
+
+            return True
+        except (json.JSONDecodeError, KeyError):
+            return False
+
+    def delete_profile(self, profile_name: str) -> bool:
+        """Delete a saved profile."""
+        profiles_dir = self.store_dir / self.PROFILES_DIR
+        profile_path = profiles_dir / f"{profile_name}.json"
+
+        if not profile_path.exists():
+            return False
+
+        profile_path.unlink()
+        return True
+
+    # ------------------------------------------------------------------
+    # Session management
+    # ------------------------------------------------------------------
+
     def logout(self) -> bool:
         config = self._load_config()
 
         if not config.api_keys and not config.profile:
             return False
+
+        if self._audit:
+            self._audit.log(event_type=AuditEventType.LOGOUT)
 
         self._config = AuthConfig()
         self._save_config(AuthConfig())
@@ -294,6 +557,10 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
         env_file = self.store_dir / ".env"
         if env_file.exists():
             env_file.unlink()
+
+    # ------------------------------------------------------------------
+    # Key rotation
+    # ------------------------------------------------------------------
 
     def rotate_api_key(
         self,
@@ -319,9 +586,6 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
         key.rotation_history.append(rotation_entry)
         key.key = new_key
         key.last_used = None
-
-        import secrets
-
         key.id = f"key_{secrets.token_hex(8)}"
 
         self._save_config(config)
@@ -333,7 +597,10 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
                 key_id=key.id,
                 key=new_key,
                 provider=key.provider.value,
-                details={"reason": reason, "previous_fingerprint": old_fingerprint},
+                details={
+                    "reason": reason,
+                    "previous_fingerprint": old_fingerprint,
+                },
             )
 
         return key
@@ -353,8 +620,21 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
         if not key:
             return False
 
+        old_scope = key.scope
         key.scope = scope
         self._save_config(config)
+
+        if self._audit:
+            self._audit.log(
+                event_type=AuditEventType.KEY_SCOPE_CHANGED,
+                key_id=key_id,
+                provider=key.provider.value,
+                details={
+                    "old_scope": old_scope.value,
+                    "new_scope": scope.value,
+                },
+            )
+
         return True
 
     def get_keys_needing_rotation(self, days: int = 90) -> list[APIKey]:
@@ -383,3 +663,172 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
         key.rotation_recommended_at = datetime.now().isoformat()
         self._save_config(config)
         return True
+
+    # ------------------------------------------------------------------
+    # Expiration alerts
+    # ------------------------------------------------------------------
+
+    def get_expiring_keys(self, within_days: int = 7) -> list[APIKey]:
+        """Get keys expiring within the given number of days."""
+        config = self._load_config()
+        deadline = datetime.now() + timedelta(days=within_days)
+        expiring: list[APIKey] = []
+
+        for key in config.api_keys:
+            if not key.is_active or not key.expires_at:
+                continue
+            try:
+                expires = datetime.fromisoformat(key.expires_at)
+                if expires <= deadline:
+                    expiring.append(key)
+            except ValueError:
+                continue
+
+        return expiring
+
+    def deactivate_expired_keys(self) -> list[APIKey]:
+        """Deactivate keys that have passed their expiry. Returns deactivated keys."""
+        config = self._load_config()
+        now = datetime.now()
+        deactivated: list[APIKey] = []
+
+        for key in config.api_keys:
+            if not key.is_active or not key.expires_at:
+                continue
+            try:
+                expires = datetime.fromisoformat(key.expires_at)
+                if now > expires:
+                    key.is_active = False
+                    deactivated.append(key)
+
+                    if self._audit:
+                        self._audit.log(
+                            event_type=AuditEventType.CONFIG_CHANGED,
+                            key_id=key.id,
+                            provider=key.provider.value,
+                            details={"action": "auto_deactivated", "expired_at": key.expires_at},
+                        )
+            except ValueError:
+                continue
+
+        if deactivated:
+            self._save_config(config)
+
+        return deactivated
+
+    def set_key_expiry(self, key_id: str, expires_at: str) -> bool:
+        """Set expiry date for a key. Format: ISO 8601."""
+        config = self._load_config()
+        key = config.get_key(key_id)
+        if not key:
+            return False
+
+        # Validate format
+        try:
+            datetime.fromisoformat(expires_at)
+        except ValueError:
+            raise ValueError(f"Invalid date format: {expires_at}. Use ISO 8601.")
+
+        key.expires_at = expires_at
+        self._save_config(config)
+        return True
+
+    # ------------------------------------------------------------------
+    # Rate limiting
+    # ------------------------------------------------------------------
+
+    def set_rate_limit(self, key_id: str, config: RateLimitConfig) -> bool:
+        """Set rate limit for a key."""
+        if not self._rate_limiter:
+            return False
+        cfg = self._load_config()
+        if not cfg.get_key(key_id):
+            return False
+        self._rate_limiter.set_limit(key_id, config)
+        return True
+
+    def get_key_usage(self, key_id: str | None = None) -> dict[str, Any]:
+        """Get usage statistics for a key or all keys."""
+        if not self._rate_limiter:
+            return {}
+        if key_id:
+            return self._rate_limiter.get_usage_stats(key_id).to_dict()
+        return {k: v.to_dict() for k, v in self._rate_limiter.get_all_usage().items()}
+
+    # ------------------------------------------------------------------
+    # Import / export
+    # ------------------------------------------------------------------
+
+    def export_json(self, include_keys: bool = True) -> str:
+        """Export current config as JSON."""
+        from .import_export import AuthExporter
+
+        config = self._load_config()
+        return AuthExporter.to_json(config, include_keys=include_keys)
+
+    def export_env(self, include_all: bool = False) -> str:
+        """Export current config as .env format."""
+        from .import_export import AuthExporter
+
+        config = self._load_config()
+        return AuthExporter.to_env(config, include_all=include_all)
+
+    def import_keys_from_env(self, env_content: str) -> tuple[int, list[str]]:
+        """Import keys from .env content. Returns (count, errors)."""
+        from .import_export import AuthImporter
+
+        keys, result = AuthImporter.from_env(env_content)
+        config = self._load_config()
+
+        for key in keys:
+            config.api_keys.append(key)
+            if not config.default_key_id:
+                config.default_key_id = key.id
+                config.default_provider = key.provider
+
+        if keys:
+            self._save_config(config)
+
+        return result.imported_count, result.errors or []
+
+    def import_keys_from_json(self, json_str: str) -> tuple[int, list[str]]:
+        """Import keys from JSON. Returns (count, errors)."""
+        from .import_export import AuthImporter
+
+        imported_config, result = AuthImporter.from_json(json_str)
+        if result.error_count > 0:
+            return 0, result.errors or []
+
+        config = self._load_config()
+        for key in imported_config.api_keys:
+            config.api_keys.append(key)
+            if not config.default_key_id:
+                config.default_key_id = key.id
+                config.default_provider = key.provider
+
+        if imported_config.api_keys:
+            self._save_config(config)
+
+        if imported_config.profile and not config.profile:
+            config.profile = imported_config.profile
+            self._save_config(config)
+
+        return result.imported_count, []
+
+    def import_keys_from_1password(self, csv_content: str) -> tuple[int, list[str]]:
+        """Import keys from 1Password CSV. Returns (count, errors)."""
+        from .import_export import AuthImporter
+
+        keys, result = AuthImporter.from_1password_csv(csv_content)
+        config = self._load_config()
+
+        for key in keys:
+            config.api_keys.append(key)
+            if not config.default_key_id:
+                config.default_key_id = key.id
+                config.default_provider = key.provider
+
+        if keys:
+            self._save_config(config)
+
+        return result.imported_count, result.errors or []

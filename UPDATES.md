@@ -2,7 +2,61 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-02-25
+**Last updated:** 2026-02-26
+
+### 2026-02-26
+- **Encryption at Rest** (`core/src/scholardevclaw/auth/encryption.py` — NEW, 191 lines):
+  - `EncryptionManager`: Fernet-based encryption with PBKDF2-HMAC-SHA256 key derivation (600k iterations)
+  - Salt persistence, enable/disable/unlock, change_password with re-encryption
+  - `FallbackEncryptionManager`: No-op fallback when `cryptography` is not installed
+  - `get_encryption_manager()` factory for graceful degradation
+  - Store integration: `enable_encryption()`, `unlock_encryption()`, `disable_encryption()`, `is_encryption_enabled()`
+
+- **Rate Limiting** (`core/src/scholardevclaw/auth/rate_limit.py` — NEW, 224 lines):
+  - `RateLimiter`: Per-key sliding window rate limiter
+  - `RateLimitConfig`: Configurable per-minute/hour/day limits with burst support
+  - `KeyUsageStats` and `UsageRecord` for tracking
+  - Persistent usage data with auto-recovery from corrupted files
+  - Store integration: `set_rate_limit()`, `get_key_usage()`, `get_api_key_with_rate_check()`
+
+- **Import/Export** (`core/src/scholardevclaw/auth/import_export.py` — NEW, 291 lines):
+  - `AuthExporter`: Export to JSON (full/redacted) and .env format, file output support
+  - `AuthImporter`: Import from JSON, .env, and 1Password CSV formats
+  - Auto-detect provider from key format (Anthropic/OpenAI/GitHub/Google/Custom)
+  - `ImportResult` for tracking imported/skipped/error counts
+  - Store integration: `export_json()`, `export_env()`, `import_keys_from_env()`, `import_keys_from_json()`, `import_keys_from_1password()`
+
+- **Multi-Profile / Workspace Support** (in `store.py`):
+  - `save_profile_as()`, `load_profile()`, `list_profiles()`, `delete_profile()`
+  - Profile isolation with file-per-workspace storage under `~/.scholardevclaw/profiles/`
+  - File permission hardening (chmod 600) on profile files
+
+- **Key Expiration Alerts** (in `store.py`):
+  - `get_expiring_keys(within_days)`: Find keys expiring within a time window
+  - `deactivate_expired_keys()`: Auto-deactivate past-expiry keys
+  - `set_key_expiry(key_id, expires_at)`: Set/update expiry with ISO 8601 validation
+
+- **File Permission Hardening** (in `store.py`):
+  - `_harden_file()` sets chmod 600 on auth.json, .env, and profile files
+
+- **Rewritten `store.py`** (818 lines): Complete rewrite integrating encryption, rate limiting, multi-profile, expiration, import/export, file hardening. Fixed duplicate `__init__` bug.
+
+- **Rewritten `cli.py`** (705 lines): Added CLI commands: `rotate`, `audit`, `export`, `import`, `encrypt`, `profiles`, `usage`, `expiry`
+
+- **Updated `__init__.py`**: Exports for RateLimiter, RateLimitConfig, KeyUsageStats, AuthExporter, AuthImporter, ImportResult
+
+- **Updated `pyproject.toml`**: Added `crypto = ["cryptography>=42.0.0"]` optional dependency
+
+- **Bug fix: `disable_encryption()` password verification** — `disable_encryption("wrongpass")` previously succeeded because `unlock()` only derives a key without verification. Fixed to attempt actual decryption of auth data before disabling.
+
+- **New Tests** (220 tests, all passing):
+  - `test_auth_encryption.py` — 43 tests: key derivation, EncryptionManager, FallbackEncryptionManager, store integration
+  - `test_auth_rate_limit.py` — 32 tests: config, records, stats, limiter, store integration
+  - `test_auth_import_export.py` — 46 tests: export JSON/env, import JSON/env/1Password CSV, provider detection, store roundtrip
+  - `test_auth_profiles.py` — 28 tests: multi-profile CRUD, key expiration, file permissions
+  - `test_auth_cli_extended.py` — 71 tests: rotate, audit, export, import, encrypt, profiles, usage, expiry CLI commands
+
+- **Total: 688 tests passing** (was 145 auth tests + existing suite)
 
 ### 2026-02-25 (continued - session 2)
 - Added **Key Rotation Feature** (`core/src/scholardevclaw/auth/types.py`, `store.py`):

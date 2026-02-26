@@ -1,36 +1,53 @@
 from __future__ import annotations
 
 import getpass
+import json
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .store import AuthStore
-from .types import AuthProvider
+from .types import AuthProvider, KeyScope
 
 
 def cmd_auth(args):
     """Manage authentication and API keys"""
     store = AuthStore()
 
-    if args.auth_action == "login":
-        return _cmd_login(args, store)
-    elif args.auth_action == "logout":
-        return _cmd_logout(args, store)
-    elif args.auth_action == "status":
-        return _cmd_status(args, store)
-    elif args.auth_action == "list":
-        return _cmd_list(args, store)
-    elif args.auth_action == "add":
-        return _cmd_add(args, store)
-    elif args.auth_action == "remove":
-        return _cmd_remove(args, store)
-    elif args.auth_action == "default":
-        return _cmd_default(args, store)
-    elif args.auth_action == "setup":
-        return _cmd_setup(args, store)
+    action = args.auth_action
+    dispatch = {
+        "login": _cmd_login,
+        "logout": _cmd_logout,
+        "status": _cmd_status,
+        "list": _cmd_list,
+        "add": _cmd_add,
+        "remove": _cmd_remove,
+        "default": _cmd_default,
+        "setup": _cmd_setup,
+        "rotate": _cmd_rotate,
+        "audit": _cmd_audit,
+        "export": _cmd_export,
+        "import": _cmd_import,
+        "encrypt": _cmd_encrypt,
+        "profiles": _cmd_profiles,
+        "usage": _cmd_usage,
+        "expiry": _cmd_expiry,
+    }
+
+    handler = dispatch.get(action)
+    if handler:
+        return handler(args, store)
     else:
-        print("Unknown auth action. Use: login, logout, status, list, add, remove, default, setup")
+        print(
+            "Unknown auth action. Use: login, logout, status, list, add, remove, "
+            "default, setup, rotate, audit, export, import, encrypt, profiles, usage, expiry"
+        )
         sys.exit(1)
+
+
+# ------------------------------------------------------------------
+# Setup wizard
+# ------------------------------------------------------------------
 
 
 def _cmd_setup(args, store: AuthStore):
@@ -139,6 +156,11 @@ def _prompt_for_key(provider: AuthProvider) -> str:
     return api_key
 
 
+# ------------------------------------------------------------------
+# Login / Logout
+# ------------------------------------------------------------------
+
+
 def _cmd_login(args, store: AuthStore):
     """Login with API key"""
     if args.provider:
@@ -170,8 +192,6 @@ def _cmd_login(args, store: AuthStore):
         print(f"   Key: {added.mask()}")
 
         if args.output_json:
-            import json
-
             print(json.dumps(added.to_dict(), indent=2))
 
     except Exception as e:
@@ -198,13 +218,16 @@ def _cmd_logout(args, store: AuthStore):
         print("ℹ️  No credentials to remove.")
 
 
+# ------------------------------------------------------------------
+# Status / List
+# ------------------------------------------------------------------
+
+
 def _cmd_status(args, store: AuthStore):
     """Show authentication status"""
     status = store.get_status()
 
     if args.output_json:
-        import json
-
         print(json.dumps(status.to_dict(), indent=2))
         return
 
@@ -227,6 +250,12 @@ def _cmd_status(args, store: AuthStore):
         print(f"   Default Provider: {status.provider}")
     print(f"   Tier: {status.subscription_tier}")
 
+    # Encryption status
+    if store.is_encryption_enabled():
+        print(f"   🔒 Encryption: enabled")
+    else:
+        print(f"   🔓 Encryption: disabled")
+
     profile = store.get_profile()
     if profile:
         print(f"\n   Profile ID: {profile.id}")
@@ -239,7 +268,29 @@ def _cmd_status(args, store: AuthStore):
         for key in keys:
             status_icon = "✓" if key.is_valid() else "✗"
             default = " (default)" if key.id == store.get_config().default_key_id else ""
-            print(f"   [{status_icon}] {key.name}: {key.mask()}{default}")
+            scope_str = f" [{key.scope.value}]"
+            expiry = ""
+            if key.expires_at:
+                try:
+                    exp_dt = datetime.fromisoformat(key.expires_at)
+                    days_left = (exp_dt - datetime.now()).days
+                    if days_left < 0:
+                        expiry = " ⚠️ EXPIRED"
+                    elif days_left <= 7:
+                        expiry = f" ⚠️ expires in {days_left}d"
+                except ValueError:
+                    pass
+            print(f"   [{status_icon}] {key.name}: {key.mask()}{default}{scope_str}{expiry}")
+
+    # Expiring keys warning
+    expiring = store.get_expiring_keys(within_days=7)
+    if expiring:
+        print(f"\n⚠️  {len(expiring)} key(s) expiring within 7 days!")
+
+    # Rotation recommendations
+    needing_rotation = store.get_keys_needing_rotation(days=90)
+    if needing_rotation:
+        print(f"\n🔄 {len(needing_rotation)} key(s) older than 90 days — consider rotating")
 
 
 def _cmd_list(args, store: AuthStore):
@@ -248,8 +299,6 @@ def _cmd_list(args, store: AuthStore):
     config = store.get_config()
 
     if args.output_json:
-        import json
-
         print(json.dumps([k.to_dict() for k in keys], indent=2))
         return
 
@@ -269,9 +318,19 @@ def _cmd_list(args, store: AuthStore):
         print(f"  Provider: {key.provider.value}")
         print(f"  Key: {key.mask()}")
         print(f"  Status: {status}")
+        print(f"  Scope: {key.scope.value}")
         print(f"  Created: {key.created_at[:10]}")
         if key.last_used:
             print(f"  Last Used: {key.last_used[:10]}")
+        if key.expires_at:
+            print(f"  Expires: {key.expires_at[:10]}")
+        if key.rotation_recommended_at:
+            print(f"  🔄 Rotation recommended since: {key.rotation_recommended_at[:10]}")
+
+
+# ------------------------------------------------------------------
+# Add / Remove / Default
+# ------------------------------------------------------------------
 
 
 def _cmd_add(args, store: AuthStore):
@@ -292,8 +351,6 @@ def _cmd_add(args, store: AuthStore):
     print(f"   Key: {added.mask()}")
 
     if args.output_json:
-        import json
-
         print(json.dumps(added.to_dict(), indent=2))
 
 
@@ -321,3 +378,328 @@ def _cmd_default(args, store: AuthStore):
     else:
         print(f"❌ Key not found: {args.key_id}", file=sys.stderr)
         sys.exit(1)
+
+
+# ------------------------------------------------------------------
+# Key rotation
+# ------------------------------------------------------------------
+
+
+def _cmd_rotate(args, store: AuthStore):
+    """Rotate an API key"""
+    key_id = getattr(args, "key_id", None)
+    if not key_id:
+        print("Key ID is required. Use: auth rotate <key-id>", file=sys.stderr)
+        sys.exit(1)
+
+    new_key = getattr(args, "new_key", None)
+    if not new_key:
+        new_key = getpass.getpass("New API Key: ").strip()
+
+    if not new_key:
+        print("New API key is required", file=sys.stderr)
+        sys.exit(1)
+
+    reason = getattr(args, "reason", None) or "Manual rotation"
+
+    rotated = store.rotate_api_key(key_id, new_key, reason=reason)
+    if rotated:
+        print(f"✅ Key rotated successfully!")
+        print(f"   New Key ID: {rotated.id}")
+        print(f"   Key: {rotated.mask()}")
+        print(f"   Rotations: {len(rotated.rotation_history)}")
+    else:
+        print(f"❌ Key not found: {key_id}", file=sys.stderr)
+        sys.exit(1)
+
+
+# ------------------------------------------------------------------
+# Audit log
+# ------------------------------------------------------------------
+
+
+def _cmd_audit(args, store: AuthStore):
+    """View audit log"""
+    if not store._audit:
+        print("Audit logging is disabled.", file=sys.stderr)
+        sys.exit(1)
+
+    limit = getattr(args, "limit", 20) or 20
+    key_id = getattr(args, "key_id", None)
+
+    events = store._audit.get_events(key_id=key_id, limit=limit)
+
+    output_json = getattr(args, "output_json", False)
+    if output_json:
+        print(json.dumps([e.to_dict() for e in events], indent=2))
+        return
+
+    if not events:
+        print("\nNo audit events found.")
+        return
+
+    print(f"\n📜 Audit Log (last {len(events)} events)")
+    print("=" * 60)
+
+    for event in events:
+        ts = event.timestamp[:19]
+        icon = "✅" if event.success else "❌"
+        fp = f" [{event.key_fingerprint[:8]}]" if event.key_fingerprint else ""
+        provider = f" ({event.provider})" if event.provider else ""
+        print(f"  {icon} {ts} | {event.event_type.value}{provider}{fp}")
+        if event.details:
+            for k, v in event.details.items():
+                if v is not None:
+                    print(f"     {k}: {v}")
+
+
+# ------------------------------------------------------------------
+# Export / Import
+# ------------------------------------------------------------------
+
+
+def _cmd_export(args, store: AuthStore):
+    """Export credentials"""
+    fmt = getattr(args, "format", "json") or "json"
+    output = getattr(args, "output", None)
+    include_keys = not getattr(args, "redact", False)
+
+    if fmt == "env":
+        content = store.export_env(include_all=True)
+    else:
+        content = store.export_json(include_keys=include_keys)
+
+    if output:
+        Path(output).write_text(content)
+        print(f"✅ Exported to {output}")
+    else:
+        print(content)
+
+
+def _cmd_import(args, store: AuthStore):
+    """Import credentials"""
+    source = getattr(args, "source", None)
+    fmt = getattr(args, "format", "auto") or "auto"
+
+    if not source:
+        print("Source file is required. Use: auth import <file>", file=sys.stderr)
+        sys.exit(1)
+
+    source_path = Path(source)
+    if not source_path.exists():
+        print(f"❌ File not found: {source}", file=sys.stderr)
+        sys.exit(1)
+
+    content = source_path.read_text()
+
+    # Auto-detect format
+    if fmt == "auto":
+        if source.endswith(".csv"):
+            fmt = "1password"
+        elif source.endswith(".env") or source.startswith(".env"):
+            fmt = "env"
+        else:
+            fmt = "json"
+
+    if fmt == "env":
+        count, errors = store.import_keys_from_env(content)
+    elif fmt == "1password":
+        count, errors = store.import_keys_from_1password(content)
+    else:
+        count, errors = store.import_keys_from_json(content)
+
+    print(f"✅ Imported {count} key(s)")
+    if errors:
+        for err in errors:
+            print(f"  ⚠️  {err}")
+
+
+# ------------------------------------------------------------------
+# Encryption
+# ------------------------------------------------------------------
+
+
+def _cmd_encrypt(args, store: AuthStore):
+    """Manage encryption at rest"""
+    action = getattr(args, "encrypt_action", "status")
+
+    if action == "enable":
+        password = getpass.getpass("Master password: ").strip()
+        if not password:
+            print("Password is required", file=sys.stderr)
+            sys.exit(1)
+
+        confirm = getpass.getpass("Confirm password: ").strip()
+        if password != confirm:
+            print("Passwords do not match", file=sys.stderr)
+            sys.exit(1)
+
+        try:
+            store.enable_encryption(password)
+            print("✅ Encryption enabled. All credentials are now encrypted at rest.")
+            print("⚠️  Remember your master password — it cannot be recovered!")
+        except RuntimeError as e:
+            print(f"❌ {e}", file=sys.stderr)
+            sys.exit(1)
+
+    elif action == "disable":
+        password = getpass.getpass("Master password: ").strip()
+        if store.disable_encryption(password):
+            print("✅ Encryption disabled. Credentials stored in plaintext.")
+        else:
+            print("❌ Wrong password or encryption not enabled.", file=sys.stderr)
+            sys.exit(1)
+
+    elif action == "status":
+        if store.is_encryption_enabled():
+            print("🔒 Encryption: enabled")
+        else:
+            print("🔓 Encryption: disabled")
+            print("Enable with: scholardevclaw auth encrypt enable")
+
+    else:
+        print("Usage: auth encrypt [enable|disable|status]")
+
+
+# ------------------------------------------------------------------
+# Multi-profile / workspace
+# ------------------------------------------------------------------
+
+
+def _cmd_profiles(args, store: AuthStore):
+    """Manage credential profiles (workspaces)"""
+    action = getattr(args, "profile_action", "list")
+
+    if action == "list":
+        profiles = store.list_profiles()
+        if not profiles:
+            print("\nNo saved profiles.")
+            print("Save current config: scholardevclaw auth profiles save <name>")
+            return
+        print("\n📁 Saved Profiles:")
+        for p in profiles:
+            print(f"  - {p}")
+
+    elif action == "save":
+        name = getattr(args, "profile_name", None)
+        if not name:
+            print("Profile name required.", file=sys.stderr)
+            sys.exit(1)
+        path = store.save_profile_as(name)
+        print(f"✅ Profile saved: {name}")
+
+    elif action == "load":
+        name = getattr(args, "profile_name", None)
+        if not name:
+            print("Profile name required.", file=sys.stderr)
+            sys.exit(1)
+        if store.load_profile(name):
+            print(f"✅ Switched to profile: {name}")
+        else:
+            print(f"❌ Profile not found: {name}", file=sys.stderr)
+            sys.exit(1)
+
+    elif action == "delete":
+        name = getattr(args, "profile_name", None)
+        if not name:
+            print("Profile name required.", file=sys.stderr)
+            sys.exit(1)
+        if store.delete_profile(name):
+            print(f"✅ Profile deleted: {name}")
+        else:
+            print(f"❌ Profile not found: {name}", file=sys.stderr)
+            sys.exit(1)
+
+    else:
+        print("Usage: auth profiles [list|save|load|delete] <name>")
+
+
+# ------------------------------------------------------------------
+# Usage / rate limiting
+# ------------------------------------------------------------------
+
+
+def _cmd_usage(args, store: AuthStore):
+    """View key usage statistics"""
+    key_id = getattr(args, "key_id", None)
+    output_json = getattr(args, "output_json", False)
+
+    usage = store.get_key_usage(key_id)
+
+    if output_json:
+        print(json.dumps(usage, indent=2))
+        return
+
+    if not usage:
+        print("\nNo usage data available.")
+        return
+
+    if key_id:
+        # Single key stats
+        print(f"\n📊 Usage Stats for {key_id}")
+        print("=" * 40)
+        for k, v in usage.items():
+            print(f"  {k}: {v}")
+    else:
+        # All keys
+        print("\n📊 Usage Stats")
+        print("=" * 50)
+        for kid, stats in usage.items():
+            print(f"\n  Key: {kid}")
+            print(f"    Total: {stats['total_requests']}")
+            print(f"    Last minute: {stats['requests_last_minute']}")
+            print(f"    Last hour: {stats['requests_last_hour']}")
+            if stats.get("is_rate_limited"):
+                print(f"    ⚠️  RATE LIMITED")
+
+
+# ------------------------------------------------------------------
+# Expiry management
+# ------------------------------------------------------------------
+
+
+def _cmd_expiry(args, store: AuthStore):
+    """Manage key expiration"""
+    action = getattr(args, "expiry_action", "check")
+
+    if action == "check":
+        expiring = store.get_expiring_keys(within_days=30)
+        if not expiring:
+            print("\n✅ No keys expiring within 30 days.")
+            return
+
+        print(f"\n⚠️  {len(expiring)} key(s) expiring soon:")
+        for key in expiring:
+            days_left = 0
+            if key.expires_at:
+                try:
+                    exp_dt = datetime.fromisoformat(key.expires_at)
+                    days_left = (exp_dt - datetime.now()).days
+                except ValueError:
+                    pass
+            print(f"  - {key.name} ({key.id}): {days_left} days left")
+
+    elif action == "set":
+        key_id = getattr(args, "key_id", None)
+        expires = getattr(args, "expires_at", None)
+        if not key_id or not expires:
+            print("Usage: auth expiry set <key-id> <date>", file=sys.stderr)
+            sys.exit(1)
+        try:
+            store.set_key_expiry(key_id, expires)
+            print(f"✅ Expiry set for {key_id}: {expires}")
+        except ValueError as e:
+            print(f"❌ {e}", file=sys.stderr)
+            sys.exit(1)
+
+    elif action == "deactivate":
+        deactivated = store.deactivate_expired_keys()
+        if deactivated:
+            print(f"✅ Deactivated {len(deactivated)} expired key(s):")
+            for key in deactivated:
+                print(f"  - {key.name} ({key.id})")
+        else:
+            print("✅ No expired keys to deactivate.")
+
+    else:
+        print("Usage: auth expiry [check|set|deactivate]")

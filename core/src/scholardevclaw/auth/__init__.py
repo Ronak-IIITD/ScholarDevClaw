@@ -9,7 +9,12 @@ from .types import (
     AuthStatus,
     UserProfile,
     SubscriptionTier,
+    KeyScope,
+    KeyRotationEntry,
 )
+from .audit import AuditLogger, AuditEventType, AuditEvent
+from .rate_limit import RateLimiter, RateLimitConfig, KeyUsageStats
+from .import_export import AuthExporter, AuthImporter, ImportResult
 
 
 def get_auth_store(store_dir: str | None = None) -> AuthStore:
@@ -44,6 +49,7 @@ def get_current_user() -> UserProfile | None:
 
 
 __all__ = [
+    # Core
     "AuthStore",
     "APIKey",
     "AuthConfig",
@@ -51,6 +57,21 @@ __all__ = [
     "AuthStatus",
     "UserProfile",
     "SubscriptionTier",
+    "KeyScope",
+    "KeyRotationEntry",
+    # Audit
+    "AuditLogger",
+    "AuditEventType",
+    "AuditEvent",
+    # Rate limiting
+    "RateLimiter",
+    "RateLimitConfig",
+    "KeyUsageStats",
+    # Import / export
+    "AuthExporter",
+    "AuthImporter",
+    "ImportResult",
+    # Convenience functions
     "get_auth_store",
     "get_api_key",
     "is_authenticated",
