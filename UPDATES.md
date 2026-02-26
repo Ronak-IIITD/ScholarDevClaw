@@ -4,6 +4,27 @@
 
 **Last updated:** 2026-02-27
 
+### 2026-02-27
+- **TUI Clipboard & Image Support** (`core/src/scholardevclaw/tui/clipboard.py` — NEW, 315 lines):
+  - `ClipboardManager`: Cross-platform clipboard support (macOS/Linux/Windows)
+  - Read/write text from system clipboard
+  - Read images from clipboard (PNG, JPEG)
+  - Save pasted images to `~/.scholardevclaw/attached_images/`
+  - `ImageInputHandler` for handling image attachments
+  - Drag-and-drop file support with format validation
+  - Image path context for AI agent integration
+  - Copy AI output to clipboard
+  - Auto-cleanup of old attachments
+
+- **TUI Integration**:
+  - Lazy loading of clipboard module to avoid textual dependency issues
+  - Exports available via `scholardevclaw.tui`
+
+- **New Tests** (21 new tests):
+  - `test_tui_clipboard.py` — 21 tests: clipboard operations, image handling, cross-platform
+
+- **Total: 803 tests passing** (was 782)
+
 ### 2026-02-26
 - **Encryption at Rest** (`core/src/scholardevclaw/auth/encryption.py` — NEW, 191 lines):
   - `EncryptionManager`: Fernet-based encryption with PBKDF2-HMAC-SHA256 key derivation (600k iterations)
