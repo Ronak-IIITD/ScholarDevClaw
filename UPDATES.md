@@ -4,6 +4,46 @@
 
 **Last updated:** 2026-02-27
 
+### 2026-02-27 (Research Intelligence - Section A)
+- **Multi-source Paper Extraction** (`core/src/scholardevclaw/research_intelligence/paper_sources.py` — NEW, 495 lines):
+  - `Paper` dataclass: Unified paper representation across sources
+  - `ArxivSource`: Full arXiv API integration (search, parse Atom feeds, extract metadata, PDFs)
+  - `PubmedSource`: PubMed E-utilities API integration (esearch + efetch, XML parsing)
+  - `IEEESource`: IEEE Xplore API integration (requires API key)
+  - `PaperSourceAggregator`: Search across all sources with `search_all()`
+
+- **Citation Graph Analysis** (`core/src/scholardevclaw/research_intelligence/citation_graph.py` — NEW, 361 lines):
+  - `CitationGraph`: Graph structure for paper citations/references
+  - `CitationNode`: Node with citations and references sets
+  - `CitationPath`: Path between papers with length tracking
+  - `find_shortest_path()`: BFS-based path finding
+  - `get_pagerank()`: PageRank algorithm for influence scoring
+  - `get_influence_score()`: Combined influence metric
+  - `get_related_papers()`: Citation overlap similarity
+  - `CitationAnalyzer`: Higher-level analysis (influence, comparison, trends)
+  - Persistent graph save/load
+
+- **Research Similarity Search** (`core/src/scholardevclaw/research_intelligence/similarity.py` — NEW, 238 lines):
+  - `ResearchSimilaritySearch`: Find related papers using multiple strategies
+  - Keyword overlap matching
+  - TF-IDF cosine similarity on abstracts
+  - Year proximity weighting
+  - Combined scoring (40% keyword + 40% TF-IDF + 20% recency)
+  - `ResearchRecommendationEngine`: Recommend papers based on reading history
+
+- **Enhanced Spec Extraction** (`core/src/scholardevclaw/research_intelligence/enhanced_extractor.py` — NEW, 175 lines):
+  - `EnhancedSpecExtractor`: AI-powered spec extraction from papers
+  - `ExtractedAlgorithm`: Algorithm details (name, category, formula, complexity)
+  - `PaperSpec`: Complete spec with algorithms, code patterns, insertion points
+  - Category detection (normalization, activation, attention, optimization, architecture, tokenizer)
+  - Automatic replacement suggestions
+  - Implementation hint generation
+  - `extract_spec_from_arxiv()`: Convenience function for quick extraction
+
+- **Updated `__init__.py`**: All new modules exported
+
+- **Total: 803 tests passing** (unchanged)
+
 ### 2026-02-27 (Security Audit)
 - **Full Security Audit** — Bug-bounty-style review across entire codebase. 38+ vulnerabilities identified and 16 critical/high/medium fixes applied across 20 source files. 8 tests updated to match new security behavior.
 
