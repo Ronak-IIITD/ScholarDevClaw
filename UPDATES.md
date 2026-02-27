@@ -44,6 +44,48 @@
 
 - **Total: 803 tests passing** (unchanged)
 
+### 2026-02-27 (Advanced Mapping - Section B)
+- **Dependency Graph Analysis** (`core/src/scholardevclaw/repo_intelligence/dependency_graph.py` — NEW, 337 lines):
+  - `DependencyGraph`: Graph of module imports and dependencies
+  - `ModuleNode`: Node with imports/imported_by sets
+  - `DependencyChain`: Path between modules
+  - `find_shortest_path()`: BFS-based dependency path finding
+  - `find_circular_dependencies()`: Cycle detection
+  - `get_impact_score()`: Based on dependents and depth
+  - `get_package_structure()`: Infer package organization
+  - `DependencyAnalyzer`: Impact analysis, critical modules, refactoring suggestions
+
+- **Call Graph Analysis** (`core/src/scholardevclaw/repo_intelligence/call_graph.py` — NEW, 328 lines):
+  - `CallGraph`: Graph of function/method calls
+  - `FunctionNode`: Function with calls/called_by sets
+  - `CallChain`: Chain of function calls
+  - `find_call_chain()`: Trace call paths
+  - `find_all_callers()` / `find_callees()`: Transitive relationships
+  - `get_impact_score()`: Based on callers
+  - `find_external_calls()`: Calls to other files
+  - `CallGraphAnalyzer`: Function analysis, critical functions, entry points
+
+- **Code Embeddings** (`core/src/scholardevclaw/repo_intelligence/code_embeddings.py` — NEW, 297 lines):
+  - `CodeTokenizer`: Code-aware tokenization (keywords, numbers, identifiers)
+  - `CodeEmbeddingEngine`: TF-IDF or hash-based embeddings
+  - `CodeSimilarityFinder`: Cosine similarity search
+  - `SemanticCodeMapper`: Index entire repository for semantic search
+  - `find_duplicates()`: Detect duplicate code
+  - Optional numpy support for faster computation
+
+- **Cross-File Refactoring** (`core/src/scholardevclaw/repo_intelligence/refactoring.py` — NEW, 270 lines):
+  - `RefactorChange`, `RefactoringPlan`, `RefactoringResult`: Change tracking
+  - `CrossFileRefactorer`: Coordinated changes across files
+  - `plan_extract_method()`: Extract method to new class
+  - `plan_move_function()`: Move function to another file
+  - `plan_rename_across_files()`: Rename across entire codebase
+  - `plan_inline_function()`: Inline function at call sites
+  - `RefactoringAssistant`: AI-assisted refactoring suggestions
+
+- **Updated `__init__.py`**: All new modules exported
+
+- **Total: 803 tests passing** (unchanged)
+
 ### 2026-02-27 (Security Audit)
 - **Full Security Audit** — Bug-bounty-style review across entire codebase. 38+ vulnerabilities identified and 16 critical/high/medium fixes applied across 20 source files. 8 tests updated to match new security behavior.
 
