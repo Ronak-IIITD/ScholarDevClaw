@@ -1,4 +1,72 @@
 # Validation module
 from .runner import ValidationRunner
+from .property_testing import (
+    HypothesisTestResult,
+    PropertyTestConfig,
+    TypeToStrategy,
+    PropertyTestGenerator,
+    create_property_test,
+    HypothesisTestRunner,
+    quickcheck,
+)
+from .fuzzing import (
+    FuzzTarget,
+    FuzzResult,
+    PythonFuzzer,
+    LibFuzzerRunner,
+    AFLRunner,
+    FuzzerManager,
+    fuzz_function,
+)
+from .mutation_testing import (
+    Mutation,
+    MutationResult,
+    MutationTestReport,
+    PythonMutator,
+    MutationTestRunner,
+    MutmutIntegration,
+    quick_mutate,
+)
+from .benchmark_suite import (
+    BenchmarkTask,
+    BenchmarkMetrics,
+    BenchmarkRun,
+    BenchmarkSuiteReport,
+    BenchmarkSuite,
+    PrebuiltBenchmarks,
+    PerformanceComparator,
+    quick_benchmark,
+)
 
-__all__ = ["ValidationRunner"]
+__all__ = [
+    "ValidationRunner",
+    "HypothesisTestResult",
+    "PropertyTestConfig",
+    "TypeToStrategy",
+    "PropertyTestGenerator",
+    "create_property_test",
+    "HypothesisTestRunner",
+    "quickcheck",
+    "FuzzTarget",
+    "FuzzResult",
+    "PythonFuzzer",
+    "LibFuzzerRunner",
+    "AFLRunner",
+    "FuzzerManager",
+    "fuzz_function",
+    "Mutation",
+    "MutationResult",
+    "MutationTestReport",
+    "PythonMutator",
+    "MutationTestRunner",
+    "MutmutIntegration",
+    "quick_mutate",
+    "BenchmarkTask",
+    "BenchmarkMetrics",
+    "BenchmarkRun",
+    "BenchmarkSuiteReport",
+    "BenchmarkSuite",
+    "PrebuiltBenchmarks",
+    "PerformanceComparator",
+    "quick_benchmark",
+]
