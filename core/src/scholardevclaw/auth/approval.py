@@ -6,6 +6,7 @@ Allows team members to request API keys and get admin approval.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -143,6 +144,7 @@ class ApprovalWorkflow:
     def __init__(self, store_dir: str | Path):
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.store_dir, 0o700)
         self.requests_file = self.store_dir / self.REQUESTS_FILE
         self.notifications_file = self.store_dir / self.NOTIFICATIONS_FILE
 
@@ -353,6 +355,7 @@ class ApprovalWorkflow:
 
     def _save_requests(self, requests: dict[str, Any]) -> None:
         self.requests_file.write_text(json.dumps(requests, indent=2))
+        os.chmod(self.requests_file, 0o600)
 
     def _load_notifications(self) -> dict[str, Any]:
         if not self.notifications_file.exists():
@@ -364,6 +367,7 @@ class ApprovalWorkflow:
 
     def _save_notifications(self, notifications: dict[str, Any]) -> None:
         self.notifications_file.write_text(json.dumps(notifications, indent=2))
+        os.chmod(self.notifications_file, 0o600)
 
 
 class RequestValidator:

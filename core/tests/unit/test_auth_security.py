@@ -64,7 +64,9 @@ class TestAuthSecurity:
         output = f.getvalue()
 
         data = json.loads(output)
-        assert data[0]["key"] == "sk-very-secret-key-12345"
+        # Security fix: to_safe_dict() no longer exposes raw key
+        assert "key" not in data[0] or data[0].get("key") != "sk-very-secret-key-12345"
+        assert "key_fingerprint" in data[0] or "key_masked" in data[0]
 
     def test_fingerprint_does_not_reveal_key(self):
         """Verify fingerprint doesn't expose the actual key"""
@@ -80,7 +82,7 @@ class TestAuthSecurity:
         fp = api_key.get_fingerprint()
         assert "sk-very-secret" not in fp
         assert "12345" not in fp
-        assert len(fp) == 16
+        assert len(fp) == 64
 
     def test_auth_file_contains_masked_or_no_key(self, temp_auth_dir):
         """Verify auth file can be configured to not store keys"""

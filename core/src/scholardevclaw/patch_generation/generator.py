@@ -236,6 +236,14 @@ class SwiGLU(nn.Module):
         for target in targets:
             file_path = self.repo_path / target.get("file", "model.py")
 
+            # SECURITY: Prevent path traversal — ensure target stays within repo
+            try:
+                resolved = file_path.resolve()
+                if not resolved.is_relative_to(self.repo_path.resolve()):
+                    continue
+            except (ValueError, OSError):
+                continue
+
             if not file_path.exists():
                 continue
 

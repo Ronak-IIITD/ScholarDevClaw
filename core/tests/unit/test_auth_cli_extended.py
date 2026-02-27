@@ -248,7 +248,7 @@ class TestCmdEncrypt:
 
     def test_encrypt_enable(self, store, capsys):
         args = _make_args(auth_action="encrypt", encrypt_action="enable")
-        with patch("getpass.getpass", side_effect=["testpass123", "testpass123"]):
+        with patch("getpass.getpass", side_effect=["Testpass12345!", "Testpass12345!"]):
             _cmd_encrypt(args, store)
         out = capsys.readouterr().out
         assert "Encryption enabled" in out

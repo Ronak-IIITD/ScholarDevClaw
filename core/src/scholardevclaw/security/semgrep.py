@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
 
 from .types import SecurityFinding, SecurityScanResult, SecurityTool, Severity
+
+# Allowlists for validating config values before passing to subprocess
+_VALID_SEMGREP_RULE_PATTERN = re.compile(r"^[a-zA-Z0-9_./:=-]+$")
+_VALID_EXCLUDE_PATTERN = re.compile(r"^[a-zA-Z0-9_.*/?-]+$")
 
 
 class SemgrepScanner:
@@ -60,9 +65,13 @@ class SemgrepScanner:
                 cmd.append("--quiet")
 
             for pattern in self.exclude_patterns:
+                if not _VALID_EXCLUDE_PATTERN.match(pattern):
+                    continue  # skip unsafe patterns
                 cmd.extend(["--exclude", pattern])
 
             for rule in self.rules:
+                if not _VALID_SEMGREP_RULE_PATTERN.match(rule):
+                    continue  # skip unsafe rule identifiers
                 cmd.extend(["--config", rule])
 
             cmd.append(str(path))

@@ -6,6 +6,7 @@ Supports automatic rotation via provider APIs and scheduled rotation policies.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -176,6 +177,7 @@ class RotationScheduler:
     def __init__(self, store_dir: str | Path, auth_store: Any = None):
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.store_dir, 0o700)
         self.policies_file = self.store_dir / self.POLICIES_FILE
         self.rotation_log_file = self.store_dir / self.ROTATION_LOG_FILE
         self.auth_store = auth_store
@@ -384,6 +386,7 @@ class RotationScheduler:
 
         with open(self.rotation_log_file, "a") as f:
             f.write(json.dumps(entry) + "\n")
+        os.chmod(self.rotation_log_file, 0o600)
 
     def _load_policies(self) -> dict[str, Any]:
         if not self.policies_file.exists():
@@ -395,3 +398,4 @@ class RotationScheduler:
 
     def _save_policies(self, policies: dict[str, Any]) -> None:
         self.policies_file.write_text(json.dumps(policies, indent=2))
+        os.chmod(self.policies_file, 0o600)

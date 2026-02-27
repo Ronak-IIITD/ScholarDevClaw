@@ -272,7 +272,8 @@ class TestAuthCLI:
         # Check that output contains JSON with expected fields
         assert '"id":' in captured.out
         assert '"provider": "openai"' in captured.out
-        assert '"key": "sk_json_test"' in captured.out
+        # Security fix: to_safe_dict() no longer exposes raw key
+        assert '"key_fingerprint":' in captured.out or '"key_masked":' in captured.out
 
     def test_auth_logout_confirm_yes(self, temp_auth_dir, capsys, monkeypatch):
         from scholardevclaw.auth.cli import cmd_auth

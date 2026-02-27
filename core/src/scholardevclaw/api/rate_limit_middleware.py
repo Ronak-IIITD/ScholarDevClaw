@@ -30,14 +30,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return f"{self.key_prefix}:{client_ip}"
 
     def _get_client_ip(self, request: Request) -> str:
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-
+        # SECURITY: Do NOT trust X-Forwarded-For or X-Real-IP headers as they are
+        # trivially spoofable. Use actual client IP from the connection.
+        # If behind a trusted reverse proxy, configure the proxy to set these headers
+        # and validate the proxy's IP before trusting them.
         if request.client:
             return request.client.host
 
@@ -55,12 +51,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         key = self._get_client_key(request)
         result = self.rate_limiter.check(key)
 
-        response = await call_next(request)
-
-        response.headers["X-RateLimit-Limit"] = str(result.limit)
-        response.headers["X-RateLimit-Remaining"] = str(result.remaining)
-        response.headers["X-RateLimit-Reset"] = str(int(result.reset_at))
-
+        # SECURITY: Return 429 BEFORE executing the request if rate-limited
         if not result.allowed:
             return JSONResponse(
                 status_code=429,
@@ -77,6 +68,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "X-RateLimit-Reset": str(int(result.reset_at)),
                 },
             )
+
+        response = await call_next(request)
+
+        response.headers["X-RateLimit-Limit"] = str(result.limit)
+        response.headers["X-RateLimit-Remaining"] = str(result.remaining)
+        response.headers["X-RateLimit-Reset"] = str(int(result.reset_at))
 
         return response
 
@@ -117,10 +114,7 @@ class EndpointRateLimiter:
         return path == pattern
 
     def _get_client_ip(self, request: Request) -> str:
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-
+        # SECURITY: Use actual client IP, not spoofable headers
         if request.client:
             return request.client.host
 

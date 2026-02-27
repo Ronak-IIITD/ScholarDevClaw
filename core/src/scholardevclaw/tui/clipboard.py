@@ -123,12 +123,14 @@ class ClipboardManager:
                 return False
 
             elif system == "Windows":
+                # SECURITY: Pass text via stdin to avoid command injection
                 process = subprocess.Popen(
-                    ["powershell", "-Command", "Set-Clipboard", "-Value", text],
+                    ["powershell", "-Command", "Set-Clipboard -Value ($input | Out-String)"],
+                    stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-                process.communicate()
+                process.communicate(text.encode())
                 return process.returncode == 0
 
         except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -143,32 +145,43 @@ class ClipboardManager:
         try:
             if system == "Darwin":  # macOS
                 # Use osascript to get image from clipboard
-                script = """
-                try
-                    set theData to the clipboard as «class PNGf»
-                    return do shell script "echo " & quoted form of (do shell script "python3 -c 'import base64,sys; print(base64.b64encode(stdin.read()).decode())'") & " | base64 -d > /tmp/sdclaw_clipboard.png && cat /tmp/sdclaw_clipboard.png"
-                on error
-                    return ""
-                end try
-                """
-                # Simpler approach: save clipboard to temp file
-                result = subprocess.run(
-                    ["osascript", "-e", "set theData to the clipboard as «class PNGf»"],
-                    capture_output=True,
-                    timeout=5,
-                )
-                if result.returncode != 0:
-                    # Try JPEG
+                # SECURITY: Use tempfile instead of hardcoded /tmp path to avoid symlink attacks
+                fd, temp_path_str = tempfile.mkstemp(suffix=".png", prefix="sdclaw_clip_")
+                os.close(fd)
+                temp_path = Path(temp_path_str)
+                try:
+                    script = f"""
+                    try
+                        set theData to the clipboard as «class PNGf»
+                        return do shell script "echo " & quoted form of (do shell script "python3 -c 'import base64,sys; print(base64.b64encode(stdin.read()).decode())'") & " | base64 -d > {temp_path_str} && cat {temp_path_str}"
+                    on error
+                        return ""
+                    end try
+                    """
+                    # Simpler approach: save clipboard to temp file
                     result = subprocess.run(
-                        ["osascript", "-e", "set theData to the clipboard as «class JPEG»"],
+                        ["osascript", "-e", "set theData to the clipboard as «class PNGf»"],
                         capture_output=True,
                         timeout=5,
                     )
-                # Read from temp file
-                temp_path = Path("/tmp/sdclaw_clipboard.png")
-                if temp_path.exists():
-                    return temp_path.read_bytes()
-                return None
+                    if result.returncode != 0:
+                        # Try JPEG
+                        result = subprocess.run(
+                            ["osascript", "-e", "set theData to the clipboard as «class JPEG»"],
+                            capture_output=True,
+                            timeout=5,
+                        )
+                    # Read from temp file
+                    if temp_path.exists() and temp_path.stat().st_size > 0:
+                        data = temp_path.read_bytes()
+                        return data
+                    return None
+                finally:
+                    # Cleanup temp file
+                    try:
+                        temp_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
 
             elif system == "Linux":
                 # Try xclip to get image
@@ -228,6 +241,10 @@ class ClipboardManager:
         """Save a dropped file and return attachment info."""
         if not source_path.exists():
             raise FileNotFoundError(f"File not found: {source_path}")
+
+        # SECURITY: Reject symlinks to prevent symlink-following attacks
+        if source_path.is_symlink():
+            raise ValueError(f"Symlinks are not allowed: {source_path}")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         ext = source_path.suffix or ".png"

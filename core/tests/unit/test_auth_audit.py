@@ -29,7 +29,7 @@ class TestAuditLogging:
         event = logger.log(
             event_type=AuditEventType.KEY_ADDED,
             key_id="key_123",
-            key="sk_test",
+            key_fingerprint="abcdef0123456789",
             provider="anthropic",
             details={"name": "test-key"},
         )
@@ -108,14 +108,17 @@ class TestAuditLogging:
         from scholardevclaw.auth.audit import AuditLogger, AuditEventType
 
         logger = AuditLogger(temp_audit_dir)
+        import hashlib
+
+        fp = hashlib.sha256(b"sk_secret_key_12345").hexdigest()
         event = logger.log(
             event_type=AuditEventType.KEY_ACCESSED,
-            key="sk_secret_key_12345",
+            key_fingerprint=fp,
         )
 
         assert event.key_fingerprint is not None
         assert "sk_secret" not in event.key_fingerprint
-        assert len(event.key_fingerprint) == 16
+        assert len(event.key_fingerprint) == 64
 
 
 class TestAuthStoreAuditIntegration:

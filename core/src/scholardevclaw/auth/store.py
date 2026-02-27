@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import stat
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -55,6 +57,10 @@ class AuthStore:
                 self.store_dir = Path.home() / ".scholardevclaw"
 
         self.store_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(self.store_dir, 0o700)
+        except OSError:
+            pass
         self.auth_file = self.store_dir / "auth.json"
         self._config: AuthConfig | None = None
         self._audit: AuditLogger | None = AuditLogger(str(self.store_dir)) if enable_audit else None
@@ -71,8 +77,54 @@ class AuthStore:
         """Set file permissions to owner-only read/write (0600)."""
         try:
             os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-        except OSError:
-            pass  # Windows / permission error — best effort
+        except OSError as e:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Could not harden file permissions on %s: %s", path, e
+            )
+
+    @staticmethod
+    def _validate_profile_name(profile_name: str) -> str:
+        """Validate profile name to prevent path traversal attacks.
+
+        Only allows alphanumeric characters, hyphens, and underscores.
+        Raises ValueError for invalid names.
+        """
+        if not profile_name:
+            raise ValueError("Profile name cannot be empty")
+        if not re.match(r"^[a-zA-Z0-9_-]+$", profile_name):
+            raise ValueError(
+                f"Invalid profile name '{profile_name}': "
+                "only alphanumeric characters, hyphens, and underscores are allowed"
+            )
+        if profile_name in (".", ".."):
+            raise ValueError("Profile name cannot be '.' or '..'")
+        if len(profile_name) > 128:
+            raise ValueError("Profile name too long (max 128 characters)")
+        return profile_name
+
+    def _atomic_write_text(self, path: Path, content: str) -> None:
+        """Write text to a file atomically using temp + rename.
+
+        Prevents TOCTOU race conditions and partial writes.
+        """
+        fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".tmp_")
+        try:
+            os.write(fd, content.encode())
+            os.close(fd)
+            fd = -1
+            os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)
+            os.rename(tmp_path, str(path))
+        except Exception:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
 
     def _load_config(self) -> AuthConfig:
         if self._config is not None:
@@ -107,14 +159,16 @@ class AuthStore:
 
         if self._encryption and self._encryption.is_enabled:
             encrypted = self._encryption.encrypt_dict(data)
-            self.auth_file.write_text(encrypted)
+            self._atomic_write_text(self.auth_file, encrypted)
         else:
-            with open(self.auth_file, "w") as f:
-                json.dump(data, f, indent=2)
-
-        self._harden_file(self.auth_file)
+            self._atomic_write_text(self.auth_file, json.dumps(data, indent=2))
 
     def _write_env_file(self, api_key: APIKey) -> None:
+        """Write env file with provider info only. Never writes plaintext keys when encryption is on."""
+        if self._encryption and self._encryption.is_enabled:
+            # Do NOT write plaintext key to .env when encryption is enabled
+            return
+
         env_file = self.store_dir / ".env"
         env_content = f"""# ScholarDevClaw Configuration
 # Generated: {datetime.now().isoformat()}
@@ -123,9 +177,7 @@ class AuthStore:
 SCHOLARDEVCLAW_API_KEY={api_key.key}
 SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
 """
-        with open(env_file, "w") as f:
-            f.write(env_content)
-        self._harden_file(env_file)
+        self._atomic_write_text(env_file, env_content)
 
     # ------------------------------------------------------------------
     # Encryption support
@@ -256,7 +308,7 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
                 self._audit.log(
                     event_type=AuditEventType.KEY_ACCESSED,
                     key_id=key.id,
-                    key=key.key,
+                    key_fingerprint=key.get_fingerprint(),
                     provider=key.provider.value,
                 )
 
@@ -295,7 +347,7 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
             self._audit.log(
                 event_type=AuditEventType.KEY_ACCESSED,
                 key_id=key_obj.id,
-                key=key_obj.key,
+                key_fingerprint=key_obj.get_fingerprint(),
                 provider=key_obj.provider.value,
             )
 
@@ -347,7 +399,7 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
             self._audit.log(
                 event_type=AuditEventType.KEY_ADDED,
                 key_id=api_key.id,
-                key=key,
+                key_fingerprint=api_key.get_fingerprint(),
                 provider=provider.value,
                 details={"name": name, "scope": scope.value},
             )
@@ -376,7 +428,7 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
             self._audit.log(
                 event_type=AuditEventType.KEY_REMOVED,
                 key_id=key_id,
-                key=key_to_remove.key,
+                key_fingerprint=key_to_remove.get_fingerprint(),
                 provider=key_to_remove.provider.value,
                 details={"name": key_to_remove.name},
             )
@@ -478,20 +530,21 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
 
     def save_profile_as(self, profile_name: str) -> Path:
         """Save current config as a named profile."""
+        self._validate_profile_name(profile_name)
+
         profiles_dir = self.store_dir / self.PROFILES_DIR
         profiles_dir.mkdir(parents=True, exist_ok=True)
 
         config = self._load_config()
         profile_path = profiles_dir / f"{profile_name}.json"
 
-        with open(profile_path, "w") as f:
-            json.dump(config.to_dict(), f, indent=2)
-
-        self._harden_file(profile_path)
+        self._atomic_write_text(profile_path, json.dumps(config.to_dict(), indent=2))
         return profile_path
 
     def load_profile(self, profile_name: str) -> bool:
         """Switch to a saved profile."""
+        self._validate_profile_name(profile_name)
+
         profiles_dir = self.store_dir / self.PROFILES_DIR
         profile_path = profiles_dir / f"{profile_name}.json"
 
@@ -516,6 +569,8 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
 
     def delete_profile(self, profile_name: str) -> bool:
         """Delete a saved profile."""
+        self._validate_profile_name(profile_name)
+
         profiles_dir = self.store_dir / self.PROFILES_DIR
         profile_path = profiles_dir / f"{profile_name}.json"
 
@@ -595,7 +650,7 @@ SCHOLARDEVCLAW_API_PROVIDER={api_key.provider.value}
             self._audit.log(
                 event_type=AuditEventType.KEY_ROTATED,
                 key_id=key.id,
-                key=new_key,
+                key_fingerprint=key.get_fingerprint(),
                 provider=key.provider.value,
                 details={
                     "reason": reason,

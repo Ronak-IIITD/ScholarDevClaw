@@ -30,6 +30,16 @@ class HardwareKeyManager:
     def __init__(self, store_dir: str | Path | None = None):
         self.store_dir = Path(store_dir) if store_dir else Path.home() / ".scholardevclaw"
         self.store_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.store_dir, 0o700)
+
+    @staticmethod
+    def _validate_slot(slot: int) -> None:
+        """Validate PIV slot number is within expected range."""
+        # PIV standard slots: 9a(auth)=0x9a, 9c(sign)=0x9c, 9d(keymgmt)=0x9d, 9e(card-auth)=0x9e
+        # Retired slots: 82-95 (0x82-0x95)
+        # We allow integer representations of common slots
+        if not isinstance(slot, int) or slot < 0 or slot > 255:
+            raise ValueError(f"Invalid PIV slot number: {slot}. Must be 0-255.")
 
     def is_yubikey_available(self) -> bool:
         """Check if a YubiKey is connected."""
@@ -87,7 +97,9 @@ class HardwareKeyManager:
         if not self.is_yubikey_available():
             raise RuntimeError("YubiKey not available")
 
-        # Generate key with ykman
+        self._validate_slot(slot)
+
+        # Generate key with ykman — pass PIN via stdin, not command args
         cmd = ["ykman", "piv", "keys", "generate", str(slot), "-"]
         try:
             result = subprocess.run(
@@ -116,6 +128,7 @@ class HardwareKeyManager:
         if not self.is_yubikey_available():
             raise RuntimeError("YubiKey not available")
 
+        self._validate_slot(slot)
         cmd = ["ykman", "piv", "sign", str(slot), "-"]
         try:
             result = subprocess.run(
@@ -135,6 +148,7 @@ class HardwareKeyManager:
         if not self.is_yubikey_available():
             raise RuntimeError("YubiKey not available")
 
+        self._validate_slot(slot)
         cmd = ["ykman", "piv", "keys", "export", str(slot), "-"]
         try:
             result = subprocess.run(
@@ -236,6 +250,7 @@ class HardwareKeyManager:
             if key_id in keys:
                 del keys[key_id]
                 hw_keys_file.write_text(json.dumps(keys, indent=2))
+                os.chmod(hw_keys_file, 0o600)
                 return True
         except json.JSONDecodeError:
             pass
@@ -253,8 +268,10 @@ class YubiKeyPIV:
         if not HardwareKeyManager().is_yubikey_available():
             raise RuntimeError("YubiKey not available")
 
+        # SECURITY: Pass PIN via stdin to avoid /proc/<pid>/cmdline exposure
         result = subprocess.run(
-            ["ykman", "piv", "verify", "9", pin],
+            ["ykman", "piv", "access", "verify-pin"],
+            input=pin,
             capture_output=True,
             text=True,
             timeout=10,

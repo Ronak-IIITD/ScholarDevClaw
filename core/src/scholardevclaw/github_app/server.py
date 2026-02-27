@@ -47,21 +47,29 @@ def create_github_app_app(
             import json
 
             payload = json.loads(body)
-        except:
+        except Exception:
             return WebhookResponse(
                 status=400,
                 message="Invalid JSON",
                 error="Could not parse webhook payload",
             )
 
-        if signature and not client.verify_webhook_signature(body, signature):
+        # SECURITY: Require signature header — reject if missing
+        if not signature:
+            return WebhookResponse(
+                status=401,
+                message="Missing signature",
+                error="X-Hub-Signature-256 header is required",
+            )
+
+        if not client.verify_webhook_signature(body, signature):
             return WebhookResponse(
                 status=401,
                 message="Invalid signature",
                 error="Webhook signature verification failed",
             )
 
-        result = handler.handle_webhook(event_type, payload, signature)
+        result = handler.handle_webhook(event_type, payload, signature, raw_body=body)
 
         return WebhookResponse(
             status=result.get("status", 200),
@@ -96,12 +104,22 @@ def create_github_app_router(
     @router.post("/webhook")
     async def handle_webhook(
         request: Request,
-        event: str = "pull_request",
-        signature: str | None = None,
     ) -> WebhookResponse:
+        # SECURITY: Read event and signature from headers, not query params
+        event = request.headers.get("X-GitHub-Event", "pull_request")
+        signature = request.headers.get("X-Hub-Signature-256")
+
         body = await request.body()
 
-        if signature and not client.verify_webhook_signature(body, signature):
+        # SECURITY: Require signature header
+        if not signature:
+            return WebhookResponse(
+                status=401,
+                message="Missing signature",
+                error="X-Hub-Signature-256 header is required",
+            )
+
+        if not client.verify_webhook_signature(body, signature):
             return WebhookResponse(
                 status=401,
                 message="Invalid signature",
@@ -112,7 +130,7 @@ def create_github_app_router(
 
         payload = json.loads(body)
 
-        result = handler.handle_webhook(event, payload, signature)
+        result = handler.handle_webhook(event, payload, signature, raw_body=body)
 
         return WebhookResponse(
             status=result.get("status", 200),

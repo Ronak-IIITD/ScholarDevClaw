@@ -41,12 +41,19 @@ class WebhookHandler:
         event_type: str,
         payload: dict[str, Any],
         signature: str | None = None,
+        raw_body: bytes | None = None,
     ) -> dict[str, Any]:
-        if signature and not self.client.verify_webhook_signature(
-            json.dumps(payload).encode(), signature
-        ):
-            logger.warning("Invalid webhook signature")
-            return {"error": "Invalid signature", "status": 401}
+        """Handle a webhook event.
+
+        SECURITY: When signature verification is needed, callers MUST pass
+        raw_body (the exact bytes received from GitHub) so that HMAC is
+        computed over the original payload, not a re-serialized version.
+        """
+        if signature:
+            verify_bytes = raw_body if raw_body is not None else json.dumps(payload).encode()
+            if not self.client.verify_webhook_signature(verify_bytes, signature):
+                logger.warning("Invalid webhook signature")
+                return {"error": "Invalid signature", "status": 401}
 
         if not self.client.is_configured:
             logger.warning("GitHub App not configured")

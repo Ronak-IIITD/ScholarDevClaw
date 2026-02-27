@@ -89,7 +89,7 @@ class AuditLogger:
         self,
         event_type: AuditEventType,
         key_id: str | None = None,
-        key: str | None = None,
+        key_fingerprint: str | None = None,
         provider: str | None = None,
         user_email: str | None = None,
         ip_address: str | None = None,
@@ -97,20 +97,19 @@ class AuditLogger:
         details: dict[str, Any] | None = None,
         success: bool = True,
     ) -> AuditEvent:
+        """Log an audit event.
+
+        SECURITY: Accepts only key_fingerprint, never raw key material.
+        Callers must pre-compute fingerprints via key.get_fingerprint().
+        """
         import secrets
-
-        fingerprint = None
-        if key:
-            import hashlib
-
-            fingerprint = hashlib.sha256(key.encode()).hexdigest()[:16]
 
         event = AuditEvent(
             id=f"evt_{secrets.token_hex(8)}",
             timestamp=datetime.now().isoformat(),
             event_type=event_type,
             key_id=key_id,
-            key_fingerprint=fingerprint,
+            key_fingerprint=key_fingerprint,
             provider=provider,
             user_email=user_email,
             ip_address=ip_address,
@@ -123,8 +122,14 @@ class AuditLogger:
         return event
 
     def _append_event(self, event: AuditEvent) -> None:
+        is_new = not self.audit_file.exists()
         with open(self.audit_file, "a") as f:
             f.write(json.dumps(event.to_dict()) + "\n")
+        if is_new:
+            try:
+                os.chmod(self.audit_file, 0o600)
+            except OSError:
+                pass
 
     def get_events(
         self,
@@ -180,5 +185,9 @@ class AuditLogger:
 
         with open(self.audit_file, "w") as f:
             f.writelines(remaining_events)
+        try:
+            os.chmod(self.audit_file, 0o600)
+        except OSError:
+            pass
 
         return len(remaining_events)

@@ -6,6 +6,7 @@ Supports roles (admin, developer, viewer), team workspaces, and shared key acces
 from __future__ import annotations
 
 import json
+import os
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -208,6 +209,7 @@ class TeamStore:
     def __init__(self, store_dir: str | Path):
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.store_dir, 0o700)
         self.teams_file = self.store_dir / self.TEAMS_FILE
         self.invites_file = self.store_dir / self.INVITES_FILE
 
@@ -334,6 +336,7 @@ class TeamStore:
 
     def _save_teams(self, teams: dict[str, Any]) -> None:
         self.teams_file.write_text(json.dumps(teams, indent=2))
+        os.chmod(self.teams_file, 0o600)
 
     def _load_invites(self) -> dict[str, Any]:
         if not self.invites_file.exists():
@@ -345,6 +348,7 @@ class TeamStore:
 
     def _save_invites(self, invites: dict[str, Any]) -> None:
         self.invites_file.write_text(json.dumps(invites, indent=2))
+        os.chmod(self.invites_file, 0o600)
 
 
 class TeamAccessControl:

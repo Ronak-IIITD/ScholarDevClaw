@@ -1,7 +1,10 @@
+import logging
+import os
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..repo_intelligence.parser import PyTorchRepoParser
@@ -12,6 +15,22 @@ from ..validation.runner import ValidationRunner
 from ..application.schema_contract import SCHEMA_VERSION
 from .docs import setup_openapi, setup_docs_routes, setup_exception_handlers
 from .metrics_middleware import setup_metrics
+from .rate_limit_middleware import setup_rate_limiting
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Security: Allowed base directories for repo path confinement
+# ---------------------------------------------------------------------------
+_ALLOWED_BASE_DIRS: list[Path] = []
+
+_env_allowed = os.environ.get("SCHOLARDEVCLAW_ALLOWED_REPO_DIRS", "")
+if _env_allowed:
+    for d in _env_allowed.split(":"):
+        d = d.strip()
+        if d:
+            _ALLOWED_BASE_DIRS.append(Path(d).resolve())
 
 
 app = FastAPI(
@@ -27,6 +46,58 @@ setup_openapi(app)
 setup_docs_routes(app)
 setup_exception_handlers(app)
 setup_metrics(app)
+setup_rate_limiting(app)
+
+# CORS: restrict origins in production via env var, default to restrictive policy
+_allowed_origins = os.environ.get("SCHOLARDEVCLAW_CORS_ORIGINS", "").split(",")
+_allowed_origins = [o.strip() for o in _allowed_origins if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins or [],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    if os.environ.get("SCHOLARDEVCLAW_ENABLE_HSTS", "").lower() == "true":
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
+
+
+# ---------------------------------------------------------------------------
+# API key authentication middleware
+# ---------------------------------------------------------------------------
+_API_AUTH_KEY = os.environ.get("SCHOLARDEVCLAW_API_AUTH_KEY", "")
+_AUTH_EXEMPT_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/"}
+
+
+@app.middleware("http")
+async def api_key_auth_middleware(request: Request, call_next):
+    """Require API key for all non-exempt endpoints when configured."""
+    if _API_AUTH_KEY and request.url.path not in _AUTH_EXEMPT_PATHS:
+        provided = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        if not provided or provided != _API_AUTH_KEY:
+            import json as _json
+
+            return Response(
+                content=_json.dumps({"detail": "Unauthorized"}),
+                status_code=401,
+                media_type="application/json",
+            )
+    return await call_next(request)
 
 
 class RepoAnalyzeRequest(BaseModel):
@@ -197,11 +268,27 @@ class ValidationResponse(BaseModel):
 
 
 def _resolve_existing_repo_path(repo_path: str) -> Path:
+    """Resolve and validate a repo path, enforcing confinement.
+
+    SECURITY: When SCHOLARDEVCLAW_ALLOWED_REPO_DIRS is set, the resolved
+    path must be under one of the allowed base directories to prevent
+    arbitrary filesystem traversal.
+    """
     path = Path(repo_path).expanduser().resolve()
     if not path.exists():
         raise HTTPException(status_code=404, detail="Repository path not found")
     if not path.is_dir():
         raise HTTPException(status_code=400, detail="Repository path must be a directory")
+
+    # Path confinement: enforce allowed base dirs if configured
+    if _ALLOWED_BASE_DIRS:
+        if not any(path == base or path.is_relative_to(base) for base in _ALLOWED_BASE_DIRS):
+            logger.warning("Path confinement violation: %s", path)
+            raise HTTPException(
+                status_code=403,
+                detail="Repository path is outside the allowed directories",
+            )
+
     return path
 
 
@@ -318,7 +405,8 @@ async def analyze_repo(request: RepoAnalyzeRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("analyze_repo failed: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post(
@@ -340,7 +428,8 @@ async def extract_research(request: ResearchExtractRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("extract_research failed: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post(
@@ -372,7 +461,8 @@ async def map_architecture(request: MappingRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("map_architecture failed: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post(
@@ -409,7 +499,8 @@ async def generate_patch(request: PatchGenerateRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("generate_patch failed: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post(
@@ -441,4 +532,5 @@ async def run_validation(request: ValidationRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("run_validation failed: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")

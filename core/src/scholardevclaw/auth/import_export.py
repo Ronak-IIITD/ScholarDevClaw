@@ -3,11 +3,16 @@
 Supports:
 - Export to JSON, env file, dotenv format
 - Import from JSON, env files, 1Password CSV
+
+Security:
+- Import operations enforce a maximum key count limit
+- Keys are deduplicated by fingerprint during import
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import os
@@ -18,6 +23,26 @@ from pathlib import Path
 from typing import Any
 
 from .types import APIKey, AuthConfig, AuthProvider
+
+# Maximum number of keys that can be imported in a single operation
+MAX_IMPORT_KEYS = 100
+
+
+def _key_fingerprint(key_value: str) -> str:
+    """Compute a SHA256 fingerprint for deduplication."""
+    return hashlib.sha256(key_value.encode()).hexdigest()
+
+
+def _deduplicate_keys(keys: list[APIKey]) -> list[APIKey]:
+    """Remove duplicate keys by fingerprint, keeping the first occurrence."""
+    seen: set[str] = set()
+    unique: list[APIKey] = []
+    for k in keys:
+        fp = _key_fingerprint(k.key)
+        if fp not in seen:
+            seen.add(fp)
+            unique.append(k)
+    return unique
 
 
 @dataclass
@@ -139,6 +164,13 @@ class AuthImporter:
 
         try:
             config = AuthConfig.from_dict(data)
+            # Deduplicate and enforce import limit
+            config.api_keys = _deduplicate_keys(config.api_keys)
+            if len(config.api_keys) > MAX_IMPORT_KEYS:
+                result.errors.append(
+                    f"Import truncated: {len(config.api_keys)} keys exceed limit of {MAX_IMPORT_KEYS}"
+                )
+                config.api_keys = config.api_keys[:MAX_IMPORT_KEYS]
             result.imported_count = len(config.api_keys)
             result.imported_keys = [k.name for k in config.api_keys]
         except (KeyError, ValueError) as e:

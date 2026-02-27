@@ -103,8 +103,10 @@ class TestEncryptionManager:
 
         # Create a new manager with wrong password
         mgr2 = EncryptionManager(temp_dir)
-        mgr2.unlock("wrongpassword")
-        with pytest.raises(ValueError, match="Decryption failed"):
+        result = mgr2.unlock("wrongpassword")
+        # Security fix: unlock() now verifies password against stored token
+        assert result is False
+        with pytest.raises(RuntimeError, match="Encryption not unlocked"):
             mgr2.decrypt(ciphertext)
 
     def test_encrypt_without_enable_raises(self, temp_dir):

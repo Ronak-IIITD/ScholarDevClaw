@@ -177,7 +177,7 @@ class TestAPIKey:
             key="secret_key_12345",
         )
         fp = api_key.get_fingerprint()
-        assert len(fp) == 16
+        assert len(fp) == 64
         assert isinstance(fp, str)
 
     def test_get_fingerprint_unique(self):

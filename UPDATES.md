@@ -4,6 +4,41 @@
 
 **Last updated:** 2026-02-27
 
+### 2026-02-27 (Security Audit)
+- **Full Security Audit** — Bug-bounty-style review across entire codebase. 38+ vulnerabilities identified and 16 critical/high/medium fixes applied across 20 source files. 8 tests updated to match new security behavior.
+
+- **CRITICAL Fixes:**
+  - `encryption.py`: `unlock()` now verifies password against stored verification token (was always returning True); `change_password()` made atomic via temp file + rename; salt/marker/verify file permissions hardened to 0600; store dir set to 0700
+  - `store.py`: Added `_validate_profile_name()` regex whitelist to prevent path traversal; added `_atomic_write_text()` to eliminate TOCTOU race; `_write_env_file()` skips writing when encryption enabled; all `key=key.key` audit calls replaced with `key_fingerprint=key.get_fingerprint()`; store dir hardened to 0700
+  - `audit.py`: Replaced `key` parameter with `key_fingerprint` (no longer accepts raw key material); file permission hardening on audit file creation
+  - `cli.py`: Export defaults to `include_keys=False`; CLI `--key` argument now warns about shell history exposure; all JSON output uses `to_safe_dict()` (no plaintext keys); minimum password strength enforcement (12+ chars, upper/lower/digit); reduced key exposure in setup wizard
+  - `api/server.py`: Added API key authentication middleware (`SCHOLARDEVCLAW_API_AUTH_KEY`); path confinement via `SCHOLARDEVCLAW_ALLOWED_REPO_DIRS`; security headers middleware; CORS middleware with configurable origins; wired rate limiting; sanitized 500 error responses
+  - `github_app/server.py`: Webhook signature now required (rejects missing `X-Hub-Signature-256`); bare `except:` → `except Exception:`; router reads event/signature from headers instead of query params
+  - `webhook.py`: HMAC verified against raw request body bytes instead of re-serialized JSON
+
+- **HIGH Fixes:**
+  - `oauth.py`: Token file permissions hardened to 0600; store dir to 0700
+  - `rotation.py`, `team.py`, `approval.py`, `rate_limit.py`, `hardware_keys.py`: File/dir permission hardening (0600/0700) across all auth submodules
+  - `semgrep.py`, `bandit.py`: Config value allowlist validation before subprocess execution
+  - `clipboard.py`: PowerShell injection fixed (text via stdin not CLI arg); tempfile instead of hardcoded `/tmp/` path; symlink rejection before `shutil.copy2`
+  - `generator.py`: Path traversal confinement via `is_relative_to()` check
+  - `hardware_keys.py`: PIN passed via stdin not CLI arg; slot validation (0-255 range)
+  - `rate_limit_middleware.py`: Rate limit check moved before `call_next()` (was after); removed trust of `X-Forwarded-For`/`X-Real-IP` headers
+
+- **MEDIUM Fixes:**
+  - `types.py`: Added `to_safe_dict()` method excluding plaintext key; full 64-char SHA256 fingerprint
+  - `import_export.py`: Key deduplication on import; `MAX_IMPORT_KEYS = 100` limit
+
+- **Test Updates (8 tests fixed):**
+  - `test_auth.py`: Fingerprint length assertion 16→64
+  - `test_auth_audit.py`: `key=` → `key_fingerprint=` in two tests; fingerprint length 16→64
+  - `test_auth_cli.py`: JSON output assertion updated for `to_safe_dict()`
+  - `test_auth_cli_extended.py`: Encryption password meets new strength requirements
+  - `test_auth_encryption.py`: Wrong password test updated for new `unlock()` verification behavior
+  - `test_auth_security.py`: Key exposure and fingerprint length assertions updated
+
+- **Total: 803 tests passing** (unchanged count, 8 tests updated)
+
 ### 2026-02-27
 - **TUI Keyboard Shortcuts** (`core/src/scholardevclaw/tui/app.py`):
   - **Ctrl+C**: Exit the TUI (single press)

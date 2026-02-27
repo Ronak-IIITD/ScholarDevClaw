@@ -109,6 +109,28 @@ class APIKey:
             "rotation_recommended_at": self.rotation_recommended_at,
         }
 
+    def to_safe_dict(self) -> dict[str, Any]:
+        """Return a dict representation that excludes the raw API key.
+
+        Use this instead of to_dict() for any output that may be shown to users,
+        logged, exported, or serialized where key confidentiality matters.
+        """
+        return {
+            "id": self.id,
+            "name": self.name,
+            "provider": self.provider.value,
+            "key_fingerprint": self.get_fingerprint(),
+            "key_masked": self.mask(),
+            "created_at": self.created_at,
+            "last_used": self.last_used,
+            "expires_at": self.expires_at,
+            "is_active": self.is_active,
+            "metadata": self.metadata,
+            "rotation_history": [r.to_dict() for r in self.rotation_history],
+            "scope": self.scope.value,
+            "rotation_recommended_at": self.rotation_recommended_at,
+        }
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APIKey":
         rotation_history = [KeyRotationEntry.from_dict(r) for r in data.get("rotation_history", [])]
@@ -199,7 +221,7 @@ class APIKey:
 
     def get_fingerprint(self) -> str:
         """Get a SHA256 hash of the key for identification without revealing it."""
-        return hashlib.sha256(self.key.encode()).hexdigest()[:16]
+        return hashlib.sha256(self.key.encode()).hexdigest()
 
 
 @dataclass

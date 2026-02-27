@@ -7,6 +7,7 @@ and secure token storage.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import time
 import webbrowser
@@ -15,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import requests
 
@@ -111,7 +113,7 @@ class OAuthProvider(ABC):
             "scope": scope or self.DEFAULT_SCOPE,
         }
 
-        url = self.AUTHORIZATION_URL + "?" + "&".join(f"{k}={v}" for k, v in params.items())
+        url = self.AUTHORIZATION_URL + "?" + urlencode(params)
         return url, state
 
     def exchange_code(self, code: str) -> OAuthToken:
@@ -233,6 +235,7 @@ class OAuthTokenStore:
     def __init__(self, store_dir: str | Path):
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.store_dir, 0o700)
         self.token_file = self.store_dir / self.TOKEN_FILE
 
     def save_token(self, provider: str, token: OAuthToken) -> None:
@@ -240,6 +243,7 @@ class OAuthTokenStore:
         tokens = self._load_tokens()
         tokens[provider] = token.to_dict()
         self.token_file.write_text(json.dumps(tokens, indent=2))
+        os.chmod(self.token_file, 0o600)
 
     def get_token(self, provider: str) -> OAuthToken | None:
         """Get token for a provider, auto-refresh if expired."""
@@ -291,6 +295,7 @@ class OAuthTokenStore:
         if provider in tokens:
             del tokens[provider]
             self.token_file.write_text(json.dumps(tokens, indent=2))
+            os.chmod(self.token_file, 0o600)
             return True
         return False
 

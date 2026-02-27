@@ -119,7 +119,7 @@ def _cmd_setup(args, store: AuthStore):
         store.add_api_key(api_key, name, provider, set_default=True)
         print(f"\n✅ API key added successfully!")
         print(f"   Provider: {provider.value}")
-        print(f"   Key: {api_key[:8]}...{api_key[-4:]}")
+        print(f"   Key: {api_key[:4]}...{api_key[-2:]}")
 
         email = input("\nEmail (optional, for sync): ").strip()
         if email:
@@ -174,6 +174,16 @@ def _cmd_login(args, store: AuthStore):
         provider = AuthProvider.ANTHROPIC
 
     if args.key:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Passing API keys via --key CLI argument is insecure (visible in shell history "
+            "and process listings). Prefer interactive prompt or environment variables."
+        )
+        print(
+            "⚠️  Warning: --key argument is visible in shell history. Prefer interactive prompt.",
+            file=sys.stderr,
+        )
         api_key = args.key
     else:
         api_key = getpass.getpass("API Key: ").strip()
@@ -192,7 +202,7 @@ def _cmd_login(args, store: AuthStore):
         print(f"   Key: {added.mask()}")
 
         if args.output_json:
-            print(json.dumps(added.to_dict(), indent=2))
+            print(json.dumps(added.to_safe_dict(), indent=2))
 
     except Exception as e:
         print(f"❌ Login failed: {e}", file=sys.stderr)
@@ -299,7 +309,7 @@ def _cmd_list(args, store: AuthStore):
     config = store.get_config()
 
     if args.output_json:
-        print(json.dumps([k.to_dict() for k in keys], indent=2))
+        print(json.dumps([k.to_safe_dict() for k in keys], indent=2))
         return
 
     if not keys:
@@ -351,7 +361,7 @@ def _cmd_add(args, store: AuthStore):
     print(f"   Key: {added.mask()}")
 
     if args.output_json:
-        print(json.dumps(added.to_dict(), indent=2))
+        print(json.dumps(added.to_safe_dict(), indent=2))
 
 
 def _cmd_remove(args, store: AuthStore):
@@ -462,7 +472,8 @@ def _cmd_export(args, store: AuthStore):
     """Export credentials"""
     fmt = getattr(args, "format", "json") or "json"
     output = getattr(args, "output", None)
-    include_keys = not getattr(args, "redact", False)
+    # SECURITY: Default to redacted (no plaintext keys) unless explicitly requested
+    include_keys = getattr(args, "include_keys", False)
 
     if fmt == "env":
         content = store.export_env(include_all=True)
@@ -527,6 +538,20 @@ def _cmd_encrypt(args, store: AuthStore):
         password = getpass.getpass("Master password: ").strip()
         if not password:
             print("Password is required", file=sys.stderr)
+            sys.exit(1)
+
+        # SECURITY: Enforce minimum password strength
+        if len(password) < 12:
+            print("Password must be at least 12 characters long", file=sys.stderr)
+            sys.exit(1)
+        has_upper = any(c.isupper() for c in password)
+        has_lower = any(c.islower() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        if not (has_upper and has_lower and has_digit):
+            print(
+                "Password must contain at least one uppercase letter, one lowercase letter, and one digit",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         confirm = getpass.getpass("Confirm password: ").strip()

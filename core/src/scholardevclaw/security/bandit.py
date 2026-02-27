@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -8,13 +9,21 @@ from typing import Any
 
 from .types import SecurityFinding, SecurityScanResult, SecurityTool, Severity
 
+# Allowlists for validating config values before passing to subprocess
+_VALID_CONFIDENCE_LEVELS = {"low", "medium", "high"}
+_VALID_SEVERITY_LEVELS = {"low", "medium", "high"}
+_VALID_EXCLUDE_PATTERN = re.compile(r"^[a-zA-Z0-9_.*/?-]+$")
+
 
 class BanditScanner:
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.exclude_patterns = self.config.get("exclude", ["tests/", "test_", ".venv/", "venv/"])
-        self.confidence_level = self.config.get("confidence", "low")  # low, medium, high
-        self.severity_level = self.config.get("severity", "low")  # low, medium, high
+        # Validate confidence and severity against allowlist
+        confidence = self.config.get("confidence", "low")
+        self.confidence_level = confidence if confidence in _VALID_CONFIDENCE_LEVELS else "low"
+        severity = self.config.get("severity", "low")
+        self.severity_level = severity if severity in _VALID_SEVERITY_LEVELS else "low"
 
     def is_available(self) -> bool:
         try:
@@ -53,6 +62,8 @@ class BanditScanner:
             ]
 
             for pattern in self.exclude_patterns:
+                if not _VALID_EXCLUDE_PATTERN.match(pattern):
+                    continue  # skip unsafe patterns
                 cmd.extend(["--exclude", pattern])
 
             result = subprocess.run(

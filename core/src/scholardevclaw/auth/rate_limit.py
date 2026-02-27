@@ -7,6 +7,7 @@ persists usage stats to disk so they survive restarts.
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -68,6 +69,7 @@ class RateLimiter:
     def __init__(self, store_dir: str | Path) -> None:
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.store_dir, 0o700)
         self.usage_file = self.store_dir / "usage.json"
         self._configs: dict[str, RateLimitConfig] = {}
         # In-memory sliding window: key_id -> list of timestamps
@@ -103,6 +105,7 @@ class RateLimiter:
             }
         with open(self.usage_file, "w") as f:
             json.dump(data, f, indent=2)
+        os.chmod(self.usage_file, 0o600)
 
     def set_limit(self, key_id: str, config: RateLimitConfig) -> None:
         """Set rate limit config for a key."""

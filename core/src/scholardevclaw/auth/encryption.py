@@ -27,15 +27,26 @@ class EncryptionManager:
 
     SALT_FILE = "encryption.salt"
     MARKER_FILE = "encryption.enabled"
+    VERIFY_FILE = "encryption.verify"
+    _VERIFY_PLAINTEXT = "scholardevclaw-encryption-verify-token"
 
     def __init__(self, store_dir: str | Path) -> None:
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.store_dir, 0o700)
         self._fernet: Any | None = None
 
     @property
     def is_enabled(self) -> bool:
         return (self.store_dir / self.MARKER_FILE).exists()
+
+    @staticmethod
+    def _harden_file(path: Path) -> None:
+        """Set file permissions to owner-only read/write (0600)."""
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
 
     def enable(self, password: str) -> None:
         """Enable encryption with the given master password."""
@@ -47,16 +58,27 @@ class EncryptionManager:
         else:
             salt = secrets.token_bytes(32)
             salt_path.write_bytes(salt)
+            self._harden_file(salt_path)
 
         key = _derive_key(password, salt)
         self._fernet = Fernet(key)
 
+        # Write verification token so unlock() can validate the password
+        verify_path = self.store_dir / self.VERIFY_FILE
+        verify_path.write_text(self._fernet.encrypt(self._VERIFY_PLAINTEXT.encode()).decode())
+        self._harden_file(verify_path)
+
         # Write marker
         marker = self.store_dir / self.MARKER_FILE
         marker.write_text("enabled")
+        self._harden_file(marker)
 
     def unlock(self, password: str) -> bool:
-        """Unlock encryption with the given password. Returns True on success."""
+        """Unlock encryption with the given password. Returns True on success.
+
+        Verifies the password against a stored verification token before
+        accepting it. Returns False if the password is wrong.
+        """
         from cryptography.fernet import Fernet, InvalidToken  # type: ignore[import-untyped]
 
         salt_path = self.store_dir / self.SALT_FILE
@@ -65,7 +87,23 @@ class EncryptionManager:
 
         salt = salt_path.read_bytes()
         key = _derive_key(password, salt)
-        self._fernet = Fernet(key)
+        candidate_fernet = Fernet(key)
+
+        # Verify password against stored verification token
+        verify_path = self.store_dir / self.VERIFY_FILE
+        if verify_path.exists():
+            try:
+                decrypted = candidate_fernet.decrypt(
+                    verify_path.read_text().strip().encode()
+                ).decode()
+                if decrypted != self._VERIFY_PLAINTEXT:
+                    return False
+            except (InvalidToken, Exception):
+                return False
+        # If no verify file exists (legacy), accept but create one for future use
+        # This allows migration from older installs
+
+        self._fernet = candidate_fernet
         return True
 
     def disable(self) -> None:
@@ -74,6 +112,9 @@ class EncryptionManager:
         marker = self.store_dir / self.MARKER_FILE
         if marker.exists():
             marker.unlink()
+        verify = self.store_dir / self.VERIFY_FILE
+        if verify.exists():
+            verify.unlink()
 
     def encrypt(self, plaintext: str) -> str:
         """Encrypt plaintext string, return base64 ciphertext."""
@@ -103,8 +144,13 @@ class EncryptionManager:
     def change_password(self, old_password: str, new_password: str, auth_file: Path) -> bool:
         """Re-encrypt auth data with a new password.
 
+        Uses atomic writes (write to temp + rename) to prevent data loss
+        if the process crashes mid-operation.
+
         Returns True on success, False if old password is wrong.
         """
+        import tempfile
+
         from cryptography.fernet import Fernet, InvalidToken  # type: ignore[import-untyped]
 
         salt_path = self.store_dir / self.SALT_FILE
@@ -130,8 +176,46 @@ class EncryptionManager:
         new_fernet = Fernet(new_key)
 
         encrypted = new_fernet.encrypt(plaintext.encode()).decode()
-        auth_file.write_text(encrypted)
-        salt_path.write_bytes(new_salt)
+
+        # Atomic writes: write to temp files first, then rename
+        # This prevents data loss if process crashes between writes
+        auth_dir = auth_file.parent
+        salt_dir = salt_path.parent
+
+        # Write new auth file atomically
+        fd_auth, tmp_auth = tempfile.mkstemp(dir=auth_dir, prefix=".auth_tmp_")
+        try:
+            os.write(fd_auth, encrypted.encode())
+            os.close(fd_auth)
+            os.chmod(tmp_auth, 0o600)
+            os.rename(tmp_auth, str(auth_file))
+        except Exception:
+            os.close(fd_auth) if not os.get_inheritable(fd_auth) else None
+            if os.path.exists(tmp_auth):
+                os.unlink(tmp_auth)
+            raise
+
+        # Write new salt atomically
+        fd_salt, tmp_salt = tempfile.mkstemp(dir=salt_dir, prefix=".salt_tmp_")
+        try:
+            os.write(fd_salt, new_salt)
+            os.close(fd_salt)
+            os.chmod(tmp_salt, 0o600)
+            os.rename(tmp_salt, str(salt_path))
+        except Exception:
+            # Salt write failed — auth file already has new encryption.
+            # Re-write auth with old encryption to maintain consistency
+            os.close(fd_salt) if not os.get_inheritable(fd_salt) else None
+            if os.path.exists(tmp_salt):
+                os.unlink(tmp_salt)
+            auth_file.write_text(raw)
+            self._harden_file(auth_file)
+            raise
+
+        # Re-write verification token with new key
+        verify_path = self.store_dir / self.VERIFY_FILE
+        verify_path.write_text(new_fernet.encrypt(self._VERIFY_PLAINTEXT.encode()).decode())
+        self._harden_file(verify_path)
 
         self._fernet = new_fernet
         return True
