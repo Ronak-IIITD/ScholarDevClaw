@@ -9,6 +9,39 @@ from .engine import (
     create_agent_engine,
 )
 from .repl import AgentREPL, StreamingAgentREPL, run_agent_command, run_agent_repl
+from .memory import (
+    MemoryType,
+    MemoryImportance,
+    Memory,
+    MemoryRetrieval,
+    AgentMemory,
+)
+from .planning import (
+    TaskStatus,
+    TaskPriority,
+    Task,
+    Plan,
+    Planner,
+    AdaptivePlanner,
+)
+from .reflection import (
+    ReflectionType,
+    QualityRating,
+    Reflection,
+    ReflectionReport,
+    AgentReflector,
+)
+from .tools import (
+    ToolCategory,
+    ToolStatus,
+    Tool,
+    ToolExecution,
+    ToolRegistry,
+    ToolExecutor,
+    ToolManager,
+    create_file_tool,
+    create_shell_tool,
+)
 
 __all__ = [
     "AgentEngine",
@@ -23,4 +56,29 @@ __all__ = [
     "run_agent_repl",
     "run_agent_command",
     "create_agent_engine",
+    "MemoryType",
+    "MemoryImportance",
+    "Memory",
+    "MemoryRetrieval",
+    "AgentMemory",
+    "TaskStatus",
+    "TaskPriority",
+    "Task",
+    "Plan",
+    "Planner",
+    "AdaptivePlanner",
+    "ReflectionType",
+    "QualityRating",
+    "Reflection",
+    "ReflectionReport",
+    "AgentReflector",
+    "ToolCategory",
+    "ToolStatus",
+    "Tool",
+    "ToolExecution",
+    "ToolRegistry",
+    "ToolExecutor",
+    "ToolManager",
+    "create_file_tool",
+    "create_shell_tool",
 ]

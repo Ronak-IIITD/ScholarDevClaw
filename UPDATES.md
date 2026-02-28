@@ -2,7 +2,38 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-02-27
+**Last updated:** 2026-02-28
+
+### 2026-02-28 (Agent Upgrades - Cognitive Capabilities)
+- **Agent Memory System** (`core/src/scholardevclaw/agent/memory.py` — NEW, ~400 lines):
+  - `EpisodicMemory`: Store and retrieve past experiences/interactions
+  - `SemanticMemory`: Store structured knowledge and facts
+  - `WorkingMemory`: Short-term context for current task
+  - `AgentMemory`: Unified interface combining all memory types
+  - Importance scoring, retrieval by relevance, memory consolidation
+
+- **Task Planning** (`core/src/scholardevclaw/agent/planning.py` — NEW, ~350 lines):
+  - `Task`: Task representation with id, description, status, dependencies
+  - `TaskDecomposer`: Break complex goals into executable subtasks
+  - `TaskPlanner`: Create and manage task execution plans
+  - Dependency resolution, parallel task grouping, execution ordering
+
+- **Self-Reflection** (`core/src/scholardevclaw/agent/reflection.py` — NEW, ~300 lines):
+  - `ReflectionEngine`: Self-evaluation after task completion
+  - Success/failure analysis, lesson extraction
+  - Performance metrics (accuracy, efficiency, confidence)
+  - Improvement suggestions generation
+  - Reflection logging and history
+
+- **Tool Registry** (`core/src/scholardevclaw/agent/tools.py` — NEW, ~280 lines):
+  - `ToolDefinition`: Tool metadata (name, description, parameters, return type)
+  - `ToolRegistry`: Register, discover, and execute tools
+  - Dynamic tool loading, parameter validation
+  - Tool execution with error handling
+
+- **Updated `agent/__init__.py`**: Exports all new modules
+
+- **Total: 803 tests passing**
 
 ### 2026-02-27 (Research Intelligence - Section A)
 - **Multi-source Paper Extraction** (`core/src/scholardevclaw/research_intelligence/paper_sources.py` — NEW, 495 lines):
