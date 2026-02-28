@@ -1009,3 +1009,56 @@ ScholarDevClaw is becoming a **research-to-engineering operating system**:
 | VSCode extension | Medium | High | P2 | |
 | Web UI dashboard | High | High | P3 | |
 | SSO/SAML auth | High | Medium | P3 | |
+
+---
+
+### 2026-02-28 (Advanced Automation - Section G)
+- **Scheduler** (`core/src/scholardevclaw/automation/scheduler.py` — NEW, 256 lines):
+  - `Scheduler`: Cron-like scheduling with intervals, one-time, and cron support
+  - `Schedule`, `ScheduledRun`: Task definitions and run tracking
+  - `SchedulerRunner`: Background scheduler loop
+  - `quick_schedule()`: Helper for quick schedule creation
+
+- **Webhook Triggers** (`core/src/scholardevclaw/automation/webhooks.py` — NEW, 270 lines):
+  - `WebhookRouter`: Route webhook events to triggers
+  - `GitPushHandler`: Handle push events
+  - `PullRequestHandler`: Handle PR events
+  - `WebhookExecutor`: Execute actions on events
+  - `WebhookServer`: FastAPI integration for webhooks
+  - Signature verification
+
+- **Auto-Apply** (`core/src/scholardevclaw/automation/auto_apply.py` — NEW, 382 lines):
+  - `PatchAnalyzer`: Analyze patches for risk (size, scope, tests, validation)
+  - `RiskLevel`: Critical, High, Medium, Low, Safe
+  - `AutoApplyRule`: Configurable rules for auto-applying patches
+  - `AutoApplyEngine`: Decision engine for patch application
+  - `create_default_rules()`: Pre-built safe rules
+
+- **Batch Processing** (`core/src/scholardevclaw/automation/batch.py` — NEW, 247 lines):
+  - `BatchProcessor`: Parallel task execution with worker pools
+  - `BatchJob`, `BatchTask`: Job and task definitions
+  - `BatchTemplates`: Pre-defined templates for common batch jobs
+  - Async and sync execution modes
+
+### 2026-02-28 (AI/ML Enhancements - Section H)
+- **Multi-Model Support** (`core/src/scholardevclaw/llm/multi_model.py` — NEW, 264 lines):
+  - `ModelRegistry`: Register and list available models
+  - `ModelRouter`: Route requests with fallback chains
+  - `ModelPool`: Round-robin load balancing
+  - Pre-configured: Claude (Opus/Sonnet), GPT-4o, Gemini Pro
+  - Cost estimation, latency tracking, reliability scoring
+
+- **RAG Context** (`core/src/scholardevclaw/llm/rag_context.py` — NEW, 338 lines):
+  - `TextChunker`: Split text into overlapping chunks
+  - `CodeAwareChunker`: Chunk respecting code structure
+  - `SimpleEmbedder`: Hash-based embeddings (no API needed)
+  - `VectorStore`: In-memory semantic search
+  - `RAGContextBuilder`: Index repos, retrieve context
+
+- **Confidence Calibration** (`core/src/scholardevclaw/llm/confidence.py` — NEW, 208 lines):
+  - `ConfidenceCalibrator`: Track predictions and outcomes
+  - Calibration metrics (ECE, accuracy, confidence error)
+  - `AdaptiveConfidence`: Multi-signal confidence scoring
+  - `UncertaintyEstimator`: Variance-based uncertainty
+
+- **Total: 803 tests passing** (unchanged)
