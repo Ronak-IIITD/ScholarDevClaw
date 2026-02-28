@@ -2,7 +2,25 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-02-28
+**Last updated:** 2026-03-01
+
+### 2026-03-01 (Critical Advancements - Full-Stack Roadmap)
+- **Added Section 4.5: Critical Advancements** (`UPDATES.md` — NEW):
+  - Comprehensive analysis of current architecture state
+  - Identification of gaps: Web Frontend, Real-Time Layer, CI/CD, Observability, External Integrations, Business Layer
+  - Priority implementation roadmap (7 steps)
+  - Architecture alignment status showing core is solid, missing user-facing components
+
+- **Added APPLY.md** (`APPLY.md` — NEW, ~450 lines):
+  - Complete manual requirements checklist
+  - API keys: Anthropic, OpenClaw, GitHub, Convex
+  - External service accounts with signup URLs
+  - Manual infrastructure setup (Convex, GitHub OAuth, Domain/SSL)
+  - Local development prerequisites (Python, Node.js, Bun)
+  - Cloud deployment prerequisites (Docker, Fly.io/Railway/AWS)
+  - What AI can vs cannot do (automated vs manual tasks)
+  - Quick start checklist for first-time setup
+  - Support links for each external service
 
 ### 2026-02-28 (Agent Upgrades - Cognitive Capabilities)
 - **Agent Memory System** (`core/src/scholardevclaw/agent/memory.py` — NEW, ~400 lines):
@@ -832,6 +850,155 @@ Conceptual lifecycle:
 - Root `AGENTS.md` expanded into an operational handbook for agents/contributors.
 - `README.md` updated with a detailed Core + TUI getting-started path and practical workflows.
 - `README.md` now documents scorecards, schema compatibility, resumable orchestration, and guardrails.
+
+---
+
+## 4.5) Critical Advancements — Full-Stack Roadmap
+
+**Last updated:** 2026-03-01
+
+### Current State Analysis
+
+ScholarDevClaw has a solid backend foundation:
+- **Backend:** FastAPI, CLI, TUI, Python engine (complete)
+- **Agent:** TypeScript orchestrator, Convex state (complete)
+- **Core Logic:** Repo analysis, research extraction, mapping, patch generation, validation (complete)
+- **Auth:** OAuth, API keys, teams, rate limiting, hardware keys (complete)
+- **Automation:** Scheduler, webhooks, batch processing, auto-apply (complete)
+- **Testing:** 40+ unit/e2e tests (complete)
+- **Infra:** Docker compose setup (complete)
+
+The core logic pipeline and orchestration are well-aligned. However, to become a **full-stack product** with a user-facing interface, several critical components are missing.
+
+---
+
+### Priority 1: Web Frontend (Highest)
+
+| Gap | Description |
+|-----|-------------|
+| **No Web Dashboard** | Missing React/Next.js frontend for managing integrations, viewing history, configuring settings |
+| **No User Portal** | Users cannot sign up, log in, or manage their accounts via web |
+
+**Required:**
+- Next.js web application consuming FastAPI endpoints
+- User authentication UI (OAuth + email/password)
+- Dashboard for integration management
+- Run history visualization
+- Settings/configuration UI
+
+---
+
+### Priority 2: Real-Time Layer
+
+| Gap | Description |
+|-----|-------------|
+| **No WebSocket Support** | FastAPI lacks WebSocket for live updates |
+| **No Live Progress** | Users cannot see phase progress in real-time |
+
+**Required:**
+- WebSocket endpoint in FastAPI for phase updates
+- Live log streaming to web UI
+- Push notifications for completed runs
+
+---
+
+### Priority 3: CI/CD & Developer Experience
+
+| Gap | Description |
+|-----|-------------|
+| **No GitHub Actions** | No automated testing, linting, deployment workflows |
+| **No Public API Docs** | Missing interactive API documentation (Swagger UI exists but not public-facing) |
+| **No SDK** | No client SDKs for programmatic access |
+
+**Required:**
+- `.github/workflows/` with CI/CD pipelines
+- Public API documentation site (Swagger/ReDoc hosted)
+- Python client SDK (`pip install scholardevclaw`)
+
+---
+
+### Priority 4: Observability Stack
+
+| Gap | Description |
+|-----|-------------|
+| **No Logging Aggregation** | No centralized logging (ELK/Loki) |
+| **No Dashboards** | No Grafana dashboards for metrics |
+| **No Alerting** | No PagerDuty/OpsGenie integration |
+
+**Required:**
+- Add Grafana + Prometheus to docker-compose
+- Structured logging to Loki
+- Alert rules for failed runs, API errors
+
+---
+
+### Priority 5: External Integrations
+
+| Gap | Description |
+|-----|-------------|
+| **No Notifications** | Missing Slack/Discord webhook notifications |
+| **No Email Service** | No transactional emails (password reset, run completion) |
+| **No GitHub App** | Not installable as GitHub App for repo access |
+
+**Required:**
+- Slack/Discord notification service
+- Email service integration (SendGrid/Postmark)
+- GitHub App for OAuth repo授权
+
+---
+
+### Priority 6: Business Layer
+
+| Gap | Description |
+|-----|-------------|
+| **No Payments** | No Stripe integration for subscriptions |
+| **No Usage Analytics UI** | No dashboard for usage metrics |
+| **No Audit Log UI** | No user-facing audit log viewer |
+
+**Required:**
+- Stripe subscription system
+- Usage analytics dashboard
+- Audit log viewer in web UI
+
+---
+
+### Architecture Alignment Status
+
+| Layer | Status |
+|-------|--------|
+| Core Logic | ✅ Aligned |
+| Pipeline | ✅ Aligned |
+| Phases | ✅ Aligned |
+| API | ✅ Aligned |
+| Auth Backend | ✅ Aligned |
+| State (Convex) | ⚠️ Not connected to frontend |
+| WebSocket | ❌ Missing |
+| Web UI | ❌ Missing |
+
+---
+
+### Recommended Implementation Order
+
+1. **Next.js Frontend** → Consume existing FastAPI, add web UI
+2. **WebSocket Layer** → Add real-time phase updates
+3. **GitHub Actions** → CI/CD for automated testing
+4. **Public Docs** → Hosted API documentation
+5. **Slack Notifications** → External alerts
+6. **Stripe Integration** → Payments/subscriptions
+7. **Grafana Dashboards** → Observability
+
+---
+
+### Summary
+
+ScholarDevClaw's **backend is production-ready** with comprehensive core logic, auth, and automation. To become a full-stack product, the focus should shift to:
+- Building a web frontend (Next.js)
+- Adding real-time capabilities (WebSocket)
+- Improving developer experience (CI/CD, SDKs)
+- Adding observability (Grafana, logging)
+- Building business layer (payments, notifications)
+
+The core is solid — the missing pieces are all user-facing.
 
 ---
 
