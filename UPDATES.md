@@ -22,15 +22,24 @@
   - Quick start checklist for first-time setup
   - Support links for each external service
 
-- **Added Security Edge Case Tests** (`core/tests/unit/test_security_edge_cases.py` — NEW, 24 tests):
+- **Added Security Edge Case Tests** (`core/tests/unit/test_security_edge_cases.py` — EXPANDED, 48 tests):
   - Input validation: path traversal, null byte injection, oversized inputs, malformed JSON
   - Rate limiting: per-key limits, different keys, window pruning
   - Race conditions: concurrent file writes, concurrent rate limiting
   - Memory edge cases: large files, binary files, empty repos, deeply nested structures
   - Auth security: key ID randomness, profile ID randomness, concurrent access
   - Encryption: roundtrip, wrong password rejection, unicode support
-  - API key fingerprinting
-  - Webhook and scheduler security
+  - API key fingerprinting, webhook and scheduler security
+  - **NEW: Injection Prevention**: code injection, HTML/XSS, SQL injection patterns
+  - **NEW: Authentication Security**: password length, token entropy, concurrent auth
+  - **NEW: Authorization Security**: unauthorized access blocking, role permissions
+  - **NEW: Cryptographic Security**: secure algorithms, ciphertext uniqueness, salt handling
+  - **NEW: Data Leakage Prevention**: API keys not in logs, error message sanitization
+  - **NEW: DoS Protection**: recursive structures, many small files
+  - **NEW: File System Security**: symlinks, readonly files, hidden files
+  - **NEW: Schema Validation**: invalid versions, missing fields
+  - **NEW: Batch Processing**: size limits, job isolation
+  - **NEW: Retry Logic**: limits, exponential backoff
 
 ### 2026-02-28 (Agent Upgrades - Cognitive Capabilities)
 - **Agent Memory System** (`core/src/scholardevclaw/agent/memory.py` — NEW, ~400 lines):
