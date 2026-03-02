@@ -15,6 +15,10 @@ from .memory import (
     Memory,
     MemoryRetrieval,
     AgentMemory,
+    AdvancedAgentMemory,
+    PersistentMemoryStore,
+    MemoryTier,
+    create_memory,
 )
 from .planning import (
     TaskStatus,

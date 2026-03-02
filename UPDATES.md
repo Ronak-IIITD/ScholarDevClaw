@@ -38,6 +38,20 @@
   - **NEW: DoS Protection**: recursive structures, many small files
   - **NEW: File System Security**: symlinks, readonly files, hidden files
   - **NEW: Schema Validation**: invalid versions, missing fields
+
+- **Advanced Persistent Memory System** (`core/src/scholardevclaw/agent/memory.py` — REWRITTEN, ~700 lines):
+  - **SQLite-backed persistent storage**: Fast, reliable, ACID-compliant
+  - **Multi-tier storage**: HOT → WARM → COLD → FROZEN based on importance
+  - **Memory TTL**: Configurable expiration per memory type
+  - **Memory consolidation**: Auto-promotes episodic → semantic after repeated access
+  - **Memory decay**: Gradual importance decay over time
+  - **Access tracking**: Counts and timestamps for relevance scoring
+  - **Tag-based search**: Find memories by tags
+  - **Memory merging**: Combine multiple memories into one
+  - **Session tracking**: Track memories per session
+  - **Auto-cleanup**: Expired memory removal
+  - **Thread-safe**: RLock for concurrent access
+  - **Backward compatible**: AgentMemory alias for existing code
   - **NEW: Batch Processing**: size limits, job isolation
   - **NEW: Retry Logic**: limits, exponential backoff
 
