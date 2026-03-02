@@ -22,6 +22,16 @@
   - Quick start checklist for first-time setup
   - Support links for each external service
 
+- **Added Security Edge Case Tests** (`core/tests/unit/test_security_edge_cases.py` — NEW, 24 tests):
+  - Input validation: path traversal, null byte injection, oversized inputs, malformed JSON
+  - Rate limiting: per-key limits, different keys, window pruning
+  - Race conditions: concurrent file writes, concurrent rate limiting
+  - Memory edge cases: large files, binary files, empty repos, deeply nested structures
+  - Auth security: key ID randomness, profile ID randomness, concurrent access
+  - Encryption: roundtrip, wrong password rejection, unicode support
+  - API key fingerprinting
+  - Webhook and scheduler security
+
 ### 2026-02-28 (Agent Upgrades - Cognitive Capabilities)
 - **Agent Memory System** (`core/src/scholardevclaw/agent/memory.py` — NEW, ~400 lines):
   - `EpisodicMemory`: Store and retrieve past experiences/interactions
