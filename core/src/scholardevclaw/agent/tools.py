@@ -511,7 +511,10 @@ class ToolExecutor:
 
     def _get_cache_key(self, tool_name: str, params: dict) -> str:
         """Generate deterministic cache key"""
-        normalized = json.dumps(params, sort_keys=True, default=str)
+        try:
+            normalized = json.dumps(params, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            normalized = str(sorted(params.items())) if params else ""
         return f"{tool_name}:{hashlib.sha256(normalized.encode()).hexdigest()}"
 
     def _cached_execution(
@@ -880,3 +883,534 @@ def create_tool(
         )
 
     return decorator
+
+
+# =============================================================================
+# ADVANCED TOOL FEATURES
+# =============================================================================
+
+
+class ToolHook(Enum):
+    """Hook types for tool lifecycle"""
+
+    BEFORE_EXECUTE = "before_execute"
+    AFTER_EXECUTE = "after_execute"
+    ON_SUCCESS = "on_success"
+    ON_ERROR = "on_error"
+    ON_TIMEOUT = "on_timeout"
+    BEFORE_RETRY = "before_retry"
+    ON_COMPLETE = "on_complete"
+
+
+@dataclass
+class ToolHookHandler:
+    """Handler for tool hooks"""
+
+    hook: ToolHook
+    handler: Callable[..., Any]
+    async_handler: bool = False
+
+
+class ToolMiddleware:
+    """Middleware for tool execution"""
+
+    def __init__(self):
+        self.hooks: dict[ToolHook, list[ToolHookHandler]] = {hook: [] for hook in ToolHook}
+        self._global_handlers: list[Callable] = []
+
+    def register_hook(self, hook: ToolHook, handler: Callable, async_handler: bool = False):
+        """Register a hook handler"""
+        self.hooks[hook].append(ToolHookHandler(hook, handler, async_handler))
+
+    async def execute_hooks(self, hook: ToolHook, context: dict) -> dict:
+        """Execute all handlers for a hook"""
+        for handler in self.hooks.get(hook, []):
+            if handler.async_handler:
+                result = await handler.handler(context)
+            else:
+                result = handler.handler(context)
+            if result:
+                context.update(result) if isinstance(result, dict) else None
+        return context
+
+
+class ToolMetrics:
+    """Tool execution metrics and monitoring"""
+
+    def __init__(self):
+        self._metrics: dict[str, dict] = {}
+        self._lock = threading.RLock()
+
+    def record(self, tool_name: str, duration_ms: int, success: bool, cost: float = 0):
+        """Record execution metric"""
+        with self._lock:
+            if tool_name not in self._metrics:
+                self._metrics[tool_name] = {
+                    "total_calls": 0,
+                    "successful_calls": 0,
+                    "failed_calls": 0,
+                    "total_duration_ms": 0,
+                    "total_cost": 0.0,
+                    "min_duration_ms": float("inf"),
+                    "max_duration_ms": 0,
+                }
+
+            m = self._metrics[tool_name]
+            m["total_calls"] += 1
+            if success:
+                m["successful_calls"] += 1
+            else:
+                m["failed_calls"] += 1
+            m["total_duration_ms"] += duration_ms
+            m["total_cost"] += cost
+            m["min_duration_ms"] = min(m["min_duration_ms"], duration_ms)
+            m["max_duration_ms"] = max(m["max_duration_ms"], duration_ms)
+
+    def get_metrics(self, tool_name: str | None = None) -> dict:
+        """Get metrics for a tool or all tools"""
+        with self._lock:
+            if tool_name:
+                return self._metrics.get(tool_name, {})
+            return self._metrics.copy()
+
+    def get_summary(self) -> dict:
+        """Get summary statistics"""
+        with self._lock:
+            total_calls = sum(m["total_calls"] for m in self._metrics.values())
+            total_success = sum(m["successful_calls"] for m in self._metrics.values())
+            total_cost = sum(m["total_cost"] for m in self._metrics.values())
+
+            return {
+                "total_calls": total_calls,
+                "total_success": total_success,
+                "total_failed": total_calls - total_success,
+                "success_rate": total_success / total_calls if total_calls > 0 else 0,
+                "total_cost": total_cost,
+                "unique_tools": len(self._metrics),
+            }
+
+
+class ToolState:
+    """Tool state management for long-running tools"""
+
+    def __init__(self):
+        self._states: dict[str, dict] = {}
+        self._lock = threading.RLock()
+
+    def set(self, tool_name: str, key: str, value: Any):
+        """Set a state value"""
+        with self._lock:
+            if tool_name not in self._states:
+                self._states[tool_name] = {}
+            self._states[tool_name][key] = value
+
+    def get(self, tool_name: str, key: str, default: Any = None) -> Any:
+        """Get a state value"""
+        with self._lock:
+            return self._states.get(tool_name, {}).get(key, default)
+
+    def delete(self, tool_name: str, key: str):
+        """Delete a state value"""
+        with self._lock:
+            if tool_name in self._states:
+                self._states[tool_name].pop(key, None)
+
+    def clear(self, tool_name: str | None = None):
+        """Clear state"""
+        with self._lock:
+            if tool_name:
+                self._states.pop(tool_name, None)
+            else:
+                self._states.clear()
+
+    def get_all(self, tool_name: str) -> dict:
+        """Get all state for a tool"""
+        with self._lock:
+            return self._states.get(tool_name, {}).copy()
+
+
+class ParallelToolExecutor:
+    """Execute multiple tools in parallel"""
+
+    def __init__(self, executor: ToolExecutor):
+        self.executor = executor
+
+    async def execute_many(
+        self,
+        tools: list[tuple[str, dict]],
+        max_concurrent: int = 5,
+        stop_on_error: bool = False,
+    ) -> list[ToolExecution]:
+        """Execute multiple tools in parallel"""
+        semaphore = asyncio.Semaphore(max_concurrent)
+        results: list[ToolExecution] = []
+
+        async def execute_with_semaphore(tool_name: str, params: dict) -> ToolExecution:
+            async with semaphore:
+                if stop_on_error and results and results[-1].status != ToolStatus.SUCCESS:
+                    return ToolExecution(
+                        id=str(uuid.uuid4()),
+                        tool_name=tool_name,
+                        parameters=params,
+                        status=ToolStatus.CANCELLED,
+                        error="Cancelled due to previous error",
+                    )
+                return await self.executor.execute(tool_name, params)
+
+        tasks = [execute_with_semaphore(name, params) for name, params in tools]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Convert exceptions to failed executions
+        final_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                final_results.append(
+                    ToolExecution(
+                        id=str(uuid.uuid4()),
+                        tool_name=tools[i][0],
+                        parameters=tools[i][1],
+                        status=ToolStatus.FAILED,
+                        error=str(result),
+                    )
+                )
+            else:
+                final_results.append(result)
+
+        return final_results
+
+    async def execute_map(
+        self,
+        tool_name: str,
+        params_list: list[dict],
+        max_concurrent: int = 5,
+    ) -> list[ToolExecution]:
+        """Execute same tool with different params in parallel"""
+        tools = [(tool_name, params) for params in params_list]
+        return await self.execute_many(tools, max_concurrent)
+
+
+class ToolResultTransformer:
+    """Transform tool results"""
+
+    @staticmethod
+    def extract_field(field: str) -> Callable[[dict], Any]:
+        """Create transformer that extracts a field"""
+
+        def transform(result: dict) -> Any:
+            if isinstance(result, dict):
+                return result.get(field)
+            return None
+
+        return transform
+
+    @staticmethod
+    def extract_fields(fields: list[str]) -> Callable[[dict], dict]:
+        """Create transformer that extracts multiple fields"""
+
+        def transform(result: dict) -> dict:
+            if isinstance(result, dict):
+                return {f: result.get(f) for f in fields}
+            return {}
+
+        return transform
+
+    @staticmethod
+    def filter_keys(keep: list[str]) -> Callable[[dict], dict]:
+        """Create transformer that keeps only specified keys"""
+
+        def transform(result: dict) -> dict:
+            if isinstance(result, dict):
+                return {k: v for k, v in result.items() if k in keep}
+            return {}
+
+        return transform
+
+    @staticmethod
+    def map_values(key: str, mapper: dict) -> Callable[[dict], dict]:
+        """Create transformer that maps values"""
+
+        def transform(result: dict) -> dict:
+            if isinstance(result, dict) and key in result:
+                result = result.copy()
+                result[key] = mapper.get(result[key], result[key])
+            return result
+
+        return transform
+
+
+class AdvancedToolExecutor(ToolExecutor):
+    """Advanced executor with all features"""
+
+    def __init__(self, registry: ToolRegistry):
+        super().__init__(registry)
+        self.middleware = ToolMiddleware()
+        self.metrics = ToolMetrics()
+        self.state = ToolState()
+        self._hooks_enabled = True
+
+    async def execute(
+        self,
+        tool_name: str,
+        parameters: dict[str, Any] | None = None,
+        use_cache: bool = True,
+        max_retries: int | None = None,
+        timeout: int | None = None,
+        dependencies: dict[str, Any] | None = None,
+        transform_result: Callable | None = None,
+    ) -> ToolExecution:
+        """Execute with hooks and metrics"""
+        parameters = parameters or {}
+
+        # Execute before hooks
+        if self._hooks_enabled:
+            context = await self.middleware.execute_hooks(
+                ToolHook.BEFORE_EXECUTE, {"tool_name": tool_name, "parameters": parameters}
+            )
+            # Only update with actual params, not metadata
+            for key in ["tool_name", "parameters", "execution"]:
+                context.pop(key, None)
+            parameters.update(context)
+
+        # Execute tool
+        execution = await super().execute(
+            tool_name,
+            parameters=parameters,
+            use_cache=use_cache,
+            max_retries=max_retries,
+            timeout=timeout,
+            dependencies=dependencies,
+        )
+
+        # Record metrics
+        self.metrics.record(
+            tool_name,
+            execution.duration_ms,
+            execution.status == ToolStatus.SUCCESS,
+            execution.actual_cost,
+        )
+
+        # Execute after hooks
+        if self._hooks_enabled:
+            hook = ToolHook.AFTER_EXECUTE
+            if execution.status == ToolStatus.SUCCESS:
+                hook = ToolHook.ON_SUCCESS
+            elif execution.status == ToolStatus.TIMEOUT:
+                hook = ToolHook.ON_TIMEOUT
+            elif execution.status == ToolStatus.FAILED:
+                hook = ToolHook.ON_ERROR
+
+            await self.middleware.execute_hooks(
+                hook,
+                {
+                    "tool_name": tool_name,
+                    "parameters": parameters,
+                    "execution": execution,
+                },
+            )
+
+        # Transform result
+        if transform_result and execution.result:
+            try:
+                execution.result = transform_result(execution.result)
+            except Exception:
+                pass
+
+        return execution
+
+
+class AdvancedToolManager(ToolManager):
+    """Advanced tool manager with all features"""
+
+    def __init__(self):
+        self.registry = ToolRegistry()
+        self.executor = AdvancedToolExecutor(self.registry)
+        self._define_builtin_tools()
+
+    def create_pipeline(self) -> ToolPipeline:
+        """Create a new tool pipeline"""
+        return ToolPipeline(self.executor)
+
+    def create_parallel_executor(self) -> ParallelToolExecutor:
+        """Create parallel executor"""
+        return ParallelToolExecutor(self.executor)
+
+    def register_hook(self, hook: ToolHook, handler: Callable, async_handler: bool = False):
+        """Register a hook"""
+        self.executor.middleware.register_hook(hook, handler, async_handler)
+
+    def get_metrics(self) -> dict:
+        """Get execution metrics"""
+        return self.executor.metrics.get_summary()
+
+    def get_tool_metrics(self, tool_name: str) -> dict:
+        """Get metrics for specific tool"""
+        return self.executor.metrics.get_metrics(tool_name)
+
+    # Additional built-in tools
+    def _define_builtin_tools(self):
+        """Define enhanced built-in tools"""
+        super()._define_builtin_tools()
+
+        self.add_tool(
+            name="http_request",
+            description="Make HTTP requests",
+            category=ToolCategory.WEB,
+            func=self._http_request,
+            parameters=[
+                ToolParameter("url", "string", "URL to request", required=True),
+                ToolParameter("method", "string", "HTTP method", default="GET"),
+                ToolParameter("headers", "object", "Request headers", default={}),
+                ToolParameter("body", "string", "Request body", default=None),
+            ],
+            capabilities=[ToolCapability.EXECUTE],
+            tags=["http", "web", "request"],
+            rate_limit_per_minute=30,
+        )
+
+        self.add_tool(
+            name="git_operation",
+            description="Perform git operations",
+            category=ToolCategory.GIT,
+            func=self._git_operation,
+            parameters=[
+                ToolParameter(
+                    "operation",
+                    "string",
+                    "Git operation",
+                    required=True,
+                    enum=["status", "log", "diff", "branch"],
+                ),
+                ToolParameter("args", "object", "Operation arguments", default={}),
+            ],
+            capabilities=[ToolCapability.EXECUTE],
+            tags=["git", "version-control"],
+            rate_limit_per_minute=30,
+        )
+
+        self.add_tool(
+            name="analyze_code",
+            description="Analyze code for issues",
+            category=ToolCategory.ANALYSIS,
+            func=self._analyze_code,
+            parameters=[
+                ToolParameter("path", "string", "Path to analyze", required=True),
+                ToolParameter("rules", "object", "Analysis rules", default={}),
+            ],
+            capabilities=[ToolCapability.ANALYZE],
+            tags=["analyze", "lint", "quality"],
+        )
+
+        self.add_tool(
+            name="transform_data",
+            description="Transform data structures",
+            category=ToolCategory.DATA,
+            func=self._transform_data,
+            parameters=[
+                ToolParameter("data", "object", "Data to transform", required=True),
+                ToolParameter(
+                    "transform",
+                    "string",
+                    "Transform type",
+                    required=True,
+                    enum=["flatten", "filter", "map", "group"],
+                ),
+                ToolParameter("params", "object", "Transform params", default={}),
+            ],
+            capabilities=[ToolCapability.TRANSFORM],
+            tags=["data", "transform", "etl"],
+        )
+
+    def _http_request(
+        self, url: str, method: str = "GET", headers: dict = None, body: str = None
+    ) -> dict:
+        import requests
+
+        try:
+            response = requests.request(method, url, headers=headers or {}, json=body)
+            return {
+                "success": True,
+                "status_code": response.status_code,
+                "headers": dict(response.headers),
+                "body": response.text[:10000],
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _git_operation(self, operation: str, args: dict = None) -> dict:
+        import subprocess
+
+        args = args or {}
+
+        commands = {
+            "status": ["git", "status", "--porcelain"],
+            "log": ["git", "log", "--oneline", "-n", str(args.get("count", 10))],
+            "diff": ["git", "diff", args.get("file", "")],
+            "branch": ["git", "branch", "-a"],
+        }
+
+        cmd = commands.get(operation, ["git", "status"])
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            return {
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _analyze_code(self, path: str, rules: dict = None) -> dict:
+        import subprocess
+
+        rules = rules or {}
+
+        try:
+            result = subprocess.run(
+                ["ruff", "check", path, "--output-format=json"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            return {
+                "success": True,
+                "issues": len(result.stdout.split("\n")) - 1 if result.stdout else 0,
+                "output": result.stdout[:5000],
+            }
+        except FileNotFoundError:
+            return {"success": True, "issues": 0, "message": "ruff not installed"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _transform_data(self, data: dict, transform: str, params: dict = None) -> dict:
+        params = params or {}
+
+        if transform == "flatten":
+            result = {}
+            for k, v in data.items():
+                if isinstance(v, dict):
+                    for ik, iv in v.items():
+                        result[f"{k}.{ik}"] = iv
+                else:
+                    result[k] = v
+            return {"success": True, "result": result}
+
+        elif transform == "filter":
+            keep = params.get("keys", [])
+            return {"success": True, "result": {k: v for k, v in data.items() if k in keep}}
+
+        elif transform == "map":
+            mapping = params.get("mapping", {})
+            return {"success": True, "result": {k: mapping.get(v, v) for k, v in data.items()}}
+
+        elif transform == "group":
+            key = params.get("by", "type")
+            groups = {}
+            for item in data.get("items", []):
+                k = item.get(key, "other")
+                if k not in groups:
+                    groups[k] = []
+                groups[k].append(item)
+            return {"success": True, "result": groups}
+
+        return {"success": False, "error": f"Unknown transform: {transform}"}

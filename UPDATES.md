@@ -55,7 +55,7 @@
   - **NEW: Batch Processing**: size limits, job isolation
   - **NEW: Retry Logic**: limits, exponential backoff
 
-- **Enhanced Agent Tool System** (`core/src/scholardevclaw/agent/tools.py` — REWRITTEN, ~870 lines):
+- **Enhanced Agent Tool System** (`core/src/scholardevclaw/agent/tools.py` — EXPANDED, ~1400 lines):
   - **OpenAI Function Calling Schemas**: JSON schema format compatible with OpenAI
   - **Tool Parameters**: Type validation, defaults, enums, patterns
   - **Tool Dependencies**: Chain tools with input/output passing
@@ -70,6 +70,13 @@
   - **Tool Capabilities**: READ, WRITE, EXECUTE, SEARCH, ANALYZE, TRANSFORM
   - **Tag-based Discovery**: Find tools by tags
   - **Parameter Validation**: Type checking, required fields, defaults
+  - **NEW: Tool Middleware/Hooks**: BEFORE_EXECUTE, AFTER_EXECUTE, ON_SUCCESS, ON_ERROR, ON_TIMEOUT
+  - **NEW: Tool Metrics**: Record and aggregate execution metrics
+  - **NEW: Tool State**: Persistent state for long-running tools
+  - **NEW: Parallel Execution**: Execute multiple tools concurrently with semaphore
+  - **NEW: Result Transformation**: Extract/filter/map tool results
+  - **NEW: AdvancedToolManager**: Full-featured manager with all advanced capabilities
+  - **NEW: Additional Tools**: http_request, git_operation, analyze_code, transform_data
 
 ### 2026-02-28 (Agent Upgrades - Cognitive Capabilities)
 - **Agent Memory System** (`core/src/scholardevclaw/agent/memory.py` — NEW, ~400 lines):
