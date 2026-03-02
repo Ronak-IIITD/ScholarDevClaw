@@ -49,6 +49,19 @@ from .tools import (
     ToolManager,
     create_tool,
 )
+from .sub_agents import (
+    AgentType,
+    TaskStatus as SubTaskStatus,
+    ExecutionMode,
+    SubTask,
+    SubAgentResult,
+    SubAgent,
+    AgentPool,
+    TaskDecomposer,
+    SubAgentOrchestrator,
+    create_orchestrator,
+    create_specialized_agent,
+)
 
 __all__ = [
     "AgentEngine",
@@ -91,4 +104,14 @@ __all__ = [
     "ToolPipeline",
     "ToolManager",
     "create_tool",
+    "AgentType",
+    "ExecutionMode",
+    "SubTask",
+    "SubAgentResult",
+    "SubAgent",
+    "AgentPool",
+    "TaskDecomposer",
+    "SubAgentOrchestrator",
+    "create_orchestrator",
+    "create_specialized_agent",
 ]

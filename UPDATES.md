@@ -78,6 +78,16 @@
   - **NEW: AdvancedToolManager**: Full-featured manager with all advanced capabilities
   - **NEW: Additional Tools**: http_request, git_operation, analyze_code, transform_data
 
+- **Sub-Agent System** (`core/src/scholardevclaw/agent/sub_agents.py` — NEW, ~650 lines):
+  - **SubAgent class**: Specialized agents for specific domains
+  - **Agent types**: GENERAL, RESEARCH, CODE, ANALYSIS, PLANNING, EXECUTION, VALIDATION
+  - **AgentPool**: Manage multiple sub-agents
+  - **TaskDecomposer**: Auto-decompose complex tasks into subtasks
+  - **SubAgentOrchestrator**: Coordinate multiple sub-agents
+  - **Execution modes**: SEQUENTIAL, PARALLEL, PIPELINE
+  - **Result aggregation**: Combine results from multiple sub-agents
+  - **Task history**: Track past executions
+
 ### 2026-02-28 (Agent Upgrades - Cognitive Capabilities)
 - **Agent Memory System** (`core/src/scholardevclaw/agent/memory.py` — NEW, ~400 lines):
   - `EpisodicMemory`: Store and retrieve past experiences/interactions
