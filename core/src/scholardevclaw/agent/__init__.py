@@ -38,13 +38,16 @@ from .reflection import (
 from .tools import (
     ToolCategory,
     ToolStatus,
+    ToolCapability,
     Tool,
+    ToolParameter,
+    ToolSchema,
     ToolExecution,
     ToolRegistry,
     ToolExecutor,
+    ToolPipeline,
     ToolManager,
-    create_file_tool,
-    create_shell_tool,
+    create_tool,
 )
 
 __all__ = [
@@ -78,11 +81,14 @@ __all__ = [
     "AgentReflector",
     "ToolCategory",
     "ToolStatus",
+    "ToolCapability",
     "Tool",
+    "ToolParameter",
+    "ToolSchema",
     "ToolExecution",
     "ToolRegistry",
     "ToolExecutor",
+    "ToolPipeline",
     "ToolManager",
-    "create_file_tool",
-    "create_shell_tool",
+    "create_tool",
 ]
