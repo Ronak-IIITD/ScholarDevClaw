@@ -75,27 +75,75 @@ class OSDetector:
         self.is_mac = self.system == "darwin"
         self.is_linux = self.system == "linux"
 
+        # Detect shell (bash, zsh, fish, etc.)
+        self._detect_shell()
+
+    def _detect_shell(self) -> None:
+        """Detect the current shell."""
+        import os
+        import shutil
+
+        # Check SHELL environment variable
+        shell_path = os.environ.get("SHELL", "")
+        if shell_path:
+            self.shell_name = os.path.basename(shell_path)
+        else:
+            self.shell_name = "bash"
+
+        # Check if zsh is available
+        self.has_zsh = shutil.which("zsh") is not None
+        self.has_bash = shutil.which("bash") is not None
+        self.has_fish = shutil.which("fish") is not None
+        self.has_powershell = (
+            shutil.which("pwsh") is not None or shutil.which("powershell") is not None
+        )
+
+        # Prefer detected shell if available
+        if self.has_zsh:
+            self.user_shell = "zsh"
+        elif self.has_fish:
+            self.user_shell = "fish"
+        elif self.has_bash:
+            self.user_shell = "bash"
+        else:
+            self.user_shell = self.shell_name
+
     @property
     def shell(self) -> str:
         """Get the default shell for this OS."""
         if self.is_windows:
-            return "powershell" if self._has_powershell() else "cmd"
-        return "bash"
+            return "powershell" if self.has_powershell else "cmd"
+        return self.user_shell  # zsh, bash, fish, etc.
 
     @property
     def shell_exe(self) -> str:
         """Get the shell executable."""
         if self.is_windows:
-            if self._has_powershell():
+            if self.has_powershell:
                 return "powershell"
             return "cmd"
-        return "bash"
+        return self.user_shell
 
     def _has_powershell(self) -> bool:
         """Check if PowerShell is available."""
         import shutil
 
         return shutil.which("pwsh") is not None or shutil.which("powershell") is not None
+
+    @property
+    def is_zsh(self) -> bool:
+        """Check if current shell is ZSH."""
+        return self.user_shell == "zsh"
+
+    @property
+    def is_bash(self) -> bool:
+        """Check if current shell is BASH."""
+        return self.user_shell == "bash"
+
+    @property
+    def is_fish(self) -> bool:
+        """Check if current shell is Fish."""
+        return self.user_shell == "fish"
 
     @property
     def path_separator(self) -> str:
@@ -136,8 +184,16 @@ class OSDetector:
             "system": self.system,
             "os_name": self.os_name,
             "shell": self.shell,
+            "user_shell": self.user_shell,
+            "shell_name": self.shell_name,
+            "is_zsh": self.is_zsh,
+            "is_bash": self.is_bash,
+            "is_fish": self.is_fish,
+            "has_zsh": self.has_zsh,
+            "has_bash": self.has_bash,
+            "has_fish": self.has_fish,
             "path_separator": self.path_separator,
-            "has_powershell": self._has_powershell(),
+            "has_powershell": self.has_powershell,
         }
 
 
@@ -2329,7 +2385,7 @@ class SmartAgentEngine:
   `do it` — Intelligent run: figures out what to build/test based on project
 
 **Session:**
-  `status` — Show current session info (includes OS detection)
+  `status` — Show current session info (includes OS + shell detection)
   `help` — Show this message
   `status` — Show current session info
   `help` — Show this message
@@ -2348,7 +2404,7 @@ class SmartAgentEngine:
 
         parts.append(f"\n**System**")
         parts.append(f"  OS: {self.os.os_name}")
-        parts.append(f"  Shell: {self.os.shell}")
+        parts.append(f"  Shell: {self.os.shell} (user: {self.os.user_shell})")
 
         parts.append(f"\n**Agent Stats**")
         parts.append(f"  Total queries: {self.total_queries}")

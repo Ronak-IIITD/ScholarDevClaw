@@ -4,6 +4,23 @@
 
 **Last updated:** 2026-03-03
 
+### 2026-03-03 (Shell Detection — ZSH, BASH, Fish Support)
+
+**Goal:** Detect and support multiple shells: ZSH, BASH, Fish on Linux/macOS.
+
+**Updated: OSDetector** (`smart_engine.py` — EXTENDED):
+- Added shell detection: checks $SHELL env var and which commands
+- New properties:
+  - `is_zsh`, `is_bash`, `is_fish` — boolean flags for shell type
+  - `user_shell` — the actual shell user is running (zsh/bash/fish)
+  - `has_zsh`, `has_bash`, `has_fish` — available shells on system
+- `shell` now returns the user's preferred shell (zsh > fish > bash)
+- Status shows: `Shell: zsh (user: zsh)`
+
+**Verified:**
+- On this Linux machine with ZSH: `Shell: zsh (user: zsh)`
+- All 851 tests pass
+
 ### 2026-03-03 (OS Detection — Cross-Platform Shell Commands)
 
 **Goal:** Make the agent OS-aware so it adapts commands based on whether the user is on Windows, macOS, or Linux.
