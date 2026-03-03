@@ -56,6 +56,12 @@ from .tools import (
     ToolExecutor,
     ToolPipeline,
     ToolManager,
+    AdvancedToolManager,
+    AdvancedToolExecutor,
+    ToolMiddleware,
+    ToolMetrics,
+    ToolState,
+    ParallelToolExecutor,
     create_tool,
 )
 from .sub_agents import (
@@ -130,6 +136,12 @@ __all__ = [
     "ToolExecutor",
     "ToolPipeline",
     "ToolManager",
+    "AdvancedToolManager",
+    "AdvancedToolExecutor",
+    "ToolMiddleware",
+    "ToolMetrics",
+    "ToolState",
+    "ParallelToolExecutor",
     "create_tool",
     # Sub-agents
     "AgentType",

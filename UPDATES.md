@@ -4,6 +4,47 @@
 
 **Last updated:** 2026-03-03
 
+### 2026-03-03 (Tool Integration — Full Tool System Wired into SmartAgentEngine)
+
+**Goal:** Wire the extensive but disconnected tool system (`ToolManager`/`AdvancedToolManager`) into `SmartAgentEngine` so users can run shell commands, read/write files, search code, run git operations, and analyze code quality directly from the agent.
+
+**Added: Tool action patterns** (`smart_engine.py` — EXTENDED):
+- Added 8 new tool-based actions to `QueryClassifier.ACTION_PATTERNS`: `run_command`, `read_file`, `write_file`, `search_code`, `list_files`, `git`, `analyze_code`
+- Added 8 new keywords per action: "run ", "execute ", "shell ", "cat ", "grep ", "ls ", "git status", "lint", etc.
+- Improved `_extract_target()` to handle tool-specific extraction: commands for run/shell, file paths for read/write/cat, patterns for grep
+- Complexity routing: TRIVIAL for list/read/git, SIMPLE for run/write/search/analyze_code
+
+**Wired: AdvancedToolManager into SmartAgentEngine** (`smart_engine.py` — EXTENDED):
+- Instantiated `self.tools = AdvancedToolManager()` in `__init__()`
+- Added `DANGEROUS_COMMANDS` blocklist (rm -rf /, dd if=, mkfs, shutdown, etc.)
+- Added `_is_dangerous_command()` safety check before execution
+- Added 7 new execution methods:
+  - `_exec_run_command()`: Shell command with safety checks
+  - `_exec_tool_read_file()`: File reading via tool
+  - `_exec_tool_write_file()`: File writing (requires explicit path + content)
+  - `_exec_tool_search_code()`: Grep-like code search
+  - `_exec_tool_list_files()`: Directory listing
+  - `_exec_tool_git()`: Git operations (status, log, diff, branch)
+  - `_exec_tool_analyze_code()`: Code quality via ruff
+- Wired tool actions into `_execute_action()` dispatch
+- Added tool-based trivial actions to `_handle_trivial()` (list_files, read_file, git)
+
+**Updated: UI and help text** (`smart_engine.py` — PATCHED):
+- Added "Tools:" section to `_build_help_text()` with all 8 new commands
+- Updated greeting quick commands with `run <command>`
+- Updated `_build_status_text()` to include tool metrics (executions, success rate, available tools)
+- Updated `_generate_suggestions()` with tool-specific suggestions
+
+**Updated: exports** (`__init__.py` — EXPANDED):
+- Exports `AdvancedToolManager`, `AdvancedToolExecutor`, `ToolMiddleware`, `ToolMetrics`, `ToolState`, `ParallelToolExecutor`
+
+**Tests:** All 851 tests pass. Verified:
+- `ls .` → lists files correctly
+- `cat pyproject.toml` → reads file correctly
+- `grep class` → finds 22908 matches
+- `git status` → works
+- `run rm -rf /` → blocked with "Blocked: 'rm -rf /' is a destructive command"
+
 ### 2026-03-03 (Smart Agent Engine — Wire Everything Together)
 
 Major architectural overhaul of the agent subsystem. The previous agent had extensive scaffolding (memory, planning, reflection, sub-agents, tools) that was entirely disconnected — none of it was wired into the actual execution path. This update connects all subsystems into a unified, budget-aware execution engine.

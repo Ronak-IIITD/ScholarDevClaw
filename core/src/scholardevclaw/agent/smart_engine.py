@@ -50,6 +50,10 @@ from .reflection import (
     AgentReflector,
     QualityRating,
 )
+from .tools import (
+    AdvancedToolManager,
+    ToolStatus as ToolExecStatus,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +226,49 @@ class QueryClassifier:
             "token_cost": 2000,
             "needs_repo": True,
         },
+        # --- Tool-based actions ---
+        "run_command": {
+            "keywords": ["run ", "execute ", "shell ", "bash ", "!"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 500,
+            "needs_repo": False,
+        },
+        "read_file": {
+            "keywords": ["read file", "show file", "cat ", "open file", "view file"],
+            "complexity": QueryComplexity.TRIVIAL,
+            "token_cost": 200,
+            "needs_repo": False,
+        },
+        "write_file": {
+            "keywords": ["write file", "save file", "create file", "write to"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 300,
+            "needs_repo": False,
+        },
+        "search_code": {
+            "keywords": ["grep ", "find in code", "search code", "search files"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 400,
+            "needs_repo": False,
+        },
+        "list_files": {
+            "keywords": ["list files", "ls ", "dir ", "list directory", "show files"],
+            "complexity": QueryComplexity.TRIVIAL,
+            "token_cost": 100,
+            "needs_repo": False,
+        },
+        "git": {
+            "keywords": ["git status", "git log", "git diff", "git branch"],
+            "complexity": QueryComplexity.TRIVIAL,
+            "token_cost": 200,
+            "needs_repo": True,
+        },
+        "analyze_code": {
+            "keywords": ["lint", "ruff", "check code quality", "code quality"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 500,
+            "needs_repo": True,
+        },
     }
 
     # Compound query patterns that require multi-step execution
@@ -317,8 +364,64 @@ class QueryClassifier:
         )
 
     def _extract_target(self, user_input: str) -> str | None:
-        """Extract target (repo path or spec name) from user input."""
+        """Extract target (repo path, spec name, command, or file path) from user input."""
         parts = user_input.split()
+        user_lower = user_input.lower().strip()
+
+        # --- Tool-specific target extraction ---
+
+        # run/execute/shell: everything after the keyword is the command
+        for prefix in ["run ", "execute ", "shell ", "bash ", "!"]:
+            if user_lower.startswith(prefix):
+                remainder = user_input[len(prefix) :].strip()
+                if remainder:
+                    return remainder
+
+        # read/write/cat/view file: extract file path
+        for prefix in [
+            "read file ",
+            "show file ",
+            "cat ",
+            "open file ",
+            "view file ",
+            "write file ",
+            "save file ",
+            "create file ",
+        ]:
+            if user_lower.startswith(prefix):
+                remainder = user_input[len(prefix) :].strip()
+                if remainder:
+                    return remainder.split()[0]  # first token as path
+
+        # grep/search code: extract query
+        for prefix in ["grep ", "search code ", "search files ", "find in code "]:
+            if user_lower.startswith(prefix):
+                remainder = user_input[len(prefix) :].strip()
+                if remainder:
+                    return remainder
+
+        # list/ls/dir: extract directory path
+        for prefix in ["ls ", "dir ", "list files ", "list directory ", "show files "]:
+            if user_lower.startswith(prefix):
+                remainder = user_input[len(prefix) :].strip()
+                if remainder:
+                    return remainder.split()[0]
+                return "."  # default to current dir
+
+        # git: extract the subcommand
+        if user_lower.startswith("git "):
+            remainder = user_input[4:].strip()
+            if remainder:
+                return remainder.split()[0]  # status, log, diff, branch
+
+        # lint/ruff
+        for prefix in ["lint ", "ruff ", "check code quality ", "code quality "]:
+            if user_lower.startswith(prefix):
+                remainder = user_input[len(prefix) :].strip()
+                if remainder:
+                    return remainder.split()[0]
+
+        # --- Existing extraction logic ---
 
         # Check for spec names
         for part in parts:
@@ -339,7 +442,6 @@ class QueryClassifier:
                 return str(path.resolve())
 
         # Extract search query
-        user_lower = user_input.lower()
         for prefix in ["search", "find", "look for", "research"]:
             if prefix in user_lower:
                 idx = user_lower.index(prefix) + len(prefix)
@@ -384,6 +486,22 @@ class SmartAgentEngine:
         self.planner = AdaptivePlanner()
         self.reflector = AgentReflector()
         self.budget = TokenBudget(max_tokens=max_tokens)
+        self.tools = AdvancedToolManager()
+
+        # Safety: commands that are blocked even from run_command
+        self.DANGEROUS_COMMANDS: set[str] = {
+            "rm -rf /",
+            "rm -rf /*",
+            "mkfs",
+            "dd if=",
+            ":(){:|:&};:",
+            "chmod -R 777 /",
+            "shutdown",
+            "reboot",
+            "halt",
+            "init 0",
+            "init 6",
+        }
 
         # Session
         self.sessions: dict[str, AgentSession] = {}
@@ -598,6 +716,23 @@ class SmartAgentEngine:
         elif action == "specs":
             async for event in self._exec_specs():
                 yield event
+
+        elif action in ("list_files", "read_file", "git"):
+            # Tool-based trivial actions — fast, no pipeline call
+            result = await self._execute_action(
+                action, classification.target, classification.query_text
+            )
+            if result.ok:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=result.message,
+                    data=result.output or {},
+                )
+            else:
+                yield StreamEvent(
+                    type=StreamEventType.ERROR,
+                    message=result.error or result.message,
+                )
 
         else:
             yield StreamEvent(
@@ -898,6 +1033,20 @@ class SmartAgentEngine:
                 return await self._exec_generate(target)
             elif action == "rollback":
                 return await self._exec_rollback(target)
+            elif action == "run_command":
+                return await self._exec_run_command(target)
+            elif action == "read_file":
+                return await self._exec_tool_read_file(target)
+            elif action == "write_file":
+                return await self._exec_tool_write_file(target, query_text)
+            elif action == "search_code":
+                return await self._exec_tool_search_code(target)
+            elif action == "list_files":
+                return await self._exec_tool_list_files(target)
+            elif action == "git":
+                return await self._exec_tool_git(target)
+            elif action == "analyze_code":
+                return await self._exec_tool_analyze_code(target)
             elif action == "unknown":
                 return await self._exec_unknown(query_text)
             else:
@@ -1144,6 +1293,336 @@ class SmartAgentEngine:
         )
 
     # -----------------------------------------------------------------------
+    # Tool-based execution methods (wired to AdvancedToolManager)
+    # -----------------------------------------------------------------------
+
+    def _is_dangerous_command(self, command: str) -> str | None:
+        """Check if a command matches the blocklist. Returns reason or None."""
+        cmd_lower = command.lower().strip()
+        for dangerous in self.DANGEROUS_COMMANDS:
+            if dangerous in cmd_lower:
+                return f"Blocked: '{dangerous}' is a destructive command."
+        # Block piping to /dev/sda or similar raw devices
+        if "/dev/sd" in cmd_lower or "/dev/nvme" in cmd_lower:
+            if "dd " in cmd_lower or "mkfs" in cmd_lower:
+                return "Blocked: raw device access detected."
+        return None
+
+    async def _exec_run_command(self, command: str | None) -> ExecutionResult:
+        """Execute a shell command via the tool system with safety checks."""
+        if not command:
+            return ExecutionResult(
+                ok=False, action="run_command", error="No command provided. Usage: run <command>"
+            )
+
+        # Safety check
+        blocked = self._is_dangerous_command(command)
+        if blocked:
+            return ExecutionResult(ok=False, action="run_command", error=blocked, tokens_used=50)
+
+        cwd = self._resolve_repo_path() or "."
+
+        execution = await self.tools.execute("run_command", command=command, cwd=cwd)
+        tokens = 500
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            ok = result.get("success", False)
+            stdout = result.get("stdout", "")
+            stderr = result.get("stderr", "")
+            rc = result.get("returncode", -1)
+
+            output_text = stdout if stdout else stderr
+            if not output_text:
+                output_text = f"(exit code {rc})"
+
+            return ExecutionResult(
+                ok=ok,
+                action="run_command",
+                message=output_text[:5000],
+                output={"stdout": stdout[:5000], "stderr": stderr[:2000], "returncode": rc},
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False,
+            action="run_command",
+            error=execution.error or "Command execution failed",
+            tokens_used=tokens,
+        )
+
+    async def _exec_tool_read_file(self, file_path: str | None) -> ExecutionResult:
+        """Read a file via the tool system."""
+        if not file_path:
+            return ExecutionResult(
+                ok=False, action="read_file", error="No file path provided. Usage: cat <path>"
+            )
+
+        # Resolve relative paths against repo
+        path = Path(file_path).expanduser()
+        if not path.is_absolute():
+            repo = self._resolve_repo_path()
+            if repo:
+                path = Path(repo) / path
+
+        execution = await self.tools.execute("read_file", path=str(path))
+        tokens = 200
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            if result.get("success"):
+                content = result.get("content", "")
+                # Truncate very large files for output
+                display = content[:8000]
+                if len(content) > 8000:
+                    display += f"\n... ({len(content) - 8000} more characters)"
+                return ExecutionResult(
+                    ok=True,
+                    action="read_file",
+                    message=display,
+                    output={"path": str(path), "size": len(content)},
+                    tokens_used=tokens,
+                )
+            return ExecutionResult(
+                ok=False,
+                action="read_file",
+                error=result.get("error", "Failed to read file"),
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False,
+            action="read_file",
+            error=execution.error or "File read failed",
+            tokens_used=tokens,
+        )
+
+    async def _exec_tool_write_file(self, target: str | None, query: str = "") -> ExecutionResult:
+        """Write to a file via the tool system (requires explicit path and content)."""
+        if not target:
+            return ExecutionResult(
+                ok=False,
+                action="write_file",
+                error="No file path provided. Usage: write file <path> <content>",
+            )
+
+        # Parse: target is the path, rest of query after path is content
+        # For safety, we require content to be explicitly provided
+        parts = query.split(maxsplit=3)  # "write file <path> <content>"
+        if len(parts) < 4:
+            return ExecutionResult(
+                ok=False,
+                action="write_file",
+                error="Usage: write file <path> <content>. Both path and content are required.",
+            )
+
+        file_path = parts[2]
+        content = parts[3]
+
+        path = Path(file_path).expanduser()
+        if not path.is_absolute():
+            repo = self._resolve_repo_path()
+            if repo:
+                path = Path(repo) / path
+
+        execution = await self.tools.execute("write_file", path=str(path), content=content)
+        tokens = 300
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            if result.get("success"):
+                return ExecutionResult(
+                    ok=True,
+                    action="write_file",
+                    message=f"Wrote {result.get('bytes', 0)} bytes to {path}",
+                    output={"path": str(path), "bytes": result.get("bytes", 0)},
+                    tokens_used=tokens,
+                )
+            return ExecutionResult(
+                ok=False,
+                action="write_file",
+                error=result.get("error", "Failed to write file"),
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False,
+            action="write_file",
+            error=execution.error or "File write failed",
+            tokens_used=tokens,
+        )
+
+    async def _exec_tool_search_code(self, query: str | None) -> ExecutionResult:
+        """Search code via the tool system (grep-like)."""
+        if not query:
+            return ExecutionResult(
+                ok=False,
+                action="search_code",
+                error="No search query. Usage: grep <pattern>",
+            )
+
+        search_path = self._resolve_repo_path() or "."
+
+        execution = await self.tools.execute(
+            "search_code", query=query, path=search_path, file_pattern="*"
+        )
+        tokens = 400
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            if result.get("success"):
+                matches = result.get("matches", 0)
+                results_list = result.get("results", [])
+                display = f"Found {matches} matches"
+                if results_list:
+                    display += ":\n" + "\n".join(results_list[:30])
+                    if matches > 30:
+                        display += f"\n... ({matches - 30} more)"
+                return ExecutionResult(
+                    ok=True,
+                    action="search_code",
+                    message=display,
+                    output={"matches": matches, "results": results_list[:50]},
+                    tokens_used=tokens,
+                )
+            return ExecutionResult(
+                ok=False,
+                action="search_code",
+                error=result.get("error", "Search failed"),
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False,
+            action="search_code",
+            error=execution.error or "Search failed",
+            tokens_used=tokens,
+        )
+
+    async def _exec_tool_list_files(self, directory: str | None) -> ExecutionResult:
+        """List files in a directory via the tool system."""
+        if not directory:
+            directory = self._resolve_repo_path() or "."
+
+        path = Path(directory).expanduser()
+        if not path.is_absolute():
+            repo = self._resolve_repo_path()
+            if repo:
+                path = Path(repo) / path
+
+        execution = await self.tools.execute("list_directory", path=str(path), recursive=False)
+        tokens = 100
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            if result.get("success"):
+                files = result.get("files", [])
+                count = result.get("count", len(files))
+                display = f"{count} files in {path}:\n" + "\n".join(f"  {f}" for f in files[:50])
+                if count > 50:
+                    display += f"\n  ... ({count - 50} more)"
+                return ExecutionResult(
+                    ok=True,
+                    action="list_files",
+                    message=display,
+                    output={"path": str(path), "files": files, "count": count},
+                    tokens_used=tokens,
+                )
+            return ExecutionResult(
+                ok=False,
+                action="list_files",
+                error=result.get("error", "Failed to list directory"),
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False,
+            action="list_files",
+            error=execution.error or "Directory listing failed",
+            tokens_used=tokens,
+        )
+
+    async def _exec_tool_git(self, operation: str | None) -> ExecutionResult:
+        """Execute a git operation via the tool system."""
+        valid_ops = {"status", "log", "diff", "branch"}
+        if not operation or operation not in valid_ops:
+            operation = "status"  # default to status
+
+        execution = await self.tools.execute("git_operation", operation=operation, args={})
+        tokens = 200
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            if result.get("success"):
+                output = result.get("output", "")
+                return ExecutionResult(
+                    ok=True,
+                    action="git",
+                    message=output[:5000] if output else "(no output)",
+                    output={"operation": operation, "raw": output[:5000]},
+                    tokens_used=tokens,
+                )
+            return ExecutionResult(
+                ok=False,
+                action="git",
+                error=result.get("error", f"git {operation} failed"),
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False,
+            action="git",
+            error=execution.error or f"git {operation} failed",
+            tokens_used=tokens,
+        )
+
+    async def _exec_tool_analyze_code(self, path: str | None) -> ExecutionResult:
+        """Run code analysis (ruff) via the tool system."""
+        path = path or self._resolve_repo_path() or "."
+
+        execution = await self.tools.execute("analyze_code", path=path, rules={})
+        tokens = 500
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            if result.get("success"):
+                issues = result.get("issues", 0)
+                output = result.get("output", "")
+                msg = result.get("message", "")
+                display = f"Code analysis: {issues} issue(s)"
+                if msg:
+                    display += f" — {msg}"
+                if output:
+                    display += f"\n{output[:3000]}"
+                return ExecutionResult(
+                    ok=True,
+                    action="analyze_code",
+                    message=display,
+                    output={"issues": issues, "raw": output[:5000]},
+                    tokens_used=tokens,
+                )
+            return ExecutionResult(
+                ok=False,
+                action="analyze_code",
+                error=result.get("error", "Analysis failed"),
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False,
+            action="analyze_code",
+            error=execution.error or "Code analysis failed",
+            tokens_used=tokens,
+        )
+
+    # -----------------------------------------------------------------------
     # Memory integration
     # -----------------------------------------------------------------------
 
@@ -1308,6 +1787,7 @@ class SmartAgentEngine:
         base += "\n  - `suggest` — Get improvement suggestions"
         base += "\n  - `search <query>` — Find research papers"
         base += "\n  - `integrate <spec>` — Apply a research improvement"
+        base += "\n  - `run <command>` — Execute a shell command"
         base += "\n  - `help` — See all commands"
 
         return base
@@ -1332,6 +1812,15 @@ class SmartAgentEngine:
 
 **Recovery:**
   `rollback` — Revert last integration
+
+**Tools:**
+  `run <command>` — Execute a shell command
+  `cat <path>` — Read a file
+  `write file <path> <content>` — Write content to a file
+  `grep <pattern>` — Search code for a pattern
+  `ls [path]` — List files in a directory
+  `git status|log|diff|branch` — Git operations
+  `lint [path]` — Run code quality analysis (ruff)
 
 **Session:**
   `status` — Show current session info
@@ -1358,6 +1847,12 @@ class SmartAgentEngine:
         parts.append(f"\n**Memory**")
         parts.append(f"  Total memories: {mem_stats['total_memories']}")
         parts.append(f"  Cached: {mem_stats['cached_count']}")
+
+        tool_stats = self.tools.get_statistics()
+        parts.append(f"\n**Tools**")
+        parts.append(f"  Executions: {tool_stats['total_executions']}")
+        parts.append(f"  Success rate: {tool_stats['success_rate']:.0%}")
+        parts.append(f"  Available: {len(self.tools.list_tools())}")
 
         return "\n".join(parts)
 
@@ -1403,6 +1898,14 @@ class SmartAgentEngine:
                 suggestions.append("rollback — Revert the changes")
         elif action == "security":
             suggestions.append("suggest — Get improvement suggestions")
+        elif action == "run_command":
+            suggestions.append("git status — Check repository state")
+        elif action in ("read_file", "list_files", "search_code"):
+            suggestions.append("analyze <path> — Run full analysis")
+        elif action == "git":
+            suggestions.append("analyze — Analyze repository")
+        elif action == "analyze_code":
+            suggestions.append("suggest — Get AI-powered improvement ideas")
 
         return suggestions
 
@@ -1468,6 +1971,8 @@ class SmartAgentEngine:
             "memory_stats": self.memory.get_stats(),
             "reflection_report": self.reflector.generate_report().__dict__,
             "quality_threshold": self.quality_threshold,
+            "tool_metrics": self.tools.get_metrics(),
+            "tool_statistics": self.tools.get_statistics(),
         }
 
 
