@@ -1,0 +1,1489 @@
+"""
+Smart Agent Engine — the brain that maximizes output quality per token spent.
+
+This module wires together:
+- Memory (persistent context across sessions)
+- Planning (task decomposition with token budgets)
+- Reflection (output quality scoring + iterative improvement)
+- Sub-agents (real pipeline calls, not mock data)
+- Token budget management (pocket-friendly execution)
+
+Design principles:
+1. Classify query complexity first → route to cheapest sufficient path
+2. Use memory to avoid redundant work (don't re-analyze same repo)
+3. Plan before executing complex tasks
+4. Reflect on output quality; retry if below threshold
+5. Stream progress to user in real-time
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any, AsyncGenerator
+
+from .engine import (
+    StreamEvent,
+    StreamEventType,
+    AgentResponse,
+    AgentSession,
+)
+from .memory import (
+    AdvancedAgentMemory,
+    MemoryType,
+    MemoryImportance,
+)
+from .planning import (
+    Planner,
+    AdaptivePlanner,
+    TaskPriority,
+    TaskStatus,
+    Plan,
+    Task,
+)
+from .reflection import (
+    AgentReflector,
+    QualityRating,
+)
+
+
+# ---------------------------------------------------------------------------
+# Query complexity classification
+# ---------------------------------------------------------------------------
+
+
+class QueryComplexity(str, Enum):
+    """How complex is the user's query?"""
+
+    TRIVIAL = "trivial"  # help, status, hello → instant, no tools
+    SIMPLE = "simple"  # single pipeline call (analyze, search, suggest)
+    MODERATE = "moderate"  # 2-3 chained calls (map + generate, suggest + integrate)
+    COMPLEX = "complex"  # full pipeline (integrate = analyze+research+map+gen+validate)
+
+
+@dataclass
+class QueryClassification:
+    """Result of classifying a user query."""
+
+    complexity: QueryComplexity
+    primary_action: str
+    secondary_actions: list[str] = field(default_factory=list)
+    target: str | None = None
+    query_text: str = ""
+    estimated_token_cost: int = 0  # rough estimate
+    needs_repo: bool = False
+    confidence: float = 0.0
+
+
+@dataclass
+class TokenBudget:
+    """Token budget manager for pocket-friendly execution."""
+
+    max_tokens: int = 50_000  # total budget per query
+    used_tokens: int = 0
+    warn_threshold: float = 0.8  # warn at 80% usage
+    hard_limit: float = 0.95  # stop at 95%
+
+    # Per-phase budgets (percentage of max)
+    phase_budgets: dict[str, float] = field(
+        default_factory=lambda: {
+            "classification": 0.02,  # 2% for understanding the query
+            "memory_retrieval": 0.03,  # 3% for memory lookups
+            "planning": 0.05,  # 5% for task planning
+            "execution": 0.75,  # 75% for actual work
+            "reflection": 0.05,  # 5% for quality assessment
+            "retry": 0.10,  # 10% reserve for retries
+        }
+    )
+
+    def can_spend(self, tokens: int) -> bool:
+        return (self.used_tokens + tokens) <= (self.max_tokens * self.hard_limit)
+
+    def spend(self, tokens: int) -> None:
+        self.used_tokens += tokens
+
+    def remaining(self) -> int:
+        return max(0, self.max_tokens - self.used_tokens)
+
+    def usage_pct(self) -> float:
+        return self.used_tokens / self.max_tokens if self.max_tokens > 0 else 1.0
+
+    def phase_budget(self, phase: str) -> int:
+        pct = self.phase_budgets.get(phase, 0.10)
+        return int(self.max_tokens * pct)
+
+    def is_warning(self) -> bool:
+        return self.usage_pct() >= self.warn_threshold
+
+
+@dataclass
+class ExecutionResult:
+    """Result from executing a single step."""
+
+    ok: bool
+    action: str
+    output: dict[str, Any] | None = None
+    message: str = ""
+    error: str | None = None
+    tokens_used: int = 0
+    duration_ms: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Query Classifier — determines optimal execution path
+# ---------------------------------------------------------------------------
+
+
+class QueryClassifier:
+    """Classify user queries to determine the cheapest sufficient execution path."""
+
+    # Action patterns with complexity and token cost estimates
+    ACTION_PATTERNS: dict[str, dict[str, Any]] = {
+        "help": {
+            "keywords": ["help", "commands", "what can you do", "?"],
+            "complexity": QueryComplexity.TRIVIAL,
+            "token_cost": 100,
+            "needs_repo": False,
+        },
+        "status": {
+            "keywords": ["status", "context", "session", "what do you know"],
+            "complexity": QueryComplexity.TRIVIAL,
+            "token_cost": 100,
+            "needs_repo": False,
+        },
+        "greet": {
+            "keywords": ["hello", "hi", "hey", "start", "good morning", "good evening"],
+            "complexity": QueryComplexity.TRIVIAL,
+            "token_cost": 100,
+            "needs_repo": False,
+        },
+        "analyze": {
+            "keywords": ["analyze", "analyse", "examine", "look at", "scan"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 2000,
+            "needs_repo": True,
+        },
+        "search": {
+            "keywords": ["search", "find papers", "look for", "research"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 3000,
+            "needs_repo": False,
+        },
+        "suggest": {
+            "keywords": ["suggest", "recommend", "what can", "improvements", "improve"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 3000,
+            "needs_repo": True,
+        },
+        "specs": {
+            "keywords": ["specs", "specifications", "list specs", "available"],
+            "complexity": QueryComplexity.TRIVIAL,
+            "token_cost": 500,
+            "needs_repo": False,
+        },
+        "validate": {
+            "keywords": ["validate", "test", "run tests", "verify", "check"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 5000,
+            "needs_repo": True,
+        },
+        "security": {
+            "keywords": ["security", "scan vulnerabilities", "audit security"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 3000,
+            "needs_repo": True,
+        },
+        "map": {
+            "keywords": ["map spec", "map to code", "where to apply"],
+            "complexity": QueryComplexity.MODERATE,
+            "token_cost": 8000,
+            "needs_repo": True,
+        },
+        "generate": {
+            "keywords": ["generate patch", "generate code", "create patch"],
+            "complexity": QueryComplexity.MODERATE,
+            "token_cost": 10000,
+            "needs_repo": True,
+        },
+        "integrate": {
+            "keywords": ["integrate", "apply", "implement", "add", "install"],
+            "complexity": QueryComplexity.COMPLEX,
+            "token_cost": 25000,
+            "needs_repo": True,
+        },
+        "rollback": {
+            "keywords": ["rollback", "revert", "undo"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 2000,
+            "needs_repo": True,
+        },
+    }
+
+    # Compound query patterns that require multi-step execution
+    COMPOUND_PATTERNS: list[dict[str, Any]] = [
+        {
+            "triggers": ["analyze and suggest", "analyze then suggest"],
+            "actions": ["analyze", "suggest"],
+            "complexity": QueryComplexity.MODERATE,
+        },
+        {
+            "triggers": ["suggest and integrate", "suggest then integrate", "find and apply"],
+            "actions": ["suggest", "integrate"],
+            "complexity": QueryComplexity.COMPLEX,
+        },
+        {
+            "triggers": ["full pipeline", "end to end", "everything"],
+            "actions": ["analyze", "suggest", "map", "generate", "validate"],
+            "complexity": QueryComplexity.COMPLEX,
+        },
+    ]
+
+    SPEC_NAMES = {
+        "rmsnorm",
+        "swiglu",
+        "flashattention",
+        "rope",
+        "gqa",
+        "mixture",
+        "layernorm",
+        "gelu",
+        "silu",
+        "mqa",
+    }
+
+    def classify(self, user_input: str) -> QueryClassification:
+        """Classify user input into an execution plan."""
+        user_lower = user_input.lower().strip()
+
+        # Check compound patterns first (higher specificity)
+        for pattern in self.COMPOUND_PATTERNS:
+            for trigger in pattern["triggers"]:
+                if trigger in user_lower:
+                    target = self._extract_target(user_input)
+                    return QueryClassification(
+                        complexity=pattern["complexity"],
+                        primary_action=pattern["actions"][0],
+                        secondary_actions=pattern["actions"][1:],
+                        target=target,
+                        query_text=user_input,
+                        estimated_token_cost=sum(
+                            self.ACTION_PATTERNS.get(a, {}).get("token_cost", 5000)
+                            for a in pattern["actions"]
+                        ),
+                        needs_repo=True,
+                        confidence=0.9,
+                    )
+
+        # Check single-action patterns
+        for action, config in self.ACTION_PATTERNS.items():
+            for keyword in config["keywords"]:
+                if keyword in user_lower:
+                    target = self._extract_target(user_input)
+                    return QueryClassification(
+                        complexity=config["complexity"],
+                        primary_action=action,
+                        target=target,
+                        query_text=user_input,
+                        estimated_token_cost=config["token_cost"],
+                        needs_repo=config["needs_repo"],
+                        confidence=0.85,
+                    )
+
+        # Fallback: try to infer intent from spec names
+        for spec in self.SPEC_NAMES:
+            if spec in user_lower:
+                return QueryClassification(
+                    complexity=QueryComplexity.COMPLEX,
+                    primary_action="integrate",
+                    target=spec,
+                    query_text=user_input,
+                    estimated_token_cost=25000,
+                    needs_repo=True,
+                    confidence=0.7,
+                )
+
+        # Unknown query — treat as generic
+        return QueryClassification(
+            complexity=QueryComplexity.SIMPLE,
+            primary_action="unknown",
+            query_text=user_input,
+            estimated_token_cost=1000,
+            confidence=0.3,
+        )
+
+    def _extract_target(self, user_input: str) -> str | None:
+        """Extract target (repo path or spec name) from user input."""
+        parts = user_input.split()
+
+        # Check for spec names
+        for part in parts:
+            if part.lower() in self.SPEC_NAMES:
+                return part.lower()
+
+        # Check for paths
+        for part in parts:
+            if part.startswith(("/", "./", "../", "~")):
+                path = Path(part).expanduser()
+                if path.exists():
+                    return str(path.resolve())
+
+        # Check last argument as path
+        if len(parts) > 1:
+            path = Path(parts[-1]).expanduser()
+            if path.exists():
+                return str(path.resolve())
+
+        # Extract search query
+        user_lower = user_input.lower()
+        for prefix in ["search", "find", "look for", "research"]:
+            if prefix in user_lower:
+                idx = user_lower.index(prefix) + len(prefix)
+                remainder = user_input[idx:].strip()
+                # Remove common filler words
+                for filler in ["for", "about", "on", "papers"]:
+                    if remainder.lower().startswith(filler):
+                        remainder = remainder[len(filler) :].strip()
+                if remainder:
+                    return remainder
+
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Smart Agent Engine — the orchestrator
+# ---------------------------------------------------------------------------
+
+
+class SmartAgentEngine:
+    """
+    Intelligent agent engine that maximizes output quality per token spent.
+
+    Wires together memory, planning, reflection, and real pipeline calls
+    with a token budget to stay pocket-friendly.
+    """
+
+    def __init__(
+        self,
+        agent_id: str = "smart-agent",
+        max_tokens: int = 50_000,
+        quality_threshold: float = 0.6,
+        max_retries: int = 2,
+    ):
+        self.agent_id = agent_id
+        self.quality_threshold = quality_threshold
+        self.max_retries = max_retries
+
+        # Core components
+        self.classifier = QueryClassifier()
+        self.memory = AdvancedAgentMemory(agent_id)
+        self.planner = AdaptivePlanner()
+        self.reflector = AgentReflector()
+        self.budget = TokenBudget(max_tokens=max_tokens)
+
+        # Session
+        self.sessions: dict[str, AgentSession] = {}
+        self.current_session: AgentSession | None = None
+
+        # Execution stats
+        self.total_queries = 0
+        self.successful_queries = 0
+        self.total_tokens_used = 0
+
+    # -----------------------------------------------------------------------
+    # Session management
+    # -----------------------------------------------------------------------
+
+    def create_session(self, repo_path: str | None = None) -> AgentSession:
+        session_id = str(uuid.uuid4())[:12]
+        session = AgentSession(id=session_id, repo_path=repo_path)
+        self.sessions[session_id] = session
+        self.current_session = session
+
+        # Store session start in memory
+        self.memory.remember_episode(
+            f"Session started: {session_id}",
+            outcome="new_session",
+            tags=["session", "start"],
+        )
+        return session
+
+    def switch_repo(self, repo_path: str) -> bool:
+        if not self.current_session:
+            return False
+        path = Path(repo_path).expanduser().resolve()
+        if not path.exists():
+            return False
+        self.current_session.repo_path = str(path)
+
+        # Remember repo context
+        self.memory.learn_fact(
+            f"User is working on repository: {path.name} at {path}",
+            source="session",
+            tags=["repo", "context", path.name],
+        )
+        return True
+
+    # -----------------------------------------------------------------------
+    # Main entry point — streaming
+    # -----------------------------------------------------------------------
+
+    async def stream_smart(
+        self,
+        user_input: str,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Main entry: classify → plan → execute → reflect → improve.
+
+        Yields StreamEvents in real-time for UI rendering.
+        """
+        if not self.current_session:
+            self.create_session()
+
+        session = self.current_session
+        if session:
+            session.add_message("user", user_input)
+
+        self.total_queries += 1
+
+        # Reset budget for this query
+        self.budget = TokenBudget(max_tokens=self.budget.max_tokens)
+
+        # --- Phase 1: Classify ---
+        yield StreamEvent(
+            type=StreamEventType.START,
+            message="Processing your request...",
+            data={"user_input": user_input},
+        )
+
+        classification = self.classifier.classify(user_input)
+        self.budget.spend(50)  # classification cost
+
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message=f"Query classified: {classification.complexity.value} "
+            f"(action={classification.primary_action}, "
+            f"est. cost ~{classification.estimated_token_cost} tokens)",
+            data={
+                "complexity": classification.complexity.value,
+                "action": classification.primary_action,
+                "confidence": classification.confidence,
+            },
+        )
+
+        # --- Phase 2: Memory retrieval (cheap context boost) ---
+        memory_context = self._retrieve_memory_context(user_input, classification)
+        if memory_context:
+            yield StreamEvent(
+                type=StreamEventType.PROGRESS,
+                message=f"Loaded {len(memory_context)} relevant memories from past sessions",
+                data={"memory_count": len(memory_context)},
+            )
+
+        # --- Phase 3: Route by complexity ---
+        try:
+            if classification.complexity == QueryComplexity.TRIVIAL:
+                async for event in self._handle_trivial(classification, memory_context):
+                    yield event
+
+            elif classification.complexity == QueryComplexity.SIMPLE:
+                async for event in self._handle_simple(classification, memory_context):
+                    yield event
+
+            elif classification.complexity == QueryComplexity.MODERATE:
+                async for event in self._handle_moderate(classification, memory_context):
+                    yield event
+
+            else:  # COMPLEX
+                async for event in self._handle_complex(classification, memory_context):
+                    yield event
+
+            self.successful_queries += 1
+
+        except Exception as e:
+            # Store error in memory for learning
+            self.memory.remember_episode(
+                f"Error on query '{user_input[:80]}': {str(e)}",
+                outcome="error",
+                tags=["error", classification.primary_action],
+            )
+            self.reflector.analyze_error(str(e), context=user_input)
+
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=str(e),
+                data={"exception": type(e).__name__},
+            )
+
+        # --- Final: Budget summary ---
+        self.total_tokens_used += self.budget.used_tokens
+        yield StreamEvent(
+            type=StreamEventType.COMPLETE,
+            message=f"Done. Tokens used: ~{self.budget.used_tokens:,} / {self.budget.max_tokens:,}",
+            data={
+                "tokens_used": self.budget.used_tokens,
+                "tokens_remaining": self.budget.remaining(),
+            },
+        )
+
+    # -----------------------------------------------------------------------
+    # Synchronous process() for CLI single-shot usage
+    # -----------------------------------------------------------------------
+
+    async def process(self, user_input: str) -> AgentResponse:
+        """Process a query and return a complete response (non-streaming)."""
+        events: list[StreamEvent] = []
+        async for event in self.stream_smart(user_input):
+            events.append(event)
+
+        # Collect output from events
+        outputs = [e for e in events if e.type == StreamEventType.OUTPUT]
+        errors = [e for e in events if e.type == StreamEventType.ERROR]
+        suggestions = [e.message for e in events if e.type == StreamEventType.SUGGESTION]
+
+        if errors:
+            return AgentResponse(
+                ok=False,
+                message=errors[0].message,
+                error=errors[0].message,
+                suggestions=suggestions,
+            )
+
+        message_parts = [e.message for e in outputs]
+        combined_data = {}
+        for e in outputs:
+            if e.data:
+                combined_data.update(e.data)
+
+        return AgentResponse(
+            ok=True,
+            message="\n".join(message_parts) if message_parts else "Done",
+            output=combined_data if combined_data else None,
+            suggestions=suggestions,
+        )
+
+    # -----------------------------------------------------------------------
+    # Complexity handlers
+    # -----------------------------------------------------------------------
+
+    async def _handle_trivial(
+        self,
+        classification: QueryClassification,
+        memory_context: list[dict],
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """Handle trivial queries (help, greet, status) — zero pipeline calls."""
+        action = classification.primary_action
+
+        if action == "greet":
+            # Personalized greeting with memory
+            greeting = self._build_greeting(memory_context)
+            yield StreamEvent(type=StreamEventType.OUTPUT, message=greeting)
+
+        elif action == "help":
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=self._build_help_text(),
+            )
+
+        elif action == "status":
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=self._build_status_text(),
+            )
+
+        elif action == "specs":
+            async for event in self._exec_specs():
+                yield event
+
+        else:
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message="I'm here to help. Try 'help' for available commands.",
+            )
+
+        self.budget.spend(100)
+
+    async def _handle_simple(
+        self,
+        classification: QueryClassification,
+        memory_context: list[dict],
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """Handle simple queries — single pipeline call with reflection."""
+        action = classification.primary_action
+        target = classification.target
+
+        # Resolve target from session/memory if missing
+        if classification.needs_repo and not target:
+            target = self._resolve_repo_path()
+            if not target and action != "search":
+                yield StreamEvent(
+                    type=StreamEventType.ERROR,
+                    message="No repository set. Use 'analyze <path>' first, or provide a path.",
+                )
+                return
+
+        # Check memory for cached results
+        cache_hit = self._check_memory_cache(action, target)
+        if cache_hit and action in ("analyze", "suggest"):
+            yield StreamEvent(
+                type=StreamEventType.PROGRESS,
+                message="Found recent results in memory — enriching with fresh data...",
+            )
+
+        # Execute
+        result = await self._execute_action(action, target, classification.query_text)
+
+        if result.ok:
+            # Reflect on output quality
+            quality = self._reflect_and_score(result, classification)
+
+            # Emit output
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=result.message,
+                data=result.output or {},
+            )
+
+            # Emit detailed output if available
+            async for event in self._format_result_details(action, result):
+                yield event
+
+            # Store in memory
+            self._store_result_in_memory(action, target, result)
+
+            # Emit contextual suggestions
+            for sugg in self._generate_suggestions(action, result):
+                yield StreamEvent(type=StreamEventType.SUGGESTION, message=sugg)
+
+        else:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=result.error or result.message,
+            )
+
+            # If quality is too low, try to recover
+            if self.budget.can_spend(5000):
+                recovery = self._suggest_recovery(action, result.error or "")
+                if recovery:
+                    yield StreamEvent(
+                        type=StreamEventType.SUGGESTION,
+                        message=recovery,
+                    )
+
+    async def _handle_moderate(
+        self,
+        classification: QueryClassification,
+        memory_context: list[dict],
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """Handle moderate queries — 2-3 chained pipeline calls with planning."""
+        all_actions = [classification.primary_action] + classification.secondary_actions
+        target = classification.target
+
+        if classification.needs_repo and not target:
+            target = self._resolve_repo_path()
+            if not target:
+                yield StreamEvent(
+                    type=StreamEventType.ERROR,
+                    message="No repository set. Use 'analyze <path>' first.",
+                )
+                return
+
+        # Create plan
+        plan = self.planner.create_plan(
+            name=f"Execute: {classification.query_text[:50]}",
+            description=classification.query_text,
+            context={"target": target, "actions": all_actions},
+        )
+
+        for i, action in enumerate(all_actions):
+            depends = [plan.tasks[-1].id] if plan.tasks else []
+            self.planner.add_task(
+                plan.id,
+                description=f"Execute {action}",
+                priority=TaskPriority.HIGH,
+                depends_on=depends,
+            )
+
+        self.budget.spend(200)  # planning cost
+
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message=f"Planned {len(all_actions)} steps: {' → '.join(all_actions)}",
+            data={"plan": [a for a in all_actions]},
+        )
+
+        # Execute each step
+        prev_result: ExecutionResult | None = None
+        for i, action in enumerate(all_actions):
+            if not self.budget.can_spend(2000):
+                yield StreamEvent(
+                    type=StreamEventType.PROGRESS,
+                    message="Token budget limit reached. Stopping early.",
+                )
+                break
+
+            step_target = target
+            # For chained actions, use previous result's context
+            if prev_result and prev_result.ok and prev_result.output:
+                if action == "integrate" and "spec" in (prev_result.output or {}):
+                    step_target = prev_result.output["spec"]
+
+            yield StreamEvent(
+                type=StreamEventType.PROGRESS,
+                message=f"Step {i + 1}/{len(all_actions)}: {action}...",
+            )
+
+            result = await self._execute_action(action, step_target, classification.query_text)
+            prev_result = result
+
+            if result.ok:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=result.message,
+                    data=result.output or {},
+                )
+                async for event in self._format_result_details(action, result):
+                    yield event
+                self._store_result_in_memory(action, step_target, result)
+            else:
+                yield StreamEvent(
+                    type=StreamEventType.ERROR,
+                    message=f"Step {action} failed: {result.error or result.message}",
+                )
+                # Try to continue if possible
+                if action == all_actions[-1]:
+                    break  # last step failed, nothing to continue
+
+        # Final suggestions
+        for sugg in self._generate_suggestions(all_actions[-1], prev_result):
+            yield StreamEvent(type=StreamEventType.SUGGESTION, message=sugg)
+
+    async def _handle_complex(
+        self,
+        classification: QueryClassification,
+        memory_context: list[dict],
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Handle complex queries (e.g., integrate) — full pipeline with
+        planning, quality gates, and iterative improvement.
+        """
+        action = classification.primary_action
+        target = classification.target
+
+        if classification.needs_repo and not target:
+            # For integrate, target is spec name, repo comes from session
+            if action == "integrate":
+                target = self._extract_spec_from_query(classification.query_text)
+                if not target:
+                    yield StreamEvent(
+                        type=StreamEventType.ERROR,
+                        message="No spec provided. Available: rmsnorm, swiglu, flashattention, rope, gqa",
+                    )
+                    return
+            else:
+                target = self._resolve_repo_path()
+                if not target:
+                    yield StreamEvent(
+                        type=StreamEventType.ERROR,
+                        message="No repository set. Use 'analyze <path>' first.",
+                    )
+                    return
+
+        repo_path = self._resolve_repo_path()
+
+        # Plan the complex execution
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message=f"Planning complex execution: {action} {target or ''}",
+        )
+
+        # Use adaptive planner for complex tasks
+        plan = self.planner.decompose_goal(
+            f"{action} {target or ''} on {repo_path or 'repo'}",
+            context={"action": action, "target": target, "repo": repo_path},
+        )
+        self.budget.spend(500)
+
+        yield StreamEvent(
+            type=StreamEventType.PROGRESS,
+            message=f"Decomposed into {len(plan.tasks)} subtasks",
+            data={"subtasks": [t.description for t in plan.tasks]},
+        )
+
+        # Execute the primary action (which is a full pipeline call)
+        result = await self._execute_action(action, target, classification.query_text)
+
+        if result.ok:
+            # Reflect on quality
+            quality = self._reflect_and_score(result, classification)
+
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=result.message,
+                data=result.output or {},
+            )
+
+            async for event in self._format_result_details(action, result):
+                yield event
+
+            # Quality gate — if below threshold and budget allows, try to improve
+            if (
+                quality
+                and quality.value < self.quality_threshold * 5  # scale to 1-5
+                and self.budget.can_spend(10000)
+            ):
+                yield StreamEvent(
+                    type=StreamEventType.PROGRESS,
+                    message="Output quality below threshold — attempting improvement...",
+                )
+                # Re-run with enhanced context from first attempt
+                enhanced_result = await self._retry_with_context(
+                    action, target, result, classification
+                )
+                if enhanced_result and enhanced_result.ok:
+                    yield StreamEvent(
+                        type=StreamEventType.OUTPUT,
+                        message=f"[Improved] {enhanced_result.message}",
+                        data=enhanced_result.output or {},
+                    )
+
+            self._store_result_in_memory(action, target, result)
+
+            # Generate suggestions
+            for sugg in self._generate_suggestions(action, result):
+                yield StreamEvent(type=StreamEventType.SUGGESTION, message=sugg)
+
+        else:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=result.error or result.message,
+            )
+
+            # Analyze failure and suggest recovery
+            self.reflector.analyze_error(result.error or "", context=classification.query_text)
+            recovery = self._suggest_recovery(action, result.error or "")
+            if recovery:
+                yield StreamEvent(type=StreamEventType.SUGGESTION, message=recovery)
+
+    # -----------------------------------------------------------------------
+    # Execution layer — real pipeline calls
+    # -----------------------------------------------------------------------
+
+    async def _execute_action(
+        self, action: str, target: str | None, query_text: str
+    ) -> ExecutionResult:
+        """Execute a single action against the real pipeline."""
+        start = time.monotonic()
+
+        try:
+            if action == "analyze":
+                return await self._exec_analyze(target)
+            elif action == "search":
+                return await self._exec_search(target or query_text)
+            elif action == "suggest":
+                return await self._exec_suggest(target)
+            elif action == "validate":
+                return await self._exec_validate(target)
+            elif action == "security":
+                return await self._exec_security(target)
+            elif action == "integrate":
+                return await self._exec_integrate(target)
+            elif action == "map":
+                return await self._exec_map(target)
+            elif action == "generate":
+                return await self._exec_generate(target)
+            elif action == "rollback":
+                return await self._exec_rollback(target)
+            elif action == "unknown":
+                return await self._exec_unknown(query_text)
+            else:
+                return ExecutionResult(ok=False, action=action, error=f"Unknown action: {action}")
+        except Exception as e:
+            duration = int((time.monotonic() - start) * 1000)
+            return ExecutionResult(ok=False, action=action, error=str(e), duration_ms=duration)
+
+    async def _exec_analyze(self, repo_path: str | None) -> ExecutionResult:
+        from scholardevclaw.application.pipeline import run_analyze
+
+        if not repo_path:
+            repo_path = self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="analyze", error="No repository path")
+
+        path = Path(repo_path).expanduser().resolve()
+        if not path.exists():
+            return ExecutionResult(ok=False, action="analyze", error=f"Path not found: {repo_path}")
+
+        # Set repo path in session
+        if self.current_session:
+            self.current_session.repo_path = str(path)
+
+        result = await asyncio.to_thread(run_analyze, str(path))
+        tokens = 2000
+        self.budget.spend(tokens)
+
+        if result.ok:
+            return ExecutionResult(
+                ok=True,
+                action="analyze",
+                message=result.title,
+                output=result.payload,
+                tokens_used=tokens,
+            )
+        return ExecutionResult(ok=False, action="analyze", error=result.error, tokens_used=tokens)
+
+    async def _exec_search(self, query: str) -> ExecutionResult:
+        from scholardevclaw.application.pipeline import run_search
+
+        if not query:
+            return ExecutionResult(ok=False, action="search", error="No search query")
+
+        result = await asyncio.to_thread(run_search, query)
+        tokens = 3000
+        self.budget.spend(tokens)
+
+        if result.ok:
+            return ExecutionResult(
+                ok=True,
+                action="search",
+                message=result.title,
+                output=result.payload,
+                tokens_used=tokens,
+            )
+        return ExecutionResult(ok=False, action="search", error=result.error, tokens_used=tokens)
+
+    async def _exec_suggest(self, repo_path: str | None) -> ExecutionResult:
+        from scholardevclaw.application.pipeline import run_suggest
+
+        repo_path = repo_path or self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="suggest", error="No repository set")
+
+        result = await asyncio.to_thread(run_suggest, repo_path)
+        tokens = 3000
+        self.budget.spend(tokens)
+
+        if result.ok:
+            return ExecutionResult(
+                ok=True,
+                action="suggest",
+                message=result.title,
+                output=result.payload,
+                tokens_used=tokens,
+            )
+        return ExecutionResult(ok=False, action="suggest", error=result.error, tokens_used=tokens)
+
+    async def _exec_validate(self, repo_path: str | None) -> ExecutionResult:
+        from scholardevclaw.application.pipeline import run_validate
+
+        repo_path = repo_path or self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="validate", error="No repository set")
+
+        result = await asyncio.to_thread(run_validate, repo_path)
+        tokens = 5000
+        self.budget.spend(tokens)
+
+        if result.ok:
+            return ExecutionResult(
+                ok=True,
+                action="validate",
+                message=result.title,
+                output=result.payload,
+                tokens_used=tokens,
+            )
+        return ExecutionResult(ok=False, action="validate", error=result.error, tokens_used=tokens)
+
+    async def _exec_security(self, repo_path: str | None) -> ExecutionResult:
+        from scholardevclaw.security import SecurityScanner
+
+        repo_path = repo_path or self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="security", error="No repository set")
+
+        scanner = SecurityScanner()
+        result = await asyncio.to_thread(scanner.scan, repo_path)
+        tokens = 3000
+        self.budget.spend(tokens)
+
+        return ExecutionResult(
+            ok=True,
+            action="security",
+            message=f"Security scan: {'passed' if result.passed else f'{result.total_findings} issues found'}",
+            output=result.to_dict(),
+            tokens_used=tokens,
+        )
+
+    async def _exec_integrate(self, spec: str | None) -> ExecutionResult:
+        from scholardevclaw.application.pipeline import run_integrate
+
+        repo_path = self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="integrate", error="No repository set")
+        if not spec:
+            return ExecutionResult(ok=False, action="integrate", error="No spec provided")
+
+        result = await asyncio.to_thread(run_integrate, repo_path, spec)
+        tokens = 20000
+        self.budget.spend(tokens)
+
+        if result.ok:
+            return ExecutionResult(
+                ok=True,
+                action="integrate",
+                message=result.title,
+                output=result.payload,
+                tokens_used=tokens,
+            )
+        return ExecutionResult(ok=False, action="integrate", error=result.error, tokens_used=tokens)
+
+    async def _exec_map(self, spec: str | None) -> ExecutionResult:
+        from scholardevclaw.application.pipeline import run_map
+
+        repo_path = self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="map", error="No repository set")
+        if not spec:
+            return ExecutionResult(ok=False, action="map", error="No spec provided")
+
+        result = await asyncio.to_thread(run_map, repo_path, spec)
+        tokens = 8000
+        self.budget.spend(tokens)
+
+        if result.ok:
+            return ExecutionResult(
+                ok=True,
+                action="map",
+                message=result.title,
+                output=result.payload,
+                tokens_used=tokens,
+            )
+        return ExecutionResult(ok=False, action="map", error=result.error, tokens_used=tokens)
+
+    async def _exec_generate(self, spec: str | None) -> ExecutionResult:
+        from scholardevclaw.application.pipeline import run_generate
+
+        repo_path = self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="generate", error="No repository set")
+        if not spec:
+            return ExecutionResult(ok=False, action="generate", error="No spec provided")
+
+        result = await asyncio.to_thread(run_generate, repo_path, spec)
+        tokens = 10000
+        self.budget.spend(tokens)
+
+        if result.ok:
+            return ExecutionResult(
+                ok=True,
+                action="generate",
+                message=result.title,
+                output=result.payload,
+                tokens_used=tokens,
+            )
+        return ExecutionResult(ok=False, action="generate", error=result.error, tokens_used=tokens)
+
+    async def _exec_rollback(self, snapshot_id: str | None) -> ExecutionResult:
+        from scholardevclaw.rollback import RollbackManager
+
+        repo_path = self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="rollback", error="No repository set")
+
+        manager = RollbackManager()
+        result = await asyncio.to_thread(manager.rollback, repo_path, snapshot_id)
+        tokens = 2000
+        self.budget.spend(tokens)
+
+        return ExecutionResult(
+            ok=True if result.ok else False,
+            action="rollback",
+            message="Rollback complete" if result.ok else "Rollback failed",
+            error=None if result.ok else str(result.error if hasattr(result, "error") else ""),
+            tokens_used=tokens,
+        )
+
+    async def _exec_specs(self) -> AsyncGenerator[StreamEvent, None]:
+        from scholardevclaw.application.pipeline import run_specs
+
+        result = await asyncio.to_thread(run_specs)
+        self.budget.spend(500)
+
+        if result.ok:
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=result.title,
+                data=result.payload or {},
+            )
+            specs = (result.payload or {}).get("specs", [])
+            if specs:
+                for spec in specs[:10]:
+                    name = spec.get("name", "unknown") if isinstance(spec, dict) else str(spec)
+                    yield StreamEvent(
+                        type=StreamEventType.OUTPUT,
+                        message=f"  - {name}",
+                    )
+        else:
+            yield StreamEvent(
+                type=StreamEventType.ERROR,
+                message=result.error or "Failed to list specs",
+            )
+
+    async def _exec_unknown(self, query: str) -> ExecutionResult:
+        """Handle unknown queries with helpful fallback."""
+        return ExecutionResult(
+            ok=False,
+            action="unknown",
+            message="I didn't understand that command.",
+            error=f"Unknown query: '{query[:80]}'. Try 'help' for available commands.",
+            tokens_used=100,
+        )
+
+    # -----------------------------------------------------------------------
+    # Memory integration
+    # -----------------------------------------------------------------------
+
+    def _retrieve_memory_context(
+        self,
+        query: str,
+        classification: QueryClassification,
+    ) -> list[dict]:
+        """Retrieve relevant memories for context enrichment."""
+        memories = self.memory.retrieve(
+            query,
+            limit=5,
+        )
+        self.budget.spend(100)
+
+        context = []
+        for m in memories:
+            # Only include memories above relevance threshold
+            if m.relevance + m.recency + m.importance_boost > 0.5:
+                context.append(
+                    {
+                        "content": m.memory.content[:200],
+                        "type": m.memory.memory_type.value,
+                        "relevance": round(m.relevance, 2),
+                        "tags": m.memory.tags,
+                    }
+                )
+                # Access the memory to update tracking
+                self.memory.access(m.memory.id)
+
+        return context
+
+    def _check_memory_cache(self, action: str, target: str | None) -> dict | None:
+        """Check if we have recent results for this action+target."""
+        cache_query = f"{action} {target or ''}"
+        memories = self.memory.retrieve(cache_query, limit=1)
+
+        if memories and memories[0].recency > 0.8:
+            return {
+                "content": memories[0].memory.content,
+                "tags": memories[0].memory.tags,
+            }
+        return None
+
+    def _store_result_in_memory(
+        self,
+        action: str,
+        target: str | None,
+        result: ExecutionResult,
+    ) -> None:
+        """Store execution result in memory for future context."""
+        content = f"{action} on {target or 'unknown'}: {result.message[:200]}"
+        importance = MemoryImportance.HIGH if result.ok else MemoryImportance.MEDIUM
+
+        self.memory.remember_episode(
+            content=content,
+            outcome="success" if result.ok else "failure",
+            tags=[action, "result", target or "unknown"],
+        )
+
+        # Learn facts from successful results
+        if result.ok and result.output:
+            if action == "analyze" and isinstance(result.output, dict):
+                langs = result.output.get("languages", [])
+                if langs:
+                    self.memory.learn_fact(
+                        f"Repository uses languages: {', '.join(langs[:5])}",
+                        source=action,
+                        tags=["repo", "languages"],
+                    )
+                frameworks = result.output.get("frameworks", [])
+                if frameworks:
+                    self.memory.learn_fact(
+                        f"Repository uses frameworks: {', '.join(frameworks[:5])}",
+                        source=action,
+                        tags=["repo", "frameworks"],
+                    )
+
+    # -----------------------------------------------------------------------
+    # Reflection integration
+    # -----------------------------------------------------------------------
+
+    def _reflect_and_score(
+        self,
+        result: ExecutionResult,
+        classification: QueryClassification,
+    ) -> QualityRating | None:
+        """Reflect on output quality and return rating."""
+        if not result.ok or not result.message:
+            return None
+
+        reflection = self.reflector.reflect_on_output(
+            output=result.message,
+            expected=classification.query_text,
+        )
+        self.budget.spend(200)
+
+        return reflection.quality_rating
+
+    async def _retry_with_context(
+        self,
+        action: str,
+        target: str | None,
+        prev_result: ExecutionResult,
+        classification: QueryClassification,
+    ) -> ExecutionResult | None:
+        """Retry an action with enhanced context from the first attempt."""
+        if self.max_retries <= 0:
+            return None
+
+        # Use reflection to determine what to improve
+        reflection = self.reflector.analyze_error(
+            error=prev_result.error or "Low quality output",
+            context=classification.query_text,
+        )
+
+        # Re-execute with same parameters
+        result = await self._execute_action(action, target, classification.query_text)
+        return result if result.ok else None
+
+    # -----------------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------------
+
+    def _resolve_repo_path(self) -> str | None:
+        """Get repo path from session or memory."""
+        if self.current_session and self.current_session.repo_path:
+            return self.current_session.repo_path
+
+        # Try to find from memory
+        memories = self.memory.search_by_tag("repo", limit=1)
+        if memories:
+            content = memories[0].content
+            # Extract path from "working on repository ... at /path"
+            if " at " in content:
+                return content.split(" at ")[-1].strip()
+
+        return None
+
+    def _extract_spec_from_query(self, query: str) -> str | None:
+        """Extract spec name from a query string."""
+        for spec in QueryClassifier.SPEC_NAMES:
+            if spec in query.lower():
+                return spec
+        return None
+
+    def _build_greeting(self, memory_context: list[dict]) -> str:
+        """Build a personalized greeting using memory context."""
+        base = "Hello! I'm ScholarDevClaw — your research-to-code assistant."
+
+        if self.current_session and self.current_session.repo_path:
+            repo_name = Path(self.current_session.repo_path).name
+            base += f"\n\nCurrently working on: **{repo_name}**"
+
+        if memory_context:
+            base += "\n\nFrom our previous sessions, I remember:"
+            for ctx in memory_context[:3]:
+                base += f"\n  - {ctx['content'][:100]}"
+
+        base += "\n\nWhat would you like to do? Try:"
+        base += "\n  - `analyze <path>` — Analyze a repository"
+        base += "\n  - `suggest` — Get improvement suggestions"
+        base += "\n  - `search <query>` — Find research papers"
+        base += "\n  - `integrate <spec>` — Apply a research improvement"
+        base += "\n  - `help` — See all commands"
+
+        return base
+
+    def _build_help_text(self) -> str:
+        return """**ScholarDevClaw Commands**
+
+**Repository:**
+  `analyze <path>` — Analyze repository structure and languages
+  `suggest` — Get AI-powered improvement suggestions
+  `validate` — Run validation tests
+  `security` — Run security scan
+
+**Research:**
+  `search <query>` — Search for research papers (arXiv + web)
+  `specs` — List available paper specifications
+
+**Integration:**
+  `map <spec>` — Map a spec to code locations
+  `generate <spec>` — Generate patch artifacts
+  `integrate <spec>` — Full pipeline: analyze + research + map + generate + validate
+
+**Recovery:**
+  `rollback` — Revert last integration
+
+**Session:**
+  `status` — Show current session info
+  `help` — Show this message
+
+**Available specs:** rmsnorm, swiglu, flashattention, rope, gqa, mixture"""
+
+    def _build_status_text(self) -> str:
+        parts = ["**Session Status**"]
+
+        if self.current_session:
+            parts.append(f"  Session: {self.current_session.id}")
+            parts.append(f"  Repository: {self.current_session.repo_path or 'not set'}")
+            parts.append(f"  Messages: {len(self.current_session.messages)}")
+        else:
+            parts.append("  No active session")
+
+        parts.append(f"\n**Agent Stats**")
+        parts.append(f"  Total queries: {self.total_queries}")
+        parts.append(f"  Successful: {self.successful_queries}")
+        parts.append(f"  Total tokens used: ~{self.total_tokens_used:,}")
+
+        mem_stats = self.memory.get_stats()
+        parts.append(f"\n**Memory**")
+        parts.append(f"  Total memories: {mem_stats['total_memories']}")
+        parts.append(f"  Cached: {mem_stats['cached_count']}")
+
+        return "\n".join(parts)
+
+    def _suggest_recovery(self, action: str, error: str) -> str | None:
+        """Suggest a recovery action based on error."""
+        error_lower = error.lower()
+
+        if "no repository" in error_lower or "not set" in error_lower:
+            return "analyze <path> — Set a repository first"
+        if "not found" in error_lower:
+            return "Check the path exists and try again"
+        if "no spec" in error_lower:
+            return "specs — List available specifications"
+        if "permission" in error_lower:
+            return "Check file permissions on the repository"
+        if "timeout" in error_lower:
+            return "Try a smaller repository or specific subdirectory"
+        return None
+
+    def _generate_suggestions(
+        self,
+        action: str,
+        result: ExecutionResult | None,
+    ) -> list[str]:
+        """Generate contextual next-step suggestions."""
+        suggestions = []
+
+        if action == "analyze":
+            suggestions.append("suggest — Get improvement suggestions")
+            suggestions.append("security — Run security scan")
+        elif action == "suggest":
+            suggestions.append("integrate <spec> — Apply a suggestion")
+            suggestions.append("search <query> — Find more papers")
+        elif action == "search":
+            suggestions.append("integrate <spec> — Apply a result")
+        elif action == "integrate":
+            suggestions.append("validate — Test the changes")
+            suggestions.append("rollback — Revert if needed")
+        elif action == "validate":
+            if result and result.ok:
+                suggestions.append("Great! Integration validated successfully")
+            else:
+                suggestions.append("rollback — Revert the changes")
+        elif action == "security":
+            suggestions.append("suggest — Get improvement suggestions")
+
+        return suggestions
+
+    async def _format_result_details(
+        self,
+        action: str,
+        result: ExecutionResult,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """Format detailed output for specific action types."""
+        if not result.output:
+            return
+
+        output = result.output
+
+        if action == "analyze" and isinstance(output, dict):
+            if "languages" in output:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=f"Languages: {', '.join(output['languages'][:10])}",
+                )
+            if "frameworks" in output:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=f"Frameworks: {', '.join(output['frameworks'][:10])}",
+                )
+            if "file_count" in output:
+                yield StreamEvent(
+                    type=StreamEventType.OUTPUT,
+                    message=f"Files analyzed: {output['file_count']}",
+                )
+
+        elif action == "search" and isinstance(output, dict):
+            results = output.get("results", [])
+            for r in results[:5]:
+                if isinstance(r, dict):
+                    title = r.get("title", "Unknown")
+                    yield StreamEvent(
+                        type=StreamEventType.OUTPUT,
+                        message=f"  - {title}",
+                    )
+
+        elif action == "suggest" and isinstance(output, dict):
+            suggestions = output.get("suggestions", [])
+            for s in suggestions[:5]:
+                if isinstance(s, dict):
+                    paper = s.get("paper", {})
+                    conf = s.get("confidence", 0)
+                    yield StreamEvent(
+                        type=StreamEventType.OUTPUT,
+                        message=f"  - {paper.get('title', 'Unknown')} ({conf:.0%} confidence)",
+                    )
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get comprehensive agent statistics."""
+        return {
+            "agent_id": self.agent_id,
+            "total_queries": self.total_queries,
+            "successful_queries": self.successful_queries,
+            "success_rate": (
+                self.successful_queries / self.total_queries if self.total_queries > 0 else 0
+            ),
+            "total_tokens_used": self.total_tokens_used,
+            "memory_stats": self.memory.get_stats(),
+            "reflection_report": self.reflector.generate_report().__dict__,
+            "quality_threshold": self.quality_threshold,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+
+def create_smart_engine(
+    agent_id: str = "smart-agent",
+    max_tokens: int = 50_000,
+    quality_threshold: float = 0.6,
+) -> SmartAgentEngine:
+    """Create a smart agent engine with sensible defaults."""
+    return SmartAgentEngine(
+        agent_id=agent_id,
+        max_tokens=max_tokens,
+        quality_threshold=quality_threshold,
+    )

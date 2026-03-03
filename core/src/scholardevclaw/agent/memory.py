@@ -337,7 +337,9 @@ class AdvancedAgentMemory:
 
         self.store.insert(memory)
         self._memories_cache[memory.id] = memory
-        self._auto_consolidate(memory)
+        # Note: consolidation is triggered from access(), not here.
+        # A newly created memory has access_count=0, so consolidating
+        # on creation would never trigger the threshold check.
 
         return memory
 
@@ -465,7 +467,7 @@ class AdvancedAgentMemory:
             return False
 
     def access(self, memory_id: str) -> Memory | None:
-        """Access and update memory metadata"""
+        """Access and update memory metadata, potentially triggering consolidation."""
         memory = self.store.get(memory_id)
         if memory:
             memory.access_count += 1
@@ -478,6 +480,9 @@ class AdvancedAgentMemory:
 
             self.store.insert(memory)
             self._memories_cache[memory.id] = memory
+
+            # Check for consolidation after access count increases
+            self._auto_consolidate(memory)
 
         return memory
 

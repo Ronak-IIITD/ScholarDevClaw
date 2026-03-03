@@ -58,8 +58,7 @@ class AgentSession:
     repo_path: str | None = None
     messages: list[AgentMessage] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    last_active: str = field(
-        default_factory=lambda: datetime.now().isoformat())
+    last_active: str = field(default_factory=lambda: datetime.now().isoformat())
     context: dict[str, Any] = field(default_factory=dict)
 
     def add_message(self, role: str, content: str, metadata: dict | None = None) -> None:
@@ -285,8 +284,7 @@ class StreamingAgentEngine:
 
             if self.current_session:
                 self.current_session.add_message(
-                    "assistant", f"Integrated {spec}", {
-                        "action": "integrate", "spec": spec}
+                    "assistant", f"Integrated {spec}", {"action": "integrate", "spec": spec}
                 )
 
             if result.ok:
@@ -378,8 +376,7 @@ class StreamingAgentEngine:
             for s in suggestions[:3]:
                 yield StreamEvent(
                     type=StreamEventType.OUTPUT,
-                    message=f"  • {s['paper']['title']
-                                   } ({s['confidence']:.0%})",
+                    message=f"  • {s['paper']['title']} ({s['confidence']:.0%})",
                     data=s,
                 )
                 yield StreamEvent(
@@ -583,13 +580,12 @@ What would you like to do?""",
 
     def _extract_target(self, user_input: str, action: str) -> str | None:
         parts = user_input.split()
-        spec_names = {"rmsnorm", "swiglu",
-                      "flashattention", "rope", "gqa", "mixture"}
+        spec_names = {"rmsnorm", "swiglu", "flashattention", "rope", "gqa", "mixture"}
 
         if action == "search":
             for i, part in enumerate(parts):
                 if part.lower() == "search" and i + 1 < len(parts):
-                    query_parts = parts[i + 1:]
+                    query_parts = parts[i + 1 :]
                     while query_parts and query_parts[0].lower() in {"for", "about", "on"}:
                         query_parts = query_parts[1:]
                     if query_parts:
@@ -679,15 +675,12 @@ What would you like to do?""",
         result = analyzer.analyze()
 
         if self.current_session:
-            self.current_session.add_message("assistant", f"Analyzed {
-                                             path}", {"action": "analyze"})
+            self.current_session.add_message("assistant", f"Analyzed {path}", {"action": "analyze"})
 
         return AgentResponse(
             ok=True,
-            message=f"Analysis complete! Found {
-                len(result.languages)} languages",
-            output={"languages": result.languages,
-                    "frameworks": result.frameworks},
+            message=f"Analysis complete! Found {len(result.languages)} languages",
+            output={"languages": result.languages, "frameworks": result.frameworks},
             suggestions=["suggest - Get improvements", "integrate rmsnorm"],
         )
 
@@ -809,5 +802,25 @@ What would you like to do?""",
 AgentEngine = StreamingAgentEngine
 
 
-def create_agent_engine() -> StreamingAgentEngine:
+def create_agent_engine(
+    smart: bool = True,
+    **kwargs,
+) -> StreamingAgentEngine:
+    """
+    Factory for creating an agent engine.
+
+    Args:
+        smart: If True (default), returns a SmartAgentEngine that wires together
+               memory, planning, reflection, and real pipeline calls with a token
+               budget. If False, returns the legacy StreamingAgentEngine.
+        **kwargs: Passed to SmartAgentEngine (agent_id, max_tokens, quality_threshold).
+
+    Returns:
+        An engine instance. SmartAgentEngine is a superset of StreamingAgentEngine's
+        interface (it produces the same StreamEvent types).
+    """
+    if smart:
+        from .smart_engine import SmartAgentEngine
+
+        return SmartAgentEngine(**kwargs)  # type: ignore[return-value]
     return StreamingAgentEngine()

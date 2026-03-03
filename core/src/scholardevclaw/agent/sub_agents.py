@@ -203,68 +203,130 @@ class SubAgent:
             return await self._do_general(task)
 
     async def _do_research(self, task: SubTask) -> Any:
-        """Research agent task execution"""
+        """Research agent — delegates to pipeline run_search."""
         query = task.parameters.get("query", "")
-        sources = task.parameters.get("sources", ["arxiv", "github"])
+        if not query:
+            return {"findings": [], "error": "No query provided"}
 
-        return {
-            "findings": f"Research findings for: {query}",
-            "sources_queried": sources,
-            "relevant_papers": 5,
-            "code_references": 3,
-        }
+        try:
+            from scholardevclaw.application.pipeline import run_search
+
+            result = await asyncio.to_thread(run_search, query)
+            return {
+                "findings": result.payload or {},
+                "ok": result.ok,
+                "title": result.title,
+                "error": result.error,
+            }
+        except Exception as e:
+            return {"findings": [], "error": str(e)}
 
     async def _do_code(self, task: SubTask) -> Any:
-        """Code generation agent task execution"""
+        """Code generation agent — delegates to pipeline run_generate."""
         spec = task.parameters.get("spec", "")
-        language = task.parameters.get("language", "python")
+        repo_path = task.parameters.get("repo_path", "")
 
-        return {
-            "generated_code": f"# Generated {language} code for: {spec[:50]}...",
-            "language": language,
-            "confidence": 0.85,
-        }
+        if not spec or not repo_path:
+            return {"error": "Both 'spec' and 'repo_path' parameters are required"}
+
+        try:
+            from scholardevclaw.application.pipeline import run_generate
+
+            result = await asyncio.to_thread(run_generate, repo_path, spec)
+            return {
+                "ok": result.ok,
+                "title": result.title,
+                "payload": result.payload or {},
+                "error": result.error,
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
     async def _do_analysis(self, task: SubTask) -> Any:
-        """Analysis agent task execution"""
+        """Analysis agent — delegates to pipeline run_analyze."""
         target = task.parameters.get("target", "")
+        if not target:
+            return {"error": "No target path provided"}
 
-        return {
-            "analysis": f"Analysis of: {target}",
-            "issues_found": 2,
-            "recommendations": ["Fix performance", "Add tests"],
-        }
+        try:
+            from scholardevclaw.application.pipeline import run_analyze
+
+            result = await asyncio.to_thread(run_analyze, target)
+            return {
+                "ok": result.ok,
+                "title": result.title,
+                "payload": result.payload or {},
+                "error": result.error,
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
     async def _do_planning(self, task: SubTask) -> Any:
-        """Planning agent task execution"""
+        """Planning agent — delegates to pipeline run_suggest for goal-based planning."""
         goal = task.parameters.get("goal", "")
+        repo_path = task.parameters.get("repo_path", "")
 
-        return {
-            "plan": f"Plan for: {goal}",
-            "steps": ["Step 1", "Step 2", "Step 3"],
-            "estimated_duration": "30 minutes",
-        }
+        if not repo_path:
+            # Planning without a repo is purely heuristic
+            return {
+                "plan": f"Plan for: {goal}",
+                "steps": ["Analyze repo", "Identify improvements", "Generate patches"],
+                "note": "No repo_path provided; plan is generic",
+            }
+
+        try:
+            from scholardevclaw.application.pipeline import run_suggest
+
+            result = await asyncio.to_thread(run_suggest, repo_path)
+            suggestions = (result.payload or {}).get("suggestions", [])
+            return {
+                "ok": result.ok,
+                "plan": f"Plan for: {goal}",
+                "suggestions": suggestions[:5],
+                "error": result.error,
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
     async def _do_execution(self, task: SubTask) -> Any:
-        """Execution agent task execution"""
-        command = task.parameters.get("command", "")
+        """Execution agent — delegates to pipeline run_integrate."""
+        repo_path = task.parameters.get("repo_path", "")
+        spec = task.parameters.get("spec", "")
 
-        return {
-            "executed": command,
-            "exit_code": 0,
-            "output": "Command executed successfully",
-        }
+        if not repo_path or not spec:
+            return {"error": "Both 'repo_path' and 'spec' parameters are required"}
+
+        try:
+            from scholardevclaw.application.pipeline import run_integrate
+
+            result = await asyncio.to_thread(run_integrate, repo_path, spec)
+            return {
+                "ok": result.ok,
+                "title": result.title,
+                "payload": result.payload or {},
+                "error": result.error,
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
     async def _do_validation(self, task: SubTask) -> Any:
-        """Validation agent task execution"""
+        """Validation agent — delegates to pipeline run_validate."""
         target = task.parameters.get("target", "")
+        if not target:
+            return {"error": "No target path provided"}
 
-        return {
-            "validation_passed": True,
-            "target": target,
-            "tests_run": 10,
-            "tests_passed": 10,
-        }
+        try:
+            from scholardevclaw.application.pipeline import run_validate
+
+            result = await asyncio.to_thread(run_validate, target)
+            return {
+                "ok": result.ok,
+                "title": result.title,
+                "payload": result.payload or {},
+                "error": result.error,
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
     async def _do_general(self, task: SubTask) -> Any:
         """General agent task execution"""

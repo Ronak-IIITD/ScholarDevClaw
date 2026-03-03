@@ -8,6 +8,15 @@ from .engine import (
     StreamEventType,
     create_agent_engine,
 )
+from .smart_engine import (
+    SmartAgentEngine,
+    QueryClassifier,
+    QueryClassification,
+    QueryComplexity,
+    TokenBudget,
+    ExecutionResult,
+    create_smart_engine,
+)
 from .repl import AgentREPL, StreamingAgentREPL, run_agent_command, run_agent_repl
 from .memory import (
     MemoryType,
@@ -64,34 +73,52 @@ from .sub_agents import (
 )
 
 __all__ = [
+    # Engine (legacy + smart)
     "AgentEngine",
     "StreamingAgentEngine",
+    "SmartAgentEngine",
     "AgentMode",
     "AgentResponse",
     "AgentSession",
     "StreamEvent",
     "StreamEventType",
+    "create_agent_engine",
+    "create_smart_engine",
+    # Smart engine components
+    "QueryClassifier",
+    "QueryClassification",
+    "QueryComplexity",
+    "TokenBudget",
+    "ExecutionResult",
+    # REPL
     "AgentREPL",
     "StreamingAgentREPL",
     "run_agent_repl",
     "run_agent_command",
-    "create_agent_engine",
+    # Memory
     "MemoryType",
     "MemoryImportance",
     "Memory",
     "MemoryRetrieval",
     "AgentMemory",
+    "AdvancedAgentMemory",
+    "PersistentMemoryStore",
+    "MemoryTier",
+    "create_memory",
+    # Planning
     "TaskStatus",
     "TaskPriority",
     "Task",
     "Plan",
     "Planner",
     "AdaptivePlanner",
+    # Reflection
     "ReflectionType",
     "QualityRating",
     "Reflection",
     "ReflectionReport",
     "AgentReflector",
+    # Tools
     "ToolCategory",
     "ToolStatus",
     "ToolCapability",
@@ -104,6 +131,7 @@ __all__ = [
     "ToolPipeline",
     "ToolManager",
     "create_tool",
+    # Sub-agents
     "AgentType",
     "ExecutionMode",
     "SubTask",

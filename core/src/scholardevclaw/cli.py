@@ -1293,11 +1293,13 @@ def cmd_tui(args):
 
 def cmd_agent(args):
     """Start interactive AI agent"""
-    from scholardevclaw.agent import AgentREPL, run_agent_command
+    from scholardevclaw.agent import run_agent_command
     from scholardevclaw.agent.repl import run_agent_repl
 
+    repo_path = getattr(args, "repo", None)
+
     if args.query:
-        result = run_agent_command(args.query)
+        result = run_agent_command(args.query, repo_path=repo_path)
 
         if args.output_json:
             print(
@@ -1320,14 +1322,14 @@ def cmd_agent(args):
                 if result.output.get("frameworks"):
                     print(f"Frameworks: {', '.join(result.output['frameworks'])}")
             if result.suggestions:
-                print("\n💡 Suggestions:")
+                print("\nSuggestions:")
                 for s in result.suggestions:
-                    print(f"  • {s}")
+                    print(f"  - {s}")
             if result.error:
-                print(f"\n❌ Error: {result.error}", file=sys.stderr)
+                print(f"\nError: {result.error}", file=sys.stderr)
                 sys.exit(1)
     else:
-        run_agent_repl()
+        run_agent_repl(repo_path=repo_path)
 
 
 def main():

@@ -2,7 +2,52 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-01
+**Last updated:** 2026-03-03
+
+### 2026-03-03 (Smart Agent Engine — Wire Everything Together)
+
+Major architectural overhaul of the agent subsystem. The previous agent had extensive scaffolding (memory, planning, reflection, sub-agents, tools) that was entirely disconnected — none of it was wired into the actual execution path. This update connects all subsystems into a unified, budget-aware execution engine.
+
+**New: Smart Agent Engine** (`core/src/scholardevclaw/agent/smart_engine.py` — NEW, ~1489 lines):
+  - `QueryClassifier`: classifies user queries into TRIVIAL/SIMPLE/MODERATE/COMPLEX with confidence scores
+  - `TokenBudget`: per-query token budget manager with phase-level budgets (classification 2%, memory 3%, planning 5%, execution 75%, reflection 5%, retry 10%)
+  - `SmartAgentEngine`: orchestrator that routes queries to cheapest sufficient execution path
+  - Routes to real `pipeline.py` functions (run_analyze, run_search, run_suggest, run_validate, run_integrate, run_map, run_generate)
+  - Memory-enriched context: retrieves relevant memories before execution, stores results after
+  - Reflection loop: scores output quality, retries if below threshold and budget allows
+  - Compound query support: "analyze and suggest", "full pipeline", etc.
+  - Contextual next-step suggestions after each action
+  - Streaming output via `stream_smart()` and batch output via `process()`
+
+**Fixed: repl.py** (`core/src/scholardevclaw/agent/repl.py` — REWRITTEN, ~163 lines):
+  - `run_agent_command()` previously collected all stream events then **discarded them**, returning a generic `AgentResponse(ok=True, message="Command executed")`. Now properly delegates to `SmartAgentEngine.process()` and returns real output.
+  - `StreamingAgentREPL` now defaults to `SmartAgentEngine` instead of the legacy `StreamingAgentEngine`
+  - Both `run_agent_repl()` and `run_agent_command()` accept `repo_path` parameter
+  - REPL session properly initializes with repo path if provided
+
+**Fixed: memory.py consolidation bug** (`core/src/scholardevclaw/agent/memory.py` — PATCHED):
+  - `_auto_consolidate()` was called from `add()` on newly created memories with `access_count=0`, but checked `access_count >= 3` — so consolidation **never triggered**
+  - Moved consolidation trigger to `access()` method where `access_count` actually increments
+  - Verified: episodic memories now correctly consolidate to semantic after 3+ accesses
+
+**Fixed: sub_agents.py mock data** (`core/src/scholardevclaw/agent/sub_agents.py` — PATCHED):
+  - All 6 `_do_*` methods (research, code, analysis, planning, execution, validation) previously returned **hardcoded mock data** like `{"findings": f"Research findings for: {query}", "confidence": 0.85}`
+  - Now delegate to real pipeline functions: `run_search`, `run_generate`, `run_analyze`, `run_suggest`, `run_integrate`, `run_validate`
+  - Graceful fallback with error messages when required parameters are missing
+
+**Updated: engine.py factory** (`core/src/scholardevclaw/agent/engine.py` — PATCHED):
+  - `create_agent_engine(smart=True)` now returns `SmartAgentEngine` by default
+  - Pass `smart=False` to get the legacy `StreamingAgentEngine`
+  - Accepts `**kwargs` forwarded to `SmartAgentEngine` (agent_id, max_tokens, quality_threshold)
+
+**Updated: __init__.py exports** (`core/src/scholardevclaw/agent/__init__.py` — EXPANDED):
+  - Exports `SmartAgentEngine`, `QueryClassifier`, `QueryClassification`, `QueryComplexity`, `TokenBudget`, `ExecutionResult`, `create_smart_engine`
+
+**Fixed: CLI cmd_agent** (`core/src/scholardevclaw/cli.py` — PATCHED):
+  - `--repo` flag was defined in argparse but **never used** in `cmd_agent`
+  - Now passes `repo_path` to both `run_agent_command()` and `run_agent_repl()`
+
+**Tests:** All 851 existing tests pass. Smart engine classifier, process, and memory consolidation manually verified.
 
 ### 2026-03-01 (Critical Advancements - Full-Stack Roadmap)
 - **Added Section 4.5: Critical Advancements** (`UPDATES.md` — NEW):
