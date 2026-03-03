@@ -4,6 +4,48 @@
 
 **Last updated:** 2026-03-03
 
+### 2026-03-03 (Terminal Mode — Super Powers for the Agent)
+
+**Goal:** Give the agent super powers like a real terminal - persistent shell session, built-in commands, pipes, redirects, background jobs.
+
+**Added: AdvancedShell module** (`terminal.py` — NEW, ~946 lines):
+- **Persistent shell session**: Working directory persists across commands (cd, pwd)
+- **Shell built-ins**:
+  - `cd <dir>` — Change directory
+  - `pwd` — Print working directory
+  - `export VAR=value` — Set environment variable
+  - `alias name=cmd` — Create alias
+  - `unalias name` — Remove alias
+  - `history` — Show command history
+  - `jobs` — Show background jobs
+  - `fg %job` — Bring job to foreground
+  - `bg %job` — Resume job in background
+  - `kill %job` — Terminate job
+  - `type cmd` — Show command type
+  - `which cmd` — Locate command
+  - `env` — Show environment variables
+  - `echo` — Print text
+  - `exit/reset` — Reset terminal session
+- **Pipes**: `cmd1 | cmd2` — Chain commands
+- **Redirects**: `cmd > file` — Redirect output
+- **Background jobs**: `cmd &` — Run in background
+- **Environment expansion**: `$VAR`, `${VAR}`
+- **ANSI colors**: TerminalColors class with colorize(), prompt(), success(), error(), warning()
+
+**Wired into SmartAgentEngine** (`smart_engine.py` — EXTENDED):
+- Added `self.terminal = create_shell()` in `__init__()`
+- Added `_exec_terminal()` method
+- Added "terminal" action to QueryClassifier
+- Terminal mode: enter with `terminal` command
+
+**Verified:**
+- `terminal` → shows terminal ready, cwd, shell, jobs
+- `cd /tmp` → cwd changes to /tmp
+- `pwd` → shows /tmp
+- `echo hello` → outputs hello
+- `history` → shows command history
+- All 851 tests pass
+
 ### 2026-03-03 (Shell Detection — ZSH, BASH, Fish Support)
 
 **Goal:** Detect and support multiple shells: ZSH, BASH, Fish on Linux/macOS.

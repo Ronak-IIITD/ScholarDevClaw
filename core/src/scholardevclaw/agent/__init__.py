@@ -64,6 +64,12 @@ from .tools import (
     ParallelToolExecutor,
     create_tool,
 )
+from .terminal import (
+    AdvancedShell,
+    ShellState,
+    TerminalColors,
+    create_shell,
+)
 from .sub_agents import (
     AgentType,
     TaskStatus as SubTaskStatus,
@@ -143,6 +149,11 @@ __all__ = [
     "ToolState",
     "ParallelToolExecutor",
     "create_tool",
+    # Terminal
+    "AdvancedShell",
+    "ShellState",
+    "TerminalColors",
+    "create_shell",
     # Sub-agents
     "AgentType",
     "ExecutionMode",

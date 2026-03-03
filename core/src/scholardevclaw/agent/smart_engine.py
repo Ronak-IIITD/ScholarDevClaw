@@ -55,6 +55,10 @@ from .tools import (
     AdvancedToolManager,
     ToolStatus as ToolExecStatus,
 )
+from .terminal import (
+    AdvancedShell,
+    create_shell,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +418,22 @@ class QueryClassifier:
             "token_cost": 500,
             "needs_repo": True,
         },
+        # --- Terminal/shell features ---
+        "terminal": {
+            "keywords": [
+                "terminal",
+                "shell",
+                "interactive",
+                "console",
+                "!ls",
+                "!cd",
+                "!pwd",
+                "!echo",
+            ],
+            "complexity": QueryComplexity.TRIVIAL,
+            "token_cost": 100,
+            "needs_repo": False,
+        },
         # --- Advanced shell features ---
         "run_code": {
             "keywords": ["run code", "execute code", "run file", "python ", "node ", "python3 "],
@@ -651,6 +671,7 @@ class SmartAgentEngine:
         self.reflector = AgentReflector()
         self.budget = TokenBudget(max_tokens=max_tokens)
         self.tools = AdvancedToolManager()
+        self.terminal = create_shell()  # Advanced terminal with cd, pipes, background jobs
         self.os = DETECTED_OS  # OS detection for cross-platform commands
 
         # Safety: commands that are blocked even from run_command
@@ -1233,6 +1254,8 @@ class SmartAgentEngine:
                 return await self._exec_tool_git(target)
             elif action == "analyze_code":
                 return await self._exec_tool_analyze_code(target)
+            elif action == "terminal":
+                return await self._exec_terminal(target or query_text)
             elif action == "run_code":
                 return await self._exec_run_code(target)
             elif action == "run_tests":
@@ -1823,6 +1846,91 @@ class SmartAgentEngine:
         )
 
     # -----------------------------------------------------------------------
+    # Terminal mode — advanced shell execution
+    # -----------------------------------------------------------------------
+
+    async def _exec_terminal(self, command: str | None) -> ExecutionResult:
+        """
+        Execute a terminal command with full shell capabilities.
+
+        Supports:
+        - cd, pwd, export, alias, history, jobs
+        - Pipes: cat file | grep pattern
+        - Redirects: echo hi > file
+        - Background: long_task &
+        - Environment variables: $VAR, ${VAR}
+        """
+        if not command:
+            # Show terminal info
+            state = self.terminal.get_state()
+            cwd = state.cwd
+            return ExecutionResult(
+                ok=True,
+                action="terminal",
+                message=f"Terminal ready\nCWD: {cwd}\nShell: {self.os.user_shell}\nJobs: {len(state.jobs)}",
+                output={"cwd": cwd, "shell": self.os.user_shell, "jobs": len(state.jobs)},
+                tokens_used=50,
+            )
+
+        # Handle terminal-specific commands
+        cmd_lower = command.strip().lower()
+
+        # Reset terminal (new session)
+        if cmd_lower in ("exit", "quit", "reset"):
+            self.terminal = create_shell()
+            return ExecutionResult(
+                ok=True,
+                action="terminal",
+                message="Terminal session reset",
+                tokens_used=50,
+            )
+
+        # Show help
+        if cmd_lower in ("help", "?"):
+            return ExecutionResult(
+                ok=True,
+                action="terminal",
+                message="""Terminal Commands:
+  cd <dir>     Change directory
+  pwd          Print working directory
+  export VAR=value  Set environment variable
+  alias name=cmd   Create alias
+  history       Show command history
+  jobs          Show background jobs
+  !<cmd>        Run command in background
+  
+  Pipes:     cmd1 | cmd2
+  Redirect:  cmd > file
+  Background: cmd &
+  
+  exit/reset  Reset terminal session""",
+                tokens_used=50,
+            )
+
+        # Execute via advanced shell
+        result = self.terminal.run_command(command)
+
+        # Format output with colors
+        output = result.get("output", "")
+        if result.get("returncode", 0) != 0 and not result.get("timed_out"):
+            output = self.terminal.colors.error(output)
+
+        tokens = 200
+        self.budget.spend(tokens)
+
+        return ExecutionResult(
+            ok=result.get("returncode", 0) == 0,
+            action="terminal",
+            message=output[:5000],
+            output={
+                "returncode": result.get("returncode"),
+                "timed_out": result.get("timed_out"),
+                "cwd": self.terminal.state.cwd,
+            },
+            tokens_used=tokens,
+        )
+
+    # -----------------------------------------------------------------------
     # Advanced shell features — like Claude Code, Codex
     # -----------------------------------------------------------------------
 
@@ -2383,6 +2491,19 @@ class SmartAgentEngine:
   `run code <file.py>` — Auto-detect language and run (.py, .js, .sh, .ps1, etc.)
   `test` — Auto-detect and run tests (pytest, jest, cargo test, npm test)
   `do it` — Intelligent run: figures out what to build/test based on project
+  `terminal` — Enter advanced terminal mode
+
+**Terminal Mode** (after `terminal` command):
+  `cd <dir>` — Change directory (persists across commands)
+  `pwd` — Print working directory
+  `export VAR=value` — Set environment variable
+  `alias name=cmd` — Create command alias
+  `history` — Show command history
+  `jobs` — Show background jobs
+  `cmd1 | cmd2` — Pipe commands
+  `cmd > file` — Redirect output
+  `cmd &` — Run in background
+  `exit/reset` — Reset terminal session
 
 **Session:**
   `status` — Show current session info (includes OS + shell detection)
