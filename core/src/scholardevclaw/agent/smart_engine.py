@@ -58,6 +58,94 @@ from .tools import (
 
 
 # ---------------------------------------------------------------------------
+# OS Detection — for cross-platform shell commands
+# ---------------------------------------------------------------------------
+
+
+import platform
+import os
+
+
+class OSDetector:
+    """Detects and provides OS-specific configuration."""
+
+    def __init__(self):
+        self.system = platform.system().lower()
+        self.is_windows = self.system == "windows"
+        self.is_mac = self.system == "darwin"
+        self.is_linux = self.system == "linux"
+
+    @property
+    def shell(self) -> str:
+        """Get the default shell for this OS."""
+        if self.is_windows:
+            return "powershell" if self._has_powershell() else "cmd"
+        return "bash"
+
+    @property
+    def shell_exe(self) -> str:
+        """Get the shell executable."""
+        if self.is_windows:
+            if self._has_powershell():
+                return "powershell"
+            return "cmd"
+        return "bash"
+
+    def _has_powershell(self) -> bool:
+        """Check if PowerShell is available."""
+        import shutil
+
+        return shutil.which("pwsh") is not None or shutil.which("powershell") is not None
+
+    @property
+    def path_separator(self) -> str:
+        """Get the path separator for this OS."""
+        return "\\" if self.is_windows else "/"
+
+    @property
+    def line_ending(self) -> str:
+        """Get the line ending for this OS."""
+        return "\r\n" if self.is_windows else "\n"
+
+    def get_command_prefix(self) -> str:
+        """Get prefix for command execution."""
+        return ""  # shell=True handles this
+
+    def which(self, cmd: str) -> str | None:
+        """Find command in PATH."""
+        import shutil
+
+        return shutil.which(cmd)
+
+    def has_command(self, cmd: str) -> bool:
+        """Check if a command is available."""
+        return self.which(cmd) is not None
+
+    @property
+    def os_name(self) -> str:
+        """Human-readable OS name."""
+        if self.is_windows:
+            return "Windows"
+        if self.is_mac:
+            return "macOS"
+        return "Linux"
+
+    def get_env(self) -> dict:
+        """Get OS-specific environment info."""
+        return {
+            "system": self.system,
+            "os_name": self.os_name,
+            "shell": self.shell,
+            "path_separator": self.path_separator,
+            "has_powershell": self._has_powershell(),
+        }
+
+
+# Global OS detector
+DETECTED_OS = OSDetector()
+
+
+# ---------------------------------------------------------------------------
 # Query complexity classification
 # ---------------------------------------------------------------------------
 
@@ -507,6 +595,7 @@ class SmartAgentEngine:
         self.reflector = AgentReflector()
         self.budget = TokenBudget(max_tokens=max_tokens)
         self.tools = AdvancedToolManager()
+        self.os = DETECTED_OS  # OS detection for cross-platform commands
 
         # Safety: commands that are blocked even from run_command
         self.DANGEROUS_COMMANDS: set[str] = {
@@ -522,6 +611,23 @@ class SmartAgentEngine:
             "init 0",
             "init 6",
         }
+        # Windows-specific dangerous commands
+        if self.os.is_windows:
+            self.DANGEROUS_COMMANDS.update(
+                {
+                    "format c:",
+                    "del /s /q c:",
+                    "rmdir /s /q c:",
+                    "icacls ... /grant",
+                    "takeown /f",
+                    "bcdedit /delete",
+                    "diskpart",
+                    "reg delete",
+                    "schtasks /delete",
+                    "net user",
+                    "net localgroup",
+                }
+            )
 
         # Session
         self.sessions: dict[str, AgentSession] = {}
@@ -1352,6 +1458,9 @@ class SmartAgentEngine:
 
         cwd = self._resolve_repo_path() or "."
 
+        # Add OS prefix for display
+        os_info = f"[{self.os.os_name}] "
+
         execution = await self.tools.execute("run_command", command=command, cwd=cwd)
         tokens = 500
         self.budget.spend(tokens)
@@ -1370,8 +1479,13 @@ class SmartAgentEngine:
             return ExecutionResult(
                 ok=ok,
                 action="run_command",
-                message=output_text[:5000],
-                output={"stdout": stdout[:5000], "stderr": stderr[:2000], "returncode": rc},
+                message=os_info + output_text[:5000],
+                output={
+                    "stdout": stdout[:5000],
+                    "stderr": stderr[:2000],
+                    "returncode": rc,
+                    "os": self.os.os_name,
+                },
                 tokens_used=tokens,
             )
 
@@ -1656,19 +1770,35 @@ class SmartAgentEngine:
     # Advanced shell features — like Claude Code, Codex
     # -----------------------------------------------------------------------
 
-    LANGUAGE_RUNNERS: dict[str, str] = {
-        ".py": "python3",
-        ".js": "node",
-        ".ts": "npx ts-node",
-        ".sh": "bash",
-        ".rb": "ruby",
-        ".go": "go run",
-        ".rs": "cargo run",
-        ".java": "java",
-        ".c": "gcc",
-        ".cpp": "g++",
-        ".php": "php",
-    }
+    def get_language_runners(self) -> dict[str, str]:
+        """Get OS-specific language runners."""
+        runners = {
+            ".py": "python3",
+            ".js": "node",
+            ".ts": "npx ts-node",
+            ".sh": "bash",
+            ".rb": "ruby",
+            ".go": "go run",
+            ".rs": "cargo run",
+            ".java": "java",
+            ".c": "gcc",
+            ".cpp": "g++",
+            ".php": "php",
+            ".ps1": "pwsh",  # PowerShell
+            ".bat": "cmd /c",  # Windows batch
+            ".cmd": "cmd /c",  # Windows command
+        }
+
+        # Windows-specific adjustments
+        if self.os.is_windows:
+            runners[".py"] = "python"  # Windows often uses 'python' not 'python3'
+            runners[".sh"] = "bash"  # Requires WSL or Git Bash
+            runners[".rb"] = "ruby"  # May not be installed on Windows
+            runners[".ps1"] = "powershell -ExecutionPolicy Bypass -File"
+
+        return runners
+
+    LANGUAGE_RUNNERS: dict[str, str] = {}  # Deprecated, use get_language_runners()
 
     TEST_PATTERNS: dict[str, list[str]] = {
         "pytest": ["pytest", "-v", "--tb=short"],
@@ -1692,7 +1822,8 @@ class SmartAgentEngine:
     def _detect_language(self, file_path: str) -> str | None:
         """Detect language from file extension."""
         ext = Path(file_path).suffix.lower()
-        return ext if ext in self.LANGUAGE_RUNNERS else None
+        runners = self.get_language_runners()
+        return ext if ext in runners else None
 
     def _find_test_files(self, repo_path: str) -> dict[str, list[str]]:
         """Auto-discover test files in the repository."""
@@ -1750,11 +1881,11 @@ class SmartAgentEngine:
             return ExecutionResult(
                 ok=False,
                 action="run_code",
-                error=f"Unsupported file type: {path.suffix}. Supported: {', '.join(self.LANGUAGE_RUNNERS.keys())}",
+                error=f"Unsupported file type: {path.suffix}. Supported: {', '.join(self.get_language_runners().keys())}",
             )
 
         # Build command
-        runner = self.LANGUAGE_RUNNERS.get(ext, "")
+        runner = self.get_language_runners().get(ext, "")
         if ext == ".sh":
             cmd = f"bash {path}"
         elif ext in (".c", ".cpp"):
@@ -2193,11 +2324,13 @@ class SmartAgentEngine:
   `lint [path]` — Run code quality analysis (ruff)
 
 **Advanced (like Claude Code):**
-  `run code <file.py>` — Auto-detect language and run (.py, .js, .sh, etc.)
+  `run code <file.py>` — Auto-detect language and run (.py, .js, .sh, .ps1, etc.)
   `test` — Auto-detect and run tests (pytest, jest, cargo test, npm test)
   `do it` — Intelligent run: figures out what to build/test based on project
 
 **Session:**
+  `status` — Show current session info (includes OS detection)
+  `help` — Show this message
   `status` — Show current session info
   `help` — Show this message
 
@@ -2212,6 +2345,10 @@ class SmartAgentEngine:
             parts.append(f"  Messages: {len(self.current_session.messages)}")
         else:
             parts.append("  No active session")
+
+        parts.append(f"\n**System**")
+        parts.append(f"  OS: {self.os.os_name}")
+        parts.append(f"  Shell: {self.os.shell}")
 
         parts.append(f"\n**Agent Stats**")
         parts.append(f"  Total queries: {self.total_queries}")

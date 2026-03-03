@@ -4,6 +4,37 @@
 
 **Last updated:** 2026-03-03
 
+### 2026-03-03 (OS Detection — Cross-Platform Shell Commands)
+
+**Goal:** Make the agent OS-aware so it adapts commands based on whether the user is on Windows, macOS, or Linux.
+
+**Added: OSDetector class** (`smart_engine.py` — NEW):
+- Detects OS: `platform.system()` → windows/darwin/linux
+- Properties:
+  - `is_windows`, `is_mac`, `is_linux` — boolean flags
+  - `os_name` — human-readable: "Windows", "macOS", "Linux"
+  - `shell` — default shell: "bash" (Linux/Mac), "powershell"/"cmd" (Windows)
+  - `path_separator` — "\\" (Windows) or "/" (Unix)
+  - `line_ending` — "\r\n" (Windows) or "\n" (Unix)
+  - `has_powershell` — check if PowerShell is available
+- Global `DETECTED_OS` instance accessible everywhere
+
+**Updated: SmartAgentEngine** (`smart_engine.py` — EXTENDED):
+- Added `self.os = DETECTED_OS` in `__init__`
+- Commands now show OS prefix: `[Linux] hello`
+- Status command shows OS and shell: `OS: Linux, Shell: bash`
+- Windows dangerous commands added to blocklist: `format c:`, `del /s /q c:`, etc.
+
+**Updated: Code runner** (`get_language_runners()` — EXTENDED):
+- OS-specific runners:
+  - Windows: `.py` → `python` (not python3), `.ps1` → `powershell -ExecutionPolicy Bypass -File`, `.bat/.cmd` → `cmd /c`
+  - Linux/Mac: `.sh` → `bash`, `.ps1` → `pwsh`
+- Added Windows-specific extensions: `.ps1`, `.bat`, `.cmd`
+
+**Verified:**
+- `status` shows: `OS: Linux, Shell: bash`
+- `run echo hello` shows: `[Linux] hello`
+
 ### 2026-03-03 (Advanced Shell — Claude Code-like Capabilities)
 
 **Goal:** Make the agent work like Claude Code, Codex, or OpenCode — with advanced shell capabilities: auto-running code files, auto-running tests, intelligent build/test detection.
