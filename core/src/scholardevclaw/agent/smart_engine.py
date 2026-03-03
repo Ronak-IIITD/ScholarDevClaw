@@ -19,6 +19,7 @@ Design principles:
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -267,6 +268,25 @@ class QueryClassifier:
             "keywords": ["lint", "ruff", "check code quality", "code quality"],
             "complexity": QueryComplexity.SIMPLE,
             "token_cost": 500,
+            "needs_repo": True,
+        },
+        # --- Advanced shell features ---
+        "run_code": {
+            "keywords": ["run code", "execute code", "run file", "python ", "node ", "python3 "],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 800,
+            "needs_repo": False,
+        },
+        "run_tests": {
+            "keywords": ["test", "pytest", "run tests", "run test", "tests", "check test"],
+            "complexity": QueryComplexity.SIMPLE,
+            "token_cost": 1000,
+            "needs_repo": True,
+        },
+        "intelligent_run": {
+            "keywords": ["do it", "fix it", "run it", "execute", "build", "make"],
+            "complexity": QueryComplexity.MODERATE,
+            "token_cost": 1500,
             "needs_repo": True,
         },
     }
@@ -1009,7 +1029,11 @@ class SmartAgentEngine:
     # -----------------------------------------------------------------------
 
     async def _execute_action(
-        self, action: str, target: str | None, query_text: str
+        self,
+        action: str,
+        target: str | None,
+        query_text: str,
+        classification: QueryClassification | None = None,
     ) -> ExecutionResult:
         """Execute a single action against the real pipeline."""
         start = time.monotonic()
@@ -1047,6 +1071,12 @@ class SmartAgentEngine:
                 return await self._exec_tool_git(target)
             elif action == "analyze_code":
                 return await self._exec_tool_analyze_code(target)
+            elif action == "run_code":
+                return await self._exec_run_code(target)
+            elif action == "run_tests":
+                return await self._exec_run_tests(target)
+            elif action == "intelligent_run":
+                return await self._exec_intelligent_run(query_text)
             elif action == "unknown":
                 return await self._exec_unknown(query_text)
             else:
@@ -1623,6 +1653,344 @@ class SmartAgentEngine:
         )
 
     # -----------------------------------------------------------------------
+    # Advanced shell features — like Claude Code, Codex
+    # -----------------------------------------------------------------------
+
+    LANGUAGE_RUNNERS: dict[str, str] = {
+        ".py": "python3",
+        ".js": "node",
+        ".ts": "npx ts-node",
+        ".sh": "bash",
+        ".rb": "ruby",
+        ".go": "go run",
+        ".rs": "cargo run",
+        ".java": "java",
+        ".c": "gcc",
+        ".cpp": "g++",
+        ".php": "php",
+    }
+
+    TEST_PATTERNS: dict[str, list[str]] = {
+        "pytest": ["pytest", "-v", "--tb=short"],
+        "unittest": ["python3", "-m", "unittest", "discover"],
+        "jest": ["npx", "jest", "--passWithNoTests"],
+        "vitest": ["npx", "vitest", "run"],
+        "mocha": ["npx", "mocha"],
+        "cargo_test": ["cargo", "test", "--lib"],
+        "npm_test": ["npm", "test"],
+        "go_test": ["go", "test", "./..."],
+    }
+
+    BUILD_COMMANDS: dict[str, list[str]] = {
+        "python": ["python3", "-m", "pip", "install", "-e", "."],
+        "npm": ["npm", "install"],
+        "cargo": ["cargo", "build", "--release"],
+        "make": ["make"],
+        "go": ["go", "build", "-o", "app"],
+    }
+
+    def _detect_language(self, file_path: str) -> str | None:
+        """Detect language from file extension."""
+        ext = Path(file_path).suffix.lower()
+        return ext if ext in self.LANGUAGE_RUNNERS else None
+
+    def _find_test_files(self, repo_path: str) -> dict[str, list[str]]:
+        """Auto-discover test files in the repository."""
+        repo = Path(repo_path)
+        test_info = {
+            "pytest": [],
+            "jest": [],
+            "cargo_test": [],
+            "npm_test": [],
+            "go_test": [],
+        }
+
+        # Python pytest
+        if (repo / "pytest.ini").exists() or (repo / "pyproject.toml").exists():
+            test_info["pytest"].append("Found pytest config")
+
+        # JS/TS
+        if (repo / "package.json").exists():
+            test_info["npm_test"].append("package.json")
+        if (repo / "jest.config.js").exists() or (repo / "jest.config.ts").exists():
+            test_info["jest"].append("jest.config")
+
+        # Rust
+        if (repo / "Cargo.toml").exists():
+            test_info["cargo_test"].append("Cargo.toml")
+
+        # Go
+        if (repo / "go.mod").exists():
+            test_info["go_test"].append("go.mod")
+
+        return {k: v for k, v in test_info.items() if v}
+
+    async def _exec_run_code(self, target: str | None) -> ExecutionResult:
+        """Smart code runner - auto-detects language and runs .py/.js/etc files."""
+        if not target:
+            return ExecutionResult(
+                ok=False,
+                action="run_code",
+                error="No file path provided. Usage: run code <file.py>",
+            )
+
+        # Resolve path
+        path = Path(target).expanduser()
+        if not path.is_absolute():
+            repo = self._resolve_repo_path()
+            if repo:
+                path = Path(repo) / path
+
+        if not path.exists():
+            return ExecutionResult(ok=False, action="run_code", error=f"File not found: {path}")
+
+        # Auto-detect language
+        ext = self._detect_language(str(path))
+        if not ext:
+            return ExecutionResult(
+                ok=False,
+                action="run_code",
+                error=f"Unsupported file type: {path.suffix}. Supported: {', '.join(self.LANGUAGE_RUNNERS.keys())}",
+            )
+
+        # Build command
+        runner = self.LANGUAGE_RUNNERS.get(ext, "")
+        if ext == ".sh":
+            cmd = f"bash {path}"
+        elif ext in (".c", ".cpp"):
+            # Compile first
+            compile_result = subprocess.run(
+                ["g++", str(path), "-o", "/tmp/a.out"],
+                capture_output=True,
+                text=True,
+            )
+            if compile_result.returncode != 0:
+                return ExecutionResult(
+                    ok=False,
+                    action="run_code",
+                    error=f"Compilation failed:\n{compile_result.stderr}",
+                )
+            cmd = "/tmp/a.out"
+        elif runner:
+            cmd = f"{runner} {path}"
+        else:
+            return ExecutionResult(
+                ok=False,
+                action="run_code",
+                error=f"No runner found for {ext}",
+            )
+
+        cwd = str(path.parent)
+        execution = await self.tools.execute("run_command", command=cmd, cwd=cwd)
+        tokens = 800
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            stdout = result.get("stdout", "")
+            stderr = result.get("stderr", "")
+            rc = result.get("returncode", -1)
+
+            # Format output like Claude Code
+            output_parts = []
+            if stdout:
+                output_parts.append(f"[stdout]\n{stdout[:5000]}")
+            if stderr:
+                output_parts.append(f"[stderr]\n{stderr[:2000]}")
+            output_parts.append(f"[exit code: {rc}]")
+
+            display = "\n".join(output_parts)
+            return ExecutionResult(
+                ok=rc == 0,
+                action="run_code",
+                message=display,
+                output={"stdout": stdout, "stderr": stderr, "returncode": rc, "file": str(path)},
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False, action="run_code", error=execution.error, tokens_used=tokens
+        )
+
+    async def _exec_run_tests(self, target: str | None) -> ExecutionResult:
+        """Smart test runner - auto-detects pytest, jest, cargo test, etc."""
+        repo_path = self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="run_tests", error="No repository set")
+
+        # Find available test frameworks
+        test_info = self._find_test_files(repo_path)
+
+        if not test_info:
+            return ExecutionResult(
+                ok=False,
+                action="run_tests",
+                error="No test framework detected. Supported: pytest, jest, cargo test, npm test",
+            )
+
+        # Determine best test command
+        test_cmd = None
+        framework = None
+
+        if "pytest" in test_info:
+            test_cmd = "pytest -v --tb=short"
+            framework = "pytest"
+        elif "cargo_test" in test_info:
+            test_cmd = "cargo test --lib -- --nocapture"
+            framework = "cargo"
+        elif "npm_test" in test_info:
+            test_cmd = "npm test -- --passWithNoTests"
+            framework = "npm"
+        elif "jest" in test_info:
+            test_cmd = "npx jest --passWithNoTests"
+            framework = "jest"
+        elif "go_test" in test_info:
+            test_cmd = "go test -v ./..."
+            framework = "go"
+
+        if not test_cmd:
+            return ExecutionResult(
+                ok=False, action="run_tests", error="No runnable test framework found"
+            )
+
+        # Run tests
+        cwd = repo_path
+        execution = await self.tools.execute("run_command", command=test_cmd, cwd=cwd)
+        tokens = 1000
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            stdout = result.get("stdout", "")
+            stderr = result.get("stderr", "")
+            rc = result.get("returncode", -1)
+
+            # Parse test results
+            passed = failed = 0
+            if framework == "pytest":
+                # Parse pytest output
+                for line in stdout.split("\n"):
+                    if "passed" in line.lower():
+                        import re
+
+                        m = re.search(r"(\d+) passed", line)
+                        if m:
+                            passed = int(m.group(1))
+                    if "failed" in line.lower():
+                        import re
+
+                        m = re.search(r"(\d+) failed", line)
+                        if m:
+                            failed = int(m.group(1))
+
+            # Format output
+            status = "✅ PASSED" if rc == 0 else "❌ FAILED"
+            summary = f"[{framework}] {status} — {passed} passed, {failed} failed"
+
+            output_parts = [summary]
+            if stdout:
+                output_parts.append(f"\n[stdout]\n{stdout[-4000:]}")
+            if stderr:
+                output_parts.append(f"\n[stderr]\n{stderr[-1000:]}")
+
+            display = "\n".join(output_parts)
+            return ExecutionResult(
+                ok=rc == 0,
+                action="run_tests",
+                message=display,
+                output={
+                    "framework": framework,
+                    "passed": passed,
+                    "failed": failed,
+                    "returncode": rc,
+                    "stdout": stdout[-5000:],
+                    "stderr": stderr[-2000:],
+                },
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False, action="run_tests", error=execution.error, tokens_used=tokens
+        )
+
+    async def _exec_intelligent_run(self, query: str | None) -> ExecutionResult:
+        """Intelligent run - figures out what to execute based on project."""
+        repo_path = self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="intelligent_run", error="No repository set")
+
+        repo = Path(repo_path)
+
+        # Check for common project files and run appropriate command
+        if (repo / "package.json").exists():
+            # Node project - run npm install + test
+            cmd = "npm install && npm test" if (repo / "jest.config.js").exists() else "npm install"
+            framework = "npm"
+        elif (repo / "Cargo.toml").exists():
+            # Rust project - run cargo test
+            cmd = "cargo test --lib -- --nocapture"
+            framework = "cargo"
+        elif (repo / "go.mod").exists():
+            # Go project
+            cmd = "go test -v ./..."
+            framework = "go"
+        elif (repo / "pyproject.toml").exists() or (repo / "setup.py").exists():
+            # Python project - run pytest if tests exist
+            if (repo / "tests").exists() or (repo / "test").exists():
+                cmd = "pytest -v --tb=short"
+                framework = "pytest"
+            else:
+                cmd = "python3 -m pip install -e ."
+                framework = "pip"
+        elif (repo / "Makefile").exists():
+            # Makefile
+            cmd = "make"
+            framework = "make"
+        else:
+            # Try to find any .py file and run it
+            py_files = list(repo.rglob("*.py"))
+            if py_files:
+                cmd = f"python3 {py_files[0]}"
+                framework = "python"
+            else:
+                return ExecutionResult(
+                    ok=False,
+                    action="intelligent_run",
+                    error="Cannot determine what to run. No recognized project files found.",
+                )
+
+        cwd = str(repo)
+        execution = await self.tools.execute("run_command", command=cmd, cwd=cwd)
+        tokens = 1500
+        self.budget.spend(tokens)
+
+        if execution.status == ToolExecStatus.SUCCESS and isinstance(execution.result, dict):
+            result = execution.result
+            stdout = result.get("stdout", "")
+            stderr = result.get("stderr", "")
+            rc = result.get("returncode", -1)
+
+            output_parts = [f"[{framework}] Executed: {cmd}"]
+            output_parts.append(f"Exit code: {rc}")
+            if stdout:
+                output_parts.append(f"\n[stdout]\n{stdout[-4000:]}")
+            if stderr:
+                output_parts.append(f"\n[stderr]\n{stderr[-1000:]}")
+
+            display = "\n".join(output_parts)
+            return ExecutionResult(
+                ok=rc == 0,
+                action="intelligent_run",
+                message=display,
+                output={"command": cmd, "framework": framework, "returncode": rc},
+                tokens_used=tokens,
+            )
+
+        return ExecutionResult(
+            ok=False, action="intelligent_run", error=execution.error, tokens_used=tokens
+        )
+
+    # -----------------------------------------------------------------------
     # Memory integration
     # -----------------------------------------------------------------------
 
@@ -1788,6 +2156,8 @@ class SmartAgentEngine:
         base += "\n  - `search <query>` — Find research papers"
         base += "\n  - `integrate <spec>` — Apply a research improvement"
         base += "\n  - `run <command>` — Execute a shell command"
+        base += "\n  - `run code <file>` — Run .py/.js/.sh files"
+        base += "\n  - `test` — Auto-run tests (pytest, jest, cargo)"
         base += "\n  - `help` — See all commands"
 
         return base
@@ -1821,6 +2191,11 @@ class SmartAgentEngine:
   `ls [path]` — List files in a directory
   `git status|log|diff|branch` — Git operations
   `lint [path]` — Run code quality analysis (ruff)
+
+**Advanced (like Claude Code):**
+  `run code <file.py>` — Auto-detect language and run (.py, .js, .sh, etc.)
+  `test` — Auto-detect and run tests (pytest, jest, cargo test, npm test)
+  `do it` — Intelligent run: figures out what to build/test based on project
 
 **Session:**
   `status` — Show current session info

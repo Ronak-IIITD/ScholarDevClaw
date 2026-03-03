@@ -4,6 +4,47 @@
 
 **Last updated:** 2026-03-03
 
+### 2026-03-03 (Advanced Shell — Claude Code-like Capabilities)
+
+**Goal:** Make the agent work like Claude Code, Codex, or OpenCode — with advanced shell capabilities: auto-running code files, auto-running tests, intelligent build/test detection.
+
+**Added: Advanced shell execution methods** (`smart_engine.py` — EXTENDED):
+- `_exec_run_code()`: Smart code runner that auto-detects language from file extension and runs:
+  - `.py` → `python3`
+  - `.js` → `node`
+  - `.sh` → `bash`
+  - `.rb` → `ruby`
+  - `.go` → `go run`
+  - `.rs` → `cargo run`
+  - `.c/.cpp` → compiles with g++ then runs
+- `_exec_run_tests()`: Smart test runner that auto-discovers test frameworks:
+  - Detects pytest (pyproject.toml), jest (package.json), cargo test, npm test, go test
+  - Parses test output to show pass/fail counts
+  - Formatted output: `[pytest] ✅ PASSED — 851 passed, 0 failed`
+- `_exec_intelligent_run()`: Figures out what to execute based on project files:
+  - `package.json` → npm install/test
+  - `Cargo.toml` → cargo test
+  - `go.mod` → go test
+  - `pyproject.toml` → pytest (if tests dir exists)
+  - `Makefile` → make
+
+**Added: stdout/stderr separation** — All run commands now show `[stdout]` and `[stderr]` sections for clarity.
+
+**Added: New action patterns** in QueryClassifier:
+- `run_code`: "run code", "execute code", "python ", "node "
+- `run_tests`: "test", "pytest", "run tests", "run test"
+- `intelligent_run`: "do it", "fix it", "build", "make"
+
+**Updated: Help text** — Added "Advanced (like Claude Code)" section with:
+- `run code <file.py>` — Auto-detect and run
+- `test` — Auto-run tests
+- `do it` — Intelligent run
+
+**Tests verified:**
+- `run code cli.py` → runs Python file, shows help output
+- `test` → auto-discovers pytest, runs 851 tests, shows ✅ PASSED
+- `do it` → auto-detects pytest config, runs tests
+
 ### 2026-03-03 (Tool Integration — Full Tool System Wired into SmartAgentEngine)
 
 **Goal:** Wire the extensive but disconnected tool system (`ToolManager`/`AdvancedToolManager`) into `SmartAgentEngine` so users can run shell commands, read/write files, search code, run git operations, and analyze code quality directly from the agent.
