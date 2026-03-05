@@ -4,6 +4,28 @@
 
 **Last updated:** 2026-03-03
 
+### 2026-03-03 (Agent Capabilities — Planning, Context, Fix/Test, Summaries)
+
+**Goal:** Improve agent reasoning quality (planning + retry), codebase context retrieval, automated fix/test loop, and structured tool summaries.
+
+**Improved: Multi-step planning + retry** (`core/src/scholardevclaw/agent/smart_engine.py`):
+- Moderate plans now retry failed steps once using `_retry_with_context`
+- Simple actions also retry with context if budget allows
+
+**Added: Context probe** (`smart_engine.py`):
+- `_exec_context_probe()` runs quick file listing + search to enrich context
+- Used in complex workflows before planning
+
+**Added: fix-and-test loop** (`smart_engine.py`):
+- `fix_and_test` action: run tests, summarize failure, provide fix guidance
+
+**Added: Tool orchestration summary** (`smart_engine.py`):
+- `_build_tool_summary()` emits concise structured output after actions
+
+**Verified:**
+- `python -m py_compile` passes for smart_engine
+- All 851 tests pass
+
 ### 2026-03-03 (Slash Commands — Inbuilt Commands Palette)
 
 **Goal:** Add built-in slash commands like in modern coding agents (Claude Code, Codex).

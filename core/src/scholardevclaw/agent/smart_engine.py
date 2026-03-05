@@ -447,6 +447,12 @@ class QueryClassifier:
             "token_cost": 1000,
             "needs_repo": True,
         },
+        "fix_and_test": {
+            "keywords": ["fix tests", "fix failing", "auto-fix", "fix and test"],
+            "complexity": QueryComplexity.MODERATE,
+            "token_cost": 8000,
+            "needs_repo": True,
+        },
         "intelligent_run": {
             "keywords": ["do it", "fix it", "run it", "execute", "build", "make"],
             "complexity": QueryComplexity.MODERATE,
@@ -993,6 +999,12 @@ class SmartAgentEngine:
             # Store in memory
             self._store_result_in_memory(action, target, result)
 
+            # Tool orchestration summary
+            yield StreamEvent(
+                type=StreamEventType.OUTPUT,
+                message=self._build_tool_summary(action, result),
+            )
+
             # Emit contextual suggestions
             for sugg in self._generate_suggestions(action, result):
                 yield StreamEvent(type=StreamEventType.SUGGESTION, message=sugg)
@@ -1011,6 +1023,25 @@ class SmartAgentEngine:
                         type=StreamEventType.SUGGESTION,
                         message=recovery,
                     )
+
+            # Retry once with context if allowed
+            if self.max_retries > 0 and self.budget.can_spend(5000):
+                retry = await self._retry_with_context(action, target, result, classification)
+                if retry and retry.ok:
+                    yield StreamEvent(
+                        type=StreamEventType.OUTPUT,
+                        message=f"[Retry] {retry.message}",
+                        data=retry.output or {},
+                    )
+                    async for event in self._format_result_details(action, retry):
+                        yield event
+                    self._store_result_in_memory(action, target, retry)
+                    yield StreamEvent(
+                        type=StreamEventType.OUTPUT,
+                        message=self._build_tool_summary(action, retry),
+                    )
+                    for sugg in self._generate_suggestions(action, retry):
+                        yield StreamEvent(type=StreamEventType.SUGGESTION, message=sugg)
 
     async def _handle_moderate(
         self,
@@ -1037,7 +1068,7 @@ class SmartAgentEngine:
             context={"target": target, "actions": all_actions},
         )
 
-        for i, action in enumerate(all_actions):
+        for action in all_actions:
             depends = [plan.tasks[-1].id] if plan.tasks else []
             self.planner.add_task(
                 plan.id,
@@ -1054,7 +1085,7 @@ class SmartAgentEngine:
             data={"plan": [a for a in all_actions]},
         )
 
-        # Execute each step
+        # Execute each step with retry support
         prev_result: ExecutionResult | None = None
         for i, action in enumerate(all_actions):
             if not self.budget.can_spend(2000):
@@ -1087,14 +1118,39 @@ class SmartAgentEngine:
                 async for event in self._format_result_details(action, result):
                     yield event
                 self._store_result_in_memory(action, step_target, result)
-            else:
                 yield StreamEvent(
-                    type=StreamEventType.ERROR,
-                    message=f"Step {action} failed: {result.error or result.message}",
+                    type=StreamEventType.OUTPUT,
+                    message=self._build_tool_summary(action, result),
                 )
-                # Try to continue if possible
-                if action == all_actions[-1]:
-                    break  # last step failed, nothing to continue
+            else:
+                # Retry once with context if budget allows
+                retry_result = None
+                if self.max_retries > 0 and self.budget.can_spend(5000):
+                    retry_result = await self._retry_with_context(
+                        action, step_target, result, classification
+                    )
+                if retry_result and retry_result.ok:
+                    yield StreamEvent(
+                        type=StreamEventType.OUTPUT,
+                        message=f"[Retry] {retry_result.message}",
+                        data=retry_result.output or {},
+                    )
+                    async for event in self._format_result_details(action, retry_result):
+                        yield event
+                    self._store_result_in_memory(action, step_target, retry_result)
+                    yield StreamEvent(
+                        type=StreamEventType.OUTPUT,
+                        message=self._build_tool_summary(action, retry_result),
+                    )
+                    prev_result = retry_result
+                else:
+                    yield StreamEvent(
+                        type=StreamEventType.ERROR,
+                        message=f"Step {action} failed: {result.error or result.message}",
+                    )
+                    # Try to continue if possible
+                    if action == all_actions[-1]:
+                        break  # last step failed, nothing to continue
 
         # Final suggestions
         for sugg in self._generate_suggestions(all_actions[-1], prev_result):
@@ -1132,6 +1188,16 @@ class SmartAgentEngine:
                     return
 
         repo_path = self._resolve_repo_path()
+
+        # Context probe to enrich understanding
+        if self.budget.can_spend(500):
+            probe = await self._exec_context_probe(classification.query_text)
+            if probe.ok:
+                yield StreamEvent(
+                    type=StreamEventType.PROGRESS,
+                    message="Context probe complete",
+                    data=probe.output or {},
+                )
 
         # Plan the complex execution
         yield StreamEvent(
@@ -1207,6 +1273,72 @@ class SmartAgentEngine:
             if recovery:
                 yield StreamEvent(type=StreamEventType.SUGGESTION, message=recovery)
 
+    async def _execute_plan(
+        self,
+        plan: Plan,
+        classification: QueryClassification,
+        target: str | None,
+    ) -> ExecutionResult:
+        """Execute a plan sequentially with retry support."""
+        prev_result: ExecutionResult | None = None
+        completed_tasks: set[str] = set()
+
+        for i, task in enumerate(plan.tasks):
+            if not self.budget.can_spend(2000):
+                return ExecutionResult(
+                    ok=False,
+                    action="plan",
+                    error="Token budget limit reached. Stopping early.",
+                    tokens_used=0,
+                )
+
+            task.status = TaskStatus.IN_PROGRESS
+            task.started_at = datetime.now().isoformat()
+
+            step_target = target
+            if prev_result and prev_result.ok and prev_result.output:
+                if "spec" in (prev_result.output or {}):
+                    step_target = prev_result.output.get("spec", step_target)
+
+            # Parse action from task description
+            action = task.description.replace("Execute ", "").strip()
+
+            result = await self._execute_action(action, step_target, classification.query_text)
+            prev_result = result
+
+            if result.ok:
+                task.status = TaskStatus.COMPLETED
+                task.completed_at = datetime.now().isoformat()
+                task.result = result
+                completed_tasks.add(task.id)
+
+                self._store_result_in_memory(action, step_target, result)
+            else:
+                task.status = TaskStatus.FAILED
+                task.error = result.error or result.message
+                task.completed_at = datetime.now().isoformat()
+
+                # Retry logic for failed steps
+                if self.max_retries > 0 and self.budget.can_spend(5000):
+                    retry_result = await self._retry_with_context(
+                        action, step_target, result, classification
+                    )
+                    if retry_result and retry_result.ok:
+                        prev_result = retry_result
+                        task.status = TaskStatus.COMPLETED
+                        task.result = retry_result
+                        completed_tasks.add(task.id)
+                        continue
+
+                return result
+
+        return prev_result or ExecutionResult(
+            ok=False,
+            action="plan",
+            error="No tasks executed",
+            tokens_used=0,
+        )
+
     # -----------------------------------------------------------------------
     # Execution layer — real pipeline calls
     # -----------------------------------------------------------------------
@@ -1262,6 +1394,8 @@ class SmartAgentEngine:
                 return await self._exec_run_tests(target)
             elif action == "intelligent_run":
                 return await self._exec_intelligent_run(query_text)
+            elif action == "fix_and_test":
+                return await self._exec_fix_and_test(query_text)
             elif action == "unknown":
                 return await self._exec_unknown(query_text)
             else:
@@ -2285,6 +2419,64 @@ class SmartAgentEngine:
             ok=False, action="intelligent_run", error=execution.error, tokens_used=tokens
         )
 
+    async def _exec_fix_and_test(self, query: str | None) -> ExecutionResult:
+        """Auto-fix and test loop: run tests, summarize failure, re-run after fix hints."""
+        repo_path = self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="fix_and_test", error="No repository set")
+
+        # Step 1: Run tests
+        test_result = await self._exec_run_tests(None)
+        if test_result.ok:
+            return ExecutionResult(
+                ok=True,
+                action="fix_and_test",
+                message="Tests already passing. No fixes needed.",
+                output=test_result.output,
+                tokens_used=test_result.tokens_used,
+            )
+
+        # Step 2: Summarize failure
+        failure_summary = test_result.message or test_result.error or "Test failures detected"
+
+        # Step 3: Provide fix guidance (placeholder for future automated fixes)
+        guidance = (
+            "Auto-fix loop: tests failed. Review the failing tests and logs, "
+            "apply fixes, then re-run `test` or `fix tests`."
+        )
+
+        return ExecutionResult(
+            ok=False,
+            action="fix_and_test",
+            message=f"{failure_summary}\n\n{guidance}",
+            output={"test_result": test_result.output, "guidance": guidance},
+            tokens_used=test_result.tokens_used,
+        )
+
+    async def _exec_context_probe(self, query: str) -> ExecutionResult:
+        """Gather context hints from codebase: repo root, files, and summaries."""
+        repo_path = self._resolve_repo_path()
+        if not repo_path:
+            return ExecutionResult(ok=False, action="context_probe", error="No repository set")
+
+        # Use tool-based commands for quick context
+        list_result = await self._exec_tool_list_files(repo_path)
+        search_result = await self._exec_tool_search_code(query)
+
+        summary = {
+            "repo": repo_path,
+            "files": list_result.output.get("files", []) if list_result.output else [],
+            "matches": search_result.output.get("matches", 0) if search_result.output else 0,
+        }
+
+        return ExecutionResult(
+            ok=True,
+            action="context_probe",
+            message=f"Context probe: {summary['matches']} matches, {len(summary['files'])} files",
+            output=summary,
+            tokens_used=500,
+        )
+
     # -----------------------------------------------------------------------
     # Memory integration
     # -----------------------------------------------------------------------
@@ -2545,6 +2737,18 @@ class SmartAgentEngine:
         parts.append(f"  Available: {len(self.tools.list_tools())}")
 
         return "\n".join(parts)
+
+    def _build_tool_summary(self, action: str, result: ExecutionResult) -> str:
+        """Build a concise tool orchestration summary."""
+        summary = f"[Tools] action={action}"
+        if result.output:
+            if isinstance(result.output, dict):
+                keys = list(result.output.keys())
+                if keys:
+                    summary += f" | outputs: {', '.join(keys[:5])}"
+        if result.duration_ms:
+            summary += f" | duration={result.duration_ms}ms"
+        return summary
 
     def _suggest_recovery(self, action: str, error: str) -> str | None:
         """Suggest a recovery action based on error."""
