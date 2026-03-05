@@ -4,6 +4,24 @@
 
 **Last updated:** 2026-03-03
 
+### 2026-03-03 (REPL Terminal Mode — Claude Code-style Inline Shell)
+
+**Goal:** Make the REPL behave like Claude Code by allowing inline terminal execution and a dedicated terminal mode with persistent prompt.
+
+**Added: REPL terminal mode** (`core/src/scholardevclaw/agent/repl.py` — EXTENDED):
+- `terminal` command enters terminal mode with persistent prompt
+- `exit`/`back` leaves terminal mode
+- `!<cmd>` runs a terminal command inline (no mode switch)
+- Terminal prompt uses `AdvancedShell` colored prompt
+
+**Updated: help text** (`core/src/scholardevclaw/agent/smart_engine.py`):
+- Added `!<cmd>` quick terminal shortcut to Advanced section
+
+**Verified:**
+- `!echo hello` prints output inline
+- Terminal mode runs `cd`, `pwd`, `echo`
+- All 851 tests pass
+
 ### 2026-03-03 (Terminal Mode — Super Powers for the Agent)
 
 **Goal:** Give the agent super powers like a real terminal - persistent shell session, built-in commands, pipes, redirects, background jobs.

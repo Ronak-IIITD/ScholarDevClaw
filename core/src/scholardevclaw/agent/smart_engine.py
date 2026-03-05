@@ -2492,6 +2492,7 @@ class SmartAgentEngine:
   `test` — Auto-detect and run tests (pytest, jest, cargo test, npm test)
   `do it` — Intelligent run: figures out what to build/test based on project
   `terminal` — Enter advanced terminal mode
+  `!<cmd>` — Quick terminal command (e.g., `!ls`)
 
 **Terminal Mode** (after `terminal` command):
   `cd <dir>` — Change directory (persists across commands)

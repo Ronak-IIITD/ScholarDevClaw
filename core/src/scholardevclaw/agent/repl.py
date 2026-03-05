@@ -48,6 +48,7 @@ class StreamingAgentREPL:
         self.console = Console()
         self.running = False
         self._initial_repo = repo_path
+        self._terminal_mode = False
 
     def print_welcome(self) -> None:
         welcome = """
@@ -60,6 +61,8 @@ Your AI-powered research-to-code assistant.
 - `integrate <spec>` - Apply research improvements
 - `suggest` - Get improvement suggestions
 - `help` - See all commands
+- `terminal` - Enter terminal mode (super powers)
+- `!<cmd>` - Run a terminal command inline (e.g., !ls)
 
 **Examples:**
 - analyze ./my-project
@@ -84,9 +87,31 @@ Type your request or 'exit' to quit.
 
         while self.running:
             try:
-                user_input = Prompt.ask("\n[bold blue]ScholarDevClaw[/bold blue]", default="")
+                if self._terminal_mode:
+                    user_input = self._terminal_prompt()
+                else:
+                    user_input = Prompt.ask("\n[bold blue]ScholarDevClaw[/bold blue]", default="")
 
                 if not user_input.strip():
+                    continue
+
+                # Inline terminal command
+                if user_input.strip().startswith("!"):
+                    cmd = user_input.strip()[1:].strip()
+                    asyncio.run(self._process_terminal(cmd))
+                    continue
+
+                # Enter terminal mode
+                if user_input.strip().lower() in ["terminal", "shell", "console"]:
+                    self._terminal_mode = True
+                    self.console.print("Entered terminal mode. Type 'exit' to leave.", style="cyan")
+                    asyncio.run(self._process_terminal(None))
+                    continue
+
+                # Exit terminal mode
+                if self._terminal_mode and user_input.strip().lower() in ["exit", "quit", "back"]:
+                    self._terminal_mode = False
+                    self.console.print("Exited terminal mode.", style="cyan")
                     continue
 
                 if user_input.lower() in ["exit", "quit", "q"]:
@@ -97,7 +122,10 @@ Type your request or 'exit' to quit.
                     self.console.clear()
                     continue
 
-                asyncio.run(self._process_streaming(user_input))
+                if self._terminal_mode:
+                    asyncio.run(self._process_terminal(user_input))
+                else:
+                    asyncio.run(self._process_streaming(user_input))
 
             except KeyboardInterrupt:
                 self.console.print("\nGoodbye!")
@@ -121,6 +149,27 @@ Type your request or 'exit' to quit.
                     self._handle_stream_event(event)
         except Exception as e:
             self.console.print(f"\nError: {str(e)}", style="red")
+
+    async def _process_terminal(self, command: str | None) -> None:
+        """Process terminal command using SmartAgentEngine terminal mode."""
+        try:
+            if not self._smart_engine:
+                self.console.print("Terminal mode requires SmartAgentEngine", style="red")
+                return
+
+            result = await self._smart_engine._exec_terminal(command)
+            if result.message:
+                self.console.print(result.message)
+        except Exception as e:
+            self.console.print(f"\nTerminal error: {str(e)}", style="red")
+
+    def _terminal_prompt(self) -> str:
+        """Return terminal-style prompt."""
+        if not self._smart_engine:
+            return Prompt.ask("\n[bold blue]ScholarDevClaw[/bold blue]", default="")
+
+        prompt = self._smart_engine.terminal.get_prompt()
+        return Prompt.ask(f"\n{prompt}", default="")
 
     def _handle_stream_event(self, event: StreamEvent) -> None:
         """Handle a single streaming event with rich formatting."""
