@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Callable
+from typing import Callable, Any, Coroutine
 
 import rich
 from rich.console import Console
@@ -62,7 +62,23 @@ class StreamingAgentREPL:
             "/models": "Show model info",
             "/review": "Review changes",
             "/mcp": "Show MCP status",
+            "/run": "Run a terminal command: /run <cmd>",
+            "/git": "Git helper: /git <args>",
+            "/docker": "Docker helper: /docker <args>",
+            "/compose": "Docker compose: /compose <args>",
+            "/test": "Run tests (smart)",
+            "/build": "Run intelligent build/test",
         }
+        self._dangerous_fragments = [
+            "rm -rf /",
+            "rm -rf *",
+            "git reset --hard",
+            "git push --force",
+            "docker system prune",
+            "docker volume rm",
+            "mkfs",
+            "dd if=",
+        ]
 
     def print_welcome(self) -> None:
         welcome = """
@@ -259,12 +275,78 @@ Type your request or 'exit' to quit.
                 self.console.print(f"Failed to switch repo to {path}", style="red")
             return True
 
+        if cmd == "/run":
+            if not args:
+                self.console.print("Usage: /run <command>", style="yellow")
+                return True
+            command = " ".join(args)
+            if self._confirm_dangerous(command):
+                self._run_async(self._process_terminal(command))
+            return True
+
+        if cmd == "/git":
+            if not args:
+                self.console.print("Usage: /git <args>", style="yellow")
+                return True
+            command = "git " + " ".join(args)
+            if self._confirm_dangerous(command):
+                self._run_async(self._process_terminal(command))
+            return True
+
+        if cmd == "/docker":
+            if not args:
+                self.console.print("Usage: /docker <args>", style="yellow")
+                return True
+            command = "docker " + " ".join(args)
+            if self._confirm_dangerous(command):
+                self._run_async(self._process_terminal(command))
+            return True
+
+        if cmd == "/compose":
+            if not args:
+                self.console.print("Usage: /compose <args>", style="yellow")
+                return True
+            command = "docker compose " + " ".join(args)
+            if self._confirm_dangerous(command):
+                self._run_async(self._process_terminal(command))
+            return True
+
+        if cmd == "/test":
+            self._run_async(self._process_streaming("test"))
+            return True
+
+        if cmd == "/build":
+            self._run_async(self._process_streaming("do it"))
+            return True
+
         if cmd in self._slash_commands:
             # Placeholder for future commands
             self.console.print(f"{cmd}: {self._slash_commands[cmd]}")
             return True
 
         return False
+
+    def _run_async(self, coro: Coroutine[Any, Any, Any]) -> None:
+        """Run coroutine safely from sync context."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(coro)
+            return
+
+        # If already in event loop, create task
+        loop.create_task(coro)
+
+    def _confirm_dangerous(self, command: str) -> bool:
+        """Prompt confirmation for potentially destructive commands."""
+        lower = command.lower()
+        if any(fragment in lower for fragment in self._dangerous_fragments):
+            confirm = Prompt.ask(
+                f"Dangerous command detected. Type 'yes' to continue: {command}",
+                default="no",
+            )
+            return confirm.strip().lower() == "yes"
+        return True
 
     def _handle_stream_event(self, event: StreamEvent) -> None:
         """Handle a single streaming event with rich formatting."""

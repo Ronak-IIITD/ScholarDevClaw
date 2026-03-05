@@ -2686,6 +2686,14 @@ class SmartAgentEngine:
   `terminal` — Enter advanced terminal mode
   `!<cmd>` — Quick terminal command (e.g., `!ls`)
 
+**Slash Commands (REPL only):**
+  `/run <cmd>` — Run a terminal command
+  `/git <args>` — Git helper
+  `/docker <args>` — Docker helper
+  `/compose <args>` — Docker compose helper
+  `/test` — Run tests
+  `/build` — Intelligent build/test
+
 **Terminal Mode** (after `terminal` command):
   `cd <dir>` — Change directory (persists across commands)
   `pwd` — Print working directory

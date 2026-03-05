@@ -28,6 +28,14 @@
 
 ### 2026-03-03 (Slash Commands — Inbuilt Commands Palette)
 
+**Update:** Added terminal-oriented slash commands to match engineer workflows:
+- `/run <cmd>` — Run a terminal command
+- `/git <args>` — Git helper
+- `/docker <args>` — Docker helper
+- `/compose <args>` — Docker compose helper
+- `/test` — Run tests
+- `/build` — Intelligent build/test
+
 **Goal:** Add built-in slash commands like in modern coding agents (Claude Code, Codex).
 
 **Added: Slash command handling** (`core/src/scholardevclaw/agent/repl.py`):
