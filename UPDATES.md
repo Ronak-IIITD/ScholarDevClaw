@@ -36,6 +36,13 @@
 - `/test` — Run tests
 - `/build` — Intelligent build/test
 
+**Update:** Added senior engineer shortcuts:
+- `/status-git`, `/diff`, `/branch`, `/stage`, `/commit`, `/push`, `/pull`
+- `/up`, `/down`, `/ps`, `/logs <service>`, `/exec <container> <cmd>`
+- `/install`, `/lint`, `/fmt`
+
+**Fix:** Terminal execution now async-safe inside REPL slash commands (no nested event loop errors).
+
 **Goal:** Add built-in slash commands like in modern coding agents (Claude Code, Codex).
 
 **Added: Slash command handling** (`core/src/scholardevclaw/agent/repl.py`):

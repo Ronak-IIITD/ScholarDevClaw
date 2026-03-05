@@ -68,6 +68,21 @@ class StreamingAgentREPL:
             "/compose": "Docker compose: /compose <args>",
             "/test": "Run tests (smart)",
             "/build": "Run intelligent build/test",
+            "/status-git": "Git status",
+            "/diff": "Git diff",
+            "/branch": "Git branch",
+            "/commit": "Git commit: /commit <msg>",
+            "/stage": "Git add .",
+            "/push": "Git push",
+            "/pull": "Git pull",
+            "/up": "Docker compose up -d",
+            "/down": "Docker compose down",
+            "/logs": "Docker logs: /logs <service>",
+            "/exec": "Docker exec: /exec <container> <cmd>",
+            "/ps": "Docker ps",
+            "/install": "Install deps (auto)",
+            "/lint": "Run lint (auto)",
+            "/fmt": "Run formatter (auto)",
         }
         self._dangerous_fragments = [
             "rm -rf /",
@@ -317,6 +332,82 @@ Type your request or 'exit' to quit.
 
         if cmd == "/build":
             self._run_async(self._process_streaming("do it"))
+            return True
+
+        if cmd == "/status-git":
+            self._run_async(self._process_terminal("git status"))
+            return True
+
+        if cmd == "/diff":
+            self._run_async(self._process_terminal("git diff"))
+            return True
+
+        if cmd == "/branch":
+            self._run_async(self._process_terminal("git branch"))
+            return True
+
+        if cmd == "/stage":
+            self._run_async(self._process_terminal("git add ."))
+            return True
+
+        if cmd == "/commit":
+            if not args:
+                self.console.print("Usage: /commit <message>", style="yellow")
+                return True
+            msg = " ".join(args).strip('"')
+            command = f'git commit -m "{msg}"'
+            if self._confirm_dangerous(command):
+                self._run_async(self._process_terminal(command))
+            return True
+
+        if cmd == "/push":
+            if self._confirm_dangerous("git push"):
+                self._run_async(self._process_terminal("git push"))
+            return True
+
+        if cmd == "/pull":
+            self._run_async(self._process_terminal("git pull"))
+            return True
+
+        if cmd == "/up":
+            self._run_async(self._process_terminal("docker compose up -d"))
+            return True
+
+        if cmd == "/down":
+            self._run_async(self._process_terminal("docker compose down"))
+            return True
+
+        if cmd == "/ps":
+            self._run_async(self._process_terminal("docker ps"))
+            return True
+
+        if cmd == "/logs":
+            if not args:
+                self.console.print("Usage: /logs <service>", style="yellow")
+                return True
+            command = "docker logs " + " ".join(args)
+            self._run_async(self._process_terminal(command))
+            return True
+
+        if cmd == "/exec":
+            if len(args) < 2:
+                self.console.print("Usage: /exec <container> <cmd>", style="yellow")
+                return True
+            container = args[0]
+            command = "docker exec -it " + container + " " + " ".join(args[1:])
+            self._run_async(self._process_terminal(command))
+            return True
+
+        if cmd == "/install":
+            self._run_async(self._process_streaming("do it"))
+            return True
+
+        if cmd == "/lint":
+            self._run_async(self._process_streaming("lint"))
+            return True
+
+        if cmd == "/fmt":
+            self._run_async(self._process_terminal("ruff format ."))
             return True
 
         if cmd in self._slash_commands:

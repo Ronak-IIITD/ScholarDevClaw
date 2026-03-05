@@ -2041,8 +2041,16 @@ class SmartAgentEngine:
                 tokens_used=50,
             )
 
-        # Execute via advanced shell
-        result = self.terminal.run_command(command)
+        # Execute via advanced shell (async-safe)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            result = await self.terminal.run_command_async(command)
+        else:
+            result = self.terminal.run_command(command)
 
         # Format output with colors
         output = result.get("output", "")

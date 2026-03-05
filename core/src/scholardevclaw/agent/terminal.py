@@ -223,6 +223,44 @@ class AdvancedShell:
         # Execute with pipes
         return self._execute_with_pipes(expanded, timeout)
 
+    async def run_command_async(
+        self,
+        command: str,
+        timeout: int = 60,
+    ) -> dict[str, Any]:
+        """Execute a command with full shell capabilities (async)."""
+        if not command.strip():
+            return {"stdout": "", "stderr": "", "returncode": 0, "timed_out": False, "output": ""}
+
+        # Add to history (skip duplicates)
+        if command.strip() and (not self.state.history or self.state.history[-1] != command):
+            self.state.history.append(command)
+            self.state.history_index = len(self.state.history)
+
+        # Parse command (handle pipes and redirects)
+        parsed = self._parse_command(command)
+        if not parsed:
+            return {
+                "stdout": "",
+                "stderr": "",
+                "returncode": 1,
+                "timed_out": False,
+                "output": "Parse error",
+            }
+
+        # Handle built-ins
+        if parsed["cmd"] in self.BUILTINS:
+            return self._run_builtin(parsed)
+
+        # Expand aliases
+        expanded = self._expand_alias(command)
+
+        # Expand environment variables
+        expanded = self._expand_env(expanded)
+
+        # Execute with pipes (async)
+        return await self._execute_with_pipes_async(expanded, timeout)
+
     def _parse_command(self, command: str) -> dict | None:
         """Parse command string into components."""
         try:
@@ -268,7 +306,7 @@ class AdvancedShell:
         # Match $VAR, ${VAR}
         def replace_var(match):
             var_name = match.group(1) or match.group(2)
-            return self.state.env.get(var_name, match.group(0))
+            return str(self.state.env.get(var_name, match.group(0)))
 
         # ${VAR} or $VAR
         command = re.sub(r"\$\{(\w+)\}", replace_var, command)
@@ -383,9 +421,9 @@ class AdvancedShell:
         """Set environment variables."""
         if not args:
             # Show exported vars
-            exported = [k for k, v in self.state.env.items() if k.isupper()]
+            exported = {k: value for k, value in self.state.env.items() if k.isupper()}
             return {
-                "stdout": "\n".join(f"{k}={v}" for k in sorted(exported)) + "\n",
+                "stdout": "\n".join(f"{k}={exported[k]}" for k in sorted(exported)) + "\n",
                 "stderr": "",
                 "returncode": 0,
                 "timed_out": False,
@@ -722,57 +760,47 @@ class AdvancedShell:
         }
 
     def _execute_with_pipes(self, command: str, timeout: int) -> dict[str, Any]:
-        """Execute command with pipes."""
-        import asyncio
+        """Execute command with pipes (sync wrapper)."""
+        return asyncio.run(self._execute_with_pipes_async(command, timeout))
 
+    async def _execute_with_pipes_async(self, command: str, timeout: int) -> dict[str, Any]:
+        """Execute command with pipes (async)."""
         # Split by pipe
         parts = [p.strip() for p in command.split("|")]
 
         if len(parts) == 1:
-            return self._execute_single(parts[0], timeout)
+            return await self._execute_single_async(parts[0], timeout)
 
         # Pipeline
         stdout = ""
+        prev_stdout = None
 
-        async def run_pipeline():
-            nonlocal stdout
-            proc = None
-            prev_stdout = None
+        for i, part in enumerate(parts):
+            stdin = prev_stdout or ""
+            result = await self._execute_async(part, stdin=stdin, timeout=timeout)
+            prev_stdout = result["stdout"] if result["returncode"] == 0 else None
 
-            for i, part in enumerate(parts):
-                is_last = i == len(parts) - 1
+            if result["returncode"] != 0 and i > 0:
+                return result
 
-                # Create pipe
-                if prev_stdout:
-                    stdin = prev_stdout
-                else:
-                    stdin = None
-
-                # Execute each part
-                result = await self._execute_async(part, stdin=stdin, timeout=timeout)
-                prev_stdout = result["stdout"] if result["returncode"] == 0 else None
-
-                if result["returncode"] != 0 and i > 0:
-                    return result
-
-            return {
-                "stdout": stdout,
-                "stderr": "",
-                "returncode": 0,
-                "timed_out": False,
-                "output": stdout,
-            }
-
-        return asyncio.run(run_pipeline())
+        return {
+            "stdout": stdout,
+            "stderr": "",
+            "returncode": 0,
+            "timed_out": False,
+            "output": stdout,
+        }
 
     def _execute_single(self, command: str, timeout: int) -> dict[str, Any]:
-        """Execute a single command."""
-        import asyncio
-
+        """Execute a single command (sync wrapper)."""
         return asyncio.run(self._execute_async(command, timeout=timeout))
 
+    async def _execute_single_async(self, command: str, timeout: int) -> dict[str, Any]:
+        """Execute a single command (async)."""
+        return await self._execute_async(command, timeout=timeout)
+
     async def _execute_async(
-        self, command: str, stdin: str = None, timeout: int = 60
+        self, command: str, stdin: str | None = None, timeout: int = 60
     ) -> dict[str, Any]:
         """Execute command asynchronously."""
         # Check for background job
@@ -835,7 +863,7 @@ class AdvancedShell:
                 stdout = stdout_bytes.decode("utf-8", errors="replace")
                 stderr = stderr_bytes.decode("utf-8", errors="replace")
 
-                self.state.last_exit_code = proc.returncode
+                self.state.last_exit_code = int(proc.returncode or 0)
 
                 return {
                     "stdout": stdout,
