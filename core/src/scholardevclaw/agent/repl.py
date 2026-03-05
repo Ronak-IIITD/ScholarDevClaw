@@ -49,6 +49,20 @@ class StreamingAgentREPL:
         self.running = False
         self._initial_repo = repo_path
         self._terminal_mode = False
+        self._slash_commands = {
+            "/help": "Show help",
+            "/exit": "Exit the app",
+            "/status": "View status",
+            "/terminal": "Enter terminal mode",
+            "/clear": "Clear screen",
+            "/new": "Start new session",
+            "/sessions": "List sessions",
+            "/repo": "Switch repo: /repo <path>",
+            "/agents": "List available agents",
+            "/models": "Show model info",
+            "/review": "Review changes",
+            "/mcp": "Show MCP status",
+        }
 
     def print_welcome(self) -> None:
         welcome = """
@@ -63,6 +77,7 @@ Your AI-powered research-to-code assistant.
 - `help` - See all commands
 - `terminal` - Enter terminal mode (super powers)
 - `!<cmd>` - Run a terminal command inline (e.g., !ls)
+- `/help` - Show slash commands
 
 **Examples:**
 - analyze ./my-project
@@ -94,6 +109,12 @@ Type your request or 'exit' to quit.
 
                 if not user_input.strip():
                     continue
+
+                # Slash command handling
+                if user_input.strip().startswith("/"):
+                    handled = self._handle_slash_command(user_input.strip())
+                    if handled:
+                        continue
 
                 # Inline terminal command
                 if user_input.strip().startswith("!"):
@@ -170,6 +191,80 @@ Type your request or 'exit' to quit.
 
         prompt = self._smart_engine.terminal.get_prompt()
         return Prompt.ask(f"\n{prompt}", default="")
+
+    def _handle_slash_command(self, command: str) -> bool:
+        """Handle slash commands like /help, /status, /sessions."""
+        parts = command.split()
+        cmd = parts[0].lower()
+        args = parts[1:]
+
+        if cmd == "/help":
+            table = Table(title="Slash Commands")
+            table.add_column("Command", style="cyan")
+            table.add_column("Description", style="green")
+            for k, v in self._slash_commands.items():
+                table.add_row(k, v)
+            self.console.print(table)
+            return True
+
+        if cmd in ("/exit", "/quit"):
+            self.console.print("Goodbye!")
+            self.running = False
+            return True
+
+        if cmd == "/clear":
+            self.console.clear()
+            return True
+
+        if cmd == "/status":
+            if self._smart_engine:
+                self.console.print(self._smart_engine._build_status_text())
+                return True
+            return False
+
+        if cmd == "/terminal":
+            self._terminal_mode = True
+            self.console.print("Entered terminal mode. Type 'exit' to leave.", style="cyan")
+            asyncio.run(self._process_terminal(None))
+            return True
+
+        if cmd == "/new":
+            if self._smart_engine:
+                self._smart_engine.create_session(self._initial_repo)
+                self.console.print("New session created", style="green")
+                return True
+            return False
+
+        if cmd == "/sessions":
+            if self._smart_engine:
+                sessions = self._smart_engine.sessions
+                if not sessions:
+                    self.console.print("No sessions yet.")
+                else:
+                    for sid, sess in sessions.items():
+                        repo = sess.repo_path or "(no repo)"
+                        marker = "*" if self._smart_engine.current_session == sess else " "
+                        self.console.print(f"{marker} {sid} — {repo}")
+                return True
+            return False
+
+        if cmd == "/repo":
+            if not args:
+                self.console.print("Usage: /repo <path>", style="yellow")
+                return True
+            path = " ".join(args)
+            if self._smart_engine and self._smart_engine.switch_repo(path):
+                self.console.print(f"Switched repo to {path}", style="green")
+            else:
+                self.console.print(f"Failed to switch repo to {path}", style="red")
+            return True
+
+        if cmd in self._slash_commands:
+            # Placeholder for future commands
+            self.console.print(f"{cmd}: {self._slash_commands[cmd]}")
+            return True
+
+        return False
 
     def _handle_stream_event(self, event: StreamEvent) -> None:
         """Handle a single streaming event with rich formatting."""

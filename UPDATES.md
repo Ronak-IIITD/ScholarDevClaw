@@ -4,6 +4,26 @@
 
 **Last updated:** 2026-03-03
 
+### 2026-03-03 (Slash Commands — Inbuilt Commands Palette)
+
+**Goal:** Add built-in slash commands like in modern coding agents (Claude Code, Codex).
+
+**Added: Slash command handling** (`core/src/scholardevclaw/agent/repl.py`):
+- `/help` — show slash command palette
+- `/status` — show session/system status
+- `/terminal` — enter terminal mode
+- `/new` — create new session
+- `/sessions` — list sessions
+- `/repo <path>` — switch repo
+- `/clear` — clear screen
+- `/exit` — exit app
+
+**Verified:**
+- `/help` shows command list
+- `/status` shows system info
+- `/sessions` shows sessions
+- All 851 tests pass
+
 ### 2026-03-03 (REPL Terminal Mode — Claude Code-style Inline Shell)
 
 **Goal:** Make the REPL behave like Claude Code by allowing inline terminal execution and a dedicated terminal mode with persistent prompt.
