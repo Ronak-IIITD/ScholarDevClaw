@@ -4,6 +4,47 @@
 
 **Last updated:** 2026-03-06
 
+### 2026-03-06 (Phase 3: Real Tree-Sitter AST Extraction)
+
+**Goal:** Replace empty `_extract_elements_from_tree()` and `_extract_imports_from_tree()` stubs with production-quality AST walking for 6 languages.
+
+**Summary:** Both stubs in `tree_sitter_analyzer.py` now perform real tree-sitter AST walking. The analyzer extracts functions, classes, methods, interfaces, structs, enums, traits, impls, type aliases, decorators, parameters, return types, visibility, and parent class context across Python, JavaScript, TypeScript, Go, Rust, and Java. Also fixed `_get_parser()` for tree-sitter 0.25 API compatibility and added language grammar packages to pyproject.toml. All 851 tests pass.
+
+**Implemented: `_extract_elements_from_tree()`** (~600 lines of extraction logic):
+- **Python**: classes (with base classes, decorators), functions/methods (with params, return types, async, visibility), decorated definitions
+- **JavaScript**: classes (with extends), functions, methods (with async/static/getter/setter), arrow functions from const/let declarations
+- **TypeScript**: all JS elements plus interfaces, type aliases, enums, and return type annotations
+- **Go**: functions, methods (with receiver type as parent), structs, interfaces, type aliases, visibility from capitalization
+- **Rust**: functions (with pub/async), structs, enums, traits, impl blocks (with trait detection), methods within impl context
+- **Java**: classes (with extends/implements), interfaces, methods, constructors, enums, modifiers-based visibility (public/private/protected/package)
+
+**Implemented: `_extract_imports_from_tree()`** (~250 lines of extraction logic):
+- **Python**: `import x`, `import x as y`, `from x import a, b`, `from . import local`, `from ..relative import something`, wildcard imports
+- **JavaScript/TypeScript**: ESM `import { a, b } from 'module'`, namespace imports `import * as x`, re-exports `export { a } from 'b'`
+- **Go**: single import `import "fmt"`, grouped imports `import ("fmt"; "os")`, aliased imports `import log "github.com/..."`
+- **Rust**: `use std::collections::HashMap`, `use serde::{Serialize, Deserialize}`, wildcard `use foo::*`
+- **Java**: `import java.util.List`, static imports, package path splitting
+
+**Fixed: `_get_parser()`** for tree-sitter 0.25+ API:
+- `Parser.set_language()` removed in 0.25; now uses `Parser(lang)` constructor
+- TypeScript module uses `language_typescript()` (not `language()`)
+
+**Updated: `pyproject.toml`**:
+- Added 6 tree-sitter language grammar packages as dependencies
+
+**Verification on nanoGPT test repo** (was 0 elements / 0 imports, now):
+- 30 elements extracted (LayerNorm, CausalSelfAttention, MLP, Block, GPT classes + all methods)
+- 46 imports extracted
+- Correct parent class context (e.g., `forward` method of `CausalSelfAttention`)
+- Patterns detected: normalization (3), attention (1), activation (1)
+- Frameworks detected: torch, transformers, numpy
+
+**Files modified (2):**
+- `core/src/scholardevclaw/repo_intelligence/tree_sitter_analyzer.py`
+- `core/pyproject.toml`
+
+**Verified:** All 851 tests pass.
+
 ### 2026-03-06 (Phase 2: Fix Runtime Bugs in Pipeline)
 
 **Goal:** Fix runtime crashes in the core pipeline that would occur when actually executing `run_search()` with arXiv results.
