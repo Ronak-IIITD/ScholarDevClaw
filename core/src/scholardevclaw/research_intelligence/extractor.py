@@ -1,8 +1,33 @@
+"""
+Research paper extraction and specification lookup.
+
+This module provides the :class:`ResearchExtractor` which:
+
+- Maintains a registry of hardcoded paper specs (``PAPER_SPECS``).
+- Searches the local registry by keyword or code pattern.
+- Queries arXiv for papers matching a :class:`ResearchQuery`.
+- Extracts implementation specs from PDFs / arXiv IDs using an optional
+  :class:`~scholardevclaw.llm.research_assistant.LLMResearchAssistant`.
+
+When no LLM is available, extraction falls back to the hardcoded specs.
+"""
+
+from __future__ import annotations
+
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional, List, Any
-import json
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+if TYPE_CHECKING:
+    from scholardevclaw.llm.research_assistant import LLMResearchAssistant
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Hardcoded spec registry (serves as fallback + seed data)
+# ---------------------------------------------------------------------------
 
 PAPER_SPECS: Dict[str, Dict] = {
     "rmsnorm": {
@@ -161,6 +186,11 @@ PAPER_SPECS: Dict[str, Dict] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Data classes
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class Paper:
     """Represents a research paper"""
@@ -199,12 +229,100 @@ class ImplementationSpec:
     confidence: float = 0.0
 
 
-class ResearchExtractor:
-    """Handles research paper extraction and search"""
+# ---------------------------------------------------------------------------
+# PDF text extraction helper
+# ---------------------------------------------------------------------------
 
-    def __init__(self):
+
+def _read_pdf_text(pdf_path: str, max_pages: int = 20) -> Optional[str]:
+    """Best-effort plain-text extraction from a PDF file.
+
+    Tries ``PyPDF2`` (commonly available) then ``pdfminer.six``.
+    Returns ``None`` when no reader is installed or the file is unreadable.
+    """
+    path = Path(pdf_path)
+    if not path.exists() or not path.suffix.lower() == ".pdf":
+        return None
+
+    # Try PyPDF2
+    try:
+        from PyPDF2 import PdfReader  # type: ignore[import-untyped]
+
+        reader = PdfReader(str(path))
+        pages = reader.pages[:max_pages]
+        text_parts = [page.extract_text() or "" for page in pages]
+        text = "\n".join(text_parts).strip()
+        if text:
+            return text
+    except Exception:
+        pass
+
+    # Try pdfminer
+    try:
+        from pdfminer.high_level import extract_text as pm_extract  # type: ignore[import-untyped]
+
+        text = pm_extract(str(path), maxpages=max_pages)
+        if text and text.strip():
+            return text.strip()
+    except Exception:
+        pass
+
+    return None
+
+
+def _fetch_arxiv_abstract(arxiv_id: str) -> Optional[str]:
+    """Fetch the abstract for an arXiv paper via the Atom feed API.
+
+    This is a lightweight synchronous call — no heavy ``arxiv`` library needed.
+    """
+    clean_id = arxiv_id.strip().split("/")[-1]  # handle full URLs too
+    try:
+        import httpx
+
+        url = f"http://export.arxiv.org/api/query?id_list={clean_id}"
+        resp = httpx.get(url, timeout=15.0, follow_redirects=True)
+        if resp.status_code != 200:
+            return None
+
+        # Quick XML extraction (no lxml dependency)
+        import re
+
+        match = re.search(r"<summary[^>]*>(.*?)</summary>", resp.text, re.DOTALL)
+        if match:
+            abstract = match.group(1).strip()
+            # Clean up whitespace artefacts
+            abstract = re.sub(r"\s+", " ", abstract)
+            return abstract
+    except Exception as exc:
+        logger.debug("arXiv abstract fetch failed for %s: %s", arxiv_id, exc)
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# ResearchExtractor
+# ---------------------------------------------------------------------------
+
+
+class ResearchExtractor:
+    """Handles research paper extraction and search.
+
+    Parameters
+    ----------
+    llm_assistant : LLMResearchAssistant | None
+        Optional LLM assistant for AI-powered spec extraction.
+        When provided, ``_extract_from_pdf`` and ``_extract_from_arxiv``
+        will attempt LLM-based extraction before falling back to the
+        hardcoded spec registry.
+    """
+
+    def __init__(
+        self,
+        llm_assistant: "LLMResearchAssistant | None" = None,
+    ) -> None:
         self.specs = PAPER_SPECS
         self._arxiv_client = None
+        self._llm = llm_assistant
 
     def _get_arxiv_client(self):
         """Lazy load arxiv client"""
@@ -225,6 +343,8 @@ class ResearchExtractor:
             return []
 
         try:
+            import arxiv  # noqa: F811 — lazy import matching _get_arxiv_client
+
             search_query = " AND ".join(query.keywords)
             search = arxiv.Search(
                 query=search_query,
@@ -250,7 +370,7 @@ class ResearchExtractor:
 
             return papers
         except Exception as e:
-            print(f"arXiv search error: {e}")
+            logger.warning("arXiv search error: %s", e)
             return []
 
     def search_by_keyword(self, keyword: str, max_results: int = 10) -> List[Dict]:
@@ -288,7 +408,12 @@ class ResearchExtractor:
     def find_papers_for_code_pattern(
         self, code_pattern: str, language: str = "python"
     ) -> List[Dict]:
-        """Find papers relevant to a code pattern"""
+        """Find papers relevant to a code pattern.
+
+        First checks the local keyword → spec mapping.  When an LLM
+        assistant is available *and* the local lookup returned nothing,
+        falls back to LLM-based code analysis for richer suggestions.
+        """
         pattern_lower = code_pattern.lower()
 
         mapping = {
@@ -306,7 +431,7 @@ class ResearchExtractor:
             "moe": ["mistral"],
         }
 
-        results = []
+        results: List[Dict] = []
         for key, spec_names in mapping.items():
             if key in pattern_lower:
                 for spec_name in spec_names:
@@ -321,7 +446,32 @@ class ResearchExtractor:
                             }
                         )
 
+        # LLM enhancement: if local lookup returned nothing, ask the LLM
+        if not results and self._llm is not None and self._llm.is_available:
+            try:
+                analysis = self._llm.analyse_code(
+                    code_pattern,
+                    language=language,
+                    focus="ML research improvements",
+                )
+                if analysis is not None:
+                    for opp in analysis.improvement_opportunities:
+                        results.append(
+                            {
+                                "name": opp.get("suggested_improvement", "unknown"),
+                                "title": opp.get("paper_reference", ""),
+                                "match_reason": opp.get("description", "LLM suggestion"),
+                                "category": "llm_suggested",
+                            }
+                        )
+            except Exception as exc:
+                logger.debug("LLM code pattern analysis failed: %s", exc)
+
         return results
+
+    # ------------------------------------------------------------------
+    # Extraction entry point
+    # ------------------------------------------------------------------
 
     def extract(self, source: str, source_type: str = "pdf") -> Dict:
         """Extract research specification (backward compatible)"""
@@ -332,7 +482,41 @@ class ResearchExtractor:
         else:
             return self._extract_from_known_paper(source)
 
+    # ------------------------------------------------------------------
+    # PDF extraction — LLM-powered with hardcoded fallback
+    # ------------------------------------------------------------------
+
     def _extract_from_pdf(self, pdf_path: str) -> Dict:
+        """Extract an implementation spec from a PDF file.
+
+        Strategy:
+        1. Try to read the PDF text.
+        2. If text is available and an LLM is configured, use the LLM to
+           extract a structured spec.
+        3. Fall back to the hardcoded RMSNorm spec (legacy behaviour).
+        """
+        # Step 1: attempt PDF text extraction
+        paper_text = _read_pdf_text(pdf_path)
+
+        # Step 2: LLM-powered extraction
+        if paper_text and self._llm is not None and self._llm.is_available:
+            try:
+                extracted = self._llm.extract_paper_spec(
+                    paper_text,
+                    paper_title=Path(pdf_path).stem.replace("_", " ").replace("-", " "),
+                )
+                if extracted is not None:
+                    spec = _extracted_spec_to_dict(extracted)
+                    # Register the new spec so subsequent lookups find it
+                    key = _spec_key(spec)
+                    if key:
+                        self.specs[key] = spec
+                        logger.info("LLM-extracted spec registered as '%s'", key)
+                    return spec
+            except Exception as exc:
+                logger.warning("LLM PDF extraction failed, using fallback: %s", exc)
+
+        # Step 3: hardcoded fallback
         return {
             "paper": {
                 "title": "Root Mean Square Layer Normalization",
@@ -365,12 +549,46 @@ class ResearchExtractor:
             },
         }
 
+    # ------------------------------------------------------------------
+    # arXiv extraction — enhanced with abstract fetch + LLM
+    # ------------------------------------------------------------------
+
     def _extract_from_arxiv(self, arxiv_id: str) -> Dict:
+        """Extract spec from an arXiv identifier.
+
+        Strategy:
+        1. Check local specs for a matching arXiv ID.
+        2. Fetch the abstract from arXiv and use the LLM.
+        3. Fall back to ``_extract_from_pdf`` (hardcoded default).
+        """
         arxiv_id_clean = arxiv_id.strip().lower()
 
+        # Step 1: check local registry
         for key, spec in self.specs.items():
             if key in arxiv_id_clean or spec["paper"].get("arxiv", "") in arxiv_id_clean:
                 return spec
+
+        # Step 2: fetch abstract and try LLM extraction
+        if self._llm is not None and self._llm.is_available:
+            abstract = _fetch_arxiv_abstract(arxiv_id)
+            if abstract:
+                try:
+                    extracted = self._llm.extract_paper_spec(
+                        abstract,
+                        paper_title=f"arXiv:{arxiv_id}",
+                    )
+                    if extracted is not None:
+                        spec = _extracted_spec_to_dict(extracted)
+                        key = _spec_key(spec)
+                        if key:
+                            self.specs[key] = spec
+                            logger.info(
+                                "LLM-extracted arXiv spec registered as '%s'",
+                                key,
+                            )
+                        return spec
+                except Exception as exc:
+                    logger.warning("LLM arXiv extraction failed for %s: %s", arxiv_id, exc)
 
         return self._extract_from_pdf(arxiv_id)
 
@@ -385,6 +603,10 @@ class ResearchExtractor:
                 return spec
 
         return self._extract_from_pdf(paper_name)
+
+    # ------------------------------------------------------------------
+    # Templates and accessors (unchanged public interface)
+    # ------------------------------------------------------------------
 
     def _get_rmsnorm_template(self) -> str:
         return """class RMSNorm(nn.Module):
@@ -419,10 +641,42 @@ class ResearchExtractor:
 
     def get_categories(self) -> Dict[str, List[str]]:
         """Get all available categories for filtering"""
-        categories = {}
+        categories: Dict[str, List[str]] = {}
         for name, spec in self.specs.items():
             cat = spec.get("algorithm", {}).get("category", "other")
             if cat not in categories:
                 categories[cat] = []
             categories[cat].append(name)
         return categories
+
+
+# ---------------------------------------------------------------------------
+# Helpers for converting LLM output → spec dict
+# ---------------------------------------------------------------------------
+
+
+def _extracted_spec_to_dict(extracted: Any) -> Dict[str, Any]:
+    """Convert an ``ExtractedSpec`` dataclass into the dict format
+    that ``PAPER_SPECS`` uses."""
+    return {
+        "paper": extracted.paper if isinstance(extracted.paper, dict) else {},
+        "algorithm": extracted.algorithm if isinstance(extracted.algorithm, dict) else {},
+        "implementation": (
+            extracted.implementation if isinstance(extracted.implementation, dict) else {}
+        ),
+        "changes": extracted.changes if isinstance(extracted.changes, dict) else {},
+        "validation": extracted.validation if isinstance(extracted.validation, dict) else {},
+    }
+
+
+def _spec_key(spec: Dict[str, Any]) -> str:
+    """Derive a lowercase registry key from a spec dict."""
+    alg_name = spec.get("algorithm", {}).get("name", "")
+    if alg_name:
+        return alg_name.lower().replace(" ", "_").replace("-", "_")
+    title = spec.get("paper", {}).get("title", "")
+    if title:
+        # Use first meaningful word
+        words = [w.lower() for w in title.split() if len(w) > 3]
+        return "_".join(words[:2]) if words else ""
+    return ""

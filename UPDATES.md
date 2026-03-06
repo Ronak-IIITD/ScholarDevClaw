@@ -4,6 +4,55 @@
 
 **Last updated:** 2026-03-06
 
+### 2026-03-06 (Phase 4: Wire LLM Module Into Pipeline)
+
+**Goal:** Connect the LLM client to the research intelligence modules so that paper extraction, code analysis, and web research use real AI instead of hardcoded stubs.
+
+**Summary:** Created `LLMResearchAssistant` — a high-level wrapper around `LLMClient` with structured prompts for research-specific tasks. Wired it into `ResearchExtractor` and `WebResearchEngine` with graceful offline fallback. Fixed the sync/async bug in `extract_code_from_url()` and implemented the previously stubbed `analyze_github_repo()` and `find_implementation_references()` methods. All 851 tests pass.
+
+**New: `llm/research_assistant.py`** (~380 lines):
+- `LLMResearchAssistant`: high-level research assistant wrapping `LLMClient`
+- `extract_paper_spec()`: extracts structured implementation specs from paper text via LLM with JSON schema enforcement
+- `analyse_code()`: analyses code snippets for ML research improvement opportunities
+- `generate_implementation_plan()`: creates step-by-step integration plans from paper spec + code context
+- `summarise_search_results()`: produces concise summaries of web/GitHub search results
+- `analyse_github_repo_content()`: analyses fetched GitHub repo files for relevant implementations
+- `_extract_json()`: robust JSON extraction from LLM output (handles fenced blocks, embedded JSON, raw JSON)
+- `_auto_detect_client()`: auto-detects LLM provider from environment variables (9 providers + Ollama)
+- `LLMResearchAssistant.create()`: factory that never raises — returns offline assistant when no credentials found
+- `ExtractedSpec`, `CodeAnalysis`, `ImplementationPlan`: typed result dataclasses
+
+**Updated: `research_intelligence/extractor.py`** (rewritten, ~480 lines):
+- `ResearchExtractor.__init__()`: accepts optional `llm_assistant` parameter
+- `_extract_from_pdf()`: now tries LLM-powered extraction first (reads PDF text via PyPDF2/pdfminer, sends to LLM), falls back to hardcoded RMSNorm spec
+- `_extract_from_arxiv()`: enhanced to fetch abstract via arXiv Atom API + LLM extraction before falling back
+- `find_papers_for_code_pattern()`: falls back to LLM code analysis when local keyword mapping returns nothing
+- New helper `_read_pdf_text()`: best-effort PDF text extraction (PyPDF2 → pdfminer fallback)
+- New helper `_fetch_arxiv_abstract()`: lightweight sync abstract fetch via arXiv Atom feed API
+- New helpers `_extracted_spec_to_dict()`, `_spec_key()`: convert LLM output to spec registry format
+- LLM-extracted specs auto-register in the spec registry for subsequent lookups
+- All existing public interfaces preserved — backward compatible
+
+**Updated: `research_intelligence/web_research.py`** (rewritten, ~450 lines):
+- **Fixed: `extract_code_from_url()`** — was calling synchronous `.get()` on async httpx client; now properly `await`ed. Added gist URL support.
+- **Implemented: `find_implementation_references()`** — was returning empty list; now searches GitHub + Papers with Code across multiple query variations, deduplicates results, sorts by relevance
+- **Implemented: `analyze_github_repo()`** — was returning stub dict; now fetches repo metadata + tree via GitHub API, identifies key files, and optionally uses LLM to analyse fetched file contents
+- `WebResearchEngine.__init__()`: accepts optional `llm_assistant` parameter
+- `SyncWebResearchEngine`: expanded with sync wrappers for all new async methods
+- Added `extract_code_from_url_sync()` for backward-compatible synchronous usage
+- Replaced bare `print()` calls with proper `logging.getLogger()` usage throughout
+
+**Updated: `llm/__init__.py`**:
+- Added exports: `LLMResearchAssistant`, `ExtractedSpec`, `CodeAnalysis`, `ImplementationPlan`
+
+**Files modified (4):**
+- `core/src/scholardevclaw/llm/research_assistant.py` (NEW)
+- `core/src/scholardevclaw/research_intelligence/extractor.py`
+- `core/src/scholardevclaw/research_intelligence/web_research.py`
+- `core/src/scholardevclaw/llm/__init__.py`
+
+**Verified:** All 851 tests pass.
+
 ### 2026-03-06 (Phase 3: Real Tree-Sitter AST Extraction)
 
 **Goal:** Replace empty `_extract_elements_from_tree()` and `_extract_imports_from_tree()` stubs with production-quality AST walking for 6 languages.

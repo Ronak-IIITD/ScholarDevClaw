@@ -37,6 +37,12 @@ from .confidence import (
     UncertaintyEstimator,
     quick_confidence,
 )
+from .research_assistant import (
+    LLMResearchAssistant,
+    ExtractedSpec,
+    CodeAnalysis,
+    ImplementationPlan,
+)
 
 __all__ = [
     # Client
@@ -73,4 +79,9 @@ __all__ = [
     "AdaptiveConfidence",
     "UncertaintyEstimator",
     "quick_confidence",
+    # Research Assistant
+    "LLMResearchAssistant",
+    "ExtractedSpec",
+    "CodeAnalysis",
+    "ImplementationPlan",
 ]
