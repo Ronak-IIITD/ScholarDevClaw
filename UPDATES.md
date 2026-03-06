@@ -4,6 +4,63 @@
 
 **Last updated:** 2026-03-06
 
+### 2026-03-06 (Phase 7: Expand Patch Generator — 15 Templates + LLM Synthesis)
+
+**Goal:** Replace the hardcoded 2-algorithm patch generator with a production-quality system supporting 15 code templates, 10+ CST transformers, and LLM synthesis fallback for arbitrary algorithms.
+
+**Summary:** Rewrote `generator.py` from 303 lines to ~1381 lines. The patch generator now uses a registry-based architecture with `_TEMPLATE_REGISTRY` (15 compilable Python code templates) and `_TRANSFORMER_REGISTRY` (10+ libcst-based code transformers). When no template or transformer matches, the generator falls back to LLM-powered code synthesis via `LLMResearchAssistant`. Also fixed `discover_specs_for_repo()` call in `tree_sitter_analyzer.py` to pass `dict(analysis.patterns)` instead of `list(analysis.patterns.keys())`. All 851 tests pass.
+
+**New: `_TEMPLATE_REGISTRY` (15 code templates):**
+- All templates are validated-compilable Python code
+- Normalization: `rmsnorm` (RMSNorm layer), `dropout_variants` (multi-strategy dropout)
+- Activation/FFN: `swiglu` (SwiGLU gated FFN), `geglu` (GEGLU gated FFN)
+- Attention: `flashattention` (FlashAttention), `flashattention2` (FlashAttention-2), `grouped_query_attention` (GQA), `qknorm` (QK-Normalized attention)
+- Positional encoding: `rope` (Rotary Position Embeddings), `alibi` (ALiBi)
+- Architecture: `preln_transformer` (Pre-LayerNorm transformer block), `mistral` (Mistral-style block with SWA + RMSNorm + SwiGLU)
+- Optimizer: `lion` (Lion optimizer), `weight_decay_fused` (fused AdamW), `cosine_warmup` (cosine annealing with warmup)
+
+**New: `_TRANSFORMER_REGISTRY` (10+ CST transformers):**
+- All transformers use libcst for safe AST-level code modification
+- Each transformer tracks its changes via `.changes: List[Dict]`
+- `RMSNormTransformer` — renames LayerNorm → RMSNorm (class definitions + references)
+- `SwiGLUTransformer` — renames MLP → SwiGLU, swaps GELU → SiLU inside MLP classes
+- `GEGLUTransformer` — renames MLP → GEGLU, swaps GELU → gated GELU
+- `FlashAttentionTransformer` — renames CausalSelfAttention → FlashCausalSelfAttention
+- `GQATransformer` — renames CausalSelfAttention/MultiHeadAttention → GroupedQueryAttention
+- `QKNormTransformer` — prefixes attention classes with "QKNorm"
+- `PreLNTransformer` — renames Block → PreLNBlock
+- `RoPETransformer` — renames positional embedding refs to rotary variants
+- `ALiBiTransformer` — renames positional embedding refs to ALiBi variants
+- `GenericRenameTransformer` — fallback that renames any class/function/name
+
+**New: `_get_transformer()` dispatcher:**
+- Looks up algorithm key in `_TRANSFORMER_REGISTRY`
+- Tries prefix matching if exact key not found
+- Falls back to `GenericRenameTransformer` for unknown algorithms
+
+**Enhanced: `PatchGenerator`:**
+- Accepts optional `llm_assistant` parameter for LLM synthesis fallback
+- `_create_new_files()` — looks up template from `_TEMPLATE_REGISTRY`, falls back to `_synthesise_with_llm()`
+- `_synthesise_with_llm()` — uses `generate_implementation_plan()` then `analyse_code()` as fallback
+- `_apply_transformation()` — uses `_get_transformer()` dispatcher instead of hardcoded if/elif
+- All `print()` calls replaced with `logging.getLogger(__name__)`
+
+**Fixed: `visit_ClassDef` return type:**
+- In libcst, `visit_*` methods must return `bool | None`, NOT the node
+- Changed `return node` → `return True` with `Optional[bool]` type hint across all transformers
+
+**Fixed: `discover_specs_for_repo()` call in `tree_sitter_analyzer.py`:**
+- Was passing `list(analysis.patterns.keys())` (a `List[str]`)
+- `discover_specs_for_repo()` expects `patterns: Dict[str, List[str]]`
+- Fixed to `dict(analysis.patterns)` to pass the full pattern→locations mapping
+
+**Files modified (3):**
+- `core/src/scholardevclaw/patch_generation/generator.py` (rewritten: 303 → 1381 lines)
+- `core/src/scholardevclaw/patch_generation/__init__.py` (expanded exports)
+- `core/src/scholardevclaw/repo_intelligence/tree_sitter_analyzer.py` (fixed `discover_specs_for_repo` call)
+
+**Verified:** All 851 tests pass.
+
 ### 2026-03-06 (Phase 6: Make Research Knowledge Base Dynamic)
 
 **Goal:** Transform the static, hardcoded research knowledge base into a dynamic system that discovers and registers new paper specs at runtime via broader local search, arXiv HTTP fallback, and LLM-powered extraction.

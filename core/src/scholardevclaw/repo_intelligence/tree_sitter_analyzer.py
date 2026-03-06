@@ -1849,7 +1849,7 @@ class TreeSitterAnalyzer:
         if llm_assistant is not None:
             try:
                 extractor.discover_specs_for_repo(
-                    patterns=list(analysis.patterns.keys()),
+                    patterns=dict(analysis.patterns),
                     frameworks=list(analysis.frameworks),
                 )
             except Exception:

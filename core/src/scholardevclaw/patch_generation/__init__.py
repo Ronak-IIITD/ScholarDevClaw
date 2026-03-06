@@ -1,4 +1,4 @@
 # Patch Generation module
-from .generator import PatchGenerator
+from .generator import NewFile, Patch, PatchGenerator, Transformation
 
-__all__ = ["PatchGenerator"]
+__all__ = ["NewFile", "Patch", "PatchGenerator", "Transformation"]
