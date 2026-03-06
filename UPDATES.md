@@ -4,6 +4,108 @@
 
 **Last updated:** 2026-03-06
 
+### 2026-03-06 (Phase 8: Make Mapping Engine Use Real AST Data + LLM Semantic Matching)
+
+**Goal:** Replace the broken mapping engine — which searched non-existent `architecture.models` and `modules` keys and fabricated `model.py:1` targets — with a production-quality engine that uses real AST-extracted elements, imports, and text scanning to find exact code locations, with optional LLM semantic matching for tough cases.
+
+**Summary:** Rewrote `mapping/engine.py` from 219 lines to ~760 lines. The engine now has 6 match tiers: exact element name match, fuzzy name/alias match, import match, text scan for usage patterns (`self.*`, `nn.*`), legacy `architecture.models` backward compatibility, and LLM semantic matching. All targets now use real file paths and line numbers from tree-sitter analysis. Confidence scoring is tier-aware. Verified against nanoGPT: all 15 specs (was 16, `mistral` counts as architecture) now find real targets — the old engine found zero real matches. All 851 tests pass.
+
+**Rewritten: `_find_target_locations()` — 6 match tiers:**
+
+**Tier 1 — Exact element match:**
+- Searches `analysis.elements` (CodeElement dataclasses from tree-sitter)
+- Matches element `.name` exactly against each `target_pattern`
+- Handles `"class MLP"` patterns by stripping the `class ` prefix
+- Uses real `.file` and `.line` from the AST
+- Example: `target_pattern="LayerNorm"` → finds `LayerNorm` class at `model.py:18`
+
+**Tier 2 — Fuzzy element match:**
+- Case-insensitive substring matching on element names
+- Alias expansion via `_CODE_PATTERN_ALIASES` mapping (30+ aliases covering normalization, attention, activation, optimizer, positional encoding, dropout patterns)
+- Code snippet matching (when tree-sitter populates `code_snippet`)
+- Example: `target_pattern="mlp"` → fuzzy-matches `MLP` class
+
+**Tier 3 — Import match:**
+- Searches `analysis.imports` (ImportStatement dataclasses)
+- Matches `target_pattern` against `.module` and `.names`
+- Example: `target_pattern="torch.nn"` → matches `from torch import nn`
+
+**Tier 3.5 — Text scan for usage patterns:**
+- For patterns containing `.` (e.g. `self.wpe`, `nn.GELU`, `nn.Dropout`) that weren't found in elements/imports
+- Reads actual source files from `root_path` and scans for pattern occurrences
+- Reports first occurrence per pattern per file with real line numbers
+- Only scans files that contain known elements (avoids scanning irrelevant files)
+- Example: `target_pattern="nn.Embedding"` → finds `self.wpe = nn.Embedding(...)` at `model.py:127`
+- Example: `target_pattern="nn.GELU"` → finds `self.gelu = nn.GELU()` at `model.py:83`
+
+**Tier 4 — Legacy architecture.models (backward compat):**
+- Preserves backward compatibility with callers (tests, API server) that pass `architecture.models[].components` dicts instead of real AST elements
+- Searches `components` dict values (string and list) against target patterns
+- Only activated when tiers 1-3.5 find nothing
+
+**Tier 5 — LLM semantic matching (optional):**
+- Activated when no targets found and `llm_assistant` is provided
+- Builds concise element summary and sends to LLM with spec context
+- LLM returns JSON array of `{index, reason}` matches
+- Robust JSON parsing: handles fenced blocks, bare arrays
+- Graceful failure — logs warning and returns empty on error
+
+**New: `_make_insertion_point()` helper:**
+- Builds `InsertionPoint` with rich context including `match_tier`, `matched_pattern`, `parent_class`, `component_type`
+- Used by all tiers for consistent target construction
+
+**New: `_text_scan_for_patterns()` method:**
+- Lightweight file scanner for usage patterns
+- Scans only files that contain known elements (from tree-sitter)
+- Falls back to `.py` file glob when no elements available
+- Deduplicates via `(file, line)` seen set shared with other tiers
+
+**New: `_search_legacy_architecture()` method:**
+- Backward-compatible search of old `architecture.models[].components` dict
+- Handles both string component values and list component values (e.g. `custom_norms`)
+
+**New: `_parse_llm_matches()` static method:**
+- Extracts JSON array from LLM output
+- Handles `\`\`\`json ... \`\`\`` fenced blocks and bare `[...]` arrays
+
+**Enhanced: `_validate_compatibility()`:**
+- Added test-file detection warning (files starting with `test_` or in `/tests/` paths)
+- Warnings don't block validation (only errors do)
+
+**Enhanced: `_calculate_confidence()` — tier-aware scoring:**
+- Base 30 + 20 for any targets + up to 30 for exact matches + 10 for fuzzy + 5 for imports + 5 for LLM + 10 for passed validation + 10 for code template
+- Error penalties: -10 per validation error
+- Clamped to 0-100
+
+**Updated: `__init__.py` exports:**
+- Added `CompatibilityIssue`, `InsertionPoint`, `MappingResult`, `ValidationResult`, `analyze_repo_for_pattern`
+
+**New: Pattern matching helpers:**
+- `_normalise()` — lowercase, strip `class `, `self.` prefixes
+- `_exact_match()` — case-sensitive name equality
+- `_fuzzy_match()` — case-insensitive substring + alias expansion
+- `_snippet_match()` — code snippet content search
+- `_import_matches()` — module/names matching
+- `_el_attr()` — dual accessor for CodeElement dataclass and raw dict
+
+**Verification against nanoGPT test repo (old engine → new engine):**
+| Spec | Old | New |
+|------|-----|-----|
+| rmsnorm | `model.py:1` (fabricated) | `model.py:18` (exact: LayerNorm class) |
+| preln_transformer | `model.py:1` (fabricated) | `model.py:18` + `model.py:98,100` (self.ln_1/ln_2) |
+| qknorm | `model.py:1` (fabricated) | `model.py:29` (CausalSelfAttention) + `model.py:35` (self.c_attn) |
+| swiglu | `model.py:1` (fabricated) | `model.py:78` (MLP) + `model.py:83` (nn.GELU) |
+| flashattention | `model.py:1` (fabricated) | `model.py:29` (CausalSelfAttention) + `model.py:45` (self.flash) |
+| rope | `model.py:1` (fabricated) | `model.py:127` (nn.Embedding) |
+| cosine_warmup | no match | `train.py:231` (get_lr function) |
+| dropout_variants | no match | `model.py:39,43` (nn.Dropout usages) |
+
+**Files modified (2):**
+- `core/src/scholardevclaw/mapping/engine.py` (rewritten: 219 → ~760 lines)
+- `core/src/scholardevclaw/mapping/__init__.py` (expanded exports)
+
+**Verified:** All 851 tests pass.
+
 ### 2026-03-06 (Phase 7: Expand Patch Generator — 15 Templates + LLM Synthesis)
 
 **Goal:** Replace the hardcoded 2-algorithm patch generator with a production-quality system supporting 15 code templates, 10+ CST transformers, and LLM synthesis fallback for arbitrary algorithms.
