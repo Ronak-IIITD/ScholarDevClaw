@@ -4,6 +4,32 @@
 
 **Last updated:** 2026-03-06
 
+### 2026-03-06 (Phase 2: Fix Runtime Bugs in Pipeline)
+
+**Goal:** Fix runtime crashes in the core pipeline that would occur when actually executing `run_search()` with arXiv results.
+
+**Summary:** Two bugs in `application/pipeline.py` fixed. Both were in the arXiv paper serialization block inside `run_search()`. All 851 tests pass.
+
+**Fixed: `pipeline.py` line 300** — `p.published.isoformat()` on a string:
+- The `Paper` dataclass defines `published: Optional[str]` (a string, not a datetime)
+- Calling `.isoformat()` on a string would crash with `AttributeError`
+- Fixed to: `p.published if p.published else None`
+
+**Fixed: `pipeline.py` line 301** — `p.summary` on a Paper that has `abstract`:
+- The `Paper` dataclass has an `abstract` field, not `summary`
+- Accessing `p.summary` would crash with `AttributeError`
+- Fixed to: `p.abstract`
+
+**Investigated and confirmed correct:** `pipeline.py` line 734 — `paper["name"]` lookup:
+- `find_papers_for_code_pattern()` returns dicts with `{"name": spec_name, ...}` where `name` is the spec lookup key
+- `suggest_research_papers()` wraps those as `{"paper": paper_dict, ...}`
+- So `suggestions[0]["paper"]["name"]` correctly retrieves the spec key — no bug here
+
+**Files modified (1):**
+- `core/src/scholardevclaw/application/pipeline.py`
+
+**Verified:** All 851 tests pass.
+
 ### 2026-03-06 (Phase 1: Auth Restructure + LLM Multi-Provider Client)
 
 **Goal:** Separate LLM providers from identity providers, support login through any LLM provider, and create a real HTTP-based LLM client for all supported providers.

@@ -297,8 +297,8 @@ def run_search(
                     "categories": p.categories,
                     "arxiv_id": p.arxiv_id,
                     "pdf_url": p.pdf_url,
-                    "published": p.published.isoformat() if getattr(p, "published", None) else None,
-                    "summary": p.summary,
+                    "published": p.published if p.published else None,
+                    "summary": p.abstract,
                 }
                 for p in arxiv_papers
             ]
