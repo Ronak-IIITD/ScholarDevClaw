@@ -43,6 +43,8 @@
 
 **Fix:** Terminal execution now async-safe inside REPL slash commands (no nested event loop errors).
 
+**Update:** AdvancedShell now supports async command execution for live terminal workflows.
+
 **Goal:** Add built-in slash commands like in modern coding agents (Claude Code, Codex).
 
 **Added: Slash command handling** (`core/src/scholardevclaw/agent/repl.py`):
