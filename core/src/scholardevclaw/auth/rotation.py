@@ -337,7 +337,26 @@ class RotationScheduler:
                 continue
 
             try:
-                provider = get_rotation_provider(policy.provider, "")
+                # SECURITY: Retrieve the actual current API key for the provider
+                # instead of passing an empty string
+                current_key = (
+                    self.auth_store.get_api_key(policy.provider) if self.auth_store else None
+                )
+                api_key_value = (
+                    current_key.get("key", "")
+                    if current_key and isinstance(current_key, dict)
+                    else ""
+                )
+                if not api_key_value:
+                    results.append(
+                        RotationResult(
+                            success=False,
+                            key_id=policy.key_id,
+                            error="No current API key available for rotation provider",
+                        )
+                    )
+                    continue
+                provider = get_rotation_provider(policy.provider, api_key_value)
                 new_key, _ = provider.get_new_key()
                 result = self.execute_rotation(policy, new_key)
                 results.append(result)
@@ -371,7 +390,9 @@ class RotationScheduler:
         return list(reversed(history))
 
     def _log_rotation(self, policy: RotationPolicy, result: RotationResult) -> None:
-        """Log a rotation event."""
+        """Log a rotation event using atomic write."""
+        import tempfile
+
         entry = {
             "policy_id": policy.id,
             "key_id": result.key_id,
@@ -384,9 +405,28 @@ class RotationScheduler:
             "timestamp": datetime.now().isoformat(),
         }
 
-        with open(self.rotation_log_file, "a") as f:
-            f.write(json.dumps(entry) + "\n")
-        os.chmod(self.rotation_log_file, 0o600)
+        line = json.dumps(entry) + "\n"
+
+        # SECURITY: Atomic append — write to temp file then rename to avoid TOCTOU
+        # For append-only logs, read existing + append + atomic write
+        existing = ""
+        if self.rotation_log_file.exists():
+            existing = self.rotation_log_file.read_text()
+
+        fd, tmp_path = tempfile.mkstemp(dir=self.store_dir, prefix=".rotation_log_tmp_")
+        try:
+            os.write(fd, (existing + line).encode())
+            os.close(fd)
+            os.chmod(tmp_path, 0o600)
+            os.rename(tmp_path, str(self.rotation_log_file))
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
 
     def _load_policies(self) -> dict[str, Any]:
         if not self.policies_file.exists():

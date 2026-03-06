@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, FastAPI, Request, Response
 from pydantic import BaseModel
 
@@ -139,7 +141,24 @@ def create_github_app_router(
         )
 
     @router.get("/repos/{owner}/{repo}")
-    async def get_repo(owner: str, repo: str):
+    async def get_repo(owner: str, repo: str, request: Request):
+        # SECURITY: Require authentication on this endpoint
+        # Check for a valid token in the Authorization header
+        auth_header = request.headers.get("Authorization", "")
+        expected_token = os.environ.get("SCHOLARDEVCLAW_API_AUTH_KEY", "")
+        if not expected_token:
+            return WebhookResponse(
+                status=503,
+                message="Service unavailable",
+                error="API authentication not configured on server",
+            )
+        if not auth_header.startswith("Bearer ") or auth_header[7:] != expected_token:
+            return WebhookResponse(
+                status=401,
+                message="Unauthorized",
+                error="Valid Bearer token required",
+            )
+
         repo_obj = client.get_repository(owner, repo)
         if not repo_obj:
             return {"error": "Repository not found"}, 404

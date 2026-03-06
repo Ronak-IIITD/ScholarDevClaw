@@ -159,6 +159,9 @@ export class DAGEngine {
     });
 
     try {
+      const MAX_IDLE_ITERATIONS = 1000; // SECURITY: prevent infinite loop when nodes stuck
+      let idleIterations = 0;
+
       while (true) {
         if (this.abortController.signal.aborted) {
           this.state.status = 'failed';
@@ -174,9 +177,22 @@ export class DAGEngine {
           );
           if (allDone) break;
 
+          idleIterations++;
+          if (idleIterations >= MAX_IDLE_ITERATIONS) {
+            const stuckNodes = Array.from(this.nodes.values())
+              .filter(n => n.status === 'pending' || n.status === 'running')
+              .map(n => n.id);
+            this.state.status = 'failed';
+            this.state.error = `Workflow stalled: nodes [${stuckNodes.join(', ')}] stuck after ${MAX_IDLE_ITERATIONS} idle iterations`;
+            logger.error(this.state.error);
+            break;
+          }
+
           await new Promise(resolve => setTimeout(resolve, 100));
           continue;
         }
+
+        idleIterations = 0; // Reset on progress
 
         const parallelNodes = readyNodes.filter(n => n.parallel);
         const sequentialNodes = readyNodes.filter(n => !n.parallel);

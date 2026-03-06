@@ -2,7 +2,61 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-03
+**Last updated:** 2026-03-06
+
+### 2026-03-06 (Comprehensive Security Audit — Phase 2)
+
+**Goal:** Bug-bounty-style security audit across the entire codebase. Find and fix all potential vulnerabilities in Python core, TypeScript agent, Convex state layer, Docker infrastructure, and Nginx configuration.
+
+**Summary:** 77+ vulnerabilities identified across 5 audit streams. 42+ fixes applied across 24 files. All 851 tests passing.
+
+**CRITICAL Fixes:**
+- `server.py`: API key comparison changed from `!=` to `hmac.compare_digest()` (timing attack); startup warning when no API key configured; auth-exempt paths use prefix matching; `/metrics` added to exempt set; warning when path confinement dirs not configured
+- `config.ts`: Removed hardcoded `'dev-token'` fallback; replaced with empty string + console warning
+- `docker-compose.prod.yml`: Grafana credentials now required via env vars (no more `admin/admin`); monitoring/API ports changed from host-exposed `ports` to internal `expose`
+- `webhooks.ts`: SSRF protection with URL validation + private IP blocking; fetch timeout; max webhook limit; header redaction in `list()`
+
+**HIGH Fixes:**
+- `run-store.ts`: Path traversal prevention via `validatePathId()` on run IDs
+- `store.ts` (workflow): `validateWorkflowId()` wired into `getFilePath()`
+- `orchestrator.ts`: Prototype pollution fix (env var allowlist sanitization); `Math.random()` replaced with `crypto.randomUUID()` for run IDs; warning log for auto-approve without Convex
+- `python-subprocess.ts`: 5-minute subprocess kill timer with settled guard
+- `engine.ts`: Max 1000 idle iterations guard with stuck node reporting
+- `integrations-mutations.ts`: `ALLOWED_STATUSES` set for `updateStatus`; `ALLOWED_PHASE_FIELDS` set for `savePhaseResult`; field injection prevention
+- `oauth.py`: Atomic write via `tempfile` + `os.rename()` for `save_token()` and `remove_token()`; added `_pending_state` tracking in `start_flow()`
+- `encryption.py`: Salt file deleted on `disable()`; FD leak fixed with `try/except OSError` instead of `os.get_inheritable()`
+- `rotation.py`: `auto_rotate_due_keys()` retrieves actual API key from auth_store (was empty string); `_log_rotation()` uses atomic write
+- `webhook.py`: Both `str(e)` instances replaced with generic error messages (no exception detail leakage)
+- `client.py`: 30s default timeout on `_api_request()`; `_sanitize_path_component()` regex validator applied to `get_repository`, `get_pull_request`, `get_branch`
+- `github_app/server.py`: `/repos/{owner}/{repo}` endpoint now requires Bearer token auth via `SCHOLARDEVCLAW_API_AUTH_KEY`
+- `errors.py`: `format_error_response()` returns generic error by default (type/message only in debug mode); `ErrorContext.__exit__` no longer logs full tracebacks
+
+**MEDIUM Fixes:**
+- `nginx.conf`: Added `server_tokens off`; Content-Security-Policy header; HSTS with `includeSubDomains` + `preload`; Referrer-Policy header; body limit reduced from 100M to 10M; `/docs` restricted to internal networks
+- `docs.py`: `from pydantic import BaseModel` moved to top of file (was imported after use); auth docs updated to reflect auth requirement; exception handler no longer leaks `type(exc).__name__`
+- `.gitignore`: Added `auth.json`, `*.salt`, `*.pem`, `docker/.env`, `oauth_tokens.json`, `rotation_policies.json`, `rotation_log.jsonl`
+- `docker-compose.yml`: Convex port changed from `ports` to `expose`
+- `logger.ts`: 10K entry cap with oldest-first eviction
+- `health.ts`: `checkEventLoop()` rewritten as synchronous (removed unsafe `Promise as unknown as HealthStatus` cast)
+
+**LOW Fixes:**
+- `Dockerfile.core`: Removed `curl` from production image; health check uses `python -c "import urllib.request; ..."`
+- `Dockerfile.agent`: Bun version pinned to `1.1.42`
+
+**Files modified (24):**
+- `core/src/scholardevclaw/api/server.py`, `docs.py`
+- `core/src/scholardevclaw/auth/encryption.py`, `oauth.py`, `rotation.py`
+- `core/src/scholardevclaw/github_app/client.py`, `server.py`, `webhook.py`
+- `core/src/scholardevclaw/utils/errors.py`
+- `agent/src/bridges/python-subprocess.ts`
+- `agent/src/orchestrator.ts`
+- `agent/src/utils/config.ts`, `health.ts`, `logger.ts`, `run-store.ts`
+- `agent/src/workflow/engine.ts`, `store.ts`, `webhooks.ts`
+- `convex/integrations-mutations.ts`
+- `docker/docker-compose.yml`, `docker-compose.prod.yml`, `Dockerfile.core`, `Dockerfile.agent`, `nginx.conf`
+- `.gitignore`
+
+**Verified:** All 851 tests pass.
 
 ### 2026-03-03 (Agent Capabilities — Planning, Context, Fix/Test, Summaries)
 

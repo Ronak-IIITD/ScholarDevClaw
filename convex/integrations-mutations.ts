@@ -21,6 +21,11 @@ export const create: Mutation = async ({ db }, args: {
   return id;
 };
 
+// SECURITY: Allowed status values to prevent arbitrary state injection
+const ALLOWED_STATUSES = new Set([
+  "pending", "running", "awaiting_approval", "completed", "failed", "cancelled",
+]);
+
 export const updateStatus: Mutation = async ({ db }, args: {
   id: string;
   status: string;
@@ -29,6 +34,10 @@ export const updateStatus: Mutation = async ({ db }, args: {
   guardrailReasons?: string[];
   updatedAt: number;
 }) => {
+  // SECURITY: Validate status against allowlist
+  if (!ALLOWED_STATUSES.has(args.status)) {
+    throw new Error(`Invalid status: ${args.status}`);
+  }
   await db.patch(args.id as any, {
     status: args.status,
     currentPhase: args.currentPhase,
@@ -38,12 +47,23 @@ export const updateStatus: Mutation = async ({ db }, args: {
   });
 };
 
+// SECURITY: Whitelist allowed fields to prevent arbitrary field injection
+const ALLOWED_PHASE_FIELDS = new Set([
+  "repoAnalysis", "researchSpec", "mapping", "patch", "validation", "report",
+  "confidence", "phaseLogs",
+]);
+
 export const savePhaseResult: Mutation = async ({ db }, args: {
   id: string;
   field: string;
   result: any;
   updatedAt: number;
 }) => {
+  // SECURITY: Reject fields not in the allowlist (prevents prototype pollution / field injection)
+  if (!ALLOWED_PHASE_FIELDS.has(args.field)) {
+    throw new Error(`Disallowed field: ${args.field}`);
+  }
+
   const update: Record<string, any> = {
     updatedAt: args.updatedAt,
   };

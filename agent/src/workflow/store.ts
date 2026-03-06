@@ -1,7 +1,23 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { dirname } from 'path';
+import { dirname, join } from 'path';
 import { WorkflowState, NodeResult } from './types.js';
+
+/**
+ * Validate that an ID is safe for use in filesystem paths.
+ * Prevents path traversal via ../, absolute paths, and shell metacharacters.
+ */
+function validateWorkflowId(id: string): void {
+  if (!id || typeof id !== 'string') {
+    throw new Error('workflowId must be a non-empty string');
+  }
+  if (/[/\\]/.test(id) || id.includes('..') || id.includes('\0')) {
+    throw new Error('workflowId contains invalid characters');
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
+    throw new Error('workflowId contains disallowed characters');
+  }
+}
 
 export interface WorkflowSnapshot {
   workflowId: string;
@@ -33,6 +49,7 @@ export class WorkflowStore {
   }
 
   private getFilePath(workflowId: string): string {
+    validateWorkflowId(workflowId);
     return `${this.storeDir}/${workflowId}.json`;
   }
 

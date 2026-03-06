@@ -1,6 +1,52 @@
 import { logger } from '../utils/logger.js';
 import { WorkflowEvent } from './types.js';
 
+const WEBHOOK_FETCH_TIMEOUT_MS = 10_000;
+const MAX_WEBHOOKS = 50;
+
+/**
+ * Validate that a URL is an acceptable webhook destination.
+ * Blocks private/internal IPs and non-HTTPS URLs (except localhost for dev).
+ */
+function validateWebhookUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid webhook URL: ${url}`);
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error(`Webhook URL must use http or https: ${url}`);
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Block private/internal hostnames (SSRF protection)
+  const blockedPatterns = [
+    /^127\./,
+    /^10\./,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\./,
+    /^0\./,
+    /^169\.254\./,
+    /^::1$/,
+    /^fc00:/,
+    /^fe80:/,
+    /^fd/,
+    /^localhost$/,
+    /^.*\.local$/,
+    /^.*\.internal$/,
+    /^metadata\./,
+  ];
+
+  for (const pattern of blockedPatterns) {
+    if (pattern.test(hostname)) {
+      throw new Error(`Webhook URL points to a blocked address: ${hostname}`);
+    }
+  }
+}
+
 export interface WebhookConfig {
   url: string;
   events: string[];
@@ -19,6 +65,10 @@ export class WebhookNotifier {
   private webhooks: Map<string, WebhookConfig> = new Map();
 
   register(name: string, config: WebhookConfig): void {
+    validateWebhookUrl(config.url);
+    if (this.webhooks.size >= MAX_WEBHOOKS) {
+      throw new Error(`Maximum webhook limit (${MAX_WEBHOOKS}) reached`);
+    }
     this.webhooks.set(name, config);
     logger.info(`[WEBHOOK] Registered: ${name} -> ${config.url}`);
   }
@@ -72,6 +122,7 @@ export class WebhookNotifier {
             ...config.headers,
           },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(WEBHOOK_FETCH_TIMEOUT_MS),
         });
 
         if (response.ok) {
@@ -97,6 +148,7 @@ export class WebhookNotifier {
       name,
       url: config.url,
       events: config.events,
+      // NOTE: headers intentionally excluded to avoid leaking tokens
     }));
   }
 

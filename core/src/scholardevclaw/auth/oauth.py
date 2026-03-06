@@ -239,11 +239,28 @@ class OAuthTokenStore:
         self.token_file = self.store_dir / self.TOKEN_FILE
 
     def save_token(self, provider: str, token: OAuthToken) -> None:
-        """Save token for a provider."""
+        """Save token for a provider using atomic write to prevent TOCTOU."""
+        import tempfile
+
         tokens = self._load_tokens()
         tokens[provider] = token.to_dict()
-        self.token_file.write_text(json.dumps(tokens, indent=2))
-        os.chmod(self.token_file, 0o600)
+        content = json.dumps(tokens, indent=2)
+
+        # SECURITY: Atomic write — write to temp file then rename
+        fd, tmp_path = tempfile.mkstemp(dir=self.store_dir, prefix=".oauth_tmp_")
+        try:
+            os.write(fd, content.encode())
+            os.close(fd)
+            os.chmod(tmp_path, 0o600)
+            os.rename(tmp_path, str(self.token_file))
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
 
     def get_token(self, provider: str) -> OAuthToken | None:
         """Get token for a provider, auto-refresh if expired."""
@@ -290,12 +307,29 @@ class OAuthTokenStore:
             raise ValueError(f"Unknown OAuth provider: {provider}")
 
     def remove_token(self, provider: str) -> bool:
-        """Remove token for a provider."""
+        """Remove token for a provider using atomic write."""
+        import tempfile
+
         tokens = self._load_tokens()
         if provider in tokens:
             del tokens[provider]
-            self.token_file.write_text(json.dumps(tokens, indent=2))
-            os.chmod(self.token_file, 0o600)
+            content = json.dumps(tokens, indent=2)
+
+            # SECURITY: Atomic write — write to temp file then rename
+            fd, tmp_path = tempfile.mkstemp(dir=self.store_dir, prefix=".oauth_tmp_")
+            try:
+                os.write(fd, content.encode())
+                os.close(fd)
+                os.chmod(tmp_path, 0o600)
+                os.rename(tmp_path, str(self.token_file))
+            except Exception:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                raise
             return True
         return False
 
@@ -344,7 +378,9 @@ class OAuthManager:
         url, state = p.get_authorization_url()
 
         # Store provider for callback
+        # NOTE: _pending_provider is not thread-safe; only use in single-threaded contexts
         self._pending_provider = provider
+        self._pending_state = state
 
         # Open browser for user
         webbrowser.open(url)

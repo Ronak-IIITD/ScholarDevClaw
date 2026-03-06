@@ -1,8 +1,13 @@
 import 'dotenv/config';
 
+// SECURITY: Warn when critical tokens are not configured
+if (!process.env.OPENCLAW_TOKEN) {
+  console.warn('[SECURITY] OPENCLAW_TOKEN is not set — using empty fallback. Set this variable in production.');
+}
+
 export const config = {
   openclaw: {
-    token: process.env.OPENCLAW_TOKEN || 'dev-token',
+    token: process.env.OPENCLAW_TOKEN || '',
     apiUrl: process.env.OPENCLAW_API_URL || 'http://localhost:3000',
   },
   convex: {

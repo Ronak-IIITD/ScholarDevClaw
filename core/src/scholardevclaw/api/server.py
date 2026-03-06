@@ -1,5 +1,7 @@
+import hmac
 import logging
 import os
+import warnings
 from pathlib import Path
 from typing import Any, Literal
 
@@ -31,6 +33,12 @@ if _env_allowed:
         d = d.strip()
         if d:
             _ALLOWED_BASE_DIRS.append(Path(d).resolve())
+else:
+    warnings.warn(
+        "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS is not set — path confinement is disabled. "
+        "Any filesystem path can be accessed via the API. Set this variable in production.",
+        stacklevel=1,
+    )
 
 
 app = FastAPI(
@@ -81,22 +89,34 @@ async def security_headers_middleware(request: Request, call_next):
 # API key authentication middleware
 # ---------------------------------------------------------------------------
 _API_AUTH_KEY = os.environ.get("SCHOLARDEVCLAW_API_AUTH_KEY", "")
-_AUTH_EXEMPT_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/"}
+if not _API_AUTH_KEY:
+    warnings.warn(
+        "SCHOLARDEVCLAW_API_AUTH_KEY is not set — API endpoints are unauthenticated. "
+        "Set this variable in production.",
+        stacklevel=1,
+    )
+_AUTH_EXEMPT_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/", "/metrics"}
 
 
 @app.middleware("http")
 async def api_key_auth_middleware(request: Request, call_next):
     """Require API key for all non-exempt endpoints when configured."""
-    if _API_AUTH_KEY and request.url.path not in _AUTH_EXEMPT_PATHS:
-        provided = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        if not provided or provided != _API_AUTH_KEY:
-            import json as _json
+    if _API_AUTH_KEY:
+        # Use prefix matching for exempt paths (e.g. /docs/json matches /docs)
+        is_exempt = any(
+            request.url.path == ep or request.url.path.startswith(ep + "/")
+            for ep in _AUTH_EXEMPT_PATHS
+        )
+        if not is_exempt:
+            provided = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+            if not provided or not hmac.compare_digest(provided, _API_AUTH_KEY):
+                import json as _json
 
-            return Response(
-                content=_json.dumps({"detail": "Unauthorized"}),
-                status_code=401,
-                media_type="application/json",
-            )
+                return Response(
+                    content=_json.dumps({"detail": "Unauthorized"}),
+                    status_code=401,
+                    media_type="application/json",
+                )
     return await call_next(request)
 
 

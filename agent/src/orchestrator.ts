@@ -100,11 +100,22 @@ export class ScholarDevClawOrchestrator {
       retryCount,
     });
 
+    // SECURITY: Sanitize contextOverrides to prevent prototype pollution
+    const safeOverrides: Partial<OrchestrationContext> = {};
+    if (options.contextOverrides) {
+      const allowedKeys = new Set<string>(['repoPath', 'paperSource', 'sourceType', 'repoAnalysis', 'researchSpec', 'mapping', 'patch', 'validation']);
+      for (const [key, value] of Object.entries(options.contextOverrides)) {
+        if (allowedKeys.has(key) && key !== '__proto__' && key !== 'constructor' && key !== 'prototype') {
+          (safeOverrides as Record<string, unknown>)[key] = value;
+        }
+      }
+    }
+
     const context: OrchestrationContext = {
       repoPath: repoUrl,
       paperSource: paperUrl || paperPdfPath || '',
       sourceType: paperUrl ? 'arxiv' as const : 'pdf' as const,
-      ...options.contextOverrides,
+      ...safeOverrides,
     };
 
     const phaseResults: Record<number, unknown> = { ...(options.phaseResults || {}) };
@@ -632,6 +643,7 @@ export class ScholarDevClawOrchestrator {
       }
       await this.convex.updateStatus(integrationId, 'pending', phase);
     } else {
+      logger.warn('No Convex configured — auto-approving after timeout. Set CONVEX_URL for real approval gates.', { runId, phase });
       await new Promise((resolve) => setTimeout(resolve, 1000));
       await this.runStore.addApproval(runId, phase, 'approved');
     }
@@ -820,7 +832,7 @@ export class ScholarDevClawOrchestrator {
 
   private generateRunId(): string {
     const stamp = Date.now().toString(36);
-    const random = Math.random().toString(36).slice(2, 8);
+    const random = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
     return `run-${stamp}-${random}`;
   }
 

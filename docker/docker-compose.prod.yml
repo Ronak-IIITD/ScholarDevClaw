@@ -7,8 +7,8 @@ services:
       dockerfile: docker/Dockerfile.core
       target: production
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     volumes:
       - repos-data:/repos:ro
       - logs-data:/app/logs
@@ -95,8 +95,8 @@ services:
   prometheus:
     image: prom/prometheus:latest
     restart: unless-stopped
-    ports:
-      - "9090:9090"
+    expose:
+      - "9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -112,14 +112,14 @@ services:
   grafana:
     image: grafana/grafana:latest
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER must be set}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
       - GF_USERS_ALLOW_SIGN_UP=false
     depends_on:
       - prometheus

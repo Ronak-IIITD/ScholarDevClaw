@@ -49,6 +49,15 @@ htmlcov/
 .env.local
 demo.md
 
+# SECURITY: Auth and encryption files
+auth.json
+*.salt
+*.pem
+docker/.env
+oauth_tokens.json
+rotation_policies.json
+rotation_log.jsonl
+
 # Test repositories
 test_repos/
 !test_repos/.gitkeep

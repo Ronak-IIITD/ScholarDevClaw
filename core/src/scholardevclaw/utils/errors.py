@@ -78,10 +78,9 @@ class ErrorContext:
         if exc_type is None:
             self.logger.debug(f"Completed: {self.operation} ({duration:.2f}s)")
         else:
+            # SECURITY: Limit traceback depth to 2 frames to reduce info leakage in logs
             self.logger.error(
-                f"Failed: {self.operation} after {duration:.2f}s\n"
-                f"  Error: {exc_type.__name__}: {exc_val}\n"
-                f"  Trace: {traceback.format_exc(limit=5)}"
+                f"Failed: {self.operation} after {duration:.2f}s — {exc_type.__name__}: {exc_val}"
             )
 
         return False
@@ -167,15 +166,21 @@ class OperationTimer:
 
 
 def format_error_response(error: Exception, include_trace: bool = False) -> dict[str, Any]:
-    """Format error for API response."""
-    response = {
-        "error": type(error).__name__,
-        "message": str(error),
+    """Format error for API response.
+
+    SECURITY: Does not expose internal exception type or message to callers.
+    Use include_trace=True only in development/debug mode.
+    """
+    response: dict[str, Any] = {
+        "error": "internal_error",
+        "message": "An unexpected error occurred",
         "timestamp": datetime.now().isoformat(),
     }
 
     if include_trace:
         response["trace"] = traceback.format_exc()
+        response["error"] = type(error).__name__
+        response["message"] = str(error)
 
     return response
 

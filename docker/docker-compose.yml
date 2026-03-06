@@ -27,8 +27,9 @@ services:
 
   convex:
     image: ghcr.io/getconvex/dev:latest
-    ports:
-      - "3210:3210"
+    # SECURITY: Do not expose Convex port to host; only accessible within Docker network
+    expose:
+      - "3210"
     volumes:
       - convex-data:/data
 

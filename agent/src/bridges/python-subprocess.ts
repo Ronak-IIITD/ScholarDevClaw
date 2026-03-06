@@ -120,12 +120,31 @@ export class PythonSubprocessBridge {
     return pathResolve(process.cwd(), this.corePath);
   }
 
+  private static readonly SUBPROCESS_TIMEOUT_MS = 300_000; // 5 minutes
+
   private async runPythonModule(modulePath: string, args: string[] = []): Promise<PhaseResult> {
     return new Promise((promiseResolve) => {
+      let settled = false;
+      const resolve = (result: PhaseResult) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(killTimer);
+        promiseResolve(result);
+      };
+
       const proc = spawn(this.pythonCmd, ['-m', modulePath, ...args], {
         cwd: this.getCoreWorkingDirectory(),
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+
+      // SECURITY: Kill subprocess if it exceeds timeout to prevent hanging
+      const killTimer = setTimeout(() => {
+        if (!settled) {
+          logger.error(`Python subprocess timed out after ${PythonSubprocessBridge.SUBPROCESS_TIMEOUT_MS}ms: ${modulePath}`);
+          proc.kill('SIGKILL');
+          resolve({ success: false, error: `Subprocess timed out after ${PythonSubprocessBridge.SUBPROCESS_TIMEOUT_MS}ms` });
+        }
+      }, PythonSubprocessBridge.SUBPROCESS_TIMEOUT_MS);
 
       let stdout = '';
       let stderr = '';
@@ -142,16 +161,16 @@ export class PythonSubprocessBridge {
         if (code === 0) {
           const output = stdout.trim();
           const parsed = this.parseJsonFromOutput(output);
-          promiseResolve({ success: true, data: parsed ?? output });
+          resolve({ success: true, data: parsed ?? output });
         } else {
           logger.error(`Python script failed: ${stderr}`);
-          promiseResolve({ success: false, error: stderr || `Exit code: ${code}` });
+          resolve({ success: false, error: stderr || `Exit code: ${code}` });
         }
       });
 
       proc.on('error', (err) => {
         logger.error(`Failed to start Python: ${err.message}`);
-        promiseResolve({ success: false, error: err.message });
+        resolve({ success: false, error: err.message });
       });
     });
   }

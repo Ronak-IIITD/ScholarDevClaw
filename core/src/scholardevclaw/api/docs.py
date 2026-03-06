@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from typing import Any
 
 
@@ -33,7 +34,8 @@ ScholarDevClaw automatically integrates cutting-edge ML research into your codeb
 
 ## Authentication
 
-Most endpoints don't require authentication. Rate limiting applies to all endpoints.
+Endpoints require API key authentication when `SCHOLARDEVCLAW_API_AUTH_KEY` is set.
+Rate limiting applies to all endpoints.
 
 ## Rate Limits
 
@@ -157,14 +159,14 @@ def setup_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
+        # SECURITY: Do not expose exception type or details to callers
         return JSONResponse(
             status_code=500,
             content={
                 "error": "internal_error",
                 "message": "An unexpected error occurred",
-                "details": {"type": type(exc).__name__},
             },
         )
 
 
-from pydantic import BaseModel
+# NOTE: BaseModel import moved to top of file (was after use at class APIError)

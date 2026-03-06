@@ -1,5 +1,22 @@
 import { mkdir, readFile, readdir, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve, basename } from 'path';
+
+/**
+ * Validate that an ID is safe for use in filesystem paths.
+ * Prevents path traversal via ../, absolute paths, and shell metacharacters.
+ */
+function validatePathId(id: string, label: string): void {
+  if (!id || typeof id !== 'string') {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+  if (/[/\\]/.test(id) || id.includes('..') || id.includes('\0')) {
+    throw new Error(`${label} contains invalid characters`);
+  }
+  // Only allow alphanumeric, dash, underscore, dot
+  if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
+    throw new Error(`${label} contains disallowed characters`);
+  }
+}
 
 export type RunSnapshotStatus =
   | 'pending'
@@ -48,6 +65,7 @@ export class RunStore {
   }
 
   private runPath(runId: string): string {
+    validatePathId(runId, 'runId');
     return join(this.runsDir, `${runId}.json`);
   }
 

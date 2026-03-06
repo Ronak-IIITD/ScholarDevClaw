@@ -11,6 +11,8 @@ from typing import Any
 import jwt
 import requests
 
+import re
+
 from .types import (
     CheckConclusion,
     CheckRun,
@@ -113,6 +115,19 @@ class GitHubAppClient:
         self._installation_expires_at = time.time() + 3600
         return self._installation_token
 
+    # SECURITY: Regex for validating path components (owner, repo, branch, etc.)
+    _SAFE_PATH_RE = re.compile(r"^[\w.\-]+$")
+
+    @staticmethod
+    def _sanitize_path_component(value: str) -> str:
+        """Validate and return a safe path component for GitHub API URLs.
+
+        Prevents URL injection via path traversal or encoded characters.
+        """
+        if not GitHubAppClient._SAFE_PATH_RE.match(value):
+            raise ValueError(f"Invalid path component: {value!r}")
+        return value
+
     def _api_request(
         self,
         method: str,
@@ -129,6 +144,10 @@ class GitHubAppClient:
         elif self._installation_token:
             headers["Authorization"] = f"Bearer {self._installation_token}"
 
+        # SECURITY: Add timeout to all GitHub API requests to prevent hanging
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = 30
+
         response = requests.request(
             method,
             f"https://api.github.com{path}",
@@ -138,6 +157,8 @@ class GitHubAppClient:
         return response
 
     def get_repository(self, owner: str, repo: str) -> Repository | None:
+        owner = self._sanitize_path_component(owner)
+        repo = self._sanitize_path_component(repo)
         response = self._api_request("GET", f"/repos/{owner}/{repo}")
         if response.status_code != 200:
             return None
@@ -153,6 +174,8 @@ class GitHubAppClient:
         )
 
     def get_pull_request(self, owner: str, repo: str, pr_number: int) -> PullRequest | None:
+        owner = self._sanitize_path_component(owner)
+        repo = self._sanitize_path_component(repo)
         response = self._api_request("GET", f"/repos/{owner}/{repo}/pulls/{pr_number}")
         if response.status_code != 200:
             return None
@@ -333,6 +356,9 @@ class GitHubAppClient:
         branch: str,
         installation_id: str | None = None,
     ) -> dict[str, Any] | None:
+        owner = self._sanitize_path_component(owner)
+        repo = self._sanitize_path_component(repo)
+        branch = self._sanitize_path_component(branch)
         response = self._api_request(
             "GET",
             f"/repos/{owner}/{repo}/branches/{branch}",

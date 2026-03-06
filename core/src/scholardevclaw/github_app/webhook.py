@@ -73,7 +73,7 @@ class WebhookHandler:
                 return {"status": 200, "message": "Event received"}
         except Exception as e:
             logger.exception(f"Error handling webhook: {e}")
-            return {"error": str(e), "status": 500}
+            return {"error": "Internal webhook processing error", "status": 500}
 
     def _handle_pull_request(self, payload: WebhookPayload) -> dict[str, Any]:
         action = payload.action
@@ -197,10 +197,11 @@ class WebhookHandler:
                 installation_id=installation_id,
                 output={
                     "title": "Integration Error",
-                    "summary": f"An error occurred: {str(e)}",
+                    "summary": "An internal error occurred during integration.",
                 },
             )
-            return {"error": str(e), "status": 500}
+            # SECURITY: Do not leak exception details to API callers
+            return {"error": "Integration processing error", "status": 500}
 
     def _run_default_integration(
         self,

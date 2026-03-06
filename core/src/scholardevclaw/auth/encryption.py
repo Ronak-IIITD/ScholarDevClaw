@@ -107,7 +107,7 @@ class EncryptionManager:
         return True
 
     def disable(self) -> None:
-        """Disable encryption."""
+        """Disable encryption and clean up related files."""
         self._fernet = None
         marker = self.store_dir / self.MARKER_FILE
         if marker.exists():
@@ -115,6 +115,10 @@ class EncryptionManager:
         verify = self.store_dir / self.VERIFY_FILE
         if verify.exists():
             verify.unlink()
+        # SECURITY: Also delete salt file so no crypto material remains
+        salt = self.store_dir / self.SALT_FILE
+        if salt.exists():
+            salt.unlink()
 
     def encrypt(self, plaintext: str) -> str:
         """Encrypt plaintext string, return base64 ciphertext."""
@@ -190,7 +194,11 @@ class EncryptionManager:
             os.chmod(tmp_auth, 0o600)
             os.rename(tmp_auth, str(auth_file))
         except Exception:
-            os.close(fd_auth) if not os.get_inheritable(fd_auth) else None
+            # SECURITY: Safe FD close — try/except OSError instead of os.get_inheritable
+            try:
+                os.close(fd_auth)
+            except OSError:
+                pass  # Already closed
             if os.path.exists(tmp_auth):
                 os.unlink(tmp_auth)
             raise
@@ -205,7 +213,10 @@ class EncryptionManager:
         except Exception:
             # Salt write failed — auth file already has new encryption.
             # Re-write auth with old encryption to maintain consistency
-            os.close(fd_salt) if not os.get_inheritable(fd_salt) else None
+            try:
+                os.close(fd_salt)
+            except OSError:
+                pass  # Already closed
             if os.path.exists(tmp_salt):
                 os.unlink(tmp_salt)
             auth_file.write_text(raw)

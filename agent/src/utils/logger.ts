@@ -10,6 +10,8 @@ export interface LogEntry {
 class Logger {
   private logs: LogEntry[] = [];
   private minLevel: LogLevel;
+  // SECURITY: Cap in-memory log buffer to prevent unbounded memory growth
+  private static readonly MAX_LOG_ENTRIES = 10_000;
 
   private levelPriority: Record<LogLevel, number> = {
     debug: 0,
@@ -37,6 +39,10 @@ class Logger {
     };
 
     this.logs.push(entry);
+    // SECURITY: Evict oldest entries when buffer exceeds cap (ring buffer behavior)
+    if (this.logs.length > Logger.MAX_LOG_ENTRIES) {
+      this.logs = this.logs.slice(-Logger.MAX_LOG_ENTRIES);
+    }
 
     const color = this.getColor(level);
     const prefix = `[${entry.timestamp}] ${level.toUpperCase()}`;
