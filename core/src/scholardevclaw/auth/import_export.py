@@ -143,12 +143,20 @@ class AuthImporter:
         """Auto-detect provider from key format."""
         if key.startswith("sk-ant"):
             return AuthProvider.ANTHROPIC
+        elif key.startswith("sk-or-"):
+            return AuthProvider.OPENROUTER
         elif key.startswith("sk-"):
             return AuthProvider.OPENAI
         elif key.startswith("ghp_") or key.startswith("github_pat_"):
             return AuthProvider.GITHUB
+        elif key.startswith("ghu_"):
+            return AuthProvider.GITHUB_COPILOT
         elif key.startswith("ya29.") or key.startswith("1//"):
             return AuthProvider.GOOGLE
+        elif key.startswith("gsk_"):
+            return AuthProvider.GROQ
+        elif key.startswith("co-"):
+            return AuthProvider.COHERE
         return AuthProvider.CUSTOM
 
     @staticmethod
@@ -209,6 +217,14 @@ class AuthImporter:
             r"OPENAI_API_KEY\s*=\s*(.+)": AuthProvider.OPENAI,
             r"GITHUB_TOKEN\s*=\s*(.+)": AuthProvider.GITHUB,
             r"GOOGLE_API_KEY\s*=\s*(.+)": AuthProvider.GOOGLE,
+            r"GROQ_API_KEY\s*=\s*(.+)": AuthProvider.GROQ,
+            r"MISTRAL_API_KEY\s*=\s*(.+)": AuthProvider.MISTRAL,
+            r"DEEPSEEK_API_KEY\s*=\s*(.+)": AuthProvider.DEEPSEEK,
+            r"COHERE_API_KEY\s*=\s*(.+)": AuthProvider.COHERE,
+            r"OPENROUTER_API_KEY\s*=\s*(.+)": AuthProvider.OPENROUTER,
+            r"TOGETHER_API_KEY\s*=\s*(.+)": AuthProvider.TOGETHER,
+            r"FIREWORKS_API_KEY\s*=\s*(.+)": AuthProvider.FIREWORKS,
+            r"AZURE_OPENAI_API_KEY\s*=\s*(.+)": AuthProvider.AZURE_OPENAI,
         }
 
         import secrets as _secrets

@@ -10,12 +10,40 @@ from typing import Any
 
 
 class AuthProvider(str, Enum):
+    # Identity / legacy providers
     LOCAL = "local"
     GITHUB = "github"
     GOOGLE = "google"
+    CUSTOM = "custom"
+
+    # LLM API providers
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
-    CUSTOM = "custom"
+    GITHUB_COPILOT = "github_copilot"
+    OLLAMA = "ollama"
+    AZURE_OPENAI = "azure_openai"
+    GROQ = "groq"
+    MISTRAL = "mistral"
+    DEEPSEEK = "deepseek"
+    COHERE = "cohere"
+    OPENROUTER = "openrouter"
+    TOGETHER = "together"
+    FIREWORKS = "fireworks"
+
+    @property
+    def is_llm_provider(self) -> bool:
+        """Whether this provider is an LLM backend (vs identity/storage only)."""
+        return self in _LLM_PROVIDERS
+
+    @property
+    def requires_api_key(self) -> bool:
+        """Whether this provider requires an API key (Ollama typically doesn't)."""
+        return self != AuthProvider.OLLAMA
+
+    @property
+    def default_base_url(self) -> str | None:
+        """Default API base URL for LLM providers."""
+        return _DEFAULT_BASE_URLS.get(self)
 
     @property
     def key_prefix(self) -> str | None:
@@ -23,7 +51,12 @@ class AuthProvider(str, Enum):
             AuthProvider.ANTHROPIC: "sk-ant",
             AuthProvider.OPENAI: "sk-",
             AuthProvider.GITHUB: "ghp_",
+            AuthProvider.GITHUB_COPILOT: "ghp_",
             AuthProvider.GOOGLE: "ya29.",
+            AuthProvider.GROQ: "gsk_",
+            AuthProvider.DEEPSEEK: "sk-",
+            AuthProvider.COHERE: "co-",
+            AuthProvider.MISTRAL: "mis",
         }
         return prefixes.get(self)
 
@@ -33,11 +66,97 @@ class AuthProvider(str, Enum):
             AuthProvider.ANTHROPIC: "sk-ant-...",
             AuthProvider.OPENAI: "sk-...",
             AuthProvider.GITHUB: "ghp_...",
+            AuthProvider.GITHUB_COPILOT: "ghp_... or github_pat_...",
             AuthProvider.GOOGLE: "ya29...",
+            AuthProvider.OLLAMA: "(no key needed — local)",
+            AuthProvider.AZURE_OPENAI: "32-character hex key",
+            AuthProvider.GROQ: "gsk_...",
+            AuthProvider.MISTRAL: "API key from console.mistral.ai",
+            AuthProvider.DEEPSEEK: "sk-... from platform.deepseek.com",
+            AuthProvider.COHERE: "co-... from dashboard.cohere.com",
+            AuthProvider.OPENROUTER: "sk-or-... from openrouter.ai",
+            AuthProvider.TOGETHER: "API key from api.together.xyz",
+            AuthProvider.FIREWORKS: "API key from fireworks.ai",
             AuthProvider.CUSTOM: "custom API key format",
             AuthProvider.LOCAL: "local key",
         }
         return hints.get(self, "API key")
+
+    @property
+    def env_var_name(self) -> str:
+        """Standard environment variable name for this provider's API key."""
+        return _ENV_VAR_NAMES.get(self, "SCHOLARDEVCLAW_API_KEY")
+
+    @property
+    def display_name(self) -> str:
+        """Human-friendly display name."""
+        return _DISPLAY_NAMES.get(self, self.value.title())
+
+
+# Sets/dicts defined after enum to avoid forward reference issues
+_LLM_PROVIDERS = {
+    AuthProvider.ANTHROPIC,
+    AuthProvider.OPENAI,
+    AuthProvider.GITHUB_COPILOT,
+    AuthProvider.OLLAMA,
+    AuthProvider.AZURE_OPENAI,
+    AuthProvider.GROQ,
+    AuthProvider.MISTRAL,
+    AuthProvider.DEEPSEEK,
+    AuthProvider.COHERE,
+    AuthProvider.OPENROUTER,
+    AuthProvider.TOGETHER,
+    AuthProvider.FIREWORKS,
+}
+
+_DEFAULT_BASE_URLS: dict[AuthProvider, str] = {
+    AuthProvider.ANTHROPIC: "https://api.anthropic.com",
+    AuthProvider.OPENAI: "https://api.openai.com/v1",
+    AuthProvider.OLLAMA: "http://localhost:11434",
+    AuthProvider.GROQ: "https://api.groq.com/openai/v1",
+    AuthProvider.MISTRAL: "https://api.mistral.ai/v1",
+    AuthProvider.DEEPSEEK: "https://api.deepseek.com",
+    AuthProvider.COHERE: "https://api.cohere.com/v2",
+    AuthProvider.OPENROUTER: "https://openrouter.ai/api/v1",
+    AuthProvider.TOGETHER: "https://api.together.xyz/v1",
+    AuthProvider.FIREWORKS: "https://api.fireworks.ai/inference/v1",
+}
+
+_ENV_VAR_NAMES: dict[AuthProvider, str] = {
+    AuthProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
+    AuthProvider.OPENAI: "OPENAI_API_KEY",
+    AuthProvider.GITHUB: "GITHUB_TOKEN",
+    AuthProvider.GITHUB_COPILOT: "GITHUB_TOKEN",
+    AuthProvider.GOOGLE: "GOOGLE_API_KEY",
+    AuthProvider.OLLAMA: "OLLAMA_HOST",
+    AuthProvider.AZURE_OPENAI: "AZURE_OPENAI_API_KEY",
+    AuthProvider.GROQ: "GROQ_API_KEY",
+    AuthProvider.MISTRAL: "MISTRAL_API_KEY",
+    AuthProvider.DEEPSEEK: "DEEPSEEK_API_KEY",
+    AuthProvider.COHERE: "COHERE_API_KEY",
+    AuthProvider.OPENROUTER: "OPENROUTER_API_KEY",
+    AuthProvider.TOGETHER: "TOGETHER_API_KEY",
+    AuthProvider.FIREWORKS: "FIREWORKS_API_KEY",
+}
+
+_DISPLAY_NAMES: dict[AuthProvider, str] = {
+    AuthProvider.LOCAL: "Local",
+    AuthProvider.GITHUB: "GitHub",
+    AuthProvider.GOOGLE: "Google",
+    AuthProvider.ANTHROPIC: "Anthropic (Claude)",
+    AuthProvider.OPENAI: "OpenAI (GPT / Codex)",
+    AuthProvider.GITHUB_COPILOT: "GitHub Copilot",
+    AuthProvider.OLLAMA: "Ollama (Local LLM)",
+    AuthProvider.AZURE_OPENAI: "Azure OpenAI",
+    AuthProvider.GROQ: "Groq",
+    AuthProvider.MISTRAL: "Mistral AI",
+    AuthProvider.DEEPSEEK: "DeepSeek",
+    AuthProvider.COHERE: "Cohere",
+    AuthProvider.OPENROUTER: "OpenRouter",
+    AuthProvider.TOGETHER: "Together AI",
+    AuthProvider.FIREWORKS: "Fireworks AI",
+    AuthProvider.CUSTOM: "Custom Provider",
+}
 
 
 class SubscriptionTier(str, Enum):
@@ -162,6 +281,10 @@ class APIKey:
         if not key:
             return False, "API key cannot be empty"
 
+        # Ollama typically doesn't need a key
+        if provider == AuthProvider.OLLAMA:
+            return True, "Valid (Ollama — key is optional)"
+
         if len(key) < 8:
             return False, "API key seems too short"
 
@@ -177,9 +300,33 @@ class APIKey:
             if not (key.startswith("ghp_") or key.startswith("github_pat_")):
                 return False, "GitHub tokens should start with 'ghp_' or 'github_pat_'"
 
+        elif provider == AuthProvider.GITHUB_COPILOT:
+            if not (
+                key.startswith("ghp_") or key.startswith("github_pat_") or key.startswith("ghu_")
+            ):
+                return (
+                    False,
+                    "GitHub Copilot tokens should start with 'ghp_', 'github_pat_', or 'ghu_'",
+                )
+
         elif provider == AuthProvider.GOOGLE:
             if not key.startswith("ya29.") and not key.startswith("1//"):
                 return False, "Google tokens typically start with 'ya29.' or '1//'"
+
+        elif provider == AuthProvider.GROQ:
+            if not key.startswith("gsk_"):
+                return False, "Groq keys should start with 'gsk_'"
+
+        elif provider == AuthProvider.COHERE:
+            if not key.startswith("co-"):
+                return False, "Cohere keys should start with 'co-'"
+
+        elif provider == AuthProvider.OPENROUTER:
+            if not key.startswith("sk-or-"):
+                return False, "OpenRouter keys should start with 'sk-or-'"
+
+        # For Azure, Mistral, DeepSeek, Together, Fireworks — no strict prefix,
+        # just length check above is sufficient
 
         return True, "Valid"
 

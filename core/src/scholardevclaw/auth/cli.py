@@ -66,33 +66,46 @@ def _cmd_setup(args, store: AuthStore):
         return
 
     print("\nNo API key found. Let's set one up!")
-    print("\nChoose your provider:")
-    print("  1. Anthropic (Claude) - Default")
-    print("  2. OpenAI (GPT)")
-    print("  3. GitHub")
-    print("  4. Custom")
+    print("\nChoose your LLM provider:")
+    print("  1.  Anthropic (Claude) — Default")
+    print("  2.  OpenAI (GPT)")
+    print("  3.  Ollama (Local — no key needed)")
+    print("  4.  Groq")
+    print("  5.  Mistral AI")
+    print("  6.  DeepSeek")
+    print("  7.  Cohere")
+    print("  8.  OpenRouter")
+    print("  9.  Together AI")
+    print("  10. Fireworks AI")
+    print("  11. GitHub Copilot")
+    print("  12. Azure OpenAI")
+    print("  13. GitHub (identity only)")
+    print("  14. Custom")
 
     try:
-        choice = input("\nProvider [1-4] (default: 1): ").strip() or "1"
+        choice = input("\nProvider [1-14] (default: 1): ").strip() or "1"
     except EOFError:
         choice = "1"
 
     provider_map = {
         "1": AuthProvider.ANTHROPIC,
         "2": AuthProvider.OPENAI,
-        "3": AuthProvider.GITHUB,
-        "4": AuthProvider.CUSTOM,
+        "3": AuthProvider.OLLAMA,
+        "4": AuthProvider.GROQ,
+        "5": AuthProvider.MISTRAL,
+        "6": AuthProvider.DEEPSEEK,
+        "7": AuthProvider.COHERE,
+        "8": AuthProvider.OPENROUTER,
+        "9": AuthProvider.TOGETHER,
+        "10": AuthProvider.FIREWORKS,
+        "11": AuthProvider.GITHUB_COPILOT,
+        "12": AuthProvider.AZURE_OPENAI,
+        "13": AuthProvider.GITHUB,
+        "14": AuthProvider.CUSTOM,
     }
     provider = provider_map.get(choice, AuthProvider.ANTHROPIC)
 
-    env_hints = {
-        AuthProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
-        AuthProvider.OPENAI: "OPENAI_API_KEY",
-        AuthProvider.GITHUB: "GITHUB_TOKEN",
-        AuthProvider.CUSTOM: "SCHOLARDEVCLAW_API_KEY",
-    }
-
-    env_var = env_hints.get(provider, "SCHOLARDEVCLAW_API_KEY")
+    env_var = provider.env_var_name
 
     import os
 
@@ -109,6 +122,10 @@ def _cmd_setup(args, store: AuthStore):
             api_key = env_key
         else:
             api_key = _prompt_for_key(provider)
+    elif provider == AuthProvider.OLLAMA:
+        print(f"\n✓ Ollama runs locally — no API key needed.")
+        print(f"  Make sure Ollama is running at {provider.default_base_url}")
+        api_key = "ollama-local"
     else:
         print(f"\n💡 Tip: You can also set {env_var} environment variable")
         api_key = _prompt_for_key(provider)
@@ -118,8 +135,10 @@ def _cmd_setup(args, store: AuthStore):
     try:
         store.add_api_key(api_key, name, provider, set_default=True)
         print(f"\n✅ API key added successfully!")
-        print(f"   Provider: {provider.value}")
+        print(f"   Provider: {provider.display_name}")
         print(f"   Key: {api_key[:4]}...{api_key[-2:]}")
+        if provider.default_base_url:
+            print(f"   Base URL: {provider.default_base_url}")
 
         email = input("\nEmail (optional, for sync): ").strip()
         if email:
@@ -143,10 +162,21 @@ def _prompt_for_key(provider: AuthProvider) -> str:
         AuthProvider.ANTHROPIC: "Get your key at: https://console.anthropic.com",
         AuthProvider.OPENAI: "Get your key at: https://platform.openai.com/api-keys",
         AuthProvider.GITHUB: "Get a token at: https://github.com/settings/tokens",
+        AuthProvider.GITHUB_COPILOT: "Use your GitHub token (ghp_... or github_pat_...)",
+        AuthProvider.GROQ: "Get your key at: https://console.groq.com/keys",
+        AuthProvider.MISTRAL: "Get your key at: https://console.mistral.ai/api-keys",
+        AuthProvider.DEEPSEEK: "Get your key at: https://platform.deepseek.com/api_keys",
+        AuthProvider.COHERE: "Get your key at: https://dashboard.cohere.com/api-keys",
+        AuthProvider.OPENROUTER: "Get your key at: https://openrouter.ai/keys",
+        AuthProvider.TOGETHER: "Get your key at: https://api.together.xyz/settings/api-keys",
+        AuthProvider.FIREWORKS: "Get your key at: https://fireworks.ai/api-keys",
+        AuthProvider.AZURE_OPENAI: "Get your key from Azure Portal > OpenAI resource > Keys",
         AuthProvider.CUSTOM: "Enter your custom API key",
     }
 
     print(f"\n{hints.get(provider, 'Enter your API key')}")
+    if provider.key_format_hint:
+        print(f"  Format: {provider.key_format_hint}")
     api_key = getpass.getpass("API Key: ").strip()
 
     if not api_key:
@@ -168,7 +198,10 @@ def _cmd_login(args, store: AuthStore):
             provider = AuthProvider(args.provider.lower())
         except ValueError:
             print(f"Unknown provider: {args.provider}", file=sys.stderr)
-            print("Supported: anthropic, openai, github, google, custom")
+            print(
+                "Supported: anthropic, openai, ollama, groq, mistral, deepseek, cohere, "
+                "openrouter, together, fireworks, github_copilot, azure_openai, github, google, custom"
+            )
             sys.exit(1)
     else:
         provider = AuthProvider.ANTHROPIC

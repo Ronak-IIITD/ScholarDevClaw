@@ -1,4 +1,12 @@
 # LLM module
+from .client import (
+    LLMClient,
+    LLMResponse,
+    LLMStreamChunk,
+    LLMAPIError,
+    LLMConfigError,
+    DEFAULT_MODELS as LLM_DEFAULT_MODELS,
+)
 from .multi_model import (
     ModelProvider,
     ModelCapability,
@@ -31,6 +39,14 @@ from .confidence import (
 )
 
 __all__ = [
+    # Client
+    "LLMClient",
+    "LLMResponse",
+    "LLMStreamChunk",
+    "LLMAPIError",
+    "LLMConfigError",
+    "LLM_DEFAULT_MODELS",
+    # Multi-model
     "ModelProvider",
     "ModelCapability",
     "ModelConfig",
@@ -40,6 +56,7 @@ __all__ = [
     "ModelPool",
     "create_router",
     "estimate_cost",
+    # RAG
     "DocumentChunk",
     "RetrievedChunk",
     "TextChunker",
@@ -48,6 +65,7 @@ __all__ = [
     "VectorStore",
     "RAGContextBuilder",
     "create_rag_context",
+    # Confidence
     "ConfidenceLevel",
     "Prediction",
     "CalibrationMetrics",

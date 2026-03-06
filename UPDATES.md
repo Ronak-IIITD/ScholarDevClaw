@@ -4,6 +4,57 @@
 
 **Last updated:** 2026-03-06
 
+### 2026-03-06 (Phase 1: Auth Restructure + LLM Multi-Provider Client)
+
+**Goal:** Separate LLM providers from identity providers, support login through any LLM provider, and create a real HTTP-based LLM client for all supported providers.
+
+**Summary:** AuthProvider enum expanded from 6 to 18 values. New unified LLM HTTP client (`llm/client.py`) supporting 12 providers. ModelProvider enum and default model registry expanded to cover all providers. Setup wizard now offers 14 provider choices. Import/export detects 8 key prefixes. All 851 tests passing.
+
+**New: `llm/client.py`** (NEW, ~460 lines):
+- `LLMClient`: Unified HTTP client using `httpx` for all LLM providers
+- Provider-specific request builders: Anthropic Messages API, OpenAI Chat Completions, Cohere v2, Azure OpenAI, GitHub Copilot
+- Provider-specific response parsers normalised into `LLMResponse` dataclass
+- Streaming support via `chat_stream()` with SSE parsing for both Anthropic and OpenAI-compatible formats
+- Factory methods: `from_provider()` (env var auto-detection), `from_auth_store()` (reads from local AuthStore)
+- `LLMAPIError` and `LLMConfigError` exception classes
+- Default models for 12 providers (Anthropic, OpenAI, Ollama, Groq, Mistral, DeepSeek, Cohere, OpenRouter, Together, Fireworks, GitHub Copilot, Azure OpenAI)
+- Context manager support for connection cleanup
+
+**Updated: `auth/types.py`** (expanded):
+- `AuthProvider` enum: 6 → 18 values (4 identity + 12 LLM + 2 shared)
+- New LLM providers: GITHUB_COPILOT, OLLAMA, AZURE_OPENAI, GROQ, MISTRAL, DEEPSEEK, COHERE, OPENROUTER, TOGETHER, FIREWORKS
+- New properties: `is_llm_provider`, `requires_api_key`, `default_base_url`, `env_var_name`, `display_name`
+- `validate_key_format()`: expanded validation for Groq (`gsk_`), Cohere (`co-`), OpenRouter (`sk-or-`), GitHub Copilot (`ghp_`/`ghu_`)
+- `key_format_hint`: expanded hints for all 18 providers
+
+**Updated: `llm/multi_model.py`** (expanded):
+- `ModelProvider` enum: 5 → 14 values (added GITHUB_COPILOT, AZURE_OPENAI, GROQ, MISTRAL, DEEPSEEK, COHERE, OPENROUTER, TOGETHER, FIREWORKS)
+- `DEFAULT_MODELS`: 5 → 12 models with real pricing and capability data
+- Fallback chain expanded: claude-sonnet → gpt-4o → groq-llama-3.1-70b → gemini-pro → deepseek-chat
+
+**Updated: `auth/cli.py`** (expanded):
+- Setup wizard: 4 → 14 provider choices with URLs for key acquisition
+- Ollama special handling (no key needed, shows base URL)
+- Login command: supported providers list expanded
+- `_prompt_for_key()`: shows format hints for each provider
+
+**Updated: `auth/import_export.py`** (expanded):
+- `_detect_provider()`: recognises 8 key prefixes (was 4): added `sk-or-` (OpenRouter), `ghu_` (Copilot), `gsk_` (Groq), `co-` (Cohere)
+- `from_env()`: recognises 13 env var patterns (was 5): added GROQ_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, COHERE_API_KEY, OPENROUTER_API_KEY, TOGETHER_API_KEY, FIREWORKS_API_KEY, AZURE_OPENAI_API_KEY
+
+**Updated: `llm/__init__.py`** (expanded exports):
+- Exports: LLMClient, LLMResponse, LLMStreamChunk, LLMAPIError, LLMConfigError, LLM_DEFAULT_MODELS
+
+**Files modified (6):**
+- `core/src/scholardevclaw/llm/client.py` (NEW)
+- `core/src/scholardevclaw/auth/types.py`
+- `core/src/scholardevclaw/llm/multi_model.py`
+- `core/src/scholardevclaw/llm/__init__.py`
+- `core/src/scholardevclaw/auth/cli.py`
+- `core/src/scholardevclaw/auth/import_export.py`
+
+**Verified:** All 851 tests pass.
+
 ### 2026-03-06 (Comprehensive Security Audit — Phase 2)
 
 **Goal:** Bug-bounty-style security audit across the entire codebase. Find and fix all potential vulnerabilities in Python core, TypeScript agent, Convex state layer, Docker infrastructure, and Nginx configuration.

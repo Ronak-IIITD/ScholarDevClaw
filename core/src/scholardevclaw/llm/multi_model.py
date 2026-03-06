@@ -20,12 +20,24 @@ from typing import Any, Callable
 
 
 class ModelProvider(Enum):
-    """Supported LLM providers"""
+    """Supported LLM providers.
+
+    Aligned with :class:`scholardevclaw.auth.types.AuthProvider` LLM members.
+    """
 
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     GOOGLE = "google"
     OLLAMA = "ollama"
+    GITHUB_COPILOT = "github_copilot"
+    AZURE_OPENAI = "azure_openai"
+    GROQ = "groq"
+    MISTRAL = "mistral"
+    DEEPSEEK = "deepseek"
+    COHERE = "cohere"
+    OPENROUTER = "openrouter"
+    TOGETHER = "together"
+    FIREWORKS = "fireworks"
     CUSTOM = "custom"
 
 
@@ -77,6 +89,7 @@ class ModelRegistry:
     """Registry of available models"""
 
     DEFAULT_MODELS: list[ModelConfig] = [
+        # ---- Anthropic ----
         ModelConfig(
             id="claude-opus",
             name="Claude 4 Opus",
@@ -114,6 +127,7 @@ class ModelRegistry:
             latency_estimate_ms=1500,
             reliability=0.98,
         ),
+        # ---- OpenAI ----
         ModelConfig(
             id="gpt-4o",
             name="GPT-4o",
@@ -151,6 +165,7 @@ class ModelRegistry:
             latency_estimate_ms=1800,
             reliability=0.95,
         ),
+        # ---- Google ----
         ModelConfig(
             id="gemini-pro",
             name="Gemini 1.5 Pro",
@@ -168,6 +183,133 @@ class ModelRegistry:
             cost_per_1k_output=5.0,
             latency_estimate_ms=2000,
             reliability=0.93,
+        ),
+        # ---- Groq ----
+        ModelConfig(
+            id="groq-llama-3.1-70b",
+            name="Llama 3.1 70B (Groq)",
+            provider=ModelProvider.GROQ,
+            model_id="llama-3.1-70b-versatile",
+            max_tokens=8192,
+            context_window=131072,
+            capabilities=[
+                ModelCapability.TEXT,
+                ModelCapability.CODE,
+                ModelCapability.STREAMING,
+            ],
+            cost_per_1k_input=0.59,
+            cost_per_1k_output=0.79,
+            latency_estimate_ms=300,
+            reliability=0.94,
+        ),
+        # ---- Mistral ----
+        ModelConfig(
+            id="mistral-large",
+            name="Mistral Large",
+            provider=ModelProvider.MISTRAL,
+            model_id="mistral-large-latest",
+            max_tokens=128000,
+            context_window=128000,
+            capabilities=[
+                ModelCapability.TEXT,
+                ModelCapability.CODE,
+                ModelCapability.FUNCTION,
+                ModelCapability.STREAMING,
+            ],
+            cost_per_1k_input=2.0,
+            cost_per_1k_output=6.0,
+            latency_estimate_ms=1200,
+            reliability=0.93,
+        ),
+        # ---- DeepSeek ----
+        ModelConfig(
+            id="deepseek-chat",
+            name="DeepSeek Chat",
+            provider=ModelProvider.DEEPSEEK,
+            model_id="deepseek-chat",
+            max_tokens=8192,
+            context_window=64000,
+            capabilities=[
+                ModelCapability.TEXT,
+                ModelCapability.CODE,
+                ModelCapability.STREAMING,
+            ],
+            cost_per_1k_input=0.14,
+            cost_per_1k_output=0.28,
+            latency_estimate_ms=800,
+            reliability=0.91,
+        ),
+        # ---- Cohere ----
+        ModelConfig(
+            id="command-r-plus",
+            name="Command R+",
+            provider=ModelProvider.COHERE,
+            model_id="command-r-plus",
+            max_tokens=4096,
+            context_window=128000,
+            capabilities=[
+                ModelCapability.TEXT,
+                ModelCapability.CODE,
+                ModelCapability.STREAMING,
+            ],
+            cost_per_1k_input=2.5,
+            cost_per_1k_output=10.0,
+            latency_estimate_ms=1500,
+            reliability=0.92,
+        ),
+        # ---- Together ----
+        ModelConfig(
+            id="together-llama-3.1-70b",
+            name="Llama 3.1 70B (Together)",
+            provider=ModelProvider.TOGETHER,
+            model_id="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+            max_tokens=4096,
+            context_window=131072,
+            capabilities=[
+                ModelCapability.TEXT,
+                ModelCapability.CODE,
+                ModelCapability.STREAMING,
+            ],
+            cost_per_1k_input=0.88,
+            cost_per_1k_output=0.88,
+            latency_estimate_ms=600,
+            reliability=0.93,
+        ),
+        # ---- Fireworks ----
+        ModelConfig(
+            id="fireworks-llama-3.1-70b",
+            name="Llama 3.1 70B (Fireworks)",
+            provider=ModelProvider.FIREWORKS,
+            model_id="accounts/fireworks/models/llama-v3p1-70b-instruct",
+            max_tokens=4096,
+            context_window=131072,
+            capabilities=[
+                ModelCapability.TEXT,
+                ModelCapability.CODE,
+                ModelCapability.STREAMING,
+            ],
+            cost_per_1k_input=0.9,
+            cost_per_1k_output=0.9,
+            latency_estimate_ms=500,
+            reliability=0.93,
+        ),
+        # ---- Ollama (local) ----
+        ModelConfig(
+            id="ollama-llama3.1",
+            name="Llama 3.1 (Ollama)",
+            provider=ModelProvider.OLLAMA,
+            model_id="llama3.1",
+            max_tokens=4096,
+            context_window=131072,
+            capabilities=[
+                ModelCapability.TEXT,
+                ModelCapability.CODE,
+                ModelCapability.STREAMING,
+            ],
+            cost_per_1k_input=0.0,
+            cost_per_1k_output=0.0,
+            latency_estimate_ms=2000,
+            reliability=0.85,
         ),
     ]
 
@@ -322,7 +464,9 @@ def create_router() -> ModelRouter:
     """Create a model router with default models"""
     registry = ModelRegistry()
     router = ModelRouter(registry)
-    router.set_fallback_chain(["claude-sonnet", "gpt-4o", "gemini-pro"])
+    router.set_fallback_chain(
+        ["claude-sonnet", "gpt-4o", "groq-llama-3.1-70b", "gemini-pro", "deepseek-chat"]
+    )
     return router
 
 
