@@ -1828,15 +1828,33 @@ class TreeSitterAnalyzer:
 
         return False
 
-    def suggest_research_papers(self) -> List[Dict]:
-        """Suggest research papers based on code patterns"""
+    def suggest_research_papers(self, llm_assistant: "Any | None" = None) -> List[Dict]:
+        """Suggest research papers based on code patterns.
+
+        Args:
+            llm_assistant: Optional LLMResearchAssistant instance. When provided,
+                enables dynamic spec discovery via arXiv search and LLM-powered
+                extraction, significantly expanding the set of relevant papers.
+        """
         analysis = self.analyze()
         suggestions = []
 
         # Import here to avoid circular dependency
         from ..research_intelligence.extractor import ResearchExtractor
 
-        extractor = ResearchExtractor()
+        extractor = ResearchExtractor(llm_assistant=llm_assistant)
+
+        # When an LLM assistant is available, dynamically discover new specs
+        # based on the patterns and frameworks found in the repo.
+        if llm_assistant is not None:
+            try:
+                extractor.discover_specs_for_repo(
+                    patterns=list(analysis.patterns.keys()),
+                    frameworks=list(analysis.frameworks),
+                )
+            except Exception:
+                # Discovery is best-effort; don't block suggestions on failure.
+                pass
 
         for pattern_name, locations in analysis.patterns.items():
             if not locations:

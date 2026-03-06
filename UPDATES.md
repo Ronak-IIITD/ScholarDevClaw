@@ -4,6 +4,78 @@
 
 **Last updated:** 2026-03-06
 
+### 2026-03-06 (Phase 6: Make Research Knowledge Base Dynamic)
+
+**Goal:** Transform the static, hardcoded research knowledge base into a dynamic system that discovers and registers new paper specs at runtime via broader local search, arXiv HTTP fallback, and LLM-powered extraction.
+
+**Summary:** Rewrote the `ResearchExtractor` in `extractor.py` to expand the built-in spec registry from 4 to 16 entries, broaden local search across all spec fields, expand code-pattern keyword mapping from ~10 to 40+ keys, add arXiv HTTP fallback when the `arxiv` Python package isn't installed, and introduce dynamic spec discovery via `discover_specs_for_repo()`. Updated `suggest_research_papers()` in `tree_sitter_analyzer.py` to accept and forward an optional `llm_assistant` parameter, enabling dynamic discovery when an LLM is available. All 851 tests pass.
+
+**Expanded: `PAPER_SPECS` registry (4 → 16 entries):**
+- Original 4: `rmsnorm`, `preln_transformer`, `qknorm`, `swiglu`
+- New 12: `geglu`, `flashattention`, `flashattention2`, `grouped_query_attention`, `rope`, `alibi`, `weight_decay_fused`, `lion`, `mistral`, `cosine_warmup`, `dropout_variants`
+- Each spec includes: `title`, `arxiv_id`, `algorithm_name`, `category`, `replaces`, `description`, `target_patterns`, `replacement`, `year`
+
+**Rewritten: `_search_local()`:**
+- Previously searched only `title` and `category` fields
+- Now searches across ALL spec fields: `name`, `title`, `algorithm_name`, `category`, `replaces`, `description`, `target_patterns`, `replacement`
+- Case-insensitive matching across all fields
+
+**Expanded: `find_papers_for_code_pattern()` keyword mapping (~10 → 40+ keys):**
+- Normalization: `layernorm`, `layer_norm`, `batchnorm`, `batch_norm`, `groupnorm`, `group_norm`, `instancenorm`, `normalization`
+- Attention: `attention`, `self_attention`, `multi_head`, `multihead`, `causal_attention`, `cross_attention`, `scaled_dot_product`
+- Activation/FFN: `gelu`, `relu`, `silu`, `swish`, `feedforward`, `feed_forward`, `mlp`, `ffn`
+- Positional encoding: `positional_encoding`, `position_embedding`, `pos_embed`, `sinusoidal`, `rotary`, `rope`
+- Optimizer: `adam`, `adamw`, `sgd`, `optimizer`, `weight_decay`, `learning_rate`, `lr_schedule`, `cosine_schedule`, `warmup`
+- Architecture: `transformer`, `encoder`, `decoder`, `embedding`, `dropout`
+- Deduplication via `seen_names` set to prevent duplicate suggestions
+
+**New: `_fetch_arxiv_papers()` helper:**
+- Lightweight synchronous arXiv search via Atom API (`export.arxiv.org/api/query`)
+- Regex-based XML parsing — no external XML library needed
+- Returns list of dicts with `title`, `arxiv_id`, `abstract`, `authors`, `published`, `categories`
+
+**Enhanced: `search_by_keyword()` with arXiv fallback:**
+- New optional `include_arxiv=True` parameter
+- When local results are fewer than 3 and `include_arxiv` is enabled, fetches additional results from arXiv
+- arXiv results merged with local results, deduplicated
+
+**Enhanced: `search_arxiv()` with HTTP fallback:**
+- When the `arxiv` Python package isn't installed, falls back to `_search_arxiv_http()` (same Atom API + regex parser)
+- Transparent to callers — same return format
+
+**New: `discover_specs_for_repo()` method:**
+- Accepts `patterns` (from tree-sitter analysis) and `frameworks` (detected frameworks)
+- Builds arXiv search queries from pattern names via `_build_discovery_query()`
+- Fetches candidate papers from arXiv
+- Uses LLM (when available) to extract structured specs via `_try_register_arxiv_paper()`
+- Registers discovered specs in the instance-level registry for immediate use
+
+**New: `_try_register_arxiv_paper()` helper:**
+- Sends paper abstract to LLM for structured spec extraction
+- Registers extracted spec in `self.specs` with proper fields
+- Graceful failure — returns `False` if LLM extraction fails
+
+**New: `_build_discovery_query()` helper:**
+- Maps pattern names to arXiv search queries (e.g., `normalization` → `"layer normalization transformer deep learning"`)
+- Coverage for: normalization, attention, activation, optimizer, transformer, embedding, dropout, positional, loss, regularization
+
+**Instance-level spec registry:**
+- `self.specs` is now a shallow copy of `PAPER_SPECS`
+- Each `ResearchExtractor` instance can register new specs without mutating the module-level dict
+- Prevents cross-instance pollution in concurrent usage
+
+**Updated: `suggest_research_papers()` in `tree_sitter_analyzer.py`:**
+- New optional `llm_assistant` parameter (type: `Any | None`)
+- Passes `llm_assistant` through to `ResearchExtractor(llm_assistant=...)`
+- When LLM is available, calls `extractor.discover_specs_for_repo()` with patterns and frameworks from the analysis
+- Discovery is best-effort (wrapped in try/except) — doesn't block suggestions on failure
+
+**Files modified (2):**
+- `core/src/scholardevclaw/research_intelligence/extractor.py` (major rewrite)
+- `core/src/scholardevclaw/repo_intelligence/tree_sitter_analyzer.py` (updated `suggest_research_papers()`)
+
+**Verified:** All 851 tests pass.
+
 ### 2026-03-06 (Phase 5: Replace Fake Benchmarks in Validation Runner)
 
 **Goal:** Replace all hardcoded fake benchmark numbers in the validation runner with real subprocess-based measurements using `time.perf_counter()` and `tracemalloc`.
