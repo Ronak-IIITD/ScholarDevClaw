@@ -1014,84 +1014,304 @@ def cmd_rollback(args):
 
 
 def cmd_demo(args):
-    """Run demo with nanoGPT"""
-    # Find project root
+    """Run end-to-end demo: clone nanoGPT (if needed), then analyze -> suggest -> map -> generate -> validate."""
+    import subprocess as _sp
+    import time as _time
+
+    # ── Resolve demo repository ──────────────────────────────────────
     cli_dir = Path(__file__).parent
     project_root = cli_dir.parent.parent.parent
-    demo_path = project_root / "test_repos" / "nanogpt"
 
-    if not demo_path.exists():
-        print(f"Error: nanoGPT not found at {demo_path}")
-        print("Run: git clone https://github.com/karpathy/nanoGPT.git test_repos/nanogpt")
-        sys.exit(1)
+    repo_path: Path | None = None
+    if getattr(args, "repo", None):
+        repo_path = Path(args.repo).expanduser().resolve()
+        if not repo_path.exists():
+            print(f"Error: repository not found at {repo_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        repo_path = project_root / "test_repos" / "nanogpt"
+        if not repo_path.exists():
+            print("[setup] nanoGPT not found locally — cloning from GitHub...")
+            repo_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                _sp.run(
+                    [
+                        "git",
+                        "clone",
+                        "--depth",
+                        "1",
+                        "https://github.com/karpathy/nanoGPT.git",
+                        str(repo_path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                print(f"[setup] Cloned to {repo_path}")
+            except Exception as exc:
+                print(f"Error: Failed to clone nanoGPT: {exc}", file=sys.stderr)
+                print(
+                    "Clone manually: git clone https://github.com/karpathy/nanoGPT.git test_repos/nanogpt"
+                )
+                sys.exit(1)
 
-    print("ScholarDevClaw Demo")
-    print("=" * 50)
-    print(f"Repository: {demo_path}\n")
+    # ── Resolve which specs to demo ──────────────────────────────────
+    from scholardevclaw.research_intelligence.extractor import PAPER_SPECS
 
-    # Step 1: Analyze
-    print("[1/5] Analyzing repository...")
+    demo_all = getattr(args, "all_specs", False)
+    chosen_spec = getattr(args, "spec", None)
+    output_dir = getattr(args, "output_dir", None)
+    skip_validate = getattr(args, "skip_validate", False)
+    output_json = getattr(args, "output_json", False)
+
+    if demo_all:
+        spec_names = sorted(PAPER_SPECS.keys())
+    elif chosen_spec:
+        if chosen_spec not in PAPER_SPECS:
+            print(f"Error: Unknown spec '{chosen_spec}'", file=sys.stderr)
+            print(f"Available: {', '.join(sorted(PAPER_SPECS.keys()))}")
+            sys.exit(1)
+        spec_names = [chosen_spec]
+    else:
+        # Default: demonstrate a curated set that covers all categories
+        spec_names = ["rmsnorm", "swiglu", "flashattention", "rope", "cosine_warmup"]
+        spec_names = [s for s in spec_names if s in PAPER_SPECS]
+
+    # ── Imports ───────────────────────────────────────────────────────
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
-
-    analyzer = TreeSitterAnalyzer(demo_path)
-    result = analyzer.analyze()
-
-    print(f"  Found {len(result.languages)} languages: {', '.join(result.languages)}")
-    print(f"  Total files: {sum(s.file_count for s in result.language_stats)}")
-
-    # Step 2: Research
-    print("\n[2/5] Extracting RMSNorm specification...")
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
-
-    extractor = ResearchExtractor()
-    spec = extractor.get_spec("rmsnorm")
-
-    if spec is None:
-        print("Error: RMSNorm spec not found")
-        sys.exit(1)
-
-    print(f"  Algorithm: {spec['algorithm']['name']}")
-    print(f"  Replaces: {spec['algorithm']['replaces']}")
-    print(f"  Category: {spec['algorithm']['category']}")
-
-    # Step 3: Suggest
-    print("\n[3/5] Checking for improvement opportunities...")
-    suggestions = analyzer.suggest_research_papers()
-
-    if suggestions:
-        print(f"  Found {len(suggestions)} opportunities")
-        for s in suggestions[:3]:
-            print(f"    - {s['pattern']}: {s['paper']['title']} ({s['confidence']:.0f}%)")
-
-    # Step 4: Generate
-    print("\n[4/5] Generating patch...")
+    from scholardevclaw.mapping.engine import MappingEngine
     from scholardevclaw.patch_generation.generator import PatchGenerator
-
-    mapping_result = {
-        "targets": [],
-        "research_spec": spec,
-    }
-
-    generator = PatchGenerator(demo_path)
-    patch = generator.generate(mapping_result)
-
-    print(f"  Branch: {patch.branch_name}")
-    print(f"  New files: {len(patch.new_files)}")
-    print(f"  Transformations: {len(patch.transformations)}")
-
-    # Step 5: Validate
-    print("\n[5/5] Validating...")
     from scholardevclaw.validation.runner import ValidationRunner
 
-    runner = ValidationRunner(demo_path)
-    validation = runner.run({}, str(demo_path))
+    total_steps = 3 + len(spec_names) * (2 if skip_validate else 3)
+    step = 0
+    t_start = _time.perf_counter()
 
-    print(f"  Stage: {validation.stage}")
-    print(f"  Passed: {'Yes' if validation.passed else 'No'}")
+    def _step(msg: str) -> None:
+        nonlocal step
+        step += 1
+        print(f"\n[{step}/{total_steps}] {msg}")
 
-    print("\n" + "=" * 50)
-    print("Demo complete!")
-    print("\nYour repository is ready for research-driven improvements.")
+    # ── Header ────────────────────────────────────────────────────────
+    print("=" * 60)
+    print("  ScholarDevClaw — End-to-End Demo")
+    print("=" * 60)
+    print(f"  Repository : {repo_path}")
+    print(f"  Specs      : {', '.join(spec_names)}")
+    if output_dir:
+        print(f"  Output     : {output_dir}")
+    print()
+
+    # ── Step 1: Analyze ───────────────────────────────────────────────
+    _step("Analyzing repository with tree-sitter AST extraction...")
+    t0 = _time.perf_counter()
+    analyzer = TreeSitterAnalyzer(repo_path)
+    analysis = analyzer.analyze()
+    dt = _time.perf_counter() - t0
+
+    lang_list = ", ".join(analysis.languages) if analysis.languages else "none"
+    print(f"  Languages     : {lang_list}")
+    print(f"  Files scanned : {sum(s.file_count for s in analysis.language_stats)}")
+    print(f"  Code elements : {len(analysis.elements)}")
+    print(f"  Imports       : {len(analysis.imports)}")
+    print(f"  Patterns      : {dict(analysis.patterns)}")
+    print(f"  Frameworks    : {', '.join(analysis.frameworks) if analysis.frameworks else 'none'}")
+    print(f"  Time          : {dt:.2f}s")
+
+    # ── Step 2: Suggest ───────────────────────────────────────────────
+    _step("Scanning for research improvement opportunities...")
+    t0 = _time.perf_counter()
+    suggestions = analyzer.suggest_research_papers()
+    dt = _time.perf_counter() - t0
+
+    print(f"  Found {len(suggestions)} opportunities ({dt:.2f}s)")
+    for s in suggestions[:8]:
+        paper = s.get("paper", {})
+        title = paper.get("title", paper.get("name", "?"))
+        conf = s.get("confidence", 0)
+        print(f"    - {s['pattern']}: {title} ({conf:.0f}%)")
+
+    # ── Step 3: Research specs ────────────────────────────────────────
+    _step("Loading research specifications...")
+    extractor = ResearchExtractor()
+    specs_loaded = {}
+    for name in spec_names:
+        spec = extractor.get_spec(name)
+        if spec:
+            specs_loaded[name] = spec
+            algo = spec.get("algorithm", {})
+            print(
+                f"  [{name}] {algo.get('name', '?')} — replaces {algo.get('replaces', '?')} ({algo.get('category', '?')})"
+            )
+        else:
+            print(f"  [{name}] WARNING: spec not found, skipping")
+    if not specs_loaded:
+        print("Error: No specs could be loaded", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Per-spec pipeline: Map -> Generate -> Validate ────────────────
+    results = []
+    output_path = Path(output_dir).expanduser().resolve() if output_dir else None
+    if output_path:
+        output_path.mkdir(parents=True, exist_ok=True)
+
+    for spec_name, spec in specs_loaded.items():
+        spec_result: dict = {
+            "spec": spec_name,
+            "algorithm": spec.get("algorithm", {}).get("name", "?"),
+        }
+
+        # ── Map ───────────────────────────────────────────────────────
+        _step(f"Mapping [{spec_name}] to repository code locations...")
+        t0 = _time.perf_counter()
+        engine = MappingEngine(analysis.__dict__, spec)
+        mapping = engine.map()
+        dt = _time.perf_counter() - t0
+
+        targets = mapping.targets
+        print(f"  Targets found : {len(targets)} ({dt:.2f}s)")
+        print(f"  Strategy      : {mapping.strategy}")
+        print(f"  Confidence    : {mapping.confidence}%")
+        for t in targets[:5]:
+            print(f"    - {t.file}:{t.line}")
+        if len(targets) > 5:
+            print(f"    ... and {len(targets) - 5} more")
+
+        mapping_result = {
+            "targets": [
+                {
+                    "file": t.file,
+                    "line": t.line,
+                    "current_code": t.current_code,
+                    "replacement_required": t.replacement_required,
+                    "context": t.context,
+                }
+                for t in targets
+            ],
+            "strategy": mapping.strategy,
+            "confidence": mapping.confidence,
+            "research_spec": spec,
+        }
+        spec_result["mapping"] = {
+            "target_count": len(targets),
+            "strategy": mapping.strategy,
+            "confidence": mapping.confidence,
+        }
+
+        # ── Generate ──────────────────────────────────────────────────
+        _step(f"Generating patch artifacts for [{spec_name}]...")
+        t0 = _time.perf_counter()
+        generator = PatchGenerator(repo_path)
+        patch = generator.generate(mapping_result)
+        dt = _time.perf_counter() - t0
+
+        print(f"  Branch          : {patch.branch_name}")
+        print(f"  New files       : {len(patch.new_files)}")
+        print(f"  Transformations : {len(patch.transformations)}")
+        print(f"  Time            : {dt:.2f}s")
+
+        written_files: list[str] = []
+        if output_path:
+            spec_dir = output_path / spec_name
+            spec_dir.mkdir(parents=True, exist_ok=True)
+            for new_file in patch.new_files:
+                dest = spec_dir / new_file.path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(new_file.content)
+                written_files.append(str(dest))
+                print(f"    Wrote: {dest}")
+            for xform in patch.transformations:
+                xform_file = spec_dir / f"transform_{xform.file.replace('/', '_')}.diff"
+                diff_content = f"--- a/{xform.file}\n+++ b/{xform.file}\n"
+                if xform.changes:
+                    for c in xform.changes:
+                        diff_content += f"# {c.get('type', 'change')}: {c.get('from', '?')} -> {c.get('to', '?')}\n"
+                diff_content += f"\n-{xform.original[:200]}\n+{xform.modified[:200]}\n"
+                xform_file.write_text(diff_content)
+                written_files.append(str(xform_file))
+
+        spec_result["generation"] = {
+            "branch": patch.branch_name,
+            "new_files": len(patch.new_files),
+            "transformations": len(patch.transformations),
+            "written_files": written_files,
+        }
+
+        # ── Validate ──────────────────────────────────────────────────
+        if not skip_validate:
+            _step(f"Validating [{spec_name}] with real benchmarks...")
+            t0 = _time.perf_counter()
+            runner = ValidationRunner(repo_path)
+            validation = runner.run({}, str(repo_path))
+            dt = _time.perf_counter() - t0
+
+            print(f"  Stage  : {validation.stage}")
+            print(f"  Passed : {'Yes' if validation.passed else 'No'}")
+            if hasattr(validation, "comparison") and validation.comparison:
+                comp = validation.comparison
+                if isinstance(comp, dict):
+                    speedup = comp.get("speedup", "N/A")
+                    print(f"  Speedup: {speedup}")
+            print(f"  Time   : {dt:.2f}s")
+
+            spec_result["validation"] = {
+                "passed": validation.passed,
+                "stage": validation.stage,
+            }
+
+        results.append(spec_result)
+
+    # ── Summary report ────────────────────────────────────────────────
+    dt_total = _time.perf_counter() - t_start
+
+    print("\n" + "=" * 60)
+    print("  Demo Results Summary")
+    print("=" * 60)
+    print(f"  Repository    : {repo_path}")
+    print(f"  Total time    : {dt_total:.1f}s")
+    print(f"  Specs demoed  : {len(results)}")
+    print()
+
+    # Per-spec summary table
+    print(f"  {'Spec':<24} {'Targets':>8} {'Files':>6} {'Xforms':>7} {'Conf':>5}  {'Valid':>6}")
+    print(f"  {'-' * 24} {'-' * 8} {'-' * 6} {'-' * 7} {'-' * 5}  {'-' * 6}")
+    for r in results:
+        m = r.get("mapping", {})
+        g = r.get("generation", {})
+        v = r.get("validation", {})
+        valid_str = "Yes" if v.get("passed") else ("No" if v else "skip")
+        print(
+            f"  {r['spec']:<24} {m.get('target_count', 0):>8} "
+            f"{g.get('new_files', 0):>6} {g.get('transformations', 0):>7} "
+            f"{m.get('confidence', 0):>4}%  {valid_str:>6}"
+        )
+
+    if output_path:
+        print(f"\n  Patch artifacts written to: {output_path}")
+
+    print("\n  Your repository is ready for research-driven improvements.")
+    print(f"  Next: scholardevclaw integrate {repo_path} <spec>\n")
+
+    # ── JSON output ───────────────────────────────────────────────────
+    if output_json:
+        import json as _json
+
+        report = {
+            "repository": str(repo_path),
+            "total_time_seconds": round(dt_total, 2),
+            "analysis": {
+                "languages": analysis.languages,
+                "file_count": sum(s.file_count for s in analysis.language_stats),
+                "elements": len(analysis.elements),
+                "imports": len(analysis.imports),
+                "frameworks": analysis.frameworks,
+            },
+            "suggestions": len(suggestions),
+            "specs": results,
+        }
+        print(_json.dumps(report, indent=2))
 
 
 def cmd_github_app(args):
@@ -1555,7 +1775,20 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
     # demo
-    p_demo = subparsers.add_parser("demo", help="Run demo with nanoGPT")
+    p_demo = subparsers.add_parser(
+        "demo",
+        help="Run end-to-end demo (clones nanoGPT if needed, runs full pipeline)",
+    )
+    p_demo.add_argument("--repo", help="Custom repository path (defaults to test_repos/nanogpt)")
+    p_demo.add_argument("--spec", help="Run demo for a specific spec (e.g. rmsnorm, swiglu)")
+    p_demo.add_argument("--all", dest="all_specs", action="store_true", help="Demo all 16 specs")
+    p_demo.add_argument("--output-dir", help="Write patch artifacts to this directory")
+    p_demo.add_argument(
+        "--skip-validate", action="store_true", help="Skip validation benchmarks (faster)"
+    )
+    p_demo.add_argument(
+        "--output-json", action="store_true", help="Output machine-readable JSON report"
+    )
 
     args = parser.parse_args()
 

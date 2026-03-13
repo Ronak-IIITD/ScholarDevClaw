@@ -4,6 +4,48 @@
 
 **Last updated:** 2026-03-13
 
+### 2026-03-13 (Phase 11: End-to-End Demo Mode)
+
+**Goal:** Transform the `scholardevclaw demo` command from a basic single-spec stub into a production-quality end-to-end demo that auto-clones nanoGPT, runs the full pipeline (analyze -> suggest -> map -> generate -> validate) across multiple specs, writes patch artifacts, and outputs a structured summary report.
+
+**Summary:** Rewrote `cmd_demo()` from ~80 lines to ~220 lines. The demo now: (1) auto-clones nanoGPT from GitHub when not found locally, (2) defaults to 5 curated specs covering all categories (normalization, activation, attention, positional encoding, scheduler), (3) runs real mapping via `MappingEngine` with AST-extracted targets instead of passing empty targets, (4) supports `--spec <name>` for single-spec demo, `--all` for all 16 specs, `--repo <path>` for custom repositories, `--output-dir` for writing patch artifacts, `--skip-validate` for faster runs, and `--output-json` for machine-readable reports, (5) shows per-step timing, a summary table, and next-step guidance. Updated the demo subparser with 6 new flags. All 851 tests pass. Smoke-tested with 1-spec, 5-spec, and output-dir modes.
+
+**Rewritten: `cmd_demo()` (cli.py:1016-1234):**
+- Auto-clones nanoGPT via `git clone --depth 1` when `test_repos/nanogpt` is missing
+- Resolves specs: `--spec <name>` for single, `--all` for all 16, default is curated set of 5
+- Uses real `MappingEngine(analysis.__dict__, spec)` for 6-tier target matching (was passing empty `targets: []`)
+- Writes patch artifacts to `--output-dir` organized by spec name (new files + transformation diffs)
+- Shows per-step timing with `[N/M]` progress indicators
+- Dynamic step count based on number of specs and whether validation is enabled
+- Summary table with columns: Spec, Targets, Files, Xforms, Conf, Valid
+- `--output-json` produces structured JSON with analysis stats, suggestion count, and per-spec results
+- `--skip-validate` skips real benchmark validation (faster demo runs)
+- `--repo <path>` allows demoing against any repository (not just nanoGPT)
+
+**Updated: demo subparser (cli.py):**
+- Added `--repo` flag: custom repository path (defaults to test_repos/nanogpt)
+- Added `--spec` flag: run demo for a specific spec
+- Added `--all` flag: demo all 16 specs
+- Added `--output-dir` flag: write patch artifacts to directory
+- Added `--skip-validate` flag: skip validation benchmarks
+- Added `--output-json` flag: output machine-readable JSON report
+
+**Smoke test results (5-spec default, skip-validate):**
+```
+Spec                      Targets  Files  Xforms  Conf   Valid
+rmsnorm                         1      1       1   70%    skip
+swiglu                          2      1       2   70%    skip
+flashattention                  2      1       2   70%    skip
+rope                            1      1       1   60%    skip
+cosine_warmup                   1      0       1   70%    skip
+Total time: 0.7s
+```
+
+**Files modified (1):**
+- `core/src/scholardevclaw/cli.py` (rewritten `cmd_demo` + expanded demo subparser)
+
+**Verified:** All 851 tests pass. Smoke-tested: single-spec, 5-spec default, --output-dir, --output-json.
+
 ### 2026-03-13 (Phase 10: PyPI Distribution — Production Packaging)
 
 **Goal:** Make ScholarDevClaw installable via `pip install scholardevclaw` with proper metadata, classifiers, optional extras, PEP 561 typing marker, and clean sdist/wheel builds.

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- End-to-end `demo` command: auto-clones nanoGPT, runs full pipeline across multiple specs, writes patch artifacts, summary report
 - PyPI distribution: renamed to `scholardevclaw`, SPDX license, PEP 561 typing, clean sdist/wheel
 - CI/CD pipeline with GitHub Actions (lint, type-check, test, coverage, Docker build)
 - Auto-release workflow (PyPI publish, GitHub Release, Docker image push on tag)
