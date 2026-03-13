@@ -4,6 +4,107 @@
 
 **Last updated:** 2026-03-13
 
+### 2026-03-13 (Phase 13: Plugin Ecosystem — Hooks, Marketplace & Community Extensions)
+
+**Goal:** Build a real plugin ecosystem with a hook-based event system, persistent enable/disable state, per-plugin configuration, 3 discovery sources (builtin, file-based, setuptools entry-points), 3 new hook plugins, upgraded existing plugins to hook-aware v2, full pipeline hook wiring, and CLI management commands.
+
+**Summary:** Created a complete hook system with 18 named pipeline hook points (`HookPoint` enum), a `HookEvent` dataclass with mutable payloads, and a `HookRegistry` with priority-ordered execution, error isolation, and execution logging. Rewrote the `PluginManager` from 358 to ~580 lines with 3 discovery sources, persistent enable/disable state via `~/.scholardevclaw/plugin_state.json`, and per-plugin configuration. Created 3 new hook plugins (auto_lint, metrics_collector, event_logger) and upgraded all 4 existing plugins (security, rustlang, javalang, jsts) to v2.0.0 with `register_hooks()` and `teardown()`. Wired hook fire points into all 8 pipeline functions (analyze, suggest, search, map, generate, validate, integrate, multi_integrate) with before/after pairs plus `on_patch_created`, `on_pipeline_start/complete/error`. Added `enable`/`disable`/`hooks` CLI subcommands. Updated `__init__.py` with 16 public exports. Added 72 comprehensive tests covering hooks, registry, manager, all plugins, pipeline wiring, exports, and CLI. All 923 tests pass (851 existing + 72 new).
+
+**New: `core/src/scholardevclaw/plugins/hooks.py` (~314 lines):**
+- `HookPoint` str enum with 18 named hook points: `on_pipeline_start`, `on_pipeline_complete`, `on_pipeline_error`, `on_before_analyze`, `on_after_analyze`, `on_before_suggest`, `on_after_suggest`, `on_before_search`, `on_after_search`, `on_before_map`, `on_after_map`, `on_before_generate`, `on_after_generate`, `on_patch_created`, `on_before_validate`, `on_after_validate`, `on_before_integrate`, `on_after_integrate`
+- `HookEvent` dataclass with mutable `payload` dict, read-only `metadata`, `cancelled` flag, and `errors` list
+- `HookRegistry` class: `register()` with priority ordering, `fire()` with error isolation and timing, `unregister()` / `unregister_all()` / `clear()`, `list_hooks()` / `has_hooks()` / `hook_count` introspection, execution log with per-callback timing
+- `get_hook_registry()` module-level singleton accessor
+- Supports resolution by `HookPoint` enum, string value (`"on_before_analyze"`), or enum name (`"BEFORE_ANALYZE"`)
+
+**New: `core/src/scholardevclaw/plugins/auto_lint.py` (~190 lines):**
+- Hook plugin that auto-lints generated patch code using Ruff
+- Hooks: `AFTER_GENERATE` (priority 50), `PATCH_CREATED` (priority 50)
+- Scans new file content and transformation diffs for lint issues
+- Attempts auto-fix via `ruff check --fix` when available
+- Reports issues as payload annotations
+
+**New: `core/src/scholardevclaw/plugins/metrics_collector.py` (~215 lines):**
+- Hook plugin that collects per-stage timing and payload size metrics
+- Hooks: all `BEFORE_*` (priority 10), all `AFTER_*` (priority 200), `PIPELINE_START/COMPLETE/ERROR`
+- Tracks stage start times, elapsed durations, payload sizes
+- `metrics` property for programmatic access, `summary()` for human-readable output
+- `reset()` / `teardown()` for cleanup
+
+**New: `core/src/scholardevclaw/plugins/event_logger.py` (~130 lines):**
+- Hook plugin that logs all 18 hook point firings with timestamps
+- Hooks: all 18 `HookPoint` values (priority 250 — runs last)
+- Configurable log level and max event buffer size
+- Logs payload keys, metadata, and human-readable stage context
+
+**Rewritten: `core/src/scholardevclaw/plugins/manager.py` (358 -> ~580 lines):**
+- 3 discovery sources: built-in modules (`_BUILTIN_PLUGINS` list of 7), file-based (`~/.scholardevclaw/plugins/*.py`), setuptools entry-points (`scholardevclaw.plugins` group)
+- `_load_state()` / `_save_state()` for persistent `plugin_state.json`
+- `enable_plugin()` / `disable_plugin()` / `is_enabled()` with persistence
+- `get_plugin_config()` / `set_plugin_config()` for per-plugin config
+- `load_all()` loads all enabled plugins with hook registration
+- `unload_plugin()` calls `teardown()` and unregisters hooks
+- Hook registration on load via `instance.register_hooks(registry)`
+- New "hook" scaffold template type
+
+**Upgraded: 4 existing plugins to v2.0.0 with hooks:**
+- `security.py`: Added `register_hooks()` / `teardown()`, hooks `AFTER_GENERATE` + `PATCH_CREATED` at priority 40, scans patch content for security patterns
+- `rustlang.py`: Added `register_hooks()` / `teardown()`, hooks `AFTER_ANALYZE` at priority 80, enriches analysis payload with Rust-specific data
+- `javalang.py`: Same pattern, hooks `AFTER_ANALYZE` at priority 80
+- `jsts.py`: Same pattern, hooks `AFTER_ANALYZE` at priority 80
+
+**Modified: `core/src/scholardevclaw/application/pipeline.py`:**
+- Added `_fire_hook()` helper: lazily imports registry, catches all exceptions, returns (possibly mutated) payload
+- Wired hooks into all 8 pipeline functions:
+  - `run_analyze()`: `on_before_analyze` / `on_after_analyze`
+  - `run_suggest()`: `on_before_suggest` / `on_after_suggest`
+  - `run_search()`: `on_before_search` / `on_after_search`
+  - `run_map()`: `on_before_map` / `on_after_map`
+  - `run_generate()`: `on_before_generate` / `on_after_generate` / `on_patch_created`
+  - `run_validate()`: `on_before_validate` / `on_after_validate`
+  - `run_integrate()`: `on_pipeline_start` / `on_before_integrate` / `on_after_integrate` / `on_pipeline_complete` / `on_pipeline_error`
+  - `run_multi_integrate()`: same pipeline-level + integrate hooks
+
+**Modified: `core/src/scholardevclaw/plugins/__init__.py`:**
+- Expanded exports from 8 to 16: added `HookPoint`, `HookEvent`, `HookRegistry`, `HookCallback`, `get_hook_registry`, `AutoLintPlugin`, `MetricsCollectorPlugin`, `EventLoggerPlugin`
+
+**Modified: `core/src/scholardevclaw/cli.py`:**
+- Plugin subcommand choices expanded: added `enable`, `disable`, `hooks`
+- `enable` — persists plugin as enabled via `manager.enable_plugin(name)`
+- `disable` — persists plugin as disabled and unloads if loaded
+- `hooks` — loads all plugins and displays registered hook callbacks grouped by hook point with priority, plus recent execution log
+- Plugin type choices expanded: added `hook` scaffold type
+- `list` action shows enabled/disabled status
+- `info` action shows hook registration and enabled status
+
+**New: `core/tests/unit/test_plugin_ecosystem.py` (72 tests):**
+- `TestHookPoint` (3 tests): enum count, values, str inheritance
+- `TestHookEvent` (3 tests): defaults, payload mutation, cancellation
+- `TestHookRegistry` (17 tests): register, fire, priority, mutation, error handling, unregister, clear, list, has_hooks, execution log, resolve by string/name, invalid hook
+- `TestGetHookRegistry` (2 tests): singleton, type
+- `TestPluginManager` (13 tests): discover, load, unload, enable/disable persistence, config, hook registration/unregistration
+- `TestAutoLintPlugin` (3 tests): metadata, hook registration, teardown
+- `TestMetricsCollectorPlugin` (3 tests): metadata, hook registration, teardown
+- `TestEventLoggerPlugin` (3 tests): metadata, hook registration, teardown
+- `TestSecurityPluginHooks` (3 tests): register_hooks, teardown
+- `TestRustlangPluginHooks` (2 tests): register_hooks
+- `TestJavalangPluginHooks` (2 tests): register_hooks
+- `TestJstsPluginHooks` (2 tests): register_hooks
+- `TestFireHookHelper` (4 tests): import, returns payload, no hooks, bad hook name
+- `TestPluginExports` (3 tests): all imports, __all__ list, get_plugin_manager
+- `TestFullIntegration` (3 tests): load all + fire, fire all hook points, hook count
+- `TestCLIPluginArgs` (2 tests): callable, new action choices
+
+**Plugin hook priority ordering (42 total hooks across 7 plugins):**
+- Priority 10: metrics_collector (before hooks — first to record timing)
+- Priority 40: security (after generate/patch — security scan)
+- Priority 50: auto_lint (after generate/patch — lint check)
+- Priority 80: rustlang, javalang, jsts (after analyze — enrich payload)
+- Priority 200: metrics_collector (after hooks — record completion timing)
+- Priority 250: event_logger (all hooks — log last for complete picture)
+
+**Verified:** All 923 tests pass (851 existing + 72 new). All plugin imports clean. CLI parses new subcommands. Full hook wiring verified with integration test.
+
 ### 2026-03-13 (Phase 12: Web Dashboard — React + Real-Time Pipeline Visualization)
 
 **Goal:** Build a full web dashboard with React + TypeScript + Vite that provides real-time pipeline visualization, a spec browser, and a pipeline launch UI, backed by new FastAPI dashboard API routes with WebSocket support.

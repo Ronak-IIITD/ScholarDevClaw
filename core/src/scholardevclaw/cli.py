@@ -767,12 +767,14 @@ def cmd_plugin(args):
 
         print(f"\nDiscovered plugins ({len(discovered)}):")
         for p in discovered:
-            print(f"  • {p.name} ({p.plugin_type}) - {p.description}")
-            print(f"    Version: {p.version} | Author: {p.author}")
+            enabled = manager.is_enabled(p.name) if hasattr(manager, "is_enabled") else True
+            status = "enabled" if enabled else "disabled"
+            print(f"  {'*' if enabled else '-'} {p.name} ({p.plugin_type}) - {p.description}")
+            print(f"    Version: {p.version} | Author: {p.author} | Status: {status}")
 
         print(f"\nLoaded plugins ({len(loaded)}):")
         for p in loaded:
-            print(f"  ✓ {p.name} ({p.plugin_type})")
+            print(f"  + {p.name} ({p.plugin_type})")
 
     elif args.plugin_action == "load":
         plugin = manager.load_plugin(args.plugin_name)
@@ -787,6 +789,69 @@ def cmd_plugin(args):
     elif args.plugin_action == "unload":
         manager.unload_plugin(args.plugin_name)
         print(f"Unloaded plugin: {args.plugin_name}")
+
+    elif args.plugin_action == "enable":
+        if not args.plugin_name:
+            print("Error: plugin name required for enable", file=sys.stderr)
+            sys.exit(1)
+        if hasattr(manager, "enable_plugin"):
+            manager.enable_plugin(args.plugin_name)
+            print(f"Enabled plugin: {args.plugin_name}")
+        else:
+            print("Enable/disable not supported by this plugin manager", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.plugin_action == "disable":
+        if not args.plugin_name:
+            print("Error: plugin name required for disable", file=sys.stderr)
+            sys.exit(1)
+        if hasattr(manager, "disable_plugin"):
+            manager.disable_plugin(args.plugin_name)
+            print(f"Disabled plugin: {args.plugin_name}")
+        else:
+            print("Enable/disable not supported by this plugin manager", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.plugin_action == "hooks":
+        from scholardevclaw.plugins.hooks import get_hook_registry, HookPoint
+
+        registry = get_hook_registry()
+
+        # Load all plugins so their hooks are registered
+        manager.load_all()
+
+        all_hooks = registry.list_hooks()
+        if not all_hooks:
+            print("No hooks registered. Load plugins first with 'plugin load <name>'.")
+            return
+
+        print("Registered Plugin Hooks")
+        print("=" * 60)
+        print(f"Total callbacks: {registry.hook_count}")
+        print()
+
+        # Group by hook point
+        by_point: dict[str, list[dict]] = {}
+        for h in all_hooks:
+            by_point.setdefault(h["hook"], []).append(h)
+
+        for hp in HookPoint:
+            entries = by_point.get(hp.value, [])
+            if entries:
+                print(f"  {hp.value} ({len(entries)} callbacks):")
+                for e in entries:
+                    print(f"    [{e['priority']:>3}] {e['plugin']}")
+        print()
+
+        # Show execution log if any
+        log = registry.get_execution_log()
+        if log:
+            print(f"Recent execution log ({len(log)} entries):")
+            for entry in log[-10:]:
+                status = "OK" if entry.get("error") is None else "ERR"
+                print(
+                    f"  [{status}] {entry['hook']} <- {entry['plugin']} ({entry['elapsed_ms']}ms)"
+                )
 
     elif args.plugin_action == "analyze":
         analyzer = manager.get_analyzer(args.plugin_name)
@@ -834,6 +899,10 @@ def cmd_plugin(args):
             print(f"  Description: {meta.description}")
             print(f"  Author: {meta.author}")
             print(f"  Entry point: {meta.entry_point}")
+            if hasattr(meta, "hooks") and meta.hooks:
+                print(f"  Hooks: {', '.join(meta.hooks)}")
+            enabled = manager.is_enabled(meta.name) if hasattr(manager, "is_enabled") else True
+            print(f"  Enabled: {enabled}")
         else:
             print(f"Plugin not found: {args.plugin_name}", file=sys.stderr)
             sys.exit(1)
@@ -1688,13 +1757,24 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_plugin = subparsers.add_parser("plugin", help="Manage plugins")
     p_plugin.add_argument(
         "plugin_action",
-        choices=["list", "load", "unload", "analyze", "validate", "scaffold", "info"],
+        choices=[
+            "list",
+            "load",
+            "unload",
+            "enable",
+            "disable",
+            "hooks",
+            "analyze",
+            "validate",
+            "scaffold",
+            "info",
+        ],
         help="Action to perform",
     )
     p_plugin.add_argument("plugin_name", nargs="?", help="Plugin name")
     p_plugin.add_argument("repo_path", nargs="?", help="Repository path (for analyze/validate)")
     p_plugin.add_argument(
-        "--plugin-type", choices=["analyzer", "spec_provider", "validator", "custom"]
+        "--plugin-type", choices=["analyzer", "spec_provider", "validator", "hook", "custom"]
     )
 
     # rollback

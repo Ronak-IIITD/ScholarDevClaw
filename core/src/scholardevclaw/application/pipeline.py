@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -7,6 +8,8 @@ import subprocess
 from typing import Any, Callable
 
 from .schema_contract import SCHEMA_VERSION, with_meta
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -26,6 +29,41 @@ def _log(logs: list[str], message: str, log_callback: LogCallback | None = None)
     logs.append(message)
     if log_callback is not None:
         log_callback(message)
+
+
+# ---------------------------------------------------------------------------
+# Plugin hook integration
+# ---------------------------------------------------------------------------
+
+
+def _fire_hook(
+    hook_point: str,
+    *,
+    stage: str = "",
+    payload: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Fire a plugin hook point if the hook registry is available.
+
+    Returns the (possibly mutated) payload, or None if hooks aren't loaded.
+    Failures are logged but never propagate.
+    """
+    try:
+        from scholardevclaw.plugins.hooks import get_hook_registry
+
+        registry = get_hook_registry()
+        if registry.hook_count == 0:
+            return payload
+        event = registry.fire(
+            hook_point,
+            stage=stage,
+            payload=payload if payload is not None else {},
+            metadata=metadata if metadata is not None else {},
+        )
+        return event.payload
+    except Exception as exc:
+        _logger.debug("Hook fire failed for %s: %s", hook_point, exc)
+        return payload
 
 
 def _ensure_repo(repo_path: str) -> Path:
@@ -189,6 +227,14 @@ def run_analyze(repo_path: str, *, log_callback: LogCallback | None = None) -> P
     _log(logs, f"Analyzing repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
+
+        _fire_hook(
+            "on_before_analyze",
+            stage="analyze",
+            payload={"repo_path": str(path)},
+            metadata={"repo_path": str(path)},
+        )
+
         analyzer = TreeSitterAnalyzer(path)
         result = analyzer.analyze()
 
@@ -218,6 +264,14 @@ def run_analyze(repo_path: str, *, log_callback: LogCallback | None = None) -> P
             f"Detected frameworks: {', '.join(result.frameworks) if result.frameworks else 'None'}",
             log_callback,
         )
+
+        _fire_hook(
+            "on_after_analyze",
+            stage="analyze",
+            payload=payload,
+            metadata={"repo_path": str(path)},
+        )
+
         return PipelineResult(ok=True, title="Repository Analysis", payload=payload, logs=logs)
     except Exception as exc:
         _log(logs, f"Failed: {exc}", log_callback)
@@ -237,14 +291,31 @@ def run_suggest(repo_path: str, *, log_callback: LogCallback | None = None) -> P
     _log(logs, f"Scanning for improvement opportunities: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
+
+        _fire_hook(
+            "on_before_suggest",
+            stage="suggest",
+            payload={"repo_path": str(path)},
+            metadata={"repo_path": str(path)},
+        )
+
         analyzer = TreeSitterAnalyzer(path)
         suggestions = analyzer.suggest_research_papers()
+
+        payload = {"repo_path": str(path), "suggestions": suggestions}
+
+        _fire_hook(
+            "on_after_suggest",
+            stage="suggest",
+            payload=payload,
+            metadata={"repo_path": str(path), "count": len(suggestions)},
+        )
 
         _log(logs, f"Suggestions found: {len(suggestions)}", log_callback)
         return PipelineResult(
             ok=True,
             title="Research Suggestions",
-            payload={"repo_path": str(path), "suggestions": suggestions},
+            payload=payload,
             logs=logs,
         )
     except Exception as exc:
@@ -272,6 +343,13 @@ def run_search(
     logs: list[str] = []
     _log(logs, f"Searching for: {query}", log_callback)
     try:
+        _fire_hook(
+            "on_before_search",
+            stage="search",
+            payload={"query": query, "include_arxiv": include_arxiv, "include_web": include_web},
+            metadata={"query": query, "language": language, "max_results": max_results},
+        )
+
         extractor = ResearchExtractor()
         local_results = extractor.search_by_keyword(query, max_results=max_results)
 
@@ -337,6 +415,13 @@ def run_search(
                 f"{len(payload['web'].get('papers_with_code', []))} papers",
                 log_callback,
             )
+
+        _fire_hook(
+            "on_after_search",
+            stage="search",
+            payload=payload,
+            metadata={"query": query, "language": language},
+        )
 
         return PipelineResult(ok=True, title="Research Search", payload=payload, logs=logs)
     except Exception as exc:
@@ -445,6 +530,14 @@ def run_map(
     _log(logs, f"Mapping spec '{spec_name}' to repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
+
+        _fire_hook(
+            "on_before_map",
+            stage="map",
+            payload={"repo_path": str(path), "spec_name": spec_name},
+            metadata={"repo_path": str(path), "spec_name": spec_name},
+        )
+
         mapping_result, spec = _build_mapping_result(path, spec_name, log_callback=log_callback)
         targets = mapping_result.get("targets", [])
 
@@ -457,6 +550,13 @@ def run_map(
             "target_count": len(targets),
             "mapping": mapping_result,
         }
+
+        _fire_hook(
+            "on_after_map",
+            stage="map",
+            payload=payload,
+            metadata={"repo_path": str(path), "spec_name": spec_name},
+        )
 
         _log(logs, f"Algorithm: {payload['algorithm']}", log_callback)
         _log(logs, f"Targets found: {len(targets)}", log_callback)
@@ -489,6 +589,14 @@ def run_generate(
     )
     try:
         path = _ensure_repo(repo_path)
+
+        _fire_hook(
+            "on_before_generate",
+            stage="generate",
+            payload={"repo_path": str(path), "spec_name": spec_name},
+            metadata={"repo_path": str(path), "spec_name": spec_name},
+        )
+
         mapping_result, spec = _build_mapping_result(path, spec_name, log_callback=log_callback)
 
         generator = PatchGenerator(path)
@@ -530,6 +638,25 @@ def run_generate(
         _log(logs, f"Transformations: {len(patch.transformations)}", log_callback)
         if output_dir_path:
             _log(logs, f"Patch artifacts written to: {output_dir_path}", log_callback)
+
+        _fire_hook(
+            "on_after_generate",
+            stage="generate",
+            payload=payload,
+            metadata={"repo_path": str(path), "spec_name": spec_name},
+        )
+
+        _fire_hook(
+            "on_patch_created",
+            stage="generate",
+            payload=payload,
+            metadata={
+                "repo_path": str(path),
+                "spec_name": spec_name,
+                "new_file_count": len(patch.new_files),
+                "transformation_count": len(patch.transformations),
+            },
+        )
 
         return PipelineResult(ok=True, title="Patch Generation", payload=payload, logs=logs)
     except Exception as exc:
@@ -623,6 +750,14 @@ def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> 
     _log(logs, f"Running validation in repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
+
+        _fire_hook(
+            "on_before_validate",
+            stage="validate",
+            payload={"repo_path": str(path)},
+            metadata={"repo_path": str(path)},
+        )
+
         runner = ValidationRunner(path)
         result = runner.run({}, str(path))
         baseline_metrics = _metric_dict(getattr(result, "baseline_metrics", None))
@@ -657,6 +792,13 @@ def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> 
         if result.error:
             _log(logs, f"Error: {result.error}", log_callback)
 
+        _fire_hook(
+            "on_after_validate",
+            stage="validate",
+            payload=payload,
+            metadata={"repo_path": str(path), "passed": result.passed},
+        )
+
         return PipelineResult(ok=result.passed, title="Validation", payload=payload, logs=logs)
     except Exception as exc:
         _log(logs, f"Failed: {exc}", log_callback)
@@ -687,6 +829,20 @@ def run_integrate(
     _log(logs, f"Starting integration workflow for repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
+
+        _fire_hook(
+            "on_pipeline_start",
+            stage="integrate",
+            payload={"repo_path": str(path), "spec_name": spec_name, "dry_run": dry_run},
+            metadata={"repo_path": str(path)},
+        )
+
+        _fire_hook(
+            "on_before_integrate",
+            stage="integrate",
+            payload={"repo_path": str(path), "spec_name": spec_name, "dry_run": dry_run},
+            metadata={"repo_path": str(path)},
+        )
 
         preflight = run_preflight(
             str(path),
@@ -837,6 +993,24 @@ def run_integrate(
             rollback_manager.mark_applied(str(path), rollback_snapshot_id)
             _log(logs, f"Marked rollback snapshot as applied: {rollback_snapshot_id}", log_callback)
 
+        _fire_hook(
+            "on_after_integrate",
+            stage="integrate",
+            payload=payload,
+            metadata={"repo_path": str(path), "spec_name": selected_spec_name},
+        )
+
+        _fire_hook(
+            "on_pipeline_complete",
+            stage="integrate",
+            payload=payload,
+            metadata={
+                "repo_path": str(path),
+                "spec_name": selected_spec_name,
+                "ok": validate_result.ok,
+            },
+        )
+
         return PipelineResult(
             ok=validate_result.ok,
             title="Integration",
@@ -845,6 +1019,12 @@ def run_integrate(
             error=validate_result.error,
         )
     except Exception as exc:
+        _fire_hook(
+            "on_pipeline_error",
+            stage="integrate",
+            payload={"error": str(exc)},
+            metadata={"repo_path": repo_path, "spec_name": spec_name},
+        )
         _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(
             ok=False,
@@ -891,6 +1071,20 @@ def run_multi_integrate(
 
     try:
         path = _ensure_repo(repo_path)
+
+        _fire_hook(
+            "on_pipeline_start",
+            stage="multi_integrate",
+            payload={"repo_path": str(path), "spec_names": spec_names},
+            metadata={"repo_path": str(path), "spec_count": len(spec_names)},
+        )
+
+        _fire_hook(
+            "on_before_integrate",
+            stage="multi_integrate",
+            payload={"repo_path": str(path), "spec_names": spec_names},
+            metadata={"repo_path": str(path)},
+        )
 
         preflight = run_preflight(
             str(path),
@@ -978,6 +1172,20 @@ def run_multi_integrate(
             "multi_integration",
         )
 
+        _fire_hook(
+            "on_after_integrate",
+            stage="multi_integrate",
+            payload=payload,
+            metadata={"repo_path": str(path), "specs_applied": len(results)},
+        )
+
+        _fire_hook(
+            "on_pipeline_complete",
+            stage="multi_integrate",
+            payload=payload,
+            metadata={"repo_path": str(path), "ok": validate_result.ok},
+        )
+
         return PipelineResult(
             ok=validate_result.ok,
             title="Multi-Integration",
@@ -986,6 +1194,12 @@ def run_multi_integrate(
             error=validate_result.error,
         )
     except Exception as exc:
+        _fire_hook(
+            "on_pipeline_error",
+            stage="multi_integrate",
+            payload={"error": str(exc)},
+            metadata={"repo_path": repo_path, "spec_names": spec_names},
+        )
         _log(logs, f"Failed: {exc}", log_callback)
         return PipelineResult(
             ok=False,
