@@ -1208,3 +1208,249 @@ def run_multi_integrate(
             logs=logs,
             error=str(exc),
         )
+
+
+# ---------------------------------------------------------------------------
+# Multi-repo pipeline functions
+# ---------------------------------------------------------------------------
+
+
+def run_multi_repo_analyze(
+    repo_paths: list[str],
+    *,
+    workspace_path: str | None = None,
+    log_callback: LogCallback | None = None,
+) -> PipelineResult:
+    """Add and analyse multiple repositories into a multi-repo workspace.
+
+    Returns a :class:`PipelineResult` whose payload contains all profiles.
+    """
+    from scholardevclaw.multi_repo.manager import MultiRepoManager
+
+    logs: list[str] = []
+    _log(logs, f"Multi-repo analyze: {len(repo_paths)} repo(s)", log_callback)
+
+    try:
+        ws_path = Path(workspace_path) if workspace_path else None
+        mgr = MultiRepoManager(workspace_path=ws_path)
+
+        _fire_hook(
+            "on_before_analyze",
+            stage="multi_repo_analyze",
+            payload={"repo_paths": repo_paths},
+            metadata={"repo_count": len(repo_paths)},
+        )
+
+        for rp in repo_paths:
+            mgr.add_repo(rp)
+
+        profiles = mgr.analyze_all(log_callback=log_callback)
+        profile_dicts = [p.to_dict() for p in profiles]
+        ready = [p for p in profiles if p.status.value == "ready"]
+
+        payload = with_meta(
+            {
+                "profiles": profile_dicts,
+                "total": len(profiles),
+                "ready": len(ready),
+                "errors": [p.name for p in profiles if p.status.value == "error"],
+            },
+            "multi_repo_analyze",
+        )
+
+        _fire_hook(
+            "on_after_analyze",
+            stage="multi_repo_analyze",
+            payload=payload,
+            metadata={"repo_count": len(repo_paths), "ready": len(ready)},
+        )
+
+        _log(
+            logs,
+            f"Analyzed {len(profiles)} repo(s): {len(ready)} ready",
+            log_callback,
+        )
+
+        return PipelineResult(
+            ok=len(ready) > 0,
+            title="Multi-Repo Analyze",
+            payload=payload,
+            logs=logs,
+            error=None if ready else "No repos reached ready state",
+        )
+    except Exception as exc:
+        _log(logs, f"Failed: {exc}", log_callback)
+        return PipelineResult(
+            ok=False,
+            title="Multi-Repo Analyze",
+            payload=with_meta({}, "multi_repo_analyze"),
+            logs=logs,
+            error=str(exc),
+        )
+
+
+def run_multi_repo_compare(
+    repo_paths: list[str] | None = None,
+    *,
+    workspace_path: str | None = None,
+    log_callback: LogCallback | None = None,
+) -> PipelineResult:
+    """Compare patterns, frameworks, and languages across repos in a workspace.
+
+    If *repo_paths* is provided, those repos are added/analysed first.
+    Otherwise the existing ready profiles in the workspace are used.
+    """
+    from scholardevclaw.multi_repo.analysis import CrossRepoAnalyzer
+    from scholardevclaw.multi_repo.manager import MultiRepoManager
+
+    logs: list[str] = []
+    _log(logs, "Multi-repo compare", log_callback)
+
+    try:
+        ws_path = Path(workspace_path) if workspace_path else None
+        mgr = MultiRepoManager(workspace_path=ws_path)
+
+        # Optionally add and analyze new repos first
+        if repo_paths:
+            for rp in repo_paths:
+                mgr.add_repo(rp)
+            mgr.analyze_all(log_callback=log_callback)
+
+        profiles = mgr.get_ready_profiles()
+        if len(profiles) < 2:
+            _log(logs, "Need at least 2 ready profiles for comparison", log_callback)
+            return PipelineResult(
+                ok=False,
+                title="Multi-Repo Compare",
+                payload=with_meta({"profiles_ready": len(profiles)}, "multi_repo_compare"),
+                logs=logs,
+                error="Need at least 2 analysed repos for comparison",
+            )
+
+        analyzer = CrossRepoAnalyzer(profiles)
+        result = analyzer.compare()
+        spec_matrix = analyzer.spec_relevance_matrix()
+
+        payload = with_meta(
+            {
+                **result.to_dict(),
+                "spec_relevance_matrix": spec_matrix,
+            },
+            "multi_repo_compare",
+        )
+
+        _fire_hook(
+            "on_after_analyze",
+            stage="multi_repo_compare",
+            payload=payload,
+            metadata={"repo_count": len(profiles)},
+        )
+
+        _log(logs, result.summary, log_callback)
+
+        return PipelineResult(
+            ok=True,
+            title="Multi-Repo Compare",
+            payload=payload,
+            logs=logs,
+        )
+    except Exception as exc:
+        _log(logs, f"Failed: {exc}", log_callback)
+        return PipelineResult(
+            ok=False,
+            title="Multi-Repo Compare",
+            payload=with_meta({}, "multi_repo_compare"),
+            logs=logs,
+            error=str(exc),
+        )
+
+
+def run_multi_repo_transfer(
+    repo_paths: list[str] | None = None,
+    *,
+    source_id: str | None = None,
+    target_id: str | None = None,
+    workspace_path: str | None = None,
+    log_callback: LogCallback | None = None,
+) -> PipelineResult:
+    """Discover transferable improvements between repos in a workspace.
+
+    If *source_id* and *target_id* are given, only that pair is evaluated.
+    Otherwise all directed pairs are considered.
+    """
+    from scholardevclaw.multi_repo.manager import MultiRepoManager
+    from scholardevclaw.multi_repo.transfer import KnowledgeTransferEngine
+
+    logs: list[str] = []
+    _log(logs, "Multi-repo transfer discovery", log_callback)
+
+    try:
+        ws_path = Path(workspace_path) if workspace_path else None
+        mgr = MultiRepoManager(workspace_path=ws_path)
+
+        if repo_paths:
+            for rp in repo_paths:
+                mgr.add_repo(rp)
+            mgr.analyze_all(log_callback=log_callback)
+
+        profiles = mgr.get_ready_profiles()
+        if len(profiles) < 2:
+            _log(logs, "Need at least 2 ready profiles for transfer", log_callback)
+            return PipelineResult(
+                ok=False,
+                title="Multi-Repo Transfer",
+                payload=with_meta({"profiles_ready": len(profiles)}, "multi_repo_transfer"),
+                logs=logs,
+                error="Need at least 2 analysed repos for transfer discovery",
+            )
+
+        engine = KnowledgeTransferEngine(profiles)
+
+        if source_id and target_id:
+            plan = engine.discover_for_pair(source_id, target_id)
+            plans = [plan] if plan else []
+        else:
+            plans = engine.discover()
+
+        plan_dicts = [p.to_dict() for p in plans]
+        total_opps = sum(len(p.opportunities) for p in plans)
+
+        payload = with_meta(
+            {
+                "plans": plan_dicts,
+                "plan_count": len(plans),
+                "total_opportunities": total_opps,
+            },
+            "multi_repo_transfer",
+        )
+
+        _fire_hook(
+            "on_after_analyze",
+            stage="multi_repo_transfer",
+            payload=payload,
+            metadata={"plan_count": len(plans), "total_opportunities": total_opps},
+        )
+
+        _log(
+            logs,
+            f"Found {len(plans)} transfer plan(s) with {total_opps} opportunity(ies)",
+            log_callback,
+        )
+        for plan in plans[:3]:
+            _log(logs, plan.summary, log_callback)
+
+        return PipelineResult(
+            ok=True,
+            title="Multi-Repo Transfer",
+            payload=payload,
+            logs=logs,
+        )
+    except Exception as exc:
+        _log(logs, f"Failed: {exc}", log_callback)
+        return PipelineResult(
+            ok=False,
+            title="Multi-Repo Transfer",
+            payload=with_meta({}, "multi_repo_transfer"),
+            logs=logs,
+            error=str(exc),
+        )

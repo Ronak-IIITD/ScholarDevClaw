@@ -4,6 +4,64 @@
 
 **Last updated:** 2026-03-13
 
+### 2026-03-13 (Phase 14: Multi-Repo Support — Cross-Repo Analysis, Comparison & Knowledge Transfer)
+
+**Goal:** Add multi-repository support enabling users to manage, analyze, compare, and transfer knowledge across multiple codebases simultaneously. This is the final phase of the ScholarDevClaw overhaul.
+
+**Summary:** Created a complete `multi_repo` package with 3 modules (manager, analysis, transfer) totaling ~900 lines. The `MultiRepoManager` coordinates workspace persistence and batch analysis across N repos via `RepoProfile` snapshots. The `CrossRepoAnalyzer` computes pattern/framework/language overlap with pairwise Jaccard similarity scoring and spec relevance matrices. The `KnowledgeTransferEngine` discovers transferable improvements between repos, scoring confidence based on shared languages, frameworks, patterns, and codebase size. Added 3 pipeline functions (`run_multi_repo_analyze`, `run_multi_repo_compare`, `run_multi_repo_transfer`) with hook wiring. Added `multi-repo` CLI subcommand with 7 actions (add, remove, list, analyze, compare, transfer, status). Added 78 comprehensive tests. All 1001 tests pass (923 existing + 78 new).
+
+**New: `core/src/scholardevclaw/multi_repo/__init__.py` (~49 lines):**
+- Package init with 12 public exports across 3 submodules
+- Exports: `MultiRepoManager`, `RepoProfile`, `RepoProfileStatus`, `CrossRepoAnalyzer`, `ComparisonResult`, `PatternOverlap`, `FrameworkComparison`, `LanguageOverlap`, `KnowledgeTransferEngine`, `TransferOpportunity`, `TransferPlan`, `TransferDirection`
+
+**New: `core/src/scholardevclaw/multi_repo/manager.py` (~345 lines):**
+- `RepoProfileStatus` str enum: PENDING, ANALYZING, READY, ERROR, STALE
+- `RepoProfile` dataclass: repo_path, name, deterministic repo_id (sha256[:12]), languages, language_stats, frameworks, entry_points, test_files, patterns, element_count, suggestions, status, analyzed_at, analysis_duration_ms, error; `to_dict()` / `from_dict()` serialization
+- `MultiRepoManager`: workspace persistence in `~/.scholardevclaw/multi_repo_workspace.json`, `add_repo()`, `remove_repo()`, `get_profile()` (by ID/path/name), `list_profiles()`, `analyze_repo()` (calls `run_analyze` + `run_suggest`), `analyze_all()`, `get_ready_profiles()`, `clear_workspace()`; constructor takes optional `workspace_path` for testing
+
+**New: `core/src/scholardevclaw/multi_repo/analysis.py` (~330 lines):**
+- `PatternOverlap` dataclass: pattern name, repo IDs, per-repo occurrence details
+- `FrameworkComparison` dataclass: framework name, repo IDs
+- `LanguageOverlap` dataclass: language name, repo IDs, aggregate line/file counts
+- `ComparisonResult` dataclass: repo_ids, repo_names, pattern_overlaps, framework_comparisons, language_overlaps, pairwise_similarity, shared_patterns, unique_patterns, summary; `to_dict()` serialization
+- `CrossRepoAnalyzer`: compares patterns/frameworks/languages across N repos, computes weighted pairwise Jaccard similarity (50% patterns, 30% frameworks, 20% languages), identifies shared and unique patterns, builds spec relevance matrix, generates human-readable summary
+
+**New: `core/src/scholardevclaw/multi_repo/transfer.py` (~295 lines):**
+- `TransferDirection` str enum: SOURCE_TO_TARGET, BIDIRECTIONAL
+- `TransferOpportunity` dataclass: spec_name, source/target repo IDs, direction, confidence (0-100), rationale, shared patterns/frameworks, category; `to_dict()` serialization
+- `TransferPlan` dataclass: source/target repo IDs and names, ordered opportunities, overall_score, summary; `to_dict()` serialization
+- `KnowledgeTransferEngine`: discovers specs suggested for one repo that could benefit another, scores transferability based on shared languages (up to 30pts), frameworks (up to 30pts), related patterns (up to 20pts), and codebase size similarity (up to 10pts), generates directed transfer plans sorted by confidence, `discover()` for all pairs, `discover_for_pair()` for specific pair
+
+**Modified: `core/src/scholardevclaw/application/pipeline.py` (+210 lines):**
+- `run_multi_repo_analyze()`: adds repos to workspace, batch-analyzes, returns profile summaries with hook wiring
+- `run_multi_repo_compare()`: runs CrossRepoAnalyzer on ready profiles, returns ComparisonResult with spec relevance matrix
+- `run_multi_repo_transfer()`: runs KnowledgeTransferEngine, optional source/target pair filtering, returns TransferPlans
+
+**Modified: `core/src/scholardevclaw/cli.py` (+130 lines):**
+- Added `multi-repo` subcommand with argparse parser: actions `add`, `remove`, `list`, `analyze`, `compare`, `transfer`, `status`
+- `--workspace` flag for custom workspace path, `--source`/`--target` for targeted transfer, `--output-json` for machine-readable output
+- `cmd_multi_repo()` function wired into dispatch dict
+- Status action shows workspace summary with time-since-analysis
+
+**New: `core/tests/unit/test_multi_repo.py` (~78 tests):**
+- `TestRepoProfileStatus`: enum values, str subclass
+- `TestRepoProfile`: construction, auto-name, deterministic ID, to_dict, from_dict roundtrip, bad status default
+- `TestMultiRepoManager`: add/remove/list, persistence, get_profile by ID/name/path, clear, ready profiles
+- `TestPatternOverlap`: to_dict with repo_count
+- `TestFrameworkComparison`: to_dict with repo_count
+- `TestLanguageOverlap`: to_dict with line/file counts
+- `TestComparisonResult`: to_dict, empty result
+- `TestCrossRepoAnalyzer`: 2-repo comparison, pattern/framework/language overlaps, pairwise similarity, shared/unique patterns, spec relevance matrix, summary, Jaccard edge cases
+- `TestTransferDirection`: enum values
+- `TestTransferOpportunity`: to_dict
+- `TestTransferPlan`: to_dict, with opportunities
+- `TestKnowledgeTransferEngine`: discover, discover_for_pair, invalid ID, confidence scoring, sort order, summary, no self-transfer, helper methods, spec extraction
+- `TestPipelineFunctions`: imports, empty input edge cases
+- `TestExports`: all 12 exports, per-module imports
+- `TestCLIWiring`: dispatch dict, callable, subparser
+- `TestThreeRepoComparison`: 3-repo patterns, pairwise (3 pairs), transfer, spec matrix
+- `TestEdgeCases`: empty patterns/frameworks/suggestions, identical suggestions, JSON serializable, case-insensitive frameworks/languages
+
 ### 2026-03-13 (Phase 13: Plugin Ecosystem — Hooks, Marketplace & Community Extensions)
 
 **Goal:** Build a real plugin ecosystem with a hook-based event system, persistent enable/disable state, per-plugin configuration, 3 discovery sources (builtin, file-based, setuptools entry-points), 3 new hook plugins, upgraded existing plugins to hook-aware v2, full pipeline hook wiring, and CLI management commands.

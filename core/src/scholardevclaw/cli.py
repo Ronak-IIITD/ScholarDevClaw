@@ -1567,6 +1567,147 @@ def cmd_security(args):
         sys.exit(1)
 
 
+def cmd_multi_repo(args):
+    """Multi-repo analysis, comparison, and knowledge transfer"""
+    from pathlib import Path as _Path
+
+    action = args.multi_repo_action
+    repo_paths = args.repo_paths or []
+    ws_path = _Path(args.workspace) if args.workspace else None
+
+    if action == "add":
+        from scholardevclaw.multi_repo.manager import MultiRepoManager
+
+        if not repo_paths:
+            print("Error: provide at least one repo path to add", file=sys.stderr)
+            sys.exit(1)
+        mgr = MultiRepoManager(workspace_path=ws_path)
+        for rp in repo_paths:
+            profile = mgr.add_repo(rp)
+            print(f"Added: {profile.name} ({profile.repo_id})")
+
+    elif action == "remove":
+        from scholardevclaw.multi_repo.manager import MultiRepoManager
+
+        if not repo_paths:
+            print("Error: provide repo ID, path, or name to remove", file=sys.stderr)
+            sys.exit(1)
+        mgr = MultiRepoManager(workspace_path=ws_path)
+        for rp in repo_paths:
+            if mgr.remove_repo(rp):
+                print(f"Removed: {rp}")
+            else:
+                print(f"Not found: {rp}", file=sys.stderr)
+
+    elif action == "list":
+        from scholardevclaw.multi_repo.manager import MultiRepoManager
+
+        mgr = MultiRepoManager(workspace_path=ws_path)
+        profiles = mgr.list_profiles()
+        if not profiles:
+            print("No repos in workspace")
+            return
+        if args.output_json:
+            print(json.dumps([p.to_dict() for p in profiles], indent=2))
+            return
+        for p in profiles:
+            status = p.status.value.upper()
+            lang = ", ".join(p.languages[:3]) if p.languages else "not analyzed"
+            print(f"  [{status:9s}] {p.name:20s} ({p.repo_id})  {lang}")
+
+    elif action == "analyze":
+        from scholardevclaw.application.pipeline import run_multi_repo_analyze
+
+        ws_str = str(ws_path) if ws_path else None
+        result = run_multi_repo_analyze(
+            repo_paths,
+            workspace_path=ws_str,
+            log_callback=print,
+        )
+        if args.output_json:
+            print(json.dumps(result.payload, indent=2))
+        elif not result.ok:
+            print(f"Error: {result.error}", file=sys.stderr)
+            sys.exit(1)
+
+    elif action == "compare":
+        from scholardevclaw.application.pipeline import run_multi_repo_compare
+
+        ws_str = str(ws_path) if ws_path else None
+        result = run_multi_repo_compare(
+            repo_paths or None,
+            workspace_path=ws_str,
+            log_callback=print,
+        )
+        if args.output_json:
+            print(json.dumps(result.payload, indent=2))
+        elif not result.ok:
+            print(f"Error: {result.error}", file=sys.stderr)
+            sys.exit(1)
+
+    elif action == "transfer":
+        from scholardevclaw.application.pipeline import run_multi_repo_transfer
+
+        ws_str = str(ws_path) if ws_path else None
+        result = run_multi_repo_transfer(
+            repo_paths or None,
+            source_id=args.source,
+            target_id=args.target,
+            workspace_path=ws_str,
+            log_callback=print,
+        )
+        if args.output_json:
+            print(json.dumps(result.payload, indent=2))
+        elif not result.ok:
+            print(f"Error: {result.error}", file=sys.stderr)
+            sys.exit(1)
+
+    elif action == "status":
+        from scholardevclaw.multi_repo.manager import MultiRepoManager
+
+        mgr = MultiRepoManager(workspace_path=ws_path)
+        profiles = mgr.list_profiles()
+        ready = [p for p in profiles if p.status.value == "ready"]
+        pending = [p for p in profiles if p.status.value == "pending"]
+        errors = [p for p in profiles if p.status.value == "error"]
+
+        if args.output_json:
+            print(
+                json.dumps(
+                    {
+                        "total": len(profiles),
+                        "ready": len(ready),
+                        "pending": len(pending),
+                        "errors": len(errors),
+                        "profiles": [p.to_dict() for p in profiles],
+                    },
+                    indent=2,
+                )
+            )
+            return
+
+        print(f"Multi-repo workspace: {len(profiles)} repo(s)")
+        print(f"  Ready:   {len(ready)}")
+        print(f"  Pending: {len(pending)}")
+        print(f"  Errors:  {len(errors)}")
+        if profiles:
+            print()
+            for p in profiles:
+                status = p.status.value.upper()
+                extra = ""
+                if p.analyzed_at > 0:
+                    import time as _time
+
+                    elapsed = _time.time() - p.analyzed_at
+                    if elapsed < 3600:
+                        extra = f" ({elapsed / 60:.0f}m ago)"
+                    else:
+                        extra = f" ({elapsed / 3600:.1f}h ago)"
+                print(f"  [{status:9s}] {p.name}{extra}")
+                if p.error:
+                    print(f"             Error: {p.error}")
+
+
 def cmd_tui(args):
     """Launch interactive terminal UI (wizard mode)"""
     try:
@@ -1851,6 +1992,31 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_auth.add_argument("--key-id", help="Key ID for remove/default actions")
     p_auth.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # multi-repo
+    p_multi_repo = subparsers.add_parser(
+        "multi-repo", help="Multi-repo analysis, comparison, and knowledge transfer"
+    )
+    p_multi_repo.add_argument(
+        "multi_repo_action",
+        choices=["add", "remove", "list", "analyze", "compare", "transfer", "status"],
+        help="Action to perform",
+    )
+    p_multi_repo.add_argument(
+        "repo_paths",
+        nargs="*",
+        help="Repository path(s) — used by add, remove, analyze, compare, transfer",
+    )
+    p_multi_repo.add_argument(
+        "--workspace", help="Custom workspace JSON path (defaults to ~/.scholardevclaw/)"
+    )
+    p_multi_repo.add_argument(
+        "--source", help="Source repo ID or path (for transfer with specific pair)"
+    )
+    p_multi_repo.add_argument(
+        "--target", help="Target repo ID or path (for transfer with specific pair)"
+    )
+    p_multi_repo.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -1897,6 +2063,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "agent": cmd_agent,
         "auth": cmd_auth,
         "demo": cmd_demo,
+        "multi-repo": cmd_multi_repo,
     }
 
     commands[args.command](args)
