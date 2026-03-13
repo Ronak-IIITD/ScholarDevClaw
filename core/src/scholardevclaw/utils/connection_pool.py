@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import time
 import threading
-from dataclasses import dataclass, field
-from typing import Any, Callable, Generic, TypeVar
+import time
+from collections.abc import Callable
 from contextlib import contextmanager
-import httpx
+from dataclasses import dataclass
+from typing import Generic, TypeVar
 
+import httpx
 
 T = TypeVar("T")
 
@@ -127,7 +128,7 @@ class ConnectionPool(Generic[T]):
 
 
 class HTTPConnectionPool:
-    _instances: dict[str, "HTTPConnectionPool"] = {}
+    _instances: dict[str, HTTPConnectionPool] = {}
     _lock = threading.RLock()
 
     def __init__(self, base_url: str, config: PoolConfig | None = None):
@@ -138,7 +139,7 @@ class HTTPConnectionPool:
         self._client_lock = threading.RLock()
 
     @classmethod
-    def get_pool(cls, base_url: str, config: PoolConfig | None = None) -> "HTTPConnectionPool":
+    def get_pool(cls, base_url: str, config: PoolConfig | None = None) -> HTTPConnectionPool:
         with cls._lock:
             if base_url not in cls._instances:
                 cls._instances[base_url] = cls(base_url, config)
@@ -208,7 +209,7 @@ class HTTPConnectionPool:
 
 
 class AsyncHTTPConnectionPool:
-    _instances: dict[str, "AsyncHTTPConnectionPool"] = {}
+    _instances: dict[str, AsyncHTTPConnectionPool] = {}
     _lock = threading.RLock()
 
     def __init__(self, base_url: str, config: PoolConfig | None = None):
@@ -219,7 +220,7 @@ class AsyncHTTPConnectionPool:
         self._client_lock = threading.RLock()
 
     @classmethod
-    def get_pool(cls, base_url: str, config: PoolConfig | None = None) -> "AsyncHTTPConnectionPool":
+    def get_pool(cls, base_url: str, config: PoolConfig | None = None) -> AsyncHTTPConnectionPool:
         with cls._lock:
             if base_url not in cls._instances:
                 cls._instances[base_url] = cls(base_url, config)

@@ -1,7 +1,6 @@
 """Security tests for auth module"""
 
 import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -21,10 +20,11 @@ class TestAuthSecurity:
 
     def test_api_key_not_logged_in_plain(self, temp_auth_dir, capsys):
         """Verify API keys are masked in output (shows only first 8 chars)"""
+        from argparse import Namespace
+
         from scholardevclaw.auth.cli import cmd_auth
         from scholardevclaw.auth.store import AuthStore
         from scholardevclaw.auth.types import AuthProvider
-        from argparse import Namespace
 
         store = AuthStore(temp_auth_dir)
         store.add_api_key("sk-secret-12345", "secret", AuthProvider.ANTHROPIC)
@@ -41,10 +41,11 @@ class TestAuthSecurity:
 
     def test_api_key_not_in_status_json(self, temp_auth_dir):
         """Verify API keys can be excluded from JSON status"""
+        from argparse import Namespace
+
         from scholardevclaw.auth.cli import cmd_auth
         from scholardevclaw.auth.store import AuthStore
         from scholardevclaw.auth.types import AuthProvider
-        from argparse import Namespace
 
         store = AuthStore(temp_auth_dir)
         store.add_api_key("sk-very-secret-key-12345", "secret", AuthProvider.ANTHROPIC)
@@ -55,7 +56,6 @@ class TestAuthSecurity:
         )
 
         import io
-        import sys
         from contextlib import redirect_stdout
 
         f = io.StringIO()
@@ -120,7 +120,6 @@ class TestAuthSecurity:
     def test_env_override_key_not_stored(self, temp_auth_dir, monkeypatch):
         """Verify keys from env var are not stored"""
         from scholardevclaw.auth.store import AuthStore
-        from scholardevclaw.auth.types import AuthProvider
 
         monkeypatch.setenv("SCHOLARDEVCLAW_API_KEY", "sk-env-only")
 
@@ -177,7 +176,6 @@ class TestAuthSecurity:
         monkeypatch.setenv("SCHOLARDEVCLAW_AUTH_DIR", malicious_path)
 
         from scholardevclaw.auth.store import AuthStore
-        import os
 
         try:
             store = AuthStore(malicious_path)

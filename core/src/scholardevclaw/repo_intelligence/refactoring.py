@@ -14,7 +14,6 @@ import ast
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -384,8 +383,6 @@ class RefactoringAssistant:
 
     def get_refactoring_plan(self, refactor_type: str, **kwargs) -> RefactoringPlan:
         """Get a refactoring plan based on type"""
-        from .dependency_graph import DependencyGraph
-        from .call_graph import CallGraph
 
         if refactor_type == "extract_method":
             return RefactoringPlan(name="Extract method")

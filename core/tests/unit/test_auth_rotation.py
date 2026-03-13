@@ -1,21 +1,17 @@
 """Tests for secret rotation automation."""
 
-import json
 import tempfile
-from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from scholardevclaw.auth.rotation import (
-    RotationPolicy,
-    RotationResult,
-    RotationProvider,
-    RotationScheduler,
-    get_rotation_provider,
     AnthropicRotationProvider,
     OpenAIRotationProvider,
+    RotationPolicy,
+    RotationResult,
+    RotationScheduler,
+    get_rotation_provider,
 )
 
 

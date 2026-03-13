@@ -1,7 +1,6 @@
 """Integration tests for auth module - full workflow tests"""
 
 import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -22,7 +21,7 @@ class TestAuthIntegration:
     def test_full_auth_workflow(self, temp_auth_env):
         """Test complete workflow: add key, check status, list, remove"""
         from scholardevclaw.auth.store import AuthStore
-        from scholardevclaw.auth.types import AuthProvider, AuthStatus
+        from scholardevclaw.auth.types import AuthProvider
 
         store = AuthStore(temp_auth_env)
 
@@ -265,8 +264,9 @@ class TestAuthCLIntegration:
 
     def test_cli_store_integration(self, temp_auth_env, capsys):
         """Test CLI commands work with AuthStore"""
-        from scholardevclaw.auth.cli import cmd_auth
         from argparse import Namespace
+
+        from scholardevclaw.auth.cli import cmd_auth
 
         # Add key via CLI
         args = Namespace(
@@ -301,9 +301,10 @@ class TestAuthCLIntegration:
 
     def test_cli_json_output_integration(self, temp_auth_env, capsys):
         """Test CLI JSON output can be parsed"""
-        from scholardevclaw.auth.cli import cmd_auth
-        from argparse import Namespace
         import re
+        from argparse import Namespace
+
+        from scholardevclaw.auth.cli import cmd_auth
 
         # Add key
         args = Namespace(

@@ -11,16 +11,13 @@ Provides:
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 try:
-    import numpy as np
+    import numpy as np  # noqa: F401
 
     HAS_NUMPY = True
 except ImportError:
@@ -106,7 +103,7 @@ class SimpleEmbedder:
 
         import numpy as np
 
-        hash_input = text.encode()
+        text.encode()
         hash_values = []
 
         for i in range(self.dimension):
@@ -281,23 +278,18 @@ class CodeAwareChunker:
         current_start = 1
         chunk_index = 0
 
-        in_function = False
-        in_class = False
-        function_name = ""
-
         for i, line in enumerate(lines):
             stripped = line.strip()
 
             if stripped.startswith("def ") or stripped.startswith("async def "):
-                in_function = True
-                function_name = (
+                (
                     re.search(r"def (\w+)", stripped).group(1)
                     if re.search(r"def (\w+)", stripped)
                     else "function"
                 )
 
             elif stripped.startswith("class "):
-                in_class = True
+                pass
 
             current_chunk_lines.append(line)
 

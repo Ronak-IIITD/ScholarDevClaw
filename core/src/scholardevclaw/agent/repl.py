@@ -12,18 +12,16 @@ The SmartAgentEngine is the default and provides:
 from __future__ import annotations
 
 import asyncio
-import sys
-from typing import Callable, Any, Coroutine
+from collections.abc import Coroutine
+from typing import Any
 
-import rich
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
-from rich.syntax import Syntax
 from rich.table import Table
 
-from .engine import StreamingAgentEngine, StreamEvent, StreamEventType, AgentMode, AgentResponse
+from .engine import AgentResponse, StreamEvent, StreamEventType, StreamingAgentEngine
 
 
 class StreamingAgentREPL:
@@ -124,10 +122,10 @@ Type your request or 'exit' to quit.
 
         # Create session
         if self._smart_engine:
-            session = self._smart_engine.create_session(self._initial_repo)
+            self._smart_engine.create_session(self._initial_repo)
         else:
             assert self.engine is not None
-            session = self.engine.create_session(self._initial_repo)
+            self.engine.create_session(self._initial_repo)
 
         self.print_welcome()
 
@@ -490,7 +488,7 @@ def run_agent_command(
     from .smart_engine import SmartAgentEngine
 
     engine = SmartAgentEngine()
-    session = engine.create_session(repo_path)
+    engine.create_session(repo_path)
 
     async def _run() -> AgentResponse:
         return await engine.process(user_input)

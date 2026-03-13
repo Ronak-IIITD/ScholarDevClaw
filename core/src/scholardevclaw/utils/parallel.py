@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from collections.abc import Callable, Generator
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, TypeVar, Iterable, Generator
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -73,7 +73,7 @@ class ParallelGit:
                 check=False,
             )
             if status.returncode == 0:
-                lines = [l for l in status.stdout.splitlines() if l.strip()]
+                lines = [l for l in status.stdout.splitlines() if l.strip()]  # noqa: E741
                 return {
                     "available": True,
                     "is_clean": len(lines) == 0,

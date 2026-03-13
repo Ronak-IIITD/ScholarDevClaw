@@ -7,12 +7,10 @@ decorators, parameters, return types, and visibility across Python,
 JavaScript, TypeScript, Go, Rust, and Java.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Any, Callable, Tuple
-import os
-import subprocess
-
+from typing import Any
 
 # Tree-sitter language configurations
 LANGUAGE_CONFIGS = {
@@ -90,22 +88,22 @@ class CodeElement:
     end_line: int = 0
     language: str = ""
     visibility: str = "public"
-    parameters: List[str] = field(default_factory=list)
+    parameters: list[str] = field(default_factory=list)
     return_type: str = ""
-    decorators: List[str] = field(default_factory=list)
-    parent_class: Optional[str] = None
-    dependencies: List[str] = field(default_factory=list)
+    decorators: list[str] = field(default_factory=list)
+    parent_class: str | None = None
+    dependencies: list[str] = field(default_factory=list)
     code_snippet: str = ""
 
 
 @dataclass
 class ImportStatement:
     module: str
-    names: List[str]
+    names: list[str]
     file: str
     line: int
     is_from: bool = False
-    alias: Optional[str] = None
+    alias: str | None = None
 
 
 @dataclass
@@ -120,15 +118,15 @@ class LanguageStats:
 @dataclass
 class RepoAnalysis:
     root_path: Path
-    languages: List[str]
-    language_stats: List[LanguageStats]
-    elements: List[CodeElement] = field(default_factory=list)
-    imports: List[ImportStatement] = field(default_factory=list)
-    entry_points: List[str] = field(default_factory=list)
-    dependencies: Dict[str, List[str]] = field(default_factory=dict)
-    frameworks: List[str] = field(default_factory=list)
-    test_files: List[str] = field(default_factory=list)
-    patterns: Dict[str, List[str]] = field(default_factory=dict)
+    languages: list[str]
+    language_stats: list[LanguageStats]
+    elements: list[CodeElement] = field(default_factory=list)
+    imports: list[ImportStatement] = field(default_factory=list)
+    entry_points: list[str] = field(default_factory=list)
+    dependencies: dict[str, list[str]] = field(default_factory=dict)
+    frameworks: list[str] = field(default_factory=list)
+    test_files: list[str] = field(default_factory=list)
+    patterns: dict[str, list[str]] = field(default_factory=dict)
 
 
 class TreeSitterAnalyzer:
@@ -136,14 +134,14 @@ class TreeSitterAnalyzer:
 
     def __init__(self, repo_path: Path):
         self.repo_path = Path(repo_path)
-        self.parsers: Dict[str, Any] = {}
+        self.parsers: dict[str, Any] = {}
         self._setup_parsers()
 
     def _setup_parsers(self):
         """Setup tree-sitter parsers (will lazy-load)"""
         pass  # Lazy loading happens in _get_parser
 
-    def _get_parser(self, language: str) -> Optional[Any]:
+    def _get_parser(self, language: str) -> Any | None:
         """Get or create parser for a language.
 
         Supports tree-sitter 0.25+ API (Parser(lang) constructor).
@@ -157,7 +155,7 @@ class TreeSitterAnalyzer:
 
             # Map language names to (module_name, factory_function_name) pairs.
             # TypeScript is special: its module exposes language_typescript() not language().
-            lang_modules: Dict[str, Tuple[str, str]] = {
+            lang_modules: dict[str, tuple[str, str]] = {
                 "python": ("tree_sitter_python", "language"),
                 "javascript": ("tree_sitter_javascript", "language"),
                 "typescript": ("tree_sitter_typescript", "language_typescript"),
@@ -185,9 +183,9 @@ class TreeSitterAnalyzer:
         except ImportError:
             return None
 
-    def detect_languages(self) -> List[str]:
+    def detect_languages(self) -> list[str]:
         """Detect all languages in the repository"""
-        languages: Set[str] = set()
+        languages: set[str] = set()
 
         for lang, config in LANGUAGE_CONFIGS.items():
             for ext in config["extensions"]:
@@ -246,7 +244,7 @@ class TreeSitterAnalyzer:
             patterns=patterns,
         )
 
-    def _analyze_language(self, language: str) -> Optional[LanguageStats]:
+    def _analyze_language(self, language: str) -> LanguageStats | None:
         """Analyze a specific language"""
         if language not in LANGUAGE_CONFIGS:
             return None
@@ -262,7 +260,7 @@ class TreeSitterAnalyzer:
                     try:
                         content = file_path.read_text(encoding="utf-8", errors="ignore")
                         line_count += len(content.split("\n"))
-                    except:
+                    except Exception:
                         pass
 
         if file_count == 0:
@@ -276,7 +274,7 @@ class TreeSitterAnalyzer:
 
     def _parse_language_files(
         self, language: str
-    ) -> tuple[List[CodeElement], List[ImportStatement]]:
+    ) -> tuple[list[CodeElement], list[ImportStatement]]:
         """Parse all files of a specific language"""
         elements = []
         imports = []
@@ -311,7 +309,7 @@ class TreeSitterAnalyzer:
 
         return elements, imports
 
-    def _parse_with_regex(self, language: str) -> tuple[List[CodeElement], List[ImportStatement]]:
+    def _parse_with_regex(self, language: str) -> tuple[list[CodeElement], list[ImportStatement]]:
         """Fallback parsing using regex patterns"""
         elements = []
         imports = []
@@ -328,21 +326,21 @@ class TreeSitterAnalyzer:
                         content = file_path.read_text()
                         file_elements = analyzer._parse_python(file_path, content)
                         elements.extend(file_elements)
-                    except:
+                    except Exception:
                         pass
 
         return elements, imports
 
     def _extract_elements_from_tree(
         self, tree, file_path: Path, language: str
-    ) -> List[CodeElement]:
+    ) -> list[CodeElement]:
         """Extract code elements from AST tree using real tree-sitter walking.
 
         Handles functions, classes, methods, interfaces, structs, impls, and
         type declarations across Python, JavaScript, TypeScript, Go, Rust, Java.
         Extracts parameters, return types, decorators, visibility, and parent class.
         """
-        elements: List[CodeElement] = []
+        elements: list[CodeElement] = []
         rel_path = str(file_path.relative_to(self.repo_path))
 
         try:
@@ -360,8 +358,8 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
-        parent_class: Optional[str],
+        elements: list[CodeElement],
+        parent_class: str | None,
     ) -> None:
         """Recursively walk tree-sitter nodes and extract code elements."""
         handler = self._ELEMENT_HANDLERS.get(language)
@@ -403,8 +401,8 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
-        parent_class: Optional[str],
+        elements: list[CodeElement],
+        parent_class: str | None,
     ) -> None:
         """Extract Python functions, classes, and decorated definitions."""
         if node.type == "class_definition":
@@ -422,7 +420,7 @@ class TreeSitterAnalyzer:
         node: Any,
         rel_path: str,
         source: bytes,
-        elements: List[CodeElement],
+        elements: list[CodeElement],
     ) -> None:
         name_node = self._child_by_field(node, "name")
         if not name_node:
@@ -432,7 +430,7 @@ class TreeSitterAnalyzer:
         decorators = self._get_python_decorators(node, source)
 
         # Base classes from argument_list/superclasses
-        bases: List[str] = []
+        bases: list[str] = []
         superclasses = self._child_by_field(node, "superclasses")
         if superclasses:
             for child in superclasses.children:
@@ -469,8 +467,8 @@ class TreeSitterAnalyzer:
         node: Any,
         rel_path: str,
         source: bytes,
-        elements: List[CodeElement],
-        parent_class: Optional[str],
+        elements: list[CodeElement],
+        parent_class: str | None,
     ) -> None:
         name_node = self._child_by_field(node, "name")
         if not name_node:
@@ -481,7 +479,7 @@ class TreeSitterAnalyzer:
         decorators = self._get_python_decorators(node, source)
 
         # Parameters
-        params: List[str] = []
+        params: list[str] = []
         params_node = self._child_by_field(node, "parameters")
         if params_node:
             for child in params_node.children:
@@ -542,9 +540,9 @@ class TreeSitterAnalyzer:
             )
         )
 
-    def _get_python_decorators(self, node: Any, source: bytes) -> List[str]:
+    def _get_python_decorators(self, node: Any, source: bytes) -> list[str]:
         """Collect decorators from a decorated_definition parent."""
-        decorators: List[str] = []
+        decorators: list[str] = []
         parent = node.parent
         if parent and parent.type == "decorated_definition":
             for child in parent.children:
@@ -566,8 +564,8 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
-        parent_class: Optional[str],
+        elements: list[CodeElement],
+        parent_class: str | None,
     ) -> None:
         """Extract JavaScript functions, classes, methods, and arrow functions."""
         if node.type == "class_declaration":
@@ -586,7 +584,7 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
+        elements: list[CodeElement],
     ) -> None:
         name_node = self._child_by_field(node, "name")
         if not name_node:
@@ -595,7 +593,7 @@ class TreeSitterAnalyzer:
         name = self._node_text(name_node, source)
 
         # Heritage (extends)
-        bases: List[str] = []
+        bases: list[str] = []
         for child in node.children:
             if child.type == "class_heritage":
                 for hc in child.children:
@@ -620,7 +618,7 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
+        elements: list[CodeElement],
     ) -> None:
         name_node = self._child_by_field(node, "name")
         if not name_node:
@@ -650,8 +648,8 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
-        parent_class: Optional[str],
+        elements: list[CodeElement],
+        parent_class: str | None,
     ) -> None:
         name_node = self._child_by_field(node, "name")
         if not name_node:
@@ -659,7 +657,7 @@ class TreeSitterAnalyzer:
 
         name = self._node_text(name_node, source)
         is_async = any(c.type == "async" for c in node.children)
-        is_static = any(c.type == "static" for c in node.children)
+        any(c.type == "static" for c in node.children)
         is_getter = any(c.type == "get" for c in node.children)
         is_setter = any(c.type == "set" for c in node.children)
 
@@ -695,7 +693,7 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
+        elements: list[CodeElement],
     ) -> None:
         """Extract named arrow functions from const/let declarations."""
         for child in node.children:
@@ -725,9 +723,9 @@ class TreeSitterAnalyzer:
                         )
                     )
 
-    def _get_js_params(self, node: Any, source: bytes) -> List[str]:
+    def _get_js_params(self, node: Any, source: bytes) -> list[str]:
         """Extract parameter names from JS/TS formal_parameters."""
-        params: List[str] = []
+        params: list[str] = []
         for child in node.children:
             if child.type == "formal_parameters":
                 for p in child.children:
@@ -760,8 +758,8 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
-        parent_class: Optional[str],
+        elements: list[CodeElement],
+        parent_class: str | None,
     ) -> None:
         """Extract TypeScript elements — delegates to JS handler plus interfaces/type aliases."""
         # Handle TS-specific nodes
@@ -816,8 +814,8 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
-        parent_class: Optional[str],
+        elements: list[CodeElement],
+        parent_class: str | None,
     ) -> None:
         """Extract Go functions, methods, types, structs, and interfaces."""
         if node.type == "function_declaration":
@@ -908,9 +906,9 @@ class TreeSitterAnalyzer:
                             )
                         )
 
-    def _get_go_params(self, node: Any, source: bytes) -> List[str]:
+    def _get_go_params(self, node: Any, source: bytes) -> list[str]:
         """Extract Go function parameters."""
-        params: List[str] = []
+        params: list[str] = []
         param_lists_seen = 0
         for child in node.children:
             if child.type == "parameter_list":
@@ -950,8 +948,8 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
-        parent_class: Optional[str],
+        elements: list[CodeElement],
+        parent_class: str | None,
     ) -> None:
         """Extract Rust functions, structs, enums, traits, impls."""
         if node.type == "function_item":
@@ -1050,9 +1048,9 @@ class TreeSitterAnalyzer:
                     )
                 )
 
-    def _get_rust_params(self, node: Any, source: bytes) -> List[str]:
+    def _get_rust_params(self, node: Any, source: bytes) -> list[str]:
         """Extract Rust function parameters."""
-        params: List[str] = []
+        params: list[str] = []
         parameters = self._child_by_field(node, "parameters")
         if parameters:
             for child in parameters.children:
@@ -1077,8 +1075,8 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        elements: List[CodeElement],
-        parent_class: Optional[str],
+        elements: list[CodeElement],
+        parent_class: str | None,
     ) -> None:
         """Extract Java classes, interfaces, methods, and constructors."""
         if node.type == "class_declaration":
@@ -1088,7 +1086,7 @@ class TreeSitterAnalyzer:
                 modifiers = self._get_java_modifiers(node)
 
                 # Superclass
-                bases: List[str] = []
+                bases: list[str] = []
                 superclass = self._child_by_field(node, "superclass")
                 if superclass:
                     bases.append(self._node_text(superclass, source))
@@ -1189,16 +1187,16 @@ class TreeSitterAnalyzer:
                     )
                 )
 
-    def _get_java_modifiers(self, node: Any) -> List[str]:
+    def _get_java_modifiers(self, node: Any) -> list[str]:
         """Get Java access modifiers."""
-        modifiers: List[str] = []
+        modifiers: list[str] = []
         for child in node.children:
             if child.type == "modifiers":
                 for mod in child.children:
                     modifiers.append(self._node_text_fast(mod))
         return modifiers
 
-    def _java_visibility(self, modifiers: List[str]) -> str:
+    def _java_visibility(self, modifiers: list[str]) -> str:
         """Determine Java visibility from modifiers."""
         if "public" in modifiers:
             return "public"
@@ -1208,9 +1206,9 @@ class TreeSitterAnalyzer:
             return "protected"
         return "package"  # default Java visibility
 
-    def _get_java_params(self, node: Any, source: bytes) -> List[str]:
+    def _get_java_params(self, node: Any, source: bytes) -> list[str]:
         """Extract Java method parameters."""
-        params: List[str] = []
+        params: list[str] = []
         for child in node.children:
             if child.type == "formal_parameters":
                 for p in child.children:
@@ -1223,7 +1221,7 @@ class TreeSitterAnalyzer:
 
     # ---------- Handler dispatch table ----------
 
-    _ELEMENT_HANDLERS: Dict[str, Callable] = {
+    _ELEMENT_HANDLERS: dict[str, Callable] = {
         "python": _extract_python_element,
         "javascript": _extract_js_element,
         "typescript": _extract_ts_element,
@@ -1236,13 +1234,13 @@ class TreeSitterAnalyzer:
 
     def _extract_imports_from_tree(
         self, tree, file_path: Path, language: str
-    ) -> List[ImportStatement]:
+    ) -> list[ImportStatement]:
         """Extract import statements from AST tree using real tree-sitter walking.
 
         Handles Python import/from-import, JS/TS ESM imports and require(),
         Go import declarations, Rust use declarations, and Java import declarations.
         """
-        imports: List[ImportStatement] = []
+        imports: list[ImportStatement] = []
         rel_path = str(file_path.relative_to(self.repo_path))
 
         try:
@@ -1260,7 +1258,7 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        imports: List[ImportStatement],
+        imports: list[ImportStatement],
     ) -> None:
         """Recursively walk tree-sitter nodes and extract import statements."""
         handler = self._IMPORT_HANDLERS.get(language)
@@ -1278,7 +1276,7 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        imports: List[ImportStatement],
+        imports: list[ImportStatement],
     ) -> None:
         """Extract Python import and from-import statements."""
         if node.type == "import_statement":
@@ -1317,8 +1315,8 @@ class TreeSitterAnalyzer:
 
         elif node.type == "import_from_statement":
             # from pathlib import Path / from . import local / from ..relative import something
-            module_parts: List[str] = []
-            names: List[str] = []
+            module_parts: list[str] = []
+            names: list[str] = []
             found_import_keyword = False
 
             for child in node.children:
@@ -1364,13 +1362,13 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        imports: List[ImportStatement],
+        imports: list[ImportStatement],
     ) -> None:
         """Extract JS/TS import statements and require() calls."""
         if node.type == "import_statement":
             module = ""
-            names: List[str] = []
-            alias: Optional[str] = None
+            names: list[str] = []
+            alias: str | None = None
 
             # Find the source string
             for child in node.children:
@@ -1413,7 +1411,7 @@ class TreeSitterAnalyzer:
         elif node.type == "export_statement":
             # export { foo } from 'bar'
             module = ""
-            names: List[str] = []  # type: ignore[no-redef]
+            names: list[str] = []  # type: ignore[no-redef]
             for child in node.children:
                 if child.type == "string":
                     module = self._extract_string_content(child, source)
@@ -1443,7 +1441,7 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        imports: List[ImportStatement],
+        imports: list[ImportStatement],
     ) -> None:
         """Extract Go import declarations."""
         if node.type == "import_declaration":
@@ -1503,7 +1501,7 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        imports: List[ImportStatement],
+        imports: list[ImportStatement],
     ) -> None:
         """Extract Rust use declarations."""
         if node.type == "use_declaration":
@@ -1552,7 +1550,7 @@ class TreeSitterAnalyzer:
         rel_path: str,
         language: str,
         source: bytes,
-        imports: List[ImportStatement],
+        imports: list[ImportStatement],
     ) -> None:
         """Extract Java import declarations."""
         if node.type == "import_declaration":
@@ -1588,7 +1586,7 @@ class TreeSitterAnalyzer:
 
     # ---------- Import handler dispatch table ----------
 
-    _IMPORT_HANDLERS: Dict[str, Callable] = {
+    _IMPORT_HANDLERS: dict[str, Callable] = {
         "python": _extract_python_import,
         "javascript": _extract_js_import,
         "typescript": _extract_js_import,
@@ -1622,7 +1620,7 @@ class TreeSitterAnalyzer:
         return ""
 
     @staticmethod
-    def _child_by_field(node: Any, field_name: str) -> Optional[Any]:
+    def _child_by_field(node: Any, field_name: str) -> Any | None:
         """Get a child node by field name, handling API differences."""
         try:
             result = node.child_by_field_name(field_name)
@@ -1643,9 +1641,9 @@ class TreeSitterAnalyzer:
                 return TreeSitterAnalyzer._node_text(child, source)
         return text
 
-    def _find_patterns(self, elements: List[CodeElement]) -> Dict[str, List[str]]:
+    def _find_patterns(self, elements: list[CodeElement]) -> dict[str, list[str]]:
         """Find improvement patterns in code"""
-        patterns: Dict[str, List[str]] = {
+        patterns: dict[str, list[str]] = {
             "normalization": [],
             "attention": [],
             "activation": [],
@@ -1681,8 +1679,8 @@ class TreeSitterAnalyzer:
         return {k: v for k, v in patterns.items() if v}
 
     def _detect_frameworks(
-        self, elements: List[CodeElement], imports: List[ImportStatement]
-    ) -> List[str]:
+        self, elements: list[CodeElement], imports: list[ImportStatement]
+    ) -> list[str]:
         """Detect frameworks used in the codebase"""
         frameworks = []
 
@@ -1710,7 +1708,7 @@ class TreeSitterAnalyzer:
 
         return frameworks
 
-    def _find_entry_points(self) -> List[str]:
+    def _find_entry_points(self) -> list[str]:
         """Find entry points (main files)"""
         entry_points = []
 
@@ -1740,7 +1738,7 @@ class TreeSitterAnalyzer:
 
         return entry_points
 
-    def _find_test_files(self) -> List[str]:
+    def _find_test_files(self) -> list[str]:
         """Find test files"""
         test_files = []
 
@@ -1770,9 +1768,9 @@ class TreeSitterAnalyzer:
 
         return list(set(test_files))
 
-    def _build_dependency_graph(self, imports: List[ImportStatement]) -> Dict[str, List[str]]:
+    def _build_dependency_graph(self, imports: list[ImportStatement]) -> dict[str, list[str]]:
         """Build dependency graph"""
-        graph: Dict[str, List[str]] = {}
+        graph: dict[str, list[str]] = {}
 
         for imp in imports:
             if imp.file not in graph:
@@ -1828,7 +1826,7 @@ class TreeSitterAnalyzer:
 
         return False
 
-    def suggest_research_papers(self, llm_assistant: "Any | None" = None) -> List[Dict]:
+    def suggest_research_papers(self, llm_assistant: "Any | None" = None) -> list[dict]:
         """Suggest research papers based on code patterns.
 
         Args:
@@ -1877,7 +1875,7 @@ class TreeSitterAnalyzer:
 
         return suggestions
 
-    def _calculate_match_confidence(self, pattern: str, paper: Dict) -> float:
+    def _calculate_match_confidence(self, pattern: str, paper: dict) -> float:
         """Calculate confidence score for pattern-paper match"""
         confidence = 50.0  # Base confidence
 

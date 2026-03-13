@@ -1,14 +1,12 @@
-import pytest
-
 from scholardevclaw.utils.error_codes import (
-    ErrorCategory,
-    ErrorSeverity,
-    ErrorCode,
-    ErrorCodes,
     ERROR_CODE_MAP,
     AppException,
-    get_error,
+    ErrorCategory,
+    ErrorCode,
+    ErrorCodes,
+    ErrorSeverity,
     create_error,
+    get_error,
 )
 
 

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import time
-from fastapi import Request, Response, HTTPException
+from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from scholardevclaw.utils.rate_limit import RateLimiter, RateLimitConfig, RateLimitResult
+from scholardevclaw.utils.rate_limit import RateLimitConfig, RateLimiter, RateLimitResult
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

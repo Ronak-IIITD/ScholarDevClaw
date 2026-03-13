@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, FastAPI, Request, Response
+from fastapi import APIRouter, FastAPI, Request
 from pydantic import BaseModel
 
 from .client import GitHubAppClient
 from .types import GitHubAppConfig
-from .webhook import WebhookHandler, IntegrationHandler
+from .webhook import IntegrationHandler, WebhookHandler
 
 
 class WebhookRequest(BaseModel):

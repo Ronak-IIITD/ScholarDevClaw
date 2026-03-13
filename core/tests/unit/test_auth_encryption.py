@@ -12,6 +12,7 @@ from scholardevclaw.auth.encryption import (
     _derive_key,
     get_encryption_manager,
 )
+from scholardevclaw.auth.types import AuthProvider
 
 
 @pytest.fixture
@@ -51,7 +52,7 @@ class TestDeriveKey:
 class TestEncryptionManager:
     def test_init_creates_dir(self, temp_dir):
         sub = temp_dir / "nested" / "dir"
-        mgr = EncryptionManager(sub)
+        EncryptionManager(sub)
         assert sub.exists()
 
     def test_not_enabled_by_default(self, temp_dir):
@@ -342,7 +343,3 @@ class TestEncryptionWithStore:
         assert store.is_encryption_enabled() is False
         store.enable_encryption("pass")
         assert store.is_encryption_enabled() is True
-
-
-# Import needed for store integration tests
-from scholardevclaw.auth.types import AuthProvider

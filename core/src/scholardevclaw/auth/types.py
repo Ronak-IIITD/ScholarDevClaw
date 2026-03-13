@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import secrets
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -188,7 +188,7 @@ class KeyRotationEntry:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "KeyRotationEntry":
+    def from_dict(cls, data: dict[str, Any]) -> KeyRotationEntry:
         return cls(
             rotated_at=data["rotated_at"],
             previous_fingerprint=data["previous_fingerprint"],
@@ -251,7 +251,7 @@ class APIKey:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "APIKey":
+    def from_dict(cls, data: dict[str, Any]) -> APIKey:
         rotation_history = [KeyRotationEntry.from_dict(r) for r in data.get("rotation_history", [])]
         scope = KeyScope(data.get("scope", "write"))
 
@@ -386,7 +386,7 @@ class UserProfile:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "UserProfile":
+    def from_dict(cls, data: dict[str, Any]) -> UserProfile:
         return cls(
             id=data["id"],
             email=data.get("email"),
@@ -415,7 +415,7 @@ class AuthConfig:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AuthConfig":
+    def from_dict(cls, data: dict[str, Any]) -> AuthConfig:
         profile = None
         if data.get("profile"):
             profile = UserProfile.from_dict(data["profile"])

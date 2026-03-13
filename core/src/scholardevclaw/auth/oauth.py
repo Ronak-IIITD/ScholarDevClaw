@@ -12,15 +12,12 @@ import secrets
 import time
 import webbrowser
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
 import requests
-
-from ..auth.types import APIKey, AuthProvider
 
 
 @dataclass
@@ -89,8 +86,8 @@ class OAuthProvider(ABC):
 
     def generate_code_challenge(self) -> str:
         """Generate PKCE code challenge from verifier."""
-        import hashlib
         import base64
+        import hashlib
 
         if not self._code_verifier:
             self.generate_code_verifier()

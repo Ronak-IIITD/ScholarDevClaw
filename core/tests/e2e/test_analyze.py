@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -9,16 +8,16 @@ NANOGPT_REPO = ROOT / "test_repos" / "nanogpt"
 
 def get_nanogpt_path() -> Path:
     if not NANOGPT_REPO.exists():
-        raise RuntimeError(
+        pytest.skip(
             f"nanoGPT not found at {NANOGPT_REPO}. "
             "Run: git clone https://github.com/karpathy/nanoGPT.git test_repos/nanogpt"
         )
     return NANOGPT_REPO
 
 
-import pytest
+import pytest  # noqa: E402
 
-from scholardevclaw.application.pipeline import run_analyze
+from scholardevclaw.application.pipeline import run_analyze  # noqa: E402
 
 
 class TestE2EAnalyze:

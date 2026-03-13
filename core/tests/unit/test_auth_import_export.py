@@ -1,7 +1,6 @@
 """Tests for import/export (import_export.py)."""
 
 import json
-import os
 import tempfile
 from pathlib import Path
 

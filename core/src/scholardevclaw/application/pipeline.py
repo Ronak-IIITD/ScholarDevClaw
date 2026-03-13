@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 import os
-from pathlib import Path
 import subprocess
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from .schema_contract import SCHEMA_VERSION, with_meta
 

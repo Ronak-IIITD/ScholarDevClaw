@@ -298,8 +298,8 @@ class CrossRepoAnalyzer:
                     {f.lower() for f in b.frameworks},
                 )
                 language_sim = self._jaccard(
-                    {l.lower() for l in a.languages},
-                    {l.lower() for l in b.languages},
+                    {l.lower() for l in a.languages},  # noqa: E741
+                    {l.lower() for l in b.languages},  # noqa: E741
                 )
                 # Weighted average
                 similarity = (pattern_sim * 0.5) + (framework_sim * 0.3) + (language_sim * 0.2)

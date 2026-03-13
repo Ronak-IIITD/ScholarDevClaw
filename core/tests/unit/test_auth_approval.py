@@ -8,11 +8,10 @@ from pathlib import Path
 import pytest
 
 from scholardevclaw.auth.approval import (
+    ApprovalWorkflow,
+    KeyRequest,
     RequestStatus,
     RequestType,
-    KeyRequest,
-    ApprovalNotification,
-    ApprovalWorkflow,
     RequestValidator,
 )
 

@@ -1,17 +1,17 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Optional, Set
+
 import libcst as cst
 
 
 @dataclass
 class ClassInfo:
     name: str
-    bases: List[str]
+    bases: list[str]
     line_number: int
-    methods: List[str] = field(default_factory=list)
+    methods: list[str] = field(default_factory=list)
     is_nn_module: bool = False
-    attributes: List[str] = field(default_factory=list)
+    attributes: list[str] = field(default_factory=list)
     is_custom_norm: bool = False
 
 
@@ -19,23 +19,23 @@ class ClassInfo:
 class FunctionInfo:
     name: str
     line_number: int
-    parameters: List[str] = field(default_factory=list)
+    parameters: list[str] = field(default_factory=list)
 
 
 @dataclass
 class ImportInfo:
     name: str
-    alias: Optional[str] = None
-    from_module: Optional[str] = None
+    alias: str | None = None
+    from_module: str | None = None
 
 
 @dataclass
 class ModuleInfo:
     path: Path
     relative_path: Path
-    classes: List[ClassInfo] = field(default_factory=list)
-    functions: List[FunctionInfo] = field(default_factory=list)
-    imports: List[ImportInfo] = field(default_factory=list)
+    classes: list[ClassInfo] = field(default_factory=list)
+    functions: list[FunctionInfo] = field(default_factory=list)
+    imports: list[ImportInfo] = field(default_factory=list)
 
 
 @dataclass
@@ -44,7 +44,7 @@ class ModelInfo:
     file: str
     line: int
     parent: str
-    components: Dict = field(default_factory=dict)
+    components: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -59,16 +59,16 @@ class TrainingLoopInfo:
 class RepositoryMap:
     repo_name: str
     root_path: Path
-    modules: List[ModuleInfo] = field(default_factory=list)
-    models: List[ModelInfo] = field(default_factory=list)
-    training_loop: Optional[TrainingLoopInfo] = None
-    test_files: List[str] = field(default_factory=list)
+    modules: list[ModuleInfo] = field(default_factory=list)
+    models: list[ModelInfo] = field(default_factory=list)
+    training_loop: TrainingLoopInfo | None = None
+    test_files: list[str] = field(default_factory=list)
 
 
 class PyTorchRepoParser:
     def __init__(self, repo_path: Path):
         self.repo_path = Path(repo_path)
-        self.modules: List[ModuleInfo] = []
+        self.modules: list[ModuleInfo] = []
 
     def parse(self) -> RepositoryMap:
         self.modules = []
@@ -93,7 +93,7 @@ class PyTorchRepoParser:
             test_files=test_files,
         )
 
-    def _get_python_files(self) -> List[Path]:
+    def _get_python_files(self) -> list[Path]:
         python_files = []
         for pattern in ["*.py", "**/*.py"]:
             python_files.extend(self.repo_path.glob(pattern))
@@ -120,7 +120,7 @@ class PyTorchRepoParser:
             return True
         return False
 
-    def _parse_file(self, file_path: Path) -> Optional[ModuleInfo]:
+    def _parse_file(self, file_path: Path) -> ModuleInfo | None:
         try:
             source = file_path.read_text(errors="ignore")
         except Exception:
@@ -142,7 +142,7 @@ class PyTorchRepoParser:
             imports=visitor.imports,
         )
 
-    def _detect_models(self) -> List[ModelInfo]:
+    def _detect_models(self) -> list[ModelInfo]:
         models = []
 
         for module in self.modules:
@@ -159,7 +159,7 @@ class PyTorchRepoParser:
 
         return models
 
-    def _extract_components(self, cls: ClassInfo, module: ModuleInfo) -> Dict:
+    def _extract_components(self, cls: ClassInfo, module: ModuleInfo) -> dict:
         components = {}
 
         for attr in cls.attributes:
@@ -185,7 +185,7 @@ class PyTorchRepoParser:
 
         return components
 
-    def _detect_training_loop(self) -> Optional[TrainingLoopInfo]:
+    def _detect_training_loop(self) -> TrainingLoopInfo | None:
         for module in self.modules:
             if "train" in module.relative_path.stem.lower():
                 for func in module.functions:
@@ -206,7 +206,7 @@ class PyTorchRepoParser:
             loss_fn="cross_entropy",
         )
 
-    def _find_test_files(self) -> List[str]:
+    def _find_test_files(self) -> list[str]:
         test_files = []
 
         for path in self.repo_path.glob("**/test*.py"):
@@ -220,12 +220,12 @@ class PyTorchRepoParser:
 
 class PyTorchComponentVisitor(cst.CSTVisitor):
     def __init__(self):
-        self.classes: List[ClassInfo] = []
-        self.functions: List[FunctionInfo] = []
-        self.imports: List[ImportInfo] = []
-        self._current_class_bases: List[str] = []
+        self.classes: list[ClassInfo] = []
+        self.functions: list[FunctionInfo] = []
+        self.imports: list[ImportInfo] = []
+        self._current_class_bases: list[str] = []
 
-    def visit_Import(self, node: cst.Import) -> None:
+    def visit_Import(self, node: cst.Import) -> None:  # noqa: N802
         for alias in node.names:
             alias_name = alias.name.value if hasattr(alias.name, "value") else alias.name
             alias_value = (
@@ -238,7 +238,7 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
                 )
             )
 
-    def visit_ImportFrom(self, node: cst.ImportFrom) -> None:
+    def visit_ImportFrom(self, node: cst.ImportFrom) -> None:  # noqa: N802
         module = node.module.value if node.module else None
         for alias in node.names:
             alias_name = alias.name.value if hasattr(alias.name, "value") else alias.name
@@ -253,7 +253,7 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
                 )
             )
 
-    def visit_ClassDef(self, node: cst.ClassDef) -> None:
+    def visit_ClassDef(self, node: cst.ClassDef) -> None:  # noqa: N802
         bases = []
         for base in node.bases:
             if isinstance(base, cst.Name):
@@ -294,7 +294,7 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
             )
         )
 
-    def visit_FunctionDef(self, node: cst.FunctionDef) -> None:
+    def visit_FunctionDef(self, node: cst.FunctionDef) -> None:  # noqa: N802
         params = []
         for param in node.params.params:
             params.append(param.name.value)

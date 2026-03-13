@@ -13,11 +13,11 @@ from __future__ import annotations
 import json
 import time
 import tracemalloc
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 try:
     import psutil
@@ -240,7 +240,7 @@ class PrebuiltBenchmarks:
             BenchmarkTask(
                 name="string_format",
                 description="String formatting",
-                func=lambda n: "hello {} {}".format(n, n * 2),
+                func=lambda n: f"hello {n} {n * 2}",
                 inputs=[100, 1000, 10000],
                 iterations=100,
             ),

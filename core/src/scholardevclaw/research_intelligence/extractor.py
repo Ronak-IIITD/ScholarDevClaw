@@ -14,12 +14,11 @@ This module provides the :class:`ResearchExtractor` which:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from scholardevclaw.llm.research_assistant import LLMResearchAssistant
@@ -31,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Spec registry — seeds the dynamic registry at construction time
 # ---------------------------------------------------------------------------
 
-PAPER_SPECS: Dict[str, Dict] = {
+PAPER_SPECS: dict[str, dict] = {
     # --- Normalization ---
     "rmsnorm": {
         "paper": {
@@ -581,12 +580,12 @@ class Paper:
 
     id: str
     title: str
-    authors: List[str]
+    authors: list[str]
     abstract: str
-    arxiv_id: Optional[str] = None
-    pdf_url: Optional[str] = None
-    published: Optional[str] = None
-    categories: List[str] = field(default_factory=list)
+    arxiv_id: str | None = None
+    pdf_url: str | None = None
+    published: str | None = None
+    categories: list[str] = field(default_factory=list)
     year: int = 2024
 
 
@@ -594,10 +593,10 @@ class Paper:
 class ResearchQuery:
     """Search query for research papers"""
 
-    keywords: List[str]
+    keywords: list[str]
     domain: str = "cs.AI"
     max_results: int = 10
-    year_from: Optional[int] = None
+    year_from: int | None = None
 
 
 @dataclass
@@ -606,10 +605,10 @@ class ImplementationSpec:
 
     paper: Paper
     target_language: str
-    target_patterns: List[str]
+    target_patterns: list[str]
     code_template: str
-    expected_benefits: List[str]
-    risks: List[str] = field(default_factory=list)
+    expected_benefits: list[str]
+    risks: list[str] = field(default_factory=list)
     confidence: float = 0.0
 
 
@@ -618,7 +617,7 @@ class ImplementationSpec:
 # ---------------------------------------------------------------------------
 
 
-def _read_pdf_text(pdf_path: str, max_pages: int = 20) -> Optional[str]:
+def _read_pdf_text(pdf_path: str, max_pages: int = 20) -> str | None:
     """Best-effort plain-text extraction from a PDF file.
 
     Tries ``PyPDF2`` (commonly available) then ``pdfminer.six``.
@@ -654,7 +653,7 @@ def _read_pdf_text(pdf_path: str, max_pages: int = 20) -> Optional[str]:
     return None
 
 
-def _fetch_arxiv_abstract(arxiv_id: str) -> Optional[str]:
+def _fetch_arxiv_abstract(arxiv_id: str) -> str | None:
     """Fetch the abstract for an arXiv paper via the Atom feed API.
 
     This is a lightweight synchronous call — no heavy ``arxiv`` library needed.
@@ -684,7 +683,7 @@ def _fetch_arxiv_abstract(arxiv_id: str) -> Optional[str]:
 def _fetch_arxiv_papers(
     query: str,
     max_results: int = 5,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Search arXiv via the Atom API and return basic paper metadata.
 
     This is a lightweight synchronous helper that does NOT require the
@@ -723,7 +722,7 @@ def _fetch_arxiv_papers(
         return []
 
     xml = resp.text
-    entries: List[Dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
 
     for entry_match in re.finditer(r"<entry>(.*?)</entry>", xml, re.DOTALL):
         entry_xml = entry_match.group(1)
@@ -786,10 +785,10 @@ class ResearchExtractor:
 
     def __init__(
         self,
-        llm_assistant: "LLMResearchAssistant | None" = None,
+        llm_assistant: LLMResearchAssistant | None = None,
     ) -> None:
         # Deep copy the seed data so each instance has its own mutable registry
-        self.specs: Dict[str, Dict] = {k: dict(v) for k, v in PAPER_SPECS.items()}
+        self.specs: dict[str, dict] = {k: dict(v) for k, v in PAPER_SPECS.items()}
         self._arxiv_client = None
         self._llm = llm_assistant
 
@@ -808,7 +807,7 @@ class ResearchExtractor:
     # arXiv search (async, via the ``arxiv`` package when available)
     # ------------------------------------------------------------------
 
-    async def search_arxiv(self, query: ResearchQuery) -> List[Paper]:
+    async def search_arxiv(self, query: ResearchQuery) -> list[Paper]:
         """Search arXiv for papers matching the query"""
         client = self._get_arxiv_client()
 
@@ -847,13 +846,13 @@ class ResearchExtractor:
             logger.warning("arXiv search error: %s", e)
             return []
 
-    def _search_arxiv_http(self, query: ResearchQuery) -> List[Paper]:
+    def _search_arxiv_http(self, query: ResearchQuery) -> list[Paper]:
         """Fallback arXiv search using the lightweight HTTP helper."""
         raw = _fetch_arxiv_papers(
             " ".join(query.keywords),
             max_results=query.max_results,
         )
-        papers: List[Paper] = []
+        papers: list[Paper] = []
         for entry in raw:
             papers.append(
                 Paper(
@@ -878,7 +877,7 @@ class ResearchExtractor:
         max_results: int = 10,
         *,
         include_arxiv: bool = False,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Search papers by keyword in the local registry.
 
         When *include_arxiv* is True **and** local results are fewer than
@@ -934,11 +933,11 @@ class ResearchExtractor:
 
         return results[:max_results]
 
-    def _search_local(self, query: str, max_results: int = 10) -> List[Dict]:
+    def _search_local(self, query: str, max_results: int = 10) -> list[dict]:
         """Search across all fields in the local spec registry."""
         query_lower = query.lower()
         query_words = set(query_lower.split())
-        results: List[Dict] = []
+        results: list[dict] = []
 
         for name, spec in self.specs.items():
             paper = spec.get("paper", {})
@@ -985,7 +984,7 @@ class ResearchExtractor:
 
     def find_papers_for_code_pattern(
         self, code_pattern: str, language: str = "python"
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Find papers relevant to a code pattern.
 
         Uses a broad keyword → spec mapping, then falls back to LLM-based
@@ -994,7 +993,7 @@ class ResearchExtractor:
         pattern_lower = code_pattern.lower()
 
         # Broad keyword → spec mapping (expanded from 4 → 16 specs)
-        mapping: Dict[str, List[str]] = {
+        mapping: dict[str, list[str]] = {
             # Normalization
             "norm": ["rmsnorm", "preln_transformer", "qknorm"],
             "normalization": ["rmsnorm", "preln_transformer", "qknorm"],
@@ -1053,7 +1052,7 @@ class ResearchExtractor:
             "residual": ["preln_transformer", "dropout_variants"],
         }
 
-        results: List[Dict] = []
+        results: list[dict] = []
         seen_names: set = set()
 
         for key, spec_names in mapping.items():
@@ -1100,11 +1099,11 @@ class ResearchExtractor:
 
     def discover_specs_for_repo(
         self,
-        patterns: Dict[str, List[str]],
-        frameworks: List[str],
+        patterns: dict[str, list[str]],
+        frameworks: list[str],
         *,
         max_arxiv_queries: int = 3,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Dynamically discover relevant specs for a repository.
 
         Parameters
@@ -1121,7 +1120,7 @@ class ResearchExtractor:
         list[dict]
             Newly discovered and registered specs.
         """
-        new_specs: List[Dict] = []
+        new_specs: list[dict] = []
         queries_made = 0
 
         for pattern_name in patterns:
@@ -1148,10 +1147,10 @@ class ResearchExtractor:
     def _build_discovery_query(
         self,
         pattern_name: str,
-        frameworks: List[str],
+        frameworks: list[str],
     ) -> str:
         """Build a targeted arXiv query from a code pattern and frameworks."""
-        pattern_queries: Dict[str, str] = {
+        pattern_queries: dict[str, str] = {
             "normalization": "layer normalization transformer",
             "attention": "efficient attention transformer",
             "activation": "activation function neural network",
@@ -1181,7 +1180,7 @@ class ResearchExtractor:
 
         return base_query
 
-    def _try_register_arxiv_paper(self, entry: Dict[str, Any]) -> Optional[Dict]:
+    def _try_register_arxiv_paper(self, entry: dict[str, Any]) -> dict | None:
         """Attempt to register an arXiv paper as a spec using the LLM.
 
         Returns the registered spec dict, or ``None`` if no LLM is
@@ -1227,7 +1226,7 @@ class ResearchExtractor:
     # Extraction entry point
     # ------------------------------------------------------------------
 
-    def extract(self, source: str, source_type: str = "pdf") -> Dict:
+    def extract(self, source: str, source_type: str = "pdf") -> dict:
         """Extract research specification (backward compatible)"""
         if source_type == "pdf":
             return self._extract_from_pdf(source)
@@ -1240,7 +1239,7 @@ class ResearchExtractor:
     # PDF extraction — LLM-powered with hardcoded fallback
     # ------------------------------------------------------------------
 
-    def _extract_from_pdf(self, pdf_path: str) -> Dict:
+    def _extract_from_pdf(self, pdf_path: str) -> dict:
         """Extract an implementation spec from a PDF file.
 
         Strategy:
@@ -1307,7 +1306,7 @@ class ResearchExtractor:
     # arXiv extraction — enhanced with abstract fetch + LLM
     # ------------------------------------------------------------------
 
-    def _extract_from_arxiv(self, arxiv_id: str) -> Dict:
+    def _extract_from_arxiv(self, arxiv_id: str) -> dict:
         """Extract spec from an arXiv identifier.
 
         Strategy:
@@ -1346,7 +1345,7 @@ class ResearchExtractor:
 
         return self._extract_from_pdf(arxiv_id)
 
-    def _extract_from_known_paper(self, paper_name: str) -> Dict:
+    def _extract_from_known_paper(self, paper_name: str) -> dict:
         paper_lower = paper_name.lower().replace("-", "").replace("_", "").replace(" ", "")
 
         for key, spec in self.specs.items():
@@ -1374,13 +1373,13 @@ class ResearchExtractor:
         return norm * self.weight
 """
 
-    def get_spec(self, name: str) -> Optional[Dict]:
+    def get_spec(self, name: str) -> dict | None:
         return self.specs.get(name.lower())
 
-    def list_available_specs(self) -> List[str]:
+    def list_available_specs(self) -> list[str]:
         return list(self.specs.keys())
 
-    def get_code_template(self, spec_name: str) -> Optional[str]:
+    def get_code_template(self, spec_name: str) -> str | None:
         spec = self.get_spec(spec_name)
         if not spec:
             return None
@@ -1393,9 +1392,9 @@ class ResearchExtractor:
 
         return templates.get(name)
 
-    def get_categories(self) -> Dict[str, List[str]]:
+    def get_categories(self) -> dict[str, list[str]]:
         """Get all available categories for filtering"""
-        categories: Dict[str, List[str]] = {}
+        categories: dict[str, list[str]] = {}
         for name, spec in self.specs.items():
             cat = spec.get("algorithm", {}).get("category", "other")
             if cat not in categories:
@@ -1409,7 +1408,7 @@ class ResearchExtractor:
 # ---------------------------------------------------------------------------
 
 
-def _extracted_spec_to_dict(extracted: Any) -> Dict[str, Any]:
+def _extracted_spec_to_dict(extracted: Any) -> dict[str, Any]:
     """Convert an ``ExtractedSpec`` dataclass into the dict format
     that ``PAPER_SPECS`` uses."""
     return {
@@ -1423,7 +1422,7 @@ def _extracted_spec_to_dict(extracted: Any) -> Dict[str, Any]:
     }
 
 
-def _spec_key(spec: Dict[str, Any]) -> str:
+def _spec_key(spec: dict[str, Any]) -> str:
     """Derive a lowercase registry key from a spec dict."""
     alg_name = spec.get("algorithm", {}).get("name", "")
     if alg_name:

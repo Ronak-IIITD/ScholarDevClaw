@@ -1,32 +1,27 @@
-import time
 import threading
-from unittest.mock import Mock
+import time
 
 import pytest
 
 from scholardevclaw.utils.metrics import (
+    ACTIVE_REQUESTS,
+    ERRORS_TOTAL,
+    INTEGRATIONS_TOTAL,
+    PATCHES_GENERATED,
+    REQUEST_DURATION,
+    REQUESTS_TOTAL,
+    VALIDATIONS_PASSED,
+    WORKFLOW_NODE_DURATION,
+    WORKFLOW_NODES_EXECUTED,
     Counter,
     Gauge,
     Histogram,
-    HistogramBucket,
     MetricsRegistry,
-    registry,
-    REQUESTS_TOTAL,
-    REQUEST_DURATION,
-    ACTIVE_REQUESTS,
-    INTEGRATIONS_TOTAL,
-    INTEGRATION_DURATION,
-    PATCHES_GENERATED,
-    VALIDATIONS_RUN,
-    VALIDATIONS_PASSED,
-    ERRORS_TOTAL,
-    WORKFLOW_NODES_EXECUTED,
-    WORKFLOW_NODE_DURATION,
-    track_request,
+    timing_histogram,
     track_integration,
     track_patch_generated,
+    track_request,
     track_workflow_node,
-    timing_histogram,
 )
 
 

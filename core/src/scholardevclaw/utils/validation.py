@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass
@@ -119,7 +119,7 @@ class StringValidator(Validator):
             errors.append(f"String must be at most {self.max_length} characters")
 
         if self.pattern and not self.pattern.match(value):
-            errors.append(f"String does not match required pattern")
+            errors.append("String does not match required pattern")
 
         if self.allowed_chars:
             invalid_chars = set(value) - set(self.allowed_chars)
@@ -230,7 +230,7 @@ class InputValidator:
     def __init__(self):
         self._field_validators: dict[str, Validator] = {}
 
-    def field(self, name: str, validator: Validator) -> "InputValidator":
+    def field(self, name: str, validator: Validator) -> InputValidator:
         self._field_validators[name] = validator
         return self
 

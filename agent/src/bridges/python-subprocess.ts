@@ -242,4 +242,13 @@ export class PythonSubprocessBridge {
         'Subprocess mode does not support validation execution. Use PythonHttpBridge for end-to-end phase execution.',
     };
   }
+
+  async healthCheck(): Promise<boolean> {
+    try {
+      const result = await this.runPythonModule('scholardevclaw.cli', ['--version']);
+      return result.success;
+    } catch {
+      return false;
+    }
+  }
 }

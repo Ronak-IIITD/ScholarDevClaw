@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
-from .store import ContextStore, ProjectMemory, UserPreferences
+from .store import ContextStore
 
 
 @dataclass

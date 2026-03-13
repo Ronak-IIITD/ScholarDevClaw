@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from scholardevclaw.llm.research_assistant import LLMResearchAssistant
@@ -43,7 +43,7 @@ class WebResource:
     author: str = ""
     date: str = ""
     relevance_score: float = 0.0
-    code_snippets: List[str] = field(default_factory=list)
+    code_snippets: list[str] = field(default_factory=list)
     language: str = ""
 
 
@@ -57,7 +57,7 @@ class GitHubRepo:
     description: str = ""
     stars: int = 0
     language: str = ""
-    topics: List[str] = field(default_factory=list)
+    topics: list[str] = field(default_factory=list)
     relevance_score: float = 0.0
 
 
@@ -86,7 +86,7 @@ class WebResearchEngine:
 
     def __init__(
         self,
-        llm_assistant: "LLMResearchAssistant | None" = None,
+        llm_assistant: LLMResearchAssistant | None = None,
     ) -> None:
         self.client: Any = None
         if HAS_HTTPX:
@@ -100,9 +100,9 @@ class WebResearchEngine:
 
     async def search_all_sources(
         self, query: str, language: str = "python", max_results: int = 10
-    ) -> Dict[str, List[Any]]:
+    ) -> dict[str, list[Any]]:
         """Search across all available sources"""
-        results: Dict[str, List[Any]] = {
+        results: dict[str, list[Any]] = {
             "github_repos": [],
             "blog_posts": [],
             "stackoverflow": [],
@@ -123,7 +123,7 @@ class WebResearchEngine:
 
     async def search_github(
         self, query: str, language: str = "python", max_results: int = 10
-    ) -> List[GitHubRepo]:
+    ) -> list[GitHubRepo]:
         """Search GitHub for relevant repositories"""
         if not self.client:
             return []
@@ -175,7 +175,7 @@ class WebResearchEngine:
             logger.warning("GitHub search error: %s", e)
             return []
 
-    def _calculate_github_relevance(self, item: Dict, query: str) -> float:
+    def _calculate_github_relevance(self, item: dict, query: str) -> float:
         """Calculate relevance score for a GitHub repo"""
         score = 0.0
 
@@ -213,7 +213,7 @@ class WebResearchEngine:
 
         return min(score, 100.0)
 
-    async def search_papers_with_code(self, query: str, max_results: int = 10) -> List[WebResource]:
+    async def search_papers_with_code(self, query: str, max_results: int = 10) -> list[WebResource]:
         """Search Papers with Code for implementations"""
         if not self.client:
             return []
@@ -249,7 +249,7 @@ class WebResearchEngine:
             logger.warning("Papers with Code search error: %s", e)
             return []
 
-    async def search_stackoverflow(self, query: str, max_results: int = 5) -> List[WebResource]:
+    async def search_stackoverflow(self, query: str, max_results: int = 5) -> list[WebResource]:
         """Search Stack Overflow for relevant discussions"""
         if not self.client:
             return []
@@ -301,13 +301,13 @@ class WebResearchEngine:
         *,
         language: str = "python",
         max_results: int = 10,
-    ) -> List[WebResource]:
+    ) -> list[WebResource]:
         """Find reference implementations for a paper/algorithm.
 
         Searches GitHub, Papers with Code, and Stack Overflow in parallel
         for implementations of the specified algorithm.
         """
-        references: List[WebResource] = []
+        references: list[WebResource] = []
 
         search_queries = [
             f"{algorithm_name} implementation",
@@ -349,7 +349,7 @@ class WebResearchEngine:
         self,
         paper_title: str,
         algorithm_name: str,
-    ) -> List[WebResource]:
+    ) -> list[WebResource]:
         """Synchronous backward-compatible wrapper (returns empty list).
 
         For real results use the async ``find_implementation_references``
@@ -361,7 +361,7 @@ class WebResearchEngine:
     # Code extraction from URLs (fixed async/sync bug)
     # ------------------------------------------------------------------
 
-    async def extract_code_from_url(self, url: str) -> Optional[str]:
+    async def extract_code_from_url(self, url: str) -> str | None:
         """Extract code from a GitHub URL or gist.
 
         This method is now properly async (previously called synchronous
@@ -397,7 +397,7 @@ class WebResearchEngine:
         return None
 
     # Keep the old synchronous method name for backward compatibility
-    def extract_code_from_url_sync(self, url: str) -> Optional[str]:
+    def extract_code_from_url_sync(self, url: str) -> str | None:
         """Synchronous wrapper for extract_code_from_url.
 
         For real results, prefer the async version.
@@ -422,7 +422,7 @@ class WebResearchEngine:
     # GitHub repo analysis (was a stub)
     # ------------------------------------------------------------------
 
-    async def analyze_github_repo(self, repo_url: str) -> Optional[Dict]:
+    async def analyze_github_repo(self, repo_url: str) -> dict | None:
         """Analyse a GitHub repository for relevant code.
 
         Fetches the repo tree via the GitHub API and optionally uses the
@@ -443,7 +443,7 @@ class WebResearchEngine:
             headers["Authorization"] = f"token {self.github_token}"
 
         # Fetch repo metadata
-        repo_info: Dict[str, Any] = {
+        repo_info: dict[str, Any] = {
             "owner": owner,
             "repo": repo,
             "url": repo_url,
@@ -514,7 +514,7 @@ class WebResearchEngine:
 
         # Optional: LLM-powered analysis of key files
         if self._llm is not None and self._llm.is_available and repo_info.get("key_files"):
-            file_contents: Dict[str, str] = {}
+            file_contents: dict[str, str] = {}
             # Fetch up to 5 key files for LLM analysis
             for file_path in repo_info["key_files"][:5]:
                 try:
@@ -553,7 +553,7 @@ class SyncWebResearchEngine:
 
     def __init__(
         self,
-        llm_assistant: "LLMResearchAssistant | None" = None,
+        llm_assistant: LLMResearchAssistant | None = None,
     ) -> None:
         import asyncio
 
@@ -562,19 +562,19 @@ class SyncWebResearchEngine:
 
     def search_github(
         self, query: str, language: str = "python", max_results: int = 10
-    ) -> List[GitHubRepo]:
+    ) -> list[GitHubRepo]:
         return self.loop.run_until_complete(
             self.async_engine.search_github(query, language, max_results)
         )
 
-    def search_papers_with_code(self, query: str, max_results: int = 10) -> List[WebResource]:
+    def search_papers_with_code(self, query: str, max_results: int = 10) -> list[WebResource]:
         return self.loop.run_until_complete(
             self.async_engine.search_papers_with_code(query, max_results)
         )
 
     def search_all(
         self, query: str, language: str = "python", max_results: int = 10
-    ) -> Dict[str, List[Any]]:
+    ) -> dict[str, list[Any]]:
         return self.loop.run_until_complete(
             self.async_engine.search_all_sources(query, language, max_results)
         )
@@ -586,17 +586,17 @@ class SyncWebResearchEngine:
         *,
         language: str = "python",
         max_results: int = 10,
-    ) -> List[WebResource]:
+    ) -> list[WebResource]:
         return self.loop.run_until_complete(
             self.async_engine.find_implementation_references(
                 paper_title, algorithm_name, language=language, max_results=max_results
             )
         )
 
-    def analyze_github_repo(self, repo_url: str) -> Optional[Dict]:
+    def analyze_github_repo(self, repo_url: str) -> dict | None:
         return self.loop.run_until_complete(self.async_engine.analyze_github_repo(repo_url))
 
-    def extract_code_from_url(self, url: str) -> Optional[str]:
+    def extract_code_from_url(self, url: str) -> str | None:
         return self.loop.run_until_complete(self.async_engine.extract_code_from_url(url))
 
 
@@ -607,7 +607,7 @@ class SyncWebResearchEngine:
 
 def find_implementations(
     algorithm_name: str, language: str = "python", max_results: int = 10
-) -> Dict[str, List[Any]]:
+) -> dict[str, list[Any]]:
     """Find implementations of an algorithm from multiple sources"""
     engine = SyncWebResearchEngine()
 

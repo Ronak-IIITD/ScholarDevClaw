@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import time
 import tracemalloc
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
-from pathlib import Path
-import subprocess
+from typing import Any
+
 import psutil
 
 
@@ -142,11 +142,11 @@ def profile_block(name: str, profiler: Profiler):
     """Context manager for profiling a code block."""
 
     class ProfileContext:
-        def __enter__(ctx):
+        def __enter__(self):
             profiler.start_section(name)
-            return ctx
+            return self
 
-        def __exit__(ctx, *args):
+        def __exit__(self, *args):
             profiler.end_section(name)
 
     return ProfileContext()

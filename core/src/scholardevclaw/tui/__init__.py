@@ -26,11 +26,11 @@ def __getattr__(name):
         "get_clipboard_text",
     ):
         from .clipboard import (
-            ClipboardManager,
-            ImageAttachment,
-            ImageInputHandler,
-            copy_to_clipboard,
-            get_clipboard_text,
+            ClipboardManager,  # noqa: F401
+            ImageAttachment,  # noqa: F401
+            ImageInputHandler,  # noqa: F401
+            copy_to_clipboard,  # noqa: F401
+            get_clipboard_text,  # noqa: F401
         )
 
         return locals()[name]

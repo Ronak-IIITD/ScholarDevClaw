@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-import traceback
 import sys
-import time
+import traceback
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 class ColoredFormatter(logging.Formatter):

@@ -1,20 +1,18 @@
 """Tests for OAuth 2.0 authentication."""
 
-import json
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from scholardevclaw.auth.oauth import (
-    OAuthToken,
-    OAuthProvider,
-    GoogleOAuthProvider,
     GitHubOAuthProvider,
-    OAuthTokenStore,
+    GoogleOAuthProvider,
     OAuthManager,
+    OAuthToken,
+    OAuthTokenStore,
     create_oauth_provider,
 )
 

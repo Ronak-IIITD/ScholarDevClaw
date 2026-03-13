@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any
 
 
 @dataclass
@@ -36,7 +37,7 @@ class ProgressBar:
         self._start_time: float | None = None
         self._last_update = 0.0
 
-    def start(self) -> "ProgressBar":
+    def start(self) -> ProgressBar:
         self._start_time = time.time()
         self._update_display()
         return self
@@ -106,7 +107,7 @@ class ProgressBar:
             minutes = int((seconds % 3600) / 60)
             return f"{hours}h {minutes}m"
 
-    def __enter__(self) -> "ProgressBar":
+    def __enter__(self) -> ProgressBar:
         return self.start()
 
     def __exit__(self, *args) -> None:
@@ -151,7 +152,7 @@ class Spinner:
         self._index = 0
         self._active = False
 
-    def start(self) -> "Spinner":
+    def start(self) -> Spinner:
         self._active = True
         self._update()
         return self
@@ -181,7 +182,7 @@ class Spinner:
         if self._active:
             self._update()
 
-    def __enter__(self) -> "Spinner":
+    def __enter__(self) -> Spinner:
         return self.start()
 
     def __exit__(self, *args) -> None:

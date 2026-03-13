@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
 import hashlib
-from dataclasses import dataclass, field, asdict
+import json  # noqa: F401
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 LogCallback = Callable[[str], None]
 
@@ -124,7 +125,7 @@ def run_experiment(
     output_dir: str | None = None,
     log_callback: LogCallback | None = None,
 ) -> dict[str, Any]:
-    from scholardevclaw.application.pipeline import run_generate, run_validate, run_preflight
+    from scholardevclaw.application.pipeline import run_generate, run_preflight, run_validate
 
     logs: list[str] = []
     experiment_id = hashlib.sha256(

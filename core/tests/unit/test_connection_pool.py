@@ -1,15 +1,15 @@
-import time
 import threading
-from unittest.mock import Mock, patch, MagicMock
+import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from scholardevclaw.utils.connection_pool import (
-    PoolConfig,
-    ConnectionStats,
-    ConnectionPool,
-    HTTPConnectionPool,
     AsyncHTTPConnectionPool,
+    ConnectionPool,
+    ConnectionStats,
+    HTTPConnectionPool,
+    PoolConfig,
 )
 
 
@@ -124,10 +124,10 @@ class TestConnectionPool:
 
         pool = ConnectionPool(factory, max_size=2)
 
-        with pool.acquire() as conn1:
+        with pool.acquire():
             pass
 
-        with pool.acquire() as conn2:
+        with pool.acquire():
             pass
 
         assert pool.size <= 2
@@ -146,10 +146,10 @@ class TestConnectionPool:
 
         pool = ConnectionPool(factory, validator=validator, max_size=2)
 
-        with pool.acquire() as conn1:
+        with pool.acquire():
             pass
 
-        with pool.acquire() as conn2:
+        with pool.acquire():
             pass
 
         assert pool.stats.total_created >= 1
@@ -181,10 +181,10 @@ class TestConnectionPool:
 
         pool = ConnectionPool(factory, closer=closer, max_size=5)
 
-        with pool.acquire() as conn1:
+        with pool.acquire():
             pass
 
-        with pool.acquire() as conn2:
+        with pool.acquire():
             pass
 
         assert pool.size == 1

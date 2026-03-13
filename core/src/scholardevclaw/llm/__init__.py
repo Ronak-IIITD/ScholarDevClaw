@@ -1,47 +1,49 @@
 # LLM module
 from .client import (
-    LLMClient,
-    LLMResponse,
-    LLMStreamChunk,
-    LLMAPIError,
-    LLMConfigError,
     DEFAULT_MODELS as LLM_DEFAULT_MODELS,
 )
+from .client import (
+    LLMAPIError,
+    LLMClient,
+    LLMConfigError,
+    LLMResponse,
+    LLMStreamChunk,
+)
+from .confidence import (
+    AdaptiveConfidence,
+    CalibrationMetrics,
+    ConfidenceCalibrator,
+    ConfidenceLevel,
+    Prediction,
+    UncertaintyEstimator,
+    quick_confidence,
+)
 from .multi_model import (
-    ModelProvider,
     ModelCapability,
     ModelConfig,
-    ModelResponse,
-    ModelRegistry,
-    ModelRouter,
     ModelPool,
+    ModelProvider,
+    ModelRegistry,
+    ModelResponse,
+    ModelRouter,
     create_router,
     estimate_cost,
 )
 from .rag_context import (
-    DocumentChunk,
-    RetrievedChunk,
-    TextChunker,
     CodeAwareChunker,
-    SimpleEmbedder,
-    VectorStore,
+    DocumentChunk,
     RAGContextBuilder,
+    RetrievedChunk,
+    SimpleEmbedder,
+    TextChunker,
+    VectorStore,
     create_rag_context,
 )
-from .confidence import (
-    ConfidenceLevel,
-    Prediction,
-    CalibrationMetrics,
-    ConfidenceCalibrator,
-    AdaptiveConfidence,
-    UncertaintyEstimator,
-    quick_confidence,
-)
 from .research_assistant import (
-    LLMResearchAssistant,
-    ExtractedSpec,
     CodeAnalysis,
+    ExtractedSpec,
     ImplementationPlan,
+    LLMResearchAssistant,
 )
 
 __all__ = [

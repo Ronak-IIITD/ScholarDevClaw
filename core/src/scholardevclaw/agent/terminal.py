@@ -16,16 +16,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-import subprocess
 import shlex
 import signal
-import pty
-import select
-import termios
-import tty
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 
@@ -809,9 +803,6 @@ class AdvancedShell:
             command = command.strip()[:-1].strip()
 
         # Parse redirects
-        stdout_redirect = None
-        stderr_redirect = None
-        stdin_redirect = None
 
         if ">" in command or "2>" in command:
             parts = command.split(">")
@@ -819,15 +810,15 @@ class AdvancedShell:
             for part in parts[1:]:
                 part = part.strip()
                 if part.startswith("2"):
-                    stderr_redirect = part[2:].strip()
+                    part[2:].strip()
                 else:
-                    stdout_redirect = part.strip()
+                    part.strip()
 
         if "<" in command:
             parts = command.split("<")
             command = parts[0].strip()
             if len(parts) > 1:
-                stdin_redirect = parts[1].strip()
+                parts[1].strip()
 
         # Run command
         try:

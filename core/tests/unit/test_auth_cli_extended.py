@@ -1,7 +1,6 @@
 """Tests for new CLI commands: rotate, audit, export, import, encrypt, profiles, usage, expiry."""
 
 import json
-import sys
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -387,7 +386,7 @@ class TestCmdUsage:
         assert "No usage data" in out
 
     def test_usage_with_data(self, store, capsys):
-        key = store.add_api_key("sk-test-123456789", "k", AuthProvider.CUSTOM)
+        store.add_api_key("sk-test-123456789", "k", AuthProvider.CUSTOM)
         store.get_api_key_with_rate_check()
         args = _make_args(auth_action="usage", key_id=None, output_json=False)
         _cmd_usage(args, store)
@@ -403,7 +402,7 @@ class TestCmdUsage:
         assert "Usage Stats" in out
 
     def test_usage_json_output(self, store, capsys):
-        key = store.add_api_key("sk-test-123456789", "k", AuthProvider.CUSTOM)
+        store.add_api_key("sk-test-123456789", "k", AuthProvider.CUSTOM)
         store.get_api_key_with_rate_check()
         args = _make_args(auth_action="usage", key_id=None, output_json=True)
         _cmd_usage(args, store)

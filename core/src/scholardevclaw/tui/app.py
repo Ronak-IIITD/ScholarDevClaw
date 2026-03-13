@@ -12,8 +12,6 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Button, Checkbox, Footer, Header, Input, Label, Pretty, Select, TextArea
 
-from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
-
 from scholardevclaw.application.pipeline import (
     run_analyze,
     run_generate,
@@ -24,6 +22,7 @@ from scholardevclaw.application.pipeline import (
     run_suggest,
     run_validate,
 )
+from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
 
 
 class TaskCompleted(Message):

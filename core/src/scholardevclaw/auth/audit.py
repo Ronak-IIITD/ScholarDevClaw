@@ -55,7 +55,7 @@ class AuditEvent:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AuditEvent":
+    def from_dict(cls, data: dict[str, Any]) -> AuditEvent:
         return cls(
             id=data["id"],
             timestamp=data["timestamp"],

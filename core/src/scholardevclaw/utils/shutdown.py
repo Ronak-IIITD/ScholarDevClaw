@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import atexit
 import signal
-import sys
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import Callable
+from collections.abc import Callable
 from contextlib import contextmanager
-import atexit
+from dataclasses import dataclass
 
 from .errors import setup_logger
 
@@ -160,4 +159,4 @@ def setup_graceful_shutdown() -> None:
     shutdown_manager.register_handler(cleanup_resources)
 
 
-from typing import Any
+from typing import Any  # noqa: E402

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import time
 import threading
-from dataclasses import dataclass, field
-from datetime import datetime
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 

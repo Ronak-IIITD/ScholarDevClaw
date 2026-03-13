@@ -1,21 +1,20 @@
-import time
 import threading
+import time
 
 import pytest
 
 from scholardevclaw.utils.tracing import (
     Span,
     TraceContext,
-    start_trace,
-    get_current_trace,
-    get_trace_id,
-    get_request_id,
-    end_trace,
-    span,
     Tracer,
+    end_trace,
     extract_trace_headers,
+    get_current_trace,
+    get_request_id,
+    get_trace_id,
     inject_trace_headers,
-    trace_context,
+    span,
+    start_trace,
 )
 
 
@@ -201,14 +200,14 @@ class TestGlobalFunctions:
     def test_get_trace_id(self):
         assert get_trace_id() is None
 
-        ctx = start_trace(trace_id="my-trace")
+        start_trace(trace_id="my-trace")
         assert get_trace_id() == "my-trace"
         end_trace()
 
     def test_get_request_id(self):
         assert get_request_id() is None
 
-        ctx = start_trace(request_id="my-req")
+        start_trace(request_id="my-req")
         assert get_request_id() == "my-req"
         end_trace()
 
@@ -298,7 +297,7 @@ class TestTracer:
         tracer = Tracer()
         tracer.set_export_callback(callback)
 
-        ctx = tracer.start_trace(trace_id="trace1")
+        tracer.start_trace(trace_id="trace1")
         tracer.end_trace()
 
         assert len(exported) == 1
@@ -307,10 +306,10 @@ class TestTracer:
     def test_tracer_get_exported(self):
         tracer = Tracer()
 
-        ctx = tracer.start_trace(trace_id="trace1")
+        tracer.start_trace(trace_id="trace1")
         tracer.end_trace()
 
-        ctx = tracer.start_trace(trace_id="trace2")
+        tracer.start_trace(trace_id="trace2")
         tracer.end_trace()
 
         exported = tracer.get_exported_traces()
@@ -319,7 +318,7 @@ class TestTracer:
     def test_tracer_clear(self):
         tracer = Tracer()
 
-        ctx = tracer.start_trace()
+        tracer.start_trace()
         tracer.end_trace()
 
         assert len(tracer.get_exported_traces()) == 1

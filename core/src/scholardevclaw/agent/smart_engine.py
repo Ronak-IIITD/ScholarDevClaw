@@ -19,55 +19,50 @@ Design principles:
 from __future__ import annotations
 
 import asyncio
+import os
+
+# ---------------------------------------------------------------------------
+# OS Detection — for cross-platform shell commands
+# ---------------------------------------------------------------------------
+import platform
 import subprocess
 import time
 import uuid
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from .engine import (
-    StreamEvent,
-    StreamEventType,
     AgentResponse,
     AgentSession,
+    StreamEvent,
+    StreamEventType,
 )
 from .memory import (
     AdvancedAgentMemory,
-    MemoryType,
-    MemoryImportance,
 )
 from .planning import (
-    Planner,
     AdaptivePlanner,
+    Plan,
     TaskPriority,
     TaskStatus,
-    Plan,
-    Task,
 )
 from .reflection import (
     AgentReflector,
     QualityRating,
 )
-from .tools import (
-    AdvancedToolManager,
-    ToolStatus as ToolExecStatus,
-)
 from .terminal import (
-    AdvancedShell,
     create_shell,
 )
-
-
-# ---------------------------------------------------------------------------
-# OS Detection — for cross-platform shell commands
-# ---------------------------------------------------------------------------
-
-
-import platform
-import os
+from .tools import (
+    AdvancedToolManager,
+)
+from .tools import (
+    ToolStatus as ToolExecStatus,
+)
 
 
 class OSDetector:
@@ -84,7 +79,6 @@ class OSDetector:
 
     def _detect_shell(self) -> None:
         """Detect the current shell."""
-        import os
         import shutil
 
         # Check SHELL environment variable
@@ -983,7 +977,7 @@ class SmartAgentEngine:
 
         if result.ok:
             # Reflect on output quality
-            quality = self._reflect_and_score(result, classification)
+            self._reflect_and_score(result, classification)
 
             # Emit output
             yield StreamEvent(
@@ -2032,11 +2026,11 @@ class SmartAgentEngine:
   history       Show command history
   jobs          Show background jobs
   !<cmd>        Run command in background
-  
+
   Pipes:     cmd1 | cmd2
   Redirect:  cmd > file
   Background: cmd &
-  
+
   exit/reset  Reset terminal session""",
                 tokens_used=50,
             )
@@ -2538,7 +2532,6 @@ class SmartAgentEngine:
     ) -> None:
         """Store execution result in memory for future context."""
         content = f"{action} on {target or 'unknown'}: {result.message[:200]}"
-        importance = MemoryImportance.HIGH if result.ok else MemoryImportance.MEDIUM
 
         self.memory.remember_episode(
             content=content,
@@ -2597,7 +2590,7 @@ class SmartAgentEngine:
             return None
 
         # Use reflection to determine what to improve
-        reflection = self.reflector.analyze_error(
+        self.reflector.analyze_error(
             error=prev_result.error or "Low quality output",
             context=classification.query_text,
         )
@@ -2732,22 +2725,22 @@ class SmartAgentEngine:
         else:
             parts.append("  No active session")
 
-        parts.append(f"\n**System**")
+        parts.append("\n**System**")
         parts.append(f"  OS: {self.os.os_name}")
         parts.append(f"  Shell: {self.os.shell} (user: {self.os.user_shell})")
 
-        parts.append(f"\n**Agent Stats**")
+        parts.append("\n**Agent Stats**")
         parts.append(f"  Total queries: {self.total_queries}")
         parts.append(f"  Successful: {self.successful_queries}")
         parts.append(f"  Total tokens used: ~{self.total_tokens_used:,}")
 
         mem_stats = self.memory.get_stats()
-        parts.append(f"\n**Memory**")
+        parts.append("\n**Memory**")
         parts.append(f"  Total memories: {mem_stats['total_memories']}")
         parts.append(f"  Cached: {mem_stats['cached_count']}")
 
         tool_stats = self.tools.get_statistics()
-        parts.append(f"\n**Tools**")
+        parts.append("\n**Tools**")
         parts.append(f"  Executions: {tool_stats['total_executions']}")
         parts.append(f"  Success rate: {tool_stats['success_rate']:.0%}")
         parts.append(f"  Available: {len(self.tools.list_tools())}")

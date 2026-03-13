@@ -9,13 +9,13 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..repo_intelligence.parser import PyTorchRepoParser
-from ..research_intelligence.extractor import ResearchExtractor
+from ..application.schema_contract import SCHEMA_VERSION
 from ..mapping.engine import MappingEngine
 from ..patch_generation.generator import PatchGenerator
+from ..repo_intelligence.parser import PyTorchRepoParser
+from ..research_intelligence.extractor import ResearchExtractor
 from ..validation.runner import ValidationRunner
-from ..application.schema_contract import SCHEMA_VERSION
-from .docs import setup_openapi, setup_docs_routes, setup_exception_handlers
+from .docs import setup_docs_routes, setup_exception_handlers, setup_openapi
 from .metrics_middleware import setup_metrics
 from .rate_limit_middleware import setup_rate_limiting
 
@@ -57,7 +57,7 @@ setup_metrics(app)
 setup_rate_limiting(app)
 
 # Dashboard routes (specs, pipeline run, WebSocket)
-from .routes.dashboard import router as dashboard_router
+from .routes.dashboard import router as dashboard_router  # noqa: E402
 
 app.include_router(dashboard_router)
 
@@ -131,7 +131,7 @@ async def api_key_auth_middleware(request: Request, call_next):
 class RepoAnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    repoPath: str
+    repoPath: str  # noqa: N815
 
     @field_validator("repoPath")
     @classmethod
@@ -145,7 +145,7 @@ class ResearchExtractRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source: str
-    sourceType: Literal["pdf", "arxiv"] = "pdf"
+    sourceType: Literal["pdf", "arxiv"] = "pdf"  # noqa: N815
 
     @field_validator("source")
     @classmethod
@@ -158,22 +158,22 @@ class ResearchExtractRequest(BaseModel):
 class MappingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    repoAnalysis: dict[str, Any]
-    researchSpec: dict[str, Any]
+    repoAnalysis: dict[str, Any]  # noqa: N815
+    researchSpec: dict[str, Any]  # noqa: N815
 
 
 class PatchGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mapping: dict[str, Any]
-    repoPath: str | None = None
+    repoPath: str | None = None  # noqa: N815
 
 
 class ValidationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     patch: dict[str, Any]
-    repoPath: str
+    repoPath: str  # noqa: N815
 
 
 class ModelEntry(BaseModel):
@@ -188,24 +188,24 @@ class TrainingLoopEntry(BaseModel):
     file: str
     line: int
     optimizer: str
-    lossFn: str
+    lossFn: str  # noqa: N815
 
 
 class ArchitectureEntry(BaseModel):
     models: list[ModelEntry]
-    trainingLoop: TrainingLoopEntry | None = None
+    trainingLoop: TrainingLoopEntry | None = None  # noqa: N815
 
 
 class TestSuiteEntry(BaseModel):
     runner: str
-    testFiles: list[str]
+    testFiles: list[str]  # noqa: N815
 
 
 class RepoAnalyzeResponse(BaseModel):
-    repoName: str
+    repoName: str  # noqa: N815
     architecture: ArchitectureEntry
     dependencies: dict[str, Any]
-    testSuite: TestSuiteEntry
+    testSuite: TestSuiteEntry  # noqa: N815
 
 
 class ResearchPaper(BaseModel):
@@ -223,18 +223,18 @@ class ResearchAlgorithm(BaseModel):
 
 
 class ResearchImplementation(BaseModel):
-    moduleName: str
-    parentClass: str
+    moduleName: str  # noqa: N815
+    parentClass: str  # noqa: N815
     parameters: list[str]
-    codeTemplate: str | None = None
+    codeTemplate: str | None = None  # noqa: N815
 
 
 class ResearchChanges(BaseModel):
     type: str
-    targetPattern: str
-    insertionPoints: list[str]
+    targetPattern: str  # noqa: N815
+    insertionPoints: list[str]  # noqa: N815
     replacement: str | None = None
-    expectedBenefits: list[str] = Field(default_factory=list)
+    expectedBenefits: list[str] = Field(default_factory=list)  # noqa: N815
 
 
 class ResearchExtractResponse(BaseModel):
@@ -248,8 +248,8 @@ class ResearchExtractResponse(BaseModel):
 class MappingTargetResponse(BaseModel):
     file: str
     line: int
-    currentCode: str
-    replacementRequired: bool
+    currentCode: str  # noqa: N815
+    replacementRequired: bool  # noqa: N815
 
 
 class MappingResponse(BaseModel):
@@ -271,28 +271,28 @@ class TransformationResponse(BaseModel):
 
 
 class PatchGenerateResponse(BaseModel):
-    newFiles: list[PatchFileResponse]
+    newFiles: list[PatchFileResponse]  # noqa: N815
     transformations: list[TransformationResponse]
-    branchName: str
+    branchName: str  # noqa: N815
 
 
 class MetricsResponse(BaseModel):
     loss: float
     perplexity: float
-    tokensPerSecond: float
-    memoryMb: float
+    tokensPerSecond: float  # noqa: N815
+    memoryMb: float  # noqa: N815
 
 
 class ValidationResponse(BaseModel):
     passed: bool
     stage: str
-    baselineMetrics: MetricsResponse | None = None
-    newMetrics: MetricsResponse | None = None
+    baselineMetrics: MetricsResponse | None = None  # noqa: N815
+    newMetrics: MetricsResponse | None = None  # noqa: N815
     comparison: dict[str, Any] | None = None
     logs: str
     error: str | None = None
-    schemaVersion: str | None = None
-    payloadType: str | None = None
+    schemaVersion: str | None = None  # noqa: N815
+    payloadType: str | None = None  # noqa: N815
 
 
 def _resolve_existing_repo_path(repo_path: str) -> Path:

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
-import os
-import shutil
 import subprocess
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .store import RollbackStore
 from .types import (
@@ -67,7 +65,7 @@ class RollbackManager:
         )
 
         self.store.save(snapshot)
-        _log(logs, f"Snapshot created successfully", log_callback)
+        _log(logs, "Snapshot created successfully", log_callback)
 
         return snapshot
 

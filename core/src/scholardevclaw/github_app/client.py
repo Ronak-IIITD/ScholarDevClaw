@@ -3,15 +3,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import re
 import time
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import jwt
 import requests
-
-import re
 
 from .types import (
     CheckConclusion,
@@ -20,7 +17,6 @@ from .types import (
     GitHubAppConfig,
     PullRequest,
     Repository,
-    WebhookEventType,
     WebhookPayload,
 )
 
@@ -66,8 +62,6 @@ class GitHubAppClient:
 
         if not self.config.app_id or not self.config.private_key:
             raise ValueError("GitHub App not configured")
-
-        import jwt
 
         now = int(time.time())
         payload = {

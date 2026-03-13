@@ -8,6 +8,7 @@ Provides:
 - GET  /api/pipeline/status - get current pipeline run status
 - WS   /api/ws/pipeline    - real-time pipeline progress via WebSocket
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -321,12 +322,12 @@ async def _run_pipeline_async(
                 "targets": len(mapping.targets),
                 "strategy": mapping.strategy,
                 "confidence": mapping.confidence,
-                "target_files": [
-                    {"file": t.file, "line": t.line} for t in mapping.targets[:10]
-                ],
+                "target_files": [{"file": t.file, "line": t.line} for t in mapping.targets[:10]],
             }
             _add_step(f"map:{spec_name}", "completed", dt, map_data)
-            await _step_broadcast(f"map:{spec_name}", "completed", data=map_data, duration=round(dt, 3))
+            await _step_broadcast(
+                f"map:{spec_name}", "completed", data=map_data, duration=round(dt, 3)
+            )
 
             # Generate
             await _step_broadcast(f"generate:{spec_name}", "running")
@@ -404,7 +405,8 @@ async def _run_pipeline_async(
         _current_run.status = "completed"  # type: ignore[union-attr]
         _current_run.finished_at = time.time()  # type: ignore[union-attr]
         _current_run.total_seconds = round(  # type: ignore[union-attr]
-            _current_run.finished_at - _current_run.started_at, 2  # type: ignore[union-attr]
+            _current_run.finished_at - _current_run.started_at,
+            2,  # type: ignore[union-attr]
         )
         await _broadcast(
             {
@@ -424,9 +426,7 @@ async def _run_pipeline_async(
             _current_run.total_seconds = round(
                 _current_run.finished_at - _current_run.started_at, 2
             )
-        await _broadcast(
-            {"type": "pipeline_error", "run_id": run_id, "error": str(exc)}
-        )
+        await _broadcast({"type": "pipeline_error", "run_id": run_id, "error": str(exc)})
 
 
 # ---------------------------------------------------------------------------

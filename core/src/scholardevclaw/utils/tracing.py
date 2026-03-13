@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import uuid
-import time
 import threading
-from dataclasses import dataclass, field
-from typing import Any, Callable
+import time
+import uuid
+from collections.abc import Callable
 from contextvars import ContextVar
+from dataclasses import dataclass, field
 from functools import wraps
+from typing import Any
 
-
-trace_context: ContextVar["TraceContext | None"] = ContextVar("trace_context", default=None)
+trace_context: ContextVar[TraceContext | None] = ContextVar("trace_context", default=None)
 
 
 @dataclass
