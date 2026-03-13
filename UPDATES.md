@@ -4,6 +4,53 @@
 
 **Last updated:** 2026-03-13
 
+### 2026-03-13 (Phase 10: PyPI Distribution — Production Packaging)
+
+**Goal:** Make ScholarDevClaw installable via `pip install scholardevclaw` with proper metadata, classifiers, optional extras, PEP 561 typing marker, and clean sdist/wheel builds.
+
+**Summary:** Renamed the package from `scholardevclaw-core` to `scholardevclaw` in `pyproject.toml` for a clean PyPI install experience. Updated license to SPDX format (`license = "MIT"`), removed deprecated license classifier, cleaned up duplicate dependencies (`pytest` moved to dev-only, `arxiv` kept as optional-only), added comprehensive project metadata (URLs, classifiers, keywords, maintainers), and created PEP 561 `py.typed` marker. Created `core/README.md` (PyPI-facing), `core/LICENSE` (MIT), and `core/MANIFEST.in` for sdist inclusion rules. Build produces clean sdist (303K) + wheel (358K) with no deprecation warnings. All 851 tests pass.
+
+**Updated: `core/pyproject.toml`:**
+- Package name: `scholardevclaw-core` → `scholardevclaw` (clean PyPI install)
+- License: `{text = "MIT"}` → `"MIT"` (SPDX format, no deprecation warning)
+- Removed deprecated `License :: OSI Approved :: MIT License` classifier
+- Removed `pytest` from core dependencies (was incorrectly in core deps; kept in dev-only)
+- Removed `arxiv` from core dependencies (was duplicated; kept as optional dep only)
+- Added `[project.urls]`: Homepage, Repository, Issues, Changelog
+- Added `[project.optional-dependencies] all` meta-extra: `scholardevclaw[arxiv,ml,tui,crypto]`
+- Added `[tool.setuptools.package-data]` for `py.typed`
+- Added classifiers: Science/Research, OS Independent, Typed, Code Generators, Python 3.13
+- Added keywords: deep-learning, code-generation, ast, tree-sitter, arxiv, paper-implementation, patch-generation
+- Added `maintainers` field
+
+**New: `core/src/scholardevclaw/py.typed`:**
+- Empty PEP 561 marker file — declares package as typed for mypy/pyright consumers
+
+**New: `core/MANIFEST.in`:**
+- Includes LICENSE, README.md, CHANGELOG.md, py.typed, *.pyi in sdist
+
+**New: `core/README.md`:**
+- PyPI-facing README with install instructions, feature overview, architecture diagram, usage examples
+
+**New: `core/LICENSE`:**
+- MIT license file
+
+**Build verification:**
+- `python -m build core/` produces:
+  - `scholardevclaw-0.1.0-py3-none-any.whl` (358K)
+  - `scholardevclaw-0.1.0.tar.gz` (303K)
+- No deprecation warnings
+- `pip install -e "core/.[dev,arxiv,ml,tui,crypto]"` works
+
+**Files created/modified (5):**
+- `core/pyproject.toml` (modified — renamed package, expanded metadata)
+- `core/src/scholardevclaw/py.typed` (NEW — PEP 561 marker)
+- `core/MANIFEST.in` (NEW — sdist inclusion rules)
+- `core/README.md` (NEW — PyPI-facing README)
+- `core/LICENSE` (NEW — MIT license)
+
+**Verified:** All 851 tests pass.
+
 ### 2026-03-13 (Phase 9: CI/CD Pipeline + Release Automation)
 
 **Goal:** Add production-grade CI/CD with GitHub Actions: lint, type-check, test matrix, coverage, Docker build, quality gate, and automated release workflow for PyPI + GitHub Releases + Docker image publishing.

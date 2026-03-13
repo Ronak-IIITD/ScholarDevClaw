@@ -3,24 +3,46 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scholardevclaw-core"
+name = "scholardevclaw"
 version = "0.1.0"
-description = "ScholarDevClaw - Autonomous ML Research Integration Engine Core"
+description = "ScholarDevClaw — Autonomous ML Research Integration Engine. Analyzes repositories, finds research improvements, and generates validated patches."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "ScholarDevClaw Team", email = "team@scholardevclaw.ai"}
 ]
-keywords = ["machine-learning", "pytorch", "research", "integration", "ai"]
+maintainers = [
+    {name = "Ronak Anand"}
+]
+keywords = [
+    "machine-learning",
+    "deep-learning",
+    "pytorch",
+    "research",
+    "integration",
+    "ai",
+    "code-generation",
+    "ast",
+    "tree-sitter",
+    "arxiv",
+    "paper-implementation",
+    "patch-generation",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
 ]
 
 dependencies = [
@@ -31,13 +53,11 @@ dependencies = [
     "uvicorn>=0.24.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
-    "pytest>=7.4.0",
     "numpy>=1.24.0",
     "httpx>=0.25.0",
     "python-dotenv>=1.0.0",
     "typer>=0.9.0",
     "rich>=13.7.0",
-    "arxiv>=1.4.0",
     "beautifulsoup4>=4.12.0",
     "lxml>=4.9.0",
     "tree-sitter>=0.20.0",
@@ -52,8 +72,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-torch = ["torch>=2.0.0"]
 arxiv = ["arxiv>=1.4.0"]
+torch = ["torch>=2.0.0"]
 ml = ["torch>=2.0.0", "transformers>=4.35.0", "datasets>=2.14.0"]
 tui = ["textual>=0.82.0"]
 security = ["bandit>=1.7.0", "semgrep>=1.0.0"]
@@ -66,12 +86,24 @@ dev = [
     "mypy>=1.7.0",
     "pre-commit>=3.5.0",
 ]
+all = [
+    "scholardevclaw[arxiv,ml,tui,crypto]",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ronak-IIITD/ScholarDevClaw"
+Repository = "https://github.com/Ronak-IIITD/ScholarDevClaw"
+Issues = "https://github.com/Ronak-IIITD/ScholarDevClaw/issues"
+Changelog = "https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/CHANGELOG.md"
 
 [project.scripts]
 scholardevclaw = "scholardevclaw.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+scholardevclaw = ["py.typed"]
 
 [tool.ruff]
 line-length = 100
