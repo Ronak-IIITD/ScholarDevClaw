@@ -8,15 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- End-to-end `demo` command: auto-clones nanoGPT, runs full pipeline across multiple specs, writes patch artifacts, summary report
-- PyPI distribution: renamed to `scholardevclaw`, SPDX license, PEP 561 typing, clean sdist/wheel
-- CI/CD pipeline with GitHub Actions (lint, type-check, test, coverage, Docker build)
-- Auto-release workflow (PyPI publish, GitHub Release, Docker image push on tag)
-- End-to-end `demo` command for full pipeline demonstration
+- **Phase 12:** Web dashboard with React + TypeScript + Vite — real-time pipeline visualization via WebSocket, spec browser with search/filter, pipeline launcher with multi-spec selection
+- **Phase 12:** Dashboard API routes (`/api/specs`, `/api/pipeline/run`, `/api/pipeline/status`, `/api/ws/pipeline`) with background async pipeline execution
+- **Phase 11:** End-to-end `demo` command: auto-clones nanoGPT, runs full pipeline across multiple specs, writes patch artifacts, summary report
+- **Phase 10:** PyPI distribution: renamed to `scholardevclaw`, SPDX license, PEP 561 typing, clean sdist/wheel
+- **Phase 9:** CI/CD pipeline with GitHub Actions (lint, type-check, test, coverage, Docker build)
+- **Phase 9:** Auto-release workflow (PyPI publish, GitHub Release, Docker image push on tag)
 - CHANGELOG.md following Keep a Changelog format
-- Web dashboard (React + TypeScript + Vite) with real-time pipeline visualization
-- Plugin ecosystem with hook system, registry, and community extensions
-- Multi-repo support for cross-repository analysis and knowledge transfer
+- Plugin ecosystem with hook system, registry, and community extensions (planned)
+- Multi-repo support for cross-repository analysis and knowledge transfer (planned)
 
 ## [0.1.0] - 2026-03-06
 

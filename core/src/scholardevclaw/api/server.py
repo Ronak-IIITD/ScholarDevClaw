@@ -56,12 +56,20 @@ setup_exception_handlers(app)
 setup_metrics(app)
 setup_rate_limiting(app)
 
-# CORS: restrict origins in production via env var, default to restrictive policy
+# Dashboard routes (specs, pipeline run, WebSocket)
+from .routes.dashboard import router as dashboard_router
+
+app.include_router(dashboard_router)
+
+# CORS: restrict origins in production via env var; allow Vite dev server in development
 _allowed_origins = os.environ.get("SCHOLARDEVCLAW_CORS_ORIGINS", "").split(",")
 _allowed_origins = [o.strip() for o in _allowed_origins if o.strip()]
+if not _allowed_origins:
+    # Development defaults: allow local Vite dev server
+    _allowed_origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_allowed_origins or [],
+    allow_origins=_allowed_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type"],

@@ -4,6 +4,64 @@
 
 **Last updated:** 2026-03-13
 
+### 2026-03-13 (Phase 12: Web Dashboard — React + Real-Time Pipeline Visualization)
+
+**Goal:** Build a full web dashboard with React + TypeScript + Vite that provides real-time pipeline visualization, a spec browser, and a pipeline launch UI, backed by new FastAPI dashboard API routes with WebSocket support.
+
+**Summary:** Created a complete `web/` frontend application (React 18, TypeScript, Vite, Tailwind CSS) with 3 pages: Dashboard overview, Paper Specs browser, and Pipeline runner with real-time WebSocket progress. On the backend, added a new `dashboard.py` API router (~465 lines) with 5 endpoints: spec listing, spec detail, pipeline run (non-blocking background task), pipeline status, and WebSocket for live step progress. The pipeline runner executes analyze → suggest → (per-spec) map → generate → validate in a background asyncio task, broadcasting step progress to all connected WebSocket clients. Updated `server.py` to wire the dashboard router and configure CORS for Vite dev server. Frontend builds to 198KB JS + 18KB CSS. TypeScript compiles cleanly. All 851 Python tests pass.
+
+**New: `core/src/scholardevclaw/api/routes/dashboard.py` (~465 lines):**
+- `GET /api/specs` — lists all 16 paper specs with summary fields (name, title, algorithm, category, replaces, arxiv_id, description)
+- `GET /api/specs/{name}` — get a single spec by name (404 if not found)
+- `POST /api/pipeline/run` — starts a full pipeline run in a background asyncio task (non-blocking, returns immediately with run_id and status)
+- `GET /api/pipeline/status` — get current pipeline run status (idle/running/completed/failed with step details)
+- `WS /api/ws/pipeline` — WebSocket endpoint for real-time pipeline progress (broadcasts step status, timing, and data to all connected clients)
+- Pipeline steps: analyze (TreeSitterAnalyzer) → suggest (suggest_research_papers) → resolve specs → (per-spec) map (MappingEngine) → generate (PatchGenerator) → validate (ValidationRunner)
+- In-memory state for single-server use; WebSocket client management with dead-client cleanup
+- Pydantic models: SpecSummary, PipelineRunRequest, PipelineStepResult, PipelineRunStatus
+
+**Updated: `core/src/scholardevclaw/api/server.py`:**
+- Wired dashboard router: `from .routes.dashboard import router as dashboard_router; app.include_router(dashboard_router)`
+- CORS defaults: added `http://localhost:5173`, `http://localhost:3000`, `http://127.0.0.1:5173` when `SCHOLARDEVCLAW_CORS_ORIGINS` env var is not set
+
+**New: `web/` — React + TypeScript + Vite dashboard (20 files):**
+- **Config:** `package.json`, `tsconfig.json`, `vite.config.ts` (with API proxy to :8000), `tailwind.config.js`, `postcss.config.js`
+- **Entry:** `index.html`, `src/main.tsx`, `src/App.tsx` (React Router with 3 routes)
+- **Types:** `src/types/api.ts` — TypeScript interfaces matching backend Pydantic models + WebSocket message types
+- **API client:** `src/lib/api.ts` — typed fetch wrappers for all dashboard endpoints + WebSocket factory
+- **Hooks:** `src/hooks/usePipelineWs.ts` — React hook for WebSocket connection with auto-reconnect, ping keep-alive, and live step state management
+- **Components:**
+  - `Layout.tsx` — sidebar + content layout shell
+  - `Sidebar.tsx` — navigation with Dashboard, Paper Specs, Pipeline links + GitHub link
+  - `StatusBadge.tsx` — colored status badge (idle/running/completed/failed) with animated dot
+  - `StepCard.tsx` — pipeline step card with icon, timing, status, and data summary grid
+  - `SpecCard.tsx` — paper spec card with category badge, arxiv link, description, and selection toggle
+- **Pages:**
+  - `DashboardPage.tsx` — overview with API health check, spec count, pipeline status, category breakdown, quick start commands
+  - `SpecsPage.tsx` — browsable spec grid with search filter and category filter dropdown
+  - `PipelinePage.tsx` — pipeline runner with repo path input, spec selector (multi-select with select all/clear), skip-validate toggle, run button, live progress bar, and step cards with WebSocket updates
+
+**Build output:**
+- `dist/index.html` — 0.84 KB
+- `dist/assets/index-BkA5N1o8.css` — 17.86 KB (4.12 KB gzip)
+- `dist/assets/index-CoqEYD-O.js` — 197.57 KB (62.24 KB gzip)
+
+**Development workflow:**
+```
+# Terminal 1: Start API server
+uvicorn scholardevclaw.api.server:app --reload
+
+# Terminal 2: Start dashboard dev server
+cd web && npm run dev
+```
+
+**Files created/modified:**
+- `core/src/scholardevclaw/api/routes/dashboard.py` (NEW — ~465 lines)
+- `core/src/scholardevclaw/api/server.py` (MODIFIED — wired dashboard router + CORS)
+- `web/` directory (NEW — 20 files, React + TypeScript + Vite + Tailwind)
+
+**Verified:** All 851 Python tests pass. TypeScript compiles cleanly. Vite production build succeeds (198KB JS + 18KB CSS).
+
 ### 2026-03-13 (Phase 11: End-to-End Demo Mode)
 
 **Goal:** Transform the `scholardevclaw demo` command from a basic single-spec stub into a production-quality end-to-end demo that auto-clones nanoGPT, runs the full pipeline (analyze -> suggest -> map -> generate -> validate) across multiple specs, writes patch artifacts, and outputs a structured summary report.
