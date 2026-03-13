@@ -1,22 +1,23 @@
 from __future__ import annotations
 
-import pytest
+import io
 import json
 import logging
-import io
+
+import pytest
 
 from scholardevclaw.utils.structured_logging import (
-    get_trace_id,
-    set_trace_id,
-    get_request_id,
-    set_request_id,
-    generate_trace_id,
-    generate_request_id,
+    LogContext,
     StructuredFormatter,
     StructuredLogger,
-    setup_structured_logging,
-    LogContext,
+    generate_request_id,
+    generate_trace_id,
     get_logger,
+    get_request_id,
+    get_trace_id,
+    set_request_id,
+    set_trace_id,
+    setup_structured_logging,
 )
 
 

@@ -20,14 +20,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Awaitable, TypeVar, ParamSpec
-from functools import wraps
-import threading
-
+from typing import Any, ParamSpec, TypeVar
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -96,7 +95,7 @@ class ToolSchema:
     parameters: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
-    def from_parameters(name: str, description: str, params: list[ToolParameter]) -> "ToolSchema":
+    def from_parameters(name: str, description: str, params: list[ToolParameter]) -> ToolSchema:
         """Create schema from parameter definitions"""
         required = [p.name for p in params if p.required]
         properties = {}
@@ -611,7 +610,7 @@ class ToolPipeline:
         parameters: dict | None = None,
         output_key: str | None = None,
         condition: Callable[[dict], bool] | None = None,
-    ) -> "ToolPipeline":
+    ) -> ToolPipeline:
         """Add a step to the pipeline"""
         self.steps.append(
             {

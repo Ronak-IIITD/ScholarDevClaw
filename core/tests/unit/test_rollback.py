@@ -1,21 +1,17 @@
-import json
-import os
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from scholardevclaw.rollback import (
-    RollbackManager,
-    RollbackStore,
-    RollbackStatus,
-    RollbackSnapshot,
-    RollbackResult,
     ChangeRecord,
     ChangeType,
     FileSnapshot,
     GitSnapshot,
+    RollbackManager,
+    RollbackSnapshot,
+    RollbackStatus,
+    RollbackStore,
     create_rollback_snapshot,
     get_rollback_status,
     list_rollback_snapshots,

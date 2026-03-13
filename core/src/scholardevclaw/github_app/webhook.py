@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .client import GitHubAppClient
 from .types import (
@@ -10,8 +11,6 @@ from .types import (
     CheckStatus,
     GitHubAppConfig,
     IntegrationResult,
-    PullRequest,
-    Repository,
     ValidationResult,
     WebhookEventType,
     WebhookPayload,
@@ -86,7 +85,7 @@ class WebhookHandler:
         owner = repo_data["owner"]["login"]
         repo = repo_data["name"]
         pr_number = pr_data["number"]
-        pr_title = pr_data["title"]
+        pr_data["title"]
         head_sha = pr_data["head"]["sha"]
         installation_id = payload.installation["id"] if payload.installation else None
 
@@ -243,7 +242,7 @@ class WebhookHandler:
 
     def _build_success_output(self, result: IntegrationResult) -> dict[str, Any]:
         summary_parts = [
-            f"**Status:** Completed successfully",
+            "**Status:** Completed successfully",
             f"**Spec:** {result.spec}",
             f"**Branch:** `{result.branch_name}`",
         ]

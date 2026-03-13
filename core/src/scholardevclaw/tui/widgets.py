@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Static, Button, Footer, Header
+from textual.app import ComposeResult
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Button, Footer, Static
 
 
 class StatusBar(Static):

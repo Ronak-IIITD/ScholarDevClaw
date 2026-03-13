@@ -1,10 +1,7 @@
 """Integration tests for auth + agent workflow"""
 
-import json
-import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -26,7 +23,7 @@ class TestAuthAgentIntegration:
         from scholardevclaw.auth.types import AuthProvider
 
         store = AuthStore(temp_auth_env)
-        key = store.add_api_key(
+        store.add_api_key(
             key="sk-ant-test-key",
             name="test-key",
             provider=AuthProvider.ANTHROPIC,
@@ -97,7 +94,7 @@ class TestAuthAgentIntegration:
         store = AuthStore(temp_auth_env)
         store.add_api_key("sk-test", "test", AuthProvider.ANTHROPIC)
 
-        profile = store.create_profile(
+        store.create_profile(
             email="pro@example.com",
             name="Pro User",
         )
@@ -175,10 +172,10 @@ class TestAuthWithCLICommands:
 
     def test_login_and_run_analyze(self, temp_auth_env, monkeypatch):
         """Simulate login then run analyze"""
+        from argparse import Namespace
+
         from scholardevclaw.auth.cli import cmd_auth
         from scholardevclaw.auth.store import AuthStore
-        from scholardevclaw.auth.types import AuthProvider
-        from argparse import Namespace
 
         args = Namespace(
             auth_action="login",
@@ -229,6 +226,7 @@ class TestAuthWithCLICommands:
     def test_auth_file_permissions(self, temp_auth_env):
         """Test auth file is created with proper permissions"""
         import stat
+
         from scholardevclaw.auth.store import AuthStore
         from scholardevclaw.auth.types import AuthProvider
 

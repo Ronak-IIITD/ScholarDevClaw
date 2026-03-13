@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
 SCHEMA_VERSION = "1.0.0"
 SUPPORTED_SCHEMA_VERSION = "1.0.0"
 
@@ -100,9 +99,7 @@ def evaluate_payload_compatibility(
                 warnings.append(
                     f"Payload minor version is newer ({schema_version}) than supported ({supported_version})."
                 )
-                notes.append(
-                    "Proceed with caution; newer optional fields may be ignored."
-                )
+                notes.append("Proceed with caution; newer optional fields may be ignored.")
             elif p_minor < s_minor:
                 notes.append(
                     f"Payload minor version is older ({schema_version}); compatibility fallback applied."

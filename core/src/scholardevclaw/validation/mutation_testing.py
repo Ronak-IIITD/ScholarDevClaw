@@ -8,17 +8,13 @@ High-quality tests should fail when code is mutated.
 from __future__ import annotations
 
 import ast
-import os
 import random
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
-
 
 MUTATIONS = [
     ("AOR", "Arithmetic Operator Replacement"),
@@ -369,7 +365,7 @@ class MutmutIntegration:
                 duration_seconds=time.time() - start_time,
             )
 
-        except Exception as e:
+        except Exception:
             return MutationTestReport(
                 total_mutations=0,
                 killed=0,

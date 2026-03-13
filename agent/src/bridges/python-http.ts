@@ -9,7 +9,7 @@ import type {
 } from './python-subprocess.js';
 
 export class PythonHttpBridge {
-  private baseUrl: string;
+  readonly baseUrl: string;
   private timeout: number;
 
   constructor(baseUrl: string = 'http://localhost:8000', timeout: number = 60000) {

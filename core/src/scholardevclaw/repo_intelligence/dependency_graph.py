@@ -11,11 +11,9 @@ Analyzes:
 from __future__ import annotations
 
 import ast
-import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass

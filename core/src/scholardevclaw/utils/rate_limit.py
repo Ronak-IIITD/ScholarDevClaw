@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import time
 import threading
-from dataclasses import dataclass, field
-from typing import Callable, Any
-from functools import wraps
+import time
 from collections import defaultdict
+from collections.abc import Callable
+from dataclasses import dataclass
+from functools import wraps
+from typing import Any
 
 
 @dataclass
@@ -258,7 +259,7 @@ def rate_limit(
     return decorator
 
 
-class RateLimitExceeded(Exception):
+class RateLimitExceeded(Exception):  # noqa: N818
     """Raised when rate limit is exceeded."""
 
     def __init__(

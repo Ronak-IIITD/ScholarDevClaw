@@ -1,14 +1,12 @@
 import io
 import time
 
-import pytest
-
 from scholardevclaw.utils.progress import (
-    ProgressConfig,
-    ProgressBar,
-    progress_iter,
-    Spinner,
     MultiProgress,
+    ProgressBar,
+    ProgressConfig,
+    Spinner,
+    progress_iter,
 )
 
 

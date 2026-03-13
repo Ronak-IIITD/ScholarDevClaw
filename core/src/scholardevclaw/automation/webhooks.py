@@ -12,12 +12,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass
@@ -263,7 +262,7 @@ class WebhookServer:
     ):
         """Create FastAPI app for webhooks"""
         try:
-            from fastapi import FastAPI, Request, HTTPException
+            from fastapi import FastAPI, HTTPException, Request
             from fastapi.responses import JSONResponse
         except ImportError:
             return None

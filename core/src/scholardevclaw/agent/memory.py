@@ -16,16 +16,14 @@ Features:
 from __future__ import annotations
 
 import json
-import uuid
-import hashlib
 import sqlite3
+import threading
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any
-import threading
-import os
 
 
 class MemoryType(Enum):
@@ -149,8 +147,8 @@ class PersistentMemoryStore:
 
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO memories 
-                (id, content, memory_type, importance, embedding, metadata, 
+                INSERT OR REPLACE INTO memories
+                (id, content, memory_type, importance, embedding, metadata,
                  created_at, accessed_at, access_count, tier, expires_at,
                  consolidated_from, summary, tags, source_session)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -380,7 +378,7 @@ class AdvancedAgentMemory:
             recency = self._calculate_recency(memory)
             importance_boost = self._calculate_importance_boost(memory)
 
-            combined = relevance * 0.5 + recency * 0.3 + importance_boost * 0.2
+            relevance * 0.5 + recency * 0.3 + importance_boost * 0.2
 
             results.append(
                 MemoryRetrieval(

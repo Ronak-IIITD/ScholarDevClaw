@@ -1,7 +1,4 @@
-import json
-
-import pytest
-
+from scholardevclaw.security.scanner import SecurityScanner
 from scholardevclaw.security.types import (
     SecurityFinding,
     SecurityReport,
@@ -9,7 +6,6 @@ from scholardevclaw.security.types import (
     SecurityTool,
     Severity,
 )
-from scholardevclaw.security.scanner import SecurityScanner
 
 
 class TestSecurityTypes:

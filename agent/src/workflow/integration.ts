@@ -1,6 +1,7 @@
 import { FunctionNode, WorkflowNode, ParallelNode, ConditionalNode } from './node.js';
 import type { WorkflowState, NodeResult } from './types.js';
 import type { PythonSubprocessBridge, PythonHttpBridge } from '../bridges/python-bridge.js';
+import type { RepoAnalysisResult, ResearchSpecResult, MappingResult, PatchResult } from '../bridges/python-subprocess.js';
 import { logger } from '../utils/logger.js';
 
 export interface PhaseConfig {
@@ -87,7 +88,7 @@ export function createMappingNode(
         throw new Error('Missing repo analysis or research spec');
       }
       
-      const result = await bridge.mapArchitecture(repoAnalysis, researchSpec);
+      const result = await bridge.mapArchitecture(repoAnalysis as RepoAnalysisResult, researchSpec as ResearchSpecResult);
       
       if (!result.success || !result.data) {
         throw new Error(`Phase 3 failed: ${result.error || 'No data'}`);
@@ -119,7 +120,7 @@ export function createPatchNode(
         throw new Error('Missing mapping');
       }
       
-      const result = await bridge.generatePatch(mapping);
+      const result = await bridge.generatePatch(mapping as MappingResult);
       
       if (!result.success || !result.data) {
         throw new Error(`Phase 4 failed: ${result.error || 'No data'}`);
@@ -152,7 +153,7 @@ export function createValidationNode(
         throw new Error('Missing patch');
       }
       
-      const result = await bridge.validate(patch, repoPath);
+      const result = await bridge.validate(patch as PatchResult, repoPath);
       
       if (!result.success || !result.data) {
         throw new Error(`Phase 5 failed: ${result.error || 'No data'}`);

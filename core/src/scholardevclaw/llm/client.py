@@ -28,15 +28,14 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Iterator
+from typing import Any
 
 import httpx
 
 # Re-use the auth provider enum for provider identification
 from scholardevclaw.auth.types import AuthProvider
-
 
 # ---------------------------------------------------------------------------
 # Response dataclass
@@ -523,7 +522,7 @@ class LLMClient:
         """Close the underlying HTTP client."""
         self._http.close()
 
-    def __enter__(self) -> "LLMClient":
+    def __enter__(self) -> LLMClient:
         return self
 
     def __exit__(self, *args: Any) -> None:
@@ -542,7 +541,7 @@ class LLMClient:
         base_url: str | None = None,
         model: str | None = None,
         timeout: float = 120.0,
-    ) -> "LLMClient":
+    ) -> LLMClient:
         """Create a client from a provider name or enum.
 
         If ``api_key`` is not provided, the client tries to read it from the
@@ -570,7 +569,7 @@ class LLMClient:
         model: str | None = None,
         base_url: str | None = None,
         timeout: float = 120.0,
-    ) -> "LLMClient":
+    ) -> LLMClient:
         """Create a client using a key from the local AuthStore.
 
         Falls back to the default active key if no provider is specified.

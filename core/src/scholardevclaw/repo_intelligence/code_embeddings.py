@@ -13,14 +13,12 @@ from __future__ import annotations
 import hashlib
 import math
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
 
 try:
-    import numpy as np
+    import numpy as np  # noqa: F401
 
     HAS_NUMPY = True
 except ImportError:

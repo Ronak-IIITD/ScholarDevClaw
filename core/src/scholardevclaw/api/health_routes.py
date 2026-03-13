@@ -3,10 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
-from scholardevclaw.utils.health import health_checker, liveness_probe, readiness_probe
 from scholardevclaw.utils.circuit_breaker import circuit_registry
+from scholardevclaw.utils.health import health_checker, liveness_probe, readiness_probe
 from scholardevclaw.utils.shutdown import shutdown_manager
-
 
 router = APIRouter(tags=["health"])
 

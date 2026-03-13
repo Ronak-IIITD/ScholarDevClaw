@@ -27,7 +27,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Optional
 
 from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
 from scholardevclaw.auth.cli import cmd_auth
@@ -51,9 +50,9 @@ def _print_compatibility_report(payload: dict, expected_type: str, *, stderr: bo
 
 
 def _build_mapping_result(repo_path: Path, spec_name: str) -> tuple[dict, dict]:
+    from scholardevclaw.mapping.engine import MappingEngine
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
-    from scholardevclaw.mapping.engine import MappingEngine
 
     analyzer = TreeSitterAnalyzer(repo_path)
     analysis = analyzer.analyze()
@@ -102,7 +101,7 @@ def cmd_analyze(args):
     result = analyzer.analyze()
 
     print(f"\nLanguages detected: {', '.join(result.languages)}")
-    print(f"\nLanguage statistics:")
+    print("\nLanguage statistics:")
     for stat in result.language_stats:
         print(f"  {stat.language}: {stat.file_count} files, {stat.line_count} lines")
 
@@ -116,7 +115,7 @@ def cmd_analyze(args):
 
     # Find patterns for improvement
     if result.patterns:
-        print(f"\nPatterns found for improvement:")
+        print("\nPatterns found for improvement:")
         for pattern_name, locations in result.patterns.items():
             print(f"  {pattern_name}: {len(locations)} locations")
 
@@ -164,7 +163,7 @@ def cmd_search(args):
 
     # Search arXiv
     if args.arxiv:
-        print(f"\nSearching arXiv...")
+        print("\nSearching arXiv...")
         try:
             from scholardevclaw.research_intelligence.extractor import ResearchQuery
 
@@ -188,7 +187,7 @@ def cmd_search(args):
 
     # Search web sources
     if args.web:
-        print(f"\nSearching web sources...")
+        print("\nSearching web sources...")
         try:
             from scholardevclaw.research_intelligence.web_research import SyncWebResearchEngine
 
@@ -219,7 +218,6 @@ def cmd_suggest(args):
     print("-" * 50)
 
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
-    from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
     analyzer = TreeSitterAnalyzer(path)
     suggestions = analyzer.suggest_research_papers()
@@ -499,9 +497,9 @@ def cmd_critic(args):
     )
 
     if not result.ok:
-        print(f"\nCritic found issues!", file=sys.stderr)
+        print("\nCritic found issues!", file=sys.stderr)
     else:
-        print(f"\nCritic passed!")
+        print("\nCritic passed!")
 
     payload = result.payload
 
@@ -577,7 +575,7 @@ def cmd_specs(args):
 
 def cmd_context(args):
     """Manage project context and memory"""
-    from scholardevclaw.context_engine import ContextEngine, get_agent_brain
+    from scholardevclaw.context_engine import ContextEngine
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
     engine = ContextEngine()
@@ -633,7 +631,7 @@ def cmd_context(args):
         print(f"Frameworks: {', '.join(summary['frameworks']) or 'None'}")
 
         stats = summary.get("stats", {})
-        print(f"\nStatistics:")
+        print("\nStatistics:")
         print(f"  Total runs: {stats.get('total_runs', 0)}")
         print(f"  Successful: {stats.get('successful_runs', 0)}")
         print(f"  Success rate: {stats.get('success_rate', 0):.0%}")
@@ -642,7 +640,7 @@ def cmd_context(args):
         print(f"Failed specs: {', '.join(stats.get('failed_specs', [])) or 'None'}")
 
         prefs = summary.get("preferences", {})
-        print(f"\nPreferences:")
+        print("\nPreferences:")
         print(f"  Preferred specs: {', '.join(prefs.get('preferred_specs', [])) or 'None'}")
         print(
             f"  Preferred categories: {', '.join(prefs.get('preferred_categories', [])) or 'None'}"
@@ -667,7 +665,7 @@ def cmd_context(args):
                 print(f"  • {reason}")
 
         context_used = result.context_used
-        print(f"\nContext used:")
+        print("\nContext used:")
         print(f"  Total runs: {context_used.get('total_runs', 0)}")
         print(f"  Success rate: {context_used.get('success_rate', 0):.0%}")
 
@@ -813,7 +811,7 @@ def cmd_plugin(args):
             sys.exit(1)
 
     elif args.plugin_action == "hooks":
-        from scholardevclaw.plugins.hooks import get_hook_registry, HookPoint
+        from scholardevclaw.plugins.hooks import HookPoint, get_hook_registry
 
         registry = get_hook_registry()
 
@@ -886,7 +884,7 @@ def cmd_plugin(args):
             args.plugin_type or "custom",
         )
         print(f"Created plugin scaffold: {scaffold_file}")
-        print(f"  Edit this file to implement your plugin")
+        print("  Edit this file to implement your plugin")
 
     elif args.plugin_action == "info":
         plugin = manager.get_plugin(args.plugin_name)
@@ -961,7 +959,7 @@ def cmd_rollback(args):
         print(f"  Description: {snapshot.description or 'N/A'}")
 
         if snapshot.git_snapshot:
-            print(f"\nGit State:")
+            print("\nGit State:")
             print(f"  Branch: {snapshot.git_snapshot.branch or 'N/A'}")
             print(
                 f"  Commit: {snapshot.git_snapshot.commit_sha[:8] if snapshot.git_snapshot.commit_sha else 'N/A'}"
@@ -1148,10 +1146,10 @@ def cmd_demo(args):
         spec_names = [s for s in spec_names if s in PAPER_SPECS]
 
     # ── Imports ───────────────────────────────────────────────────────
-    from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
-    from scholardevclaw.research_intelligence.extractor import ResearchExtractor
     from scholardevclaw.mapping.engine import MappingEngine
     from scholardevclaw.patch_generation.generator import PatchGenerator
+    from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+    from scholardevclaw.research_intelligence.extractor import ResearchExtractor
     from scholardevclaw.validation.runner import ValidationRunner
 
     total_steps = 3 + len(spec_names) * (2 if skip_validate else 3)
@@ -1465,8 +1463,8 @@ def cmd_github_app(args):
                 print(f"Allowed repositories: {', '.join(config.allowed_repositories)}")
 
             client = GitHubAppClient(config)
-            print(f"\nWebhook endpoint: /webhook")
-            print(f"Health check: /health")
+            print("\nWebhook endpoint: /webhook")
+            print("Health check: /health")
 
         if args.output_json:
             print(
@@ -1491,8 +1489,8 @@ def cmd_github_app(args):
 
         print("Testing webhook signature verification...")
 
-        import hmac
         import hashlib
+        import hmac
 
         test_payload = b'{"action": "opened", "repository": {"name": "test"}}'
         signature = (
@@ -1512,7 +1510,7 @@ def cmd_github_app(args):
 
 def cmd_security(args):
     """Run security scans on repository"""
-    from scholardevclaw.security import SecurityScanner, Severity
+    from scholardevclaw.security import SecurityScanner
 
     print(f"Running security scan on: {args.repo_path}")
     print("=" * 50)
@@ -1541,7 +1539,7 @@ def cmd_security(args):
 
     result = scanner.scan(args.repo_path, tools=tools)
 
-    print(f"\nSecurity Scan Results")
+    print("\nSecurity Scan Results")
     print("=" * 50)
     print(f"Status: {'✓ PASSED' if result.passed else '✗ FAILED'}")
 
@@ -1774,7 +1772,7 @@ Examples:
   # Analyze any codebase (Python, JS/TS, Go, Rust, Java, etc.)
   scholardevclaw analyze ./my-project
 
-  # Search for research papers and implementations  
+  # Search for research papers and implementations
   scholardevclaw search "layer normalization" --arxiv --web
 
   # Get AI-powered improvement suggestions

@@ -13,11 +13,8 @@ import json
 import subprocess
 import sys
 import textwrap
-import time
-import tracemalloc
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -33,11 +30,11 @@ class Metrics:
 class ValidationResult:
     passed: bool
     stage: str
-    baseline_metrics: Optional[Metrics] = None
-    new_metrics: Optional[Metrics] = None
-    comparison: Optional[Dict] = None
+    baseline_metrics: Metrics | None = None
+    new_metrics: Metrics | None = None
+    comparison: dict | None = None
     logs: str = ""
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +233,7 @@ class ValidationRunner:
     def __init__(self, repo_path: Path):
         self.repo_path = Path(repo_path)
 
-    def run(self, patch: Dict, repo_path: str) -> ValidationResult:
+    def run(self, patch: dict, repo_path: str) -> ValidationResult:
         test_result = self._run_tests()
 
         if not test_result.passed and test_result.error:
@@ -364,7 +361,7 @@ class ValidationRunner:
         iterations: int = 10,
         batch_size: int = 4,
         seq_len: int = 32,
-    ) -> Optional[Metrics]:
+    ) -> Metrics | None:
         """Run a real timed benchmark in a subprocess.
 
         When *use_torch* is True, runs a PyTorch micro-training loop
@@ -402,7 +399,7 @@ class ValidationRunner:
     # Simple benchmark (actually runs iterations now)
     # ------------------------------------------------------------------
 
-    def run_simple_benchmark(self, iterations: int = 10) -> Dict:
+    def run_simple_benchmark(self, iterations: int = 10) -> dict:
         """Run a quick in-process benchmark and return real timing data."""
         script = textwrap.dedent(f"""\
             import json, math, time
@@ -447,8 +444,8 @@ class BenchmarkRunner:
         self,
         impl1: str,
         impl2: str,
-        config: Dict,
-    ) -> Dict:
+        config: dict,
+    ) -> dict:
         """Run both implementations in subprocesses and compare.
 
         *impl1* / *impl2* can be:

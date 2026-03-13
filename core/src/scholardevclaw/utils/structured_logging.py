@@ -5,12 +5,12 @@ import logging
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from contextvars import ContextVar
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
 from pathlib import Path
-
+from typing import Any
 
 _trace_id: ContextVar[str | None] = ContextVar("trace_id", default=None)
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
@@ -183,7 +183,7 @@ class StructuredLogger:
     def with_duration(self, message: str, duration_ms: float, **kwargs) -> None:
         self._log(logging.INFO, message, extra=kwargs if kwargs else None, duration_ms=duration_ms)
 
-    def bind(self, **context) -> "BoundLogger":
+    def bind(self, **context) -> BoundLogger:
         return BoundLogger(self, context)
 
 

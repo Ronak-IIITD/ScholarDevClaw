@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -879,11 +878,11 @@ class TestExports:
 
     def test_analysis_importable(self):
         from scholardevclaw.multi_repo import (
-            CrossRepoAnalyzer,
             ComparisonResult,
-            PatternOverlap,
+            CrossRepoAnalyzer,
             FrameworkComparison,
             LanguageOverlap,
+            PatternOverlap,
         )
 
         assert CrossRepoAnalyzer is not None
@@ -895,9 +894,9 @@ class TestExports:
     def test_transfer_importable(self):
         from scholardevclaw.multi_repo import (
             KnowledgeTransferEngine,
+            TransferDirection,
             TransferOpportunity,
             TransferPlan,
-            TransferDirection,
         )
 
         assert KnowledgeTransferEngine is not None

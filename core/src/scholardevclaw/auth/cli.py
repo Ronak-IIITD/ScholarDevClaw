@@ -3,11 +3,11 @@ from __future__ import annotations
 import getpass
 import json
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from .store import AuthStore
-from .types import AuthProvider, KeyScope
+from .types import AuthProvider
 
 
 def cmd_auth(args):
@@ -58,7 +58,7 @@ def _cmd_setup(args, store: AuthStore):
     status = store.get_status()
 
     if status.has_api_key:
-        print(f"\n✅ Already authenticated!")
+        print("\n✅ Already authenticated!")
         print(f"   Active keys: {status.active_keys}")
         if status.user_email:
             print(f"   Email: {status.user_email}")
@@ -123,7 +123,7 @@ def _cmd_setup(args, store: AuthStore):
         else:
             api_key = _prompt_for_key(provider)
     elif provider == AuthProvider.OLLAMA:
-        print(f"\n✓ Ollama runs locally — no API key needed.")
+        print("\n✓ Ollama runs locally — no API key needed.")
         print(f"  Make sure Ollama is running at {provider.default_base_url}")
         api_key = "ollama-local"
     else:
@@ -134,7 +134,7 @@ def _cmd_setup(args, store: AuthStore):
 
     try:
         store.add_api_key(api_key, name, provider, set_default=True)
-        print(f"\n✅ API key added successfully!")
+        print("\n✅ API key added successfully!")
         print(f"   Provider: {provider.display_name}")
         print(f"   Key: {api_key[:4]}...{api_key[-2:]}")
         if provider.default_base_url:
@@ -229,7 +229,7 @@ def _cmd_login(args, store: AuthStore):
 
     try:
         added = store.add_api_key(api_key, name, provider, set_default=True)
-        print(f"✅ Logged in successfully!")
+        print("✅ Logged in successfully!")
         print(f"   Provider: {provider.value}")
         print(f"   Key ID: {added.id}")
         print(f"   Key: {added.mask()}")
@@ -282,7 +282,7 @@ def _cmd_status(args, store: AuthStore):
         print("\nRun 'scholardevclaw auth setup' to get started.")
         return
 
-    print(f"\n✅ Authenticated")
+    print("\n✅ Authenticated")
     print(f"   API Keys: {status.active_keys} active / {status.key_count} total")
 
     if status.user_email:
@@ -295,9 +295,9 @@ def _cmd_status(args, store: AuthStore):
 
     # Encryption status
     if store.is_encryption_enabled():
-        print(f"   🔒 Encryption: enabled")
+        print("   🔒 Encryption: enabled")
     else:
-        print(f"   🔓 Encryption: disabled")
+        print("   🔓 Encryption: disabled")
 
     profile = store.get_profile()
     if profile:
@@ -447,7 +447,7 @@ def _cmd_rotate(args, store: AuthStore):
 
     rotated = store.rotate_api_key(key_id, new_key, reason=reason)
     if rotated:
-        print(f"✅ Key rotated successfully!")
+        print("✅ Key rotated successfully!")
         print(f"   New Key ID: {rotated.id}")
         print(f"   Key: {rotated.mask()}")
         print(f"   Rotations: {len(rotated.rotation_history)}")
@@ -643,7 +643,7 @@ def _cmd_profiles(args, store: AuthStore):
         if not name:
             print("Profile name required.", file=sys.stderr)
             sys.exit(1)
-        path = store.save_profile_as(name)
+        store.save_profile_as(name)
         print(f"✅ Profile saved: {name}")
 
     elif action == "load":
@@ -708,7 +708,7 @@ def _cmd_usage(args, store: AuthStore):
             print(f"    Last minute: {stats['requests_last_minute']}")
             print(f"    Last hour: {stats['requests_last_hour']}")
             if stats.get("is_rate_limited"):
-                print(f"    ⚠️  RATE LIMITED")
+                print("    ⚠️  RATE LIMITED")
 
 
 # ------------------------------------------------------------------

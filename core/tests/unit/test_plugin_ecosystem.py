@@ -12,12 +12,9 @@ Covers:
 
 from __future__ import annotations
 
-import sys
 import json
-import importlib
+import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
-from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -278,6 +275,7 @@ class TestHookRegistry:
 
     def test_resolve_invalid_raises(self):
         import pytest
+
         from scholardevclaw.plugins.hooks import HookRegistry
 
         reg = HookRegistry()
@@ -308,7 +306,7 @@ class TestGetHookRegistry:
         assert a is b
 
     def test_returns_hookregistry_type(self):
-        from scholardevclaw.plugins.hooks import get_hook_registry, HookRegistry
+        from scholardevclaw.plugins.hooks import HookRegistry, get_hook_registry
 
         assert isinstance(get_hook_registry(), HookRegistry)
 
@@ -471,8 +469,8 @@ class TestMetricsCollectorPlugin:
         assert inst.get_name() == "metrics_collector"
 
     def test_register_hooks(self):
-        from scholardevclaw.plugins.metrics_collector import get_plugin_instance
         from scholardevclaw.plugins.hooks import HookRegistry
+        from scholardevclaw.plugins.metrics_collector import get_plugin_instance
 
         reg = HookRegistry()
         inst = get_plugin_instance()
@@ -534,8 +532,8 @@ class TestSecurityPluginHooks:
         assert hasattr(inst, "register_hooks")
 
     def test_register_hooks(self):
-        from scholardevclaw.plugins.security import get_plugin_instance
         from scholardevclaw.plugins.hooks import HookRegistry
+        from scholardevclaw.plugins.security import get_plugin_instance
 
         reg = HookRegistry()
         inst = get_plugin_instance()
@@ -557,8 +555,8 @@ class TestRustlangPluginHooks:
         assert hasattr(inst, "register_hooks")
 
     def test_register_hooks(self):
-        from scholardevclaw.plugins.rustlang import get_plugin_instance
         from scholardevclaw.plugins.hooks import HookRegistry
+        from scholardevclaw.plugins.rustlang import get_plugin_instance
 
         reg = HookRegistry()
         inst = get_plugin_instance()
@@ -574,8 +572,8 @@ class TestJavalangPluginHooks:
         assert hasattr(inst, "register_hooks")
 
     def test_register_hooks(self):
-        from scholardevclaw.plugins.javalang import get_plugin_instance
         from scholardevclaw.plugins.hooks import HookRegistry
+        from scholardevclaw.plugins.javalang import get_plugin_instance
 
         reg = HookRegistry()
         inst = get_plugin_instance()
@@ -591,8 +589,8 @@ class TestJstsPluginHooks:
         assert hasattr(inst, "register_hooks")
 
     def test_register_hooks(self):
-        from scholardevclaw.plugins.jsts import get_plugin_instance
         from scholardevclaw.plugins.hooks import HookRegistry
+        from scholardevclaw.plugins.jsts import get_plugin_instance
 
         reg = HookRegistry()
         inst = get_plugin_instance()
@@ -642,22 +640,22 @@ class TestFireHookHelper:
 class TestPluginExports:
     def test_all_exports_importable(self):
         from scholardevclaw.plugins import (
-            PluginManager,
-            Plugin,
-            PluginMetadata,
             AnalyzerPlugin,
+            AutoLintPlugin,
+            EventLoggerPlugin,
+            HookCallback,
+            HookEvent,
+            HookPoint,
+            HookRegistry,
+            MetricsCollectorPlugin,
+            Plugin,
+            PluginInterface,
+            PluginManager,
+            PluginMetadata,
             SpecProviderPlugin,
             ValidatorPlugin,
-            PluginInterface,
-            get_plugin_manager,
-            HookPoint,
-            HookEvent,
-            HookRegistry,
-            HookCallback,
             get_hook_registry,
-            AutoLintPlugin,
-            MetricsCollectorPlugin,
-            EventLoggerPlugin,
+            get_plugin_manager,
         )
 
         assert all(
@@ -706,7 +704,7 @@ class TestPluginExports:
         assert expected.issubset(set(plugins.__all__))
 
     def test_get_plugin_manager_returns_manager(self):
-        from scholardevclaw.plugins import get_plugin_manager, PluginManager
+        from scholardevclaw.plugins import PluginManager, get_plugin_manager
 
         mgr = get_plugin_manager()
         assert isinstance(mgr, PluginManager)
@@ -778,8 +776,6 @@ class TestFullIntegration:
 class TestCLIPluginArgs:
     def test_plugin_action_choices(self):
         """Verify the plugin subcommand accepts the new action choices."""
-        from scholardevclaw.cli import main
-        import argparse
 
         # We can't easily extract argparse choices without invoking the parser,
         # so just verify the module imports and the function exists.

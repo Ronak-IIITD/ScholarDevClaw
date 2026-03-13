@@ -104,7 +104,7 @@ class GitHubAppConfig:
     notify_on_complete: bool = True
 
     @classmethod
-    def from_env(cls) -> "GitHubAppConfig":
+    def from_env(cls) -> GitHubAppConfig:
         import os
 
         return cls(

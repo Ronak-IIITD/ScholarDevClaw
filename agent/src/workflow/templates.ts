@@ -1,4 +1,5 @@
 import { PythonSubprocessBridge, PythonHttpBridge } from '../bridges/python-bridge.js';
+import type { RepoAnalysisResult, ResearchSpecResult, MappingResult, PatchResult } from '../bridges/python-subprocess.js';
 import { FunctionNode, WorkflowNode, ConditionalNode } from './node.js';
 import type { WorkflowState } from './types.js';
 import { logger } from '../utils/logger.js';
@@ -137,8 +138,8 @@ function createMappingNode(bridge: PythonSubprocessBridge | PythonHttpBridge): W
     { id: 'mapping', name: 'Architecture Mapping', dependencies: ['analyze', 'research'], timeout: 300000 },
     async (context, state) => {
       const result = await bridge.mapArchitecture(
-        state.context.analysis,
-        state.context.research
+        state.context.analysis as RepoAnalysisResult,
+        state.context.research as ResearchSpecResult
       );
       if (!result.success) throw new Error(result.error);
       state.context.mapping = result.data;
@@ -151,7 +152,7 @@ function createPatchNode(bridge: PythonSubprocessBridge | PythonHttpBridge): Wor
   return new FunctionNode(
     { id: 'patch', name: 'Patch Generation', dependencies: ['mapping'], timeout: 600000 },
     async (context, state) => {
-      const result = await bridge.generatePatch(state.context.mapping);
+      const result = await bridge.generatePatch(state.context.mapping as MappingResult);
       if (!result.success) throw new Error(result.error);
       state.context.patch = result.data;
       return result.data;
@@ -163,7 +164,7 @@ function createValidationNode(bridge: PythonSubprocessBridge | PythonHttpBridge)
   return new FunctionNode(
     { id: 'validation', name: 'Validation', dependencies: ['patch'], timeout: 600000 },
     async (context, state) => {
-      const result = await bridge.validate(state.context.patch, context.repoPath as string);
+      const result = await bridge.validate(state.context.patch as PatchResult, context.repoPath as string);
       if (!result.success) throw new Error(result.error);
       state.context.validation = result.data;
       return result.data;
@@ -278,11 +279,11 @@ function createMultiExecuteNode(bridge: PythonSubprocessBridge | PythonHttpBridg
       const results = [];
       for (const spec of specs) {
         const mapping = await bridge.mapArchitecture(
-          state.context.analysis,
-          { spec_name: spec.name }
+          state.context.analysis as RepoAnalysisResult,
+          { spec_name: spec.name } as unknown as ResearchSpecResult
         );
-        const patch = await bridge.generatePatch(mapping.data);
-        const validation = await bridge.validate(patch.data, context.repoPath as string);
+        const patch = await bridge.generatePatch(mapping.data as MappingResult);
+        const validation = await bridge.validate(patch.data as PatchResult, context.repoPath as string);
         results.push({ spec, mapping: mapping.data, patch: patch.data, validation: validation.data });
       }
       

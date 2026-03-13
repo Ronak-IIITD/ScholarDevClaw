@@ -11,23 +11,23 @@ Provides cross-repo analysis, comparison, and knowledge transfer:
 
 from __future__ import annotations
 
+from .analysis import (
+    ComparisonResult,
+    CrossRepoAnalyzer,
+    FrameworkComparison,
+    LanguageOverlap,
+    PatternOverlap,
+)
 from .manager import (
     MultiRepoManager,
     RepoProfile,
     RepoProfileStatus,
 )
-from .analysis import (
-    CrossRepoAnalyzer,
-    ComparisonResult,
-    PatternOverlap,
-    FrameworkComparison,
-    LanguageOverlap,
-)
 from .transfer import (
     KnowledgeTransferEngine,
+    TransferDirection,
     TransferOpportunity,
     TransferPlan,
-    TransferDirection,
 )
 
 __all__ = [

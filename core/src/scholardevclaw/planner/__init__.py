@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field  # noqa: F401
+from typing import Any
 
 LogCallback = Callable[[str], None]
 

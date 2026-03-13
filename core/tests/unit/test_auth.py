@@ -1,5 +1,3 @@
-import json
-import os
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,7 +9,6 @@ from scholardevclaw.auth.types import (
     APIKey,
     AuthConfig,
     AuthProvider,
-    AuthStatus,
     KeyRotationEntry,
     KeyScope,
     SubscriptionTier,
@@ -320,7 +317,7 @@ class TestAuthStore:
         assert store.remove_api_key("missing") is False
 
     def test_set_default_key(self, store):
-        key1 = store.add_api_key("sk_1", "k1", AuthProvider.CUSTOM)
+        store.add_api_key("sk_1", "k1", AuthProvider.CUSTOM)
         key2 = store.add_api_key("sk_2", "k2", AuthProvider.OPENAI, set_default=False)
 
         ok = store.set_default_key(key2.id)
@@ -487,7 +484,6 @@ class TestAuthStore:
 
     def test_get_rotation_history(self, store):
         key = store.add_api_key("sk_1", "key1", AuthProvider.CUSTOM)
-        original_id = key.id
 
         rotated = store.rotate_api_key(key.id, "sk_2", reason="Scheduled rotation")
 

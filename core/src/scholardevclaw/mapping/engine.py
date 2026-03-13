@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class InsertionPoint:
     line: int
     current_code: str
     replacement_required: bool
-    context: Dict = field(default_factory=dict)
+    context: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -54,15 +55,15 @@ class CompatibilityIssue:
 @dataclass
 class ValidationResult:
     passed: bool
-    issues: List[CompatibilityIssue] = field(default_factory=list)
+    issues: list[CompatibilityIssue] = field(default_factory=list)
 
 
 @dataclass
 class MappingResult:
-    targets: List[InsertionPoint]
+    targets: list[InsertionPoint]
     strategy: str
     confidence: int
-    research_spec: Dict
+    research_spec: dict
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +72,7 @@ class MappingResult:
 
 # Patterns that indicate a code snippet contains a specific construct
 # (used for fuzzy matching when element names don't directly match).
-_CODE_PATTERN_ALIASES: Dict[str, List[str]] = {
+_CODE_PATTERN_ALIASES: dict[str, list[str]] = {
     "layernorm": ["LayerNorm", "layer_norm", "nn.LayerNorm"],
     "nn.layernorm": ["LayerNorm", "layer_norm", "nn.LayerNorm"],
     "nn.gelu": ["GELU", "gelu", "nn.GELU"],
@@ -174,8 +175,8 @@ class MappingEngine:
 
     def __init__(
         self,
-        repo_analysis: Dict,
-        research_spec: Dict,
+        repo_analysis: dict,
+        research_spec: dict,
         *,
         llm_assistant: Any = None,
     ):
@@ -204,7 +205,7 @@ class MappingEngine:
     # Target location finding — the core rewrite
     # ------------------------------------------------------------------
 
-    def _find_target_locations(self) -> List[InsertionPoint]:
+    def _find_target_locations(self) -> list[InsertionPoint]:
         """Find code locations that match the spec's ``target_patterns``.
 
         Search order:
@@ -215,7 +216,7 @@ class MappingEngine:
         5. Graceful empty return (never fabricates locations)
         """
         changes = self.research_spec.get("changes", {})
-        target_patterns: List[str] = changes.get("target_patterns", [])
+        target_patterns: list[str] = changes.get("target_patterns", [])
         replacement: str = changes.get("replacement", "")
 
         if not target_patterns:
@@ -226,8 +227,8 @@ class MappingEngine:
 
         # Separate patterns into class-like (start with uppercase or "class ")
         # and reference-like (e.g. "self.ln_1", "nn.GELU").
-        class_patterns: List[str] = []
-        ref_patterns: List[str] = []
+        class_patterns: list[str] = []
+        ref_patterns: list[str] = []
         for pat in target_patterns:
             stripped = pat.replace("class ", "").strip()
             if stripped and stripped[0].isupper() and "." not in pat:
@@ -236,7 +237,7 @@ class MappingEngine:
                 ref_patterns.append(pat)
 
         seen: set[tuple[str, int]] = set()  # (file, line) dedup
-        targets: List[InsertionPoint] = []
+        targets: list[InsertionPoint] = []
 
         # ---- Tier 1: Exact matches on elements ----
         for element in elements:
@@ -383,17 +384,17 @@ class MappingEngine:
 
     def _text_scan_for_patterns(
         self,
-        patterns: List[str],
+        patterns: list[str],
         replacement: str,
         seen: set,
-    ) -> List[InsertionPoint]:
+    ) -> list[InsertionPoint]:
         """Scan source files for usage patterns that appear inside method bodies.
 
         This covers patterns like ``self.wpe``, ``nn.GELU``, ``nn.Embedding``
         that aren't element names or imports but do appear in source code.
         Uses the ``root_path`` from repo_analysis if available.
         """
-        targets: List[InsertionPoint] = []
+        targets: list[InsertionPoint] = []
         root_path = self.repo_analysis.get("root_path")
         if root_path is None:
             return targets
@@ -462,14 +463,14 @@ class MappingEngine:
     # ------------------------------------------------------------------
 
     def _search_legacy_architecture(
-        self, target_patterns: List[str], replacement: str
-    ) -> List[InsertionPoint]:
+        self, target_patterns: list[str], replacement: str
+    ) -> list[InsertionPoint]:
         """Search the old-style ``architecture.models[].components`` dict.
 
         This preserves backward compatibility with callers that provide an
         ``architecture`` key instead of real ``elements``.
         """
-        targets: List[InsertionPoint] = []
+        targets: list[InsertionPoint] = []
         models = self.repo_analysis.get("architecture", {}).get("models", [])
 
         for model in models:
@@ -521,23 +522,23 @@ class MappingEngine:
 
     def _llm_semantic_match(
         self,
-        elements: List[Any],
-        target_patterns: List[str],
+        elements: list[Any],
+        target_patterns: list[str],
         replacement: str,
-    ) -> List[InsertionPoint]:
+    ) -> list[InsertionPoint]:
         """Use LLM to semantically match elements to target patterns.
 
         Sends the element list and target patterns to the LLM and asks it to
         identify which elements are semantically related to the patterns even
         if the names don't overlap lexically.
         """
-        targets: List[InsertionPoint] = []
+        targets: list[InsertionPoint] = []
         if not elements:
             return targets
 
         try:
             # Build a concise element summary for the LLM
-            element_lines: List[str] = []
+            element_lines: list[str] = []
             for i, el in enumerate(elements):
                 el_name = _el_attr(el, "name", "")
                 el_type = _el_attr(el, "type", "")
@@ -608,7 +609,7 @@ class MappingEngine:
         return targets
 
     @staticmethod
-    def _parse_llm_matches(raw: str) -> List[Dict[str, Any]]:
+    def _parse_llm_matches(raw: str) -> list[dict[str, Any]]:
         """Extract a JSON array from LLM output, tolerating fenced blocks."""
         import json
 
@@ -648,10 +649,10 @@ class MappingEngine:
         component_type: str,
         match_tier: str,
         pattern: str,
-        parent_class: Optional[str] = None,
-        extra_context: Optional[Dict] = None,
+        parent_class: str | None = None,
+        extra_context: dict | None = None,
     ) -> InsertionPoint:
-        context: Dict[str, Any] = {
+        context: dict[str, Any] = {
             "component_type": component_type,
             "replacement": replacement,
             "original": current_code,
@@ -675,8 +676,8 @@ class MappingEngine:
     # Compatibility validation
     # ------------------------------------------------------------------
 
-    def _validate_compatibility(self, targets: List[InsertionPoint]) -> ValidationResult:
-        issues: List[CompatibilityIssue] = []
+    def _validate_compatibility(self, targets: list[InsertionPoint]) -> ValidationResult:
+        issues: list[CompatibilityIssue] = []
 
         for target in targets:
             original = target.context.get("original", "")
@@ -715,7 +716,7 @@ class MappingEngine:
     # Strategy selection
     # ------------------------------------------------------------------
 
-    def _select_strategy(self, targets: List[InsertionPoint], validation: ValidationResult) -> str:
+    def _select_strategy(self, targets: list[InsertionPoint], validation: ValidationResult) -> str:
         if not targets:
             return "none"
 
@@ -731,7 +732,7 @@ class MappingEngine:
     # ------------------------------------------------------------------
 
     def _calculate_confidence(
-        self, validation: ValidationResult, targets: List[InsertionPoint]
+        self, validation: ValidationResult, targets: list[InsertionPoint]
     ) -> int:
         """Calculate a 0-100 confidence score.
 
@@ -782,9 +783,9 @@ class MappingEngine:
 # ---------------------------------------------------------------------------
 
 
-def analyze_repo_for_pattern(repo_path: str, pattern: str) -> List[Dict]:
+def analyze_repo_for_pattern(repo_path: str, pattern: str) -> list[dict]:
     """Scan Python files in *repo_path* for lines containing *pattern*."""
-    results: List[Dict] = []
+    results: list[dict] = []
     path = Path(repo_path)
 
     for py_file in path.rglob("*.py"):

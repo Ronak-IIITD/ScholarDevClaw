@@ -86,7 +86,7 @@ class TestKeyUsageStats:
 class TestRateLimiter:
     def test_init_creates_dir(self, temp_dir):
         sub = temp_dir / "nested" / "limiter"
-        limiter = RateLimiter(str(sub))
+        RateLimiter(str(sub))
         assert sub.exists()
 
     def test_default_limit(self, limiter):
@@ -328,7 +328,6 @@ class TestRateLimiterWithStore:
 
     def test_rate_limit_disabled(self, temp_dir):
         from scholardevclaw.auth.store import AuthStore
-        from scholardevclaw.auth.types import AuthProvider
 
         store = AuthStore(str(temp_dir), enable_rate_limit=False)
         assert store.set_rate_limit("any_key", RateLimitConfig()) is False

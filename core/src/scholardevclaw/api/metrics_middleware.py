@@ -1,11 +1,12 @@
 import time
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
 from ..utils.metrics import (
-    registry,
     ACTIVE_REQUESTS,
+    registry,
     track_request,
 )
 
@@ -33,7 +34,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             )
 
             return response
-        except Exception as e:
+        except Exception:
             duration = time.perf_counter() - start_time
 
             track_request(

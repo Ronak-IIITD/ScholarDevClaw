@@ -1,7 +1,4 @@
-import json
-
-import pytest
-
+from scholardevclaw.github_app.client import GitHubAppClient
 from scholardevclaw.github_app.types import (
     CheckConclusion,
     CheckStatus,
@@ -13,7 +10,6 @@ from scholardevclaw.github_app.types import (
     WebhookEventType,
     WebhookPayload,
 )
-from scholardevclaw.github_app.client import GitHubAppClient
 from scholardevclaw.github_app.webhook import WebhookHandler
 
 

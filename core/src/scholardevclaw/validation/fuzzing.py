@@ -11,16 +11,12 @@ Supports:
 
 from __future__ import annotations
 
-import ast
-import os
 import random
-import shutil
 import subprocess
-import sys
-import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass
@@ -95,8 +91,8 @@ class PythonFuzzer:
         timeout: float = 5.0,
     ) -> FuzzResult:
         """Run fuzzing on a target"""
-        import time
         import importlib.util
+        import time
 
         start_time = time.time()
 
@@ -141,7 +137,7 @@ class PythonFuzzer:
                     signal.alarm(int(timeout))
 
                 start = time.time()
-                result = target_func(*inputs)
+                target_func(*inputs)
                 elapsed = time.time() - start
 
                 if timeout > 0:

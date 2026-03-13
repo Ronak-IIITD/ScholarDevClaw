@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import List, Optional
 
 
 @dataclass
@@ -11,7 +10,7 @@ class ComponentMatch:
 
 
 class PyTorchComponentDetector:
-    def detect_modules(self, modules: List) -> List[ComponentMatch]:
+    def detect_modules(self, modules: list) -> list[ComponentMatch]:
         matches = []
 
         for module in modules:
@@ -28,11 +27,11 @@ class PyTorchComponentDetector:
 
         return matches
 
-    def detect_layer_norms(self, modules: List) -> List[ComponentMatch]:
+    def detect_layer_norms(self, modules: list) -> list[ComponentMatch]:
         matches = []
 
         for module in modules:
-            source = module.path.read_text()
+            module.path.read_text()
 
             for cls in module.classes:
                 if "LayerNorm" in cls.name or "layer_norm" in cls.name:
@@ -47,7 +46,7 @@ class PyTorchComponentDetector:
 
         return matches
 
-    def detect_attention(self, modules: List) -> List[ComponentMatch]:
+    def detect_attention(self, modules: list) -> list[ComponentMatch]:
         matches = []
 
         for module in modules:

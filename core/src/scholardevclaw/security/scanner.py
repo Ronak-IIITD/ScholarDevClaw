@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
-from .bandit import BanditScanner, run_bandit_scan
-from .semgrep import SemgrepScanner, run_semgrep_scan
-from .types import SecurityReport, SecurityScanResult, SecurityTool
+from .bandit import BanditScanner
+from .semgrep import SemgrepScanner
+from .types import SecurityReport, SecurityScanResult
 
 
 class SecurityScanner:

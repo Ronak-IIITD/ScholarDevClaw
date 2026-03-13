@@ -22,9 +22,9 @@ import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-from .hooks import HookPoint, HookRegistry, get_hook_registry
+from .hooks import HookRegistry, get_hook_registry
 
 logger = logging.getLogger(__name__)
 

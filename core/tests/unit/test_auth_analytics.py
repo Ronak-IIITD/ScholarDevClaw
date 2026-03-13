@@ -8,12 +8,11 @@ from pathlib import Path
 import pytest
 
 from scholardevclaw.auth.analytics import (
-    UsageRecord,
-    DailyUsage,
-    UsageAnalytics,
-    UsageTracker,
-    UsageDashboard,
     PROVIDER_PRICING,
+    DailyUsage,
+    UsageDashboard,
+    UsageRecord,
+    UsageTracker,
 )
 
 

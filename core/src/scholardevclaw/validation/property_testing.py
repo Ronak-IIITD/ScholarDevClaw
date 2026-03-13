@@ -10,17 +10,15 @@ Provides:
 
 from __future__ import annotations
 
-import ast
-import os
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, TypeVar, get_type_hints
-
+from typing import Any, TypeVar, get_type_hints
 
 try:
-    from hypothesis import given, settings, Phase, Verbosity
+    from hypothesis import Phase, Verbosity, given, settings  # noqa: F401
     from hypothesis import strategies as st
 
     HAS_HYPOTHESIS = True

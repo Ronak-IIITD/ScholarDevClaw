@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass
@@ -141,7 +141,7 @@ class GitHubRotationProvider(RotationProvider):
             "Accept": "application/vnd.github+json",
         }
 
-        response = requests.post(
+        requests.post(
             "https://api.github.com/user/repos",
             headers=headers,
             json={

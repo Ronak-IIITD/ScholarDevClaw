@@ -14,7 +14,6 @@ import ast
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -171,23 +170,22 @@ class CallGraph:
 
     def _analyze_calls(self, tree: ast.AST, file_path: Path):
         """Analyze calls in the AST"""
-        current_class = None
 
         class CallVisitor(ast.NodeVisitor):
-            def __init__(inner_self, outer):
+            def __init__(inner_self, outer):  # noqa: N805
                 inner_self.outer = outer
                 inner_self.current_class = None
 
-            def visit_ClassDef(inner_self, node: ast.ClassDef):
+            def visit_ClassDef(inner_self, node: ast.ClassDef):  # noqa: N805
                 old_class = inner_self.current_class
                 inner_self.current_class = node.name
                 inner_self.generic_visit(node)
                 inner_self.current_class = old_class
 
-            def visit_FunctionDef(inner_self, node: ast.FunctionDef):
+            def visit_FunctionDef(inner_self, node: ast.FunctionDef):  # noqa: N805
                 inner_self.generic_visit(node)
 
-            def visit_Call(inner_self, node: ast.Call):
+            def visit_Call(inner_self, node: ast.Call):  # noqa: N805
                 caller_name = inner_self._get_current_function_name()
                 if caller_name and inner_self.outer.functions.get(caller_name):
                     callee = inner_self._get_callee_name(node)
@@ -195,10 +193,10 @@ class CallGraph:
                         inner_self.outer.add_call(caller_name, callee)
                 inner_self.generic_visit(node)
 
-            def _get_current_function_name(inner_self) -> str | None:
+            def _get_current_function_name(inner_self) -> str | None:  # noqa: N805
                 return None
 
-            def _get_callee_name(inner_self, node: ast.Call) -> str | None:
+            def _get_callee_name(inner_self, node: ast.Call) -> str | None:  # noqa: N805
                 if isinstance(node.func, ast.Name):
                     return node.func.id
                 elif isinstance(node.func, ast.Attribute):

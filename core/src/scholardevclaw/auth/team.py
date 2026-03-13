@@ -215,7 +215,6 @@ class TeamStore:
 
     def create_team(self, name: str, owner_email: str, owner_name: str) -> Team:
         """Create a new team."""
-        from .types import APIKey
 
         team = Team(
             id=f"team_{secrets.token_hex(8)}",

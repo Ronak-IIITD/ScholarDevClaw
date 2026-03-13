@@ -1,11 +1,8 @@
 """Security tests for input validation and edge cases."""
 
-import json
-import pytest
-from pathlib import Path
 import tempfile
 import threading
-import time
+from pathlib import Path
 
 
 class TestInputValidation:
@@ -37,7 +34,7 @@ class TestInputValidation:
         }
 
         try:
-            result = evaluate_payload_compatibility(large_payload)
+            evaluate_payload_compatibility(large_payload)
         except (ValueError, MemoryError, RuntimeError, Exception):
             pass
 
@@ -67,7 +64,7 @@ class TestInputValidation:
 
         for payload in malformed_payloads:
             try:
-                result = evaluate_payload_compatibility(payload)
+                evaluate_payload_compatibility(payload)
             except Exception:
                 pass
 
@@ -90,7 +87,7 @@ class TestRateLimitSecurity:
 
     def test_rate_limit_per_key(self):
         """Test rate limit enforcement per key"""
-        from scholardevclaw.auth.rate_limit import RateLimiter, RateLimitConfig
+        from scholardevclaw.auth.rate_limit import RateLimitConfig, RateLimiter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             limiter = RateLimiter(tmpdir)
@@ -107,7 +104,7 @@ class TestRateLimitSecurity:
 
     def test_rate_limit_different_keys(self):
         """Test rate limits are per-key"""
-        from scholardevclaw.auth.rate_limit import RateLimiter, RateLimitConfig
+        from scholardevclaw.auth.rate_limit import RateLimitConfig, RateLimiter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             limiter = RateLimiter(tmpdir)
@@ -123,7 +120,7 @@ class TestRateLimitSecurity:
 
     def test_rate_limit_window_pruning(self):
         """Test old entries are pruned"""
-        from scholardevclaw.auth.rate_limit import RateLimiter, RateLimitConfig
+        from scholardevclaw.auth.rate_limit import RateLimitConfig, RateLimiter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             limiter = RateLimiter(tmpdir)
@@ -166,8 +163,9 @@ class TestRaceConditionPrevention:
 
     def test_concurrent_rate_limit(self):
         """Test rate limiting under concurrent load"""
-        from scholardevclaw.auth.rate_limit import RateLimiter, RateLimitConfig
         import threading
+
+        from scholardevclaw.auth.rate_limit import RateLimitConfig, RateLimiter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             limiter = RateLimiter(tmpdir)
@@ -310,7 +308,7 @@ class TestEncryptionSecurity:
         with tempfile.TemporaryDirectory() as tmpdir:
             mgr = EncryptionManager(tmpdir)
             mgr.enable("correctpassword")
-            ciphertext = mgr.encrypt("secret")
+            mgr.encrypt("secret")
 
             mgr2 = EncryptionManager(tmpdir)
             result = mgr2.unlock("wrongpassword")
@@ -414,7 +412,7 @@ class TestInjectionPrevention:
         for spec in malicious_specs:
             try:
                 engine = MappingEngine({}, spec)
-                result = engine.map()
+                engine.map()
             except Exception:
                 pass
 
@@ -437,7 +435,7 @@ class TestInjectionPrevention:
                 try:
                     # Run with patch containing malicious input
                     patch = {"file": "test.py", "content": inp}
-                    result = runner.run(patch, str(Path(tmpdir)))
+                    runner.run(patch, str(Path(tmpdir)))
                 except Exception:
                     pass
 
@@ -456,7 +454,7 @@ class TestInjectionPrevention:
 
         for pattern in sql_patterns:
             try:
-                result = extractor.search_by_keyword(pattern)
+                extractor.search_by_keyword(pattern)
                 # Should not execute SQL
             except Exception:
                 pass
@@ -486,7 +484,7 @@ class TestAuthenticationSecurity:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             store = AuthStore(tmpdir)
-            profile = store.create_profile(email="test@example.com")
+            store.create_profile(email="test@example.com")
 
             # Token should be random
             tokens = set()
@@ -499,9 +497,10 @@ class TestAuthenticationSecurity:
 
     def test_concurrent_auth_attempts(self):
         """Test concurrent authentication attempts"""
+        import threading
+
         from scholardevclaw.auth.store import AuthStore
         from scholardevclaw.auth.types import AuthProvider
-        import threading
 
         with tempfile.TemporaryDirectory() as tmpdir:
             results = []
@@ -599,10 +598,11 @@ class TestDataLeakagePrevention:
 
     def test_api_key_not_in_logs(self):
         """Test API keys are not logged in plain text"""
+        import io
         import logging
+
         from scholardevclaw.auth.store import AuthStore
         from scholardevclaw.auth.types import AuthProvider
-        import io
 
         with tempfile.TemporaryDirectory() as tmpdir:
             store = AuthStore(tmpdir)
@@ -617,7 +617,7 @@ class TestDataLeakagePrevention:
             store_logger.setLevel(logging.DEBUG)
 
             # Trigger any logging
-            keys = store.list_api_keys()
+            store.list_api_keys()
 
             log_output = log_capture.getvalue()
 
@@ -750,7 +750,7 @@ class TestSchemaValidation:
 
         for payload in invalid_versions:
             try:
-                result = evaluate_payload_compatibility(payload)
+                evaluate_payload_compatibility(payload)
                 # Should return compatibility report
             except Exception:
                 pass
@@ -768,7 +768,7 @@ class TestSchemaValidation:
 
         for payload in invalid_payloads:
             try:
-                result = evaluate_payload_compatibility(payload)
+                evaluate_payload_compatibility(payload)
             except Exception:
                 pass
 
@@ -788,8 +788,8 @@ class TestBatchProcessingSecurity:
 
     def test_concurrent_batch_jobs(self):
         """Test concurrent batch jobs are isolated"""
+
         from scholardevclaw.automation.batch import BatchProcessor
-        import threading
 
         processor = BatchProcessor(max_workers=2)
 
@@ -809,7 +809,7 @@ class TestRetryLogicSecurity:
 
     def test_retry_limit_prevents_infinite_loop(self):
         """Test retry logic has limits"""
-        from scholardevclaw.auth.rate_limit import RateLimiter, RateLimitConfig
+        from scholardevclaw.auth.rate_limit import RateLimitConfig, RateLimiter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             limiter = RateLimiter(tmpdir)
@@ -826,8 +826,7 @@ class TestRetryLogicSecurity:
 
     def test_exponential_backoff_timing(self):
         """Test exponential backoff timing"""
-        import time
-        from scholardevclaw.auth.rate_limit import RateLimiter, RateLimitConfig
+        from scholardevclaw.auth.rate_limit import RateLimitConfig, RateLimiter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             limiter = RateLimiter(tmpdir)

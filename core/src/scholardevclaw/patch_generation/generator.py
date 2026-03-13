@@ -24,10 +24,10 @@ import logging
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import libcst as cst
-from libcst import parse_module, CSTTransformer
+from libcst import CSTTransformer, parse_module
 
 if TYPE_CHECKING:
     from scholardevclaw.llm.research_assistant import LLMResearchAssistant
@@ -51,13 +51,13 @@ class Transformation:
     file: str
     original: str
     modified: str
-    changes: List[Dict] = field(default_factory=list)
+    changes: list[dict] = field(default_factory=list)
 
 
 @dataclass
 class Patch:
-    new_files: List[NewFile]
-    transformations: List[Transformation]
+    new_files: list[NewFile]
+    transformations: list[Transformation]
     branch_name: str
     algorithm_name: str
     paper_reference: str
@@ -74,9 +74,9 @@ class RMSNormTransformer(CSTTransformer):
     def __init__(self, original_name: str = "LayerNorm", replacement_name: str = "RMSNorm"):
         self.original_name = original_name
         self.replacement_name = replacement_name
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
 
-    def leave_ClassDef(
+    def leave_ClassDef(  # noqa: N802
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
     ) -> cst.ClassDef:
         if original_node.name.value == self.original_name:
@@ -91,7 +91,7 @@ class RMSNormTransformer(CSTTransformer):
             return updated_node.with_changes(name=new_name)
         return updated_node
 
-    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
         if original_node.value == self.original_name:
             self.changes.append(
                 {
@@ -108,15 +108,15 @@ class SwiGLUTransformer(CSTTransformer):
     """Replaces MLP class with SwiGLU and swaps GELU → SiLU activations inside it."""
 
     def __init__(self) -> None:
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
         self.in_mlp_class = False
 
-    def visit_ClassDef(self, node: cst.ClassDef) -> Optional[bool]:
+    def visit_ClassDef(self, node: cst.ClassDef) -> bool | None:  # noqa: N802
         if node.name.value == "MLP":
             self.in_mlp_class = True
         return True
 
-    def leave_ClassDef(
+    def leave_ClassDef(  # noqa: N802
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
     ) -> cst.ClassDef:
         if original_node.name.value == "MLP":
@@ -126,7 +126,7 @@ class SwiGLUTransformer(CSTTransformer):
             return updated_node.with_changes(name=new_name)
         return updated_node
 
-    def leave_Call(self, original_node: cst.Call, updated_node: cst.Call) -> cst.Call:
+    def leave_Call(self, original_node: cst.Call, updated_node: cst.Call) -> cst.Call:  # noqa: N802
         if self.in_mlp_class:
             func = original_node.func
             if isinstance(func, cst.Attribute) and func.attr.value == "GELU":
@@ -138,15 +138,15 @@ class GEGLUTransformer(CSTTransformer):
     """Replaces MLP class with GEGLU and swaps GELU → gated GELU inside it."""
 
     def __init__(self) -> None:
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
         self.in_mlp_class = False
 
-    def visit_ClassDef(self, node: cst.ClassDef) -> Optional[bool]:
+    def visit_ClassDef(self, node: cst.ClassDef) -> bool | None:  # noqa: N802
         if node.name.value == "MLP":
             self.in_mlp_class = True
         return True
 
-    def leave_ClassDef(
+    def leave_ClassDef(  # noqa: N802
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
     ) -> cst.ClassDef:
         if original_node.name.value == "MLP":
@@ -156,7 +156,7 @@ class GEGLUTransformer(CSTTransformer):
             return updated_node.with_changes(name=new_name)
         return updated_node
 
-    def leave_Call(self, original_node: cst.Call, updated_node: cst.Call) -> cst.Call:
+    def leave_Call(self, original_node: cst.Call, updated_node: cst.Call) -> cst.Call:  # noqa: N802
         if self.in_mlp_class:
             func = original_node.func
             if isinstance(func, cst.Attribute) and func.attr.value == "GELU":
@@ -168,9 +168,9 @@ class FlashAttentionTransformer(CSTTransformer):
     """Renames CausalSelfAttention to FlashCausalSelfAttention and annotates flash usage."""
 
     def __init__(self) -> None:
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
 
-    def leave_ClassDef(
+    def leave_ClassDef(  # noqa: N802
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
     ) -> cst.ClassDef:
         if original_node.name.value == "CausalSelfAttention":
@@ -185,7 +185,7 @@ class FlashAttentionTransformer(CSTTransformer):
             return updated_node.with_changes(name=new_name)
         return updated_node
 
-    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
         if original_node.value == "CausalSelfAttention":
             self.changes.append(
                 {
@@ -202,9 +202,9 @@ class GQATransformer(CSTTransformer):
     """Renames CausalSelfAttention → GroupedQueryAttention."""
 
     def __init__(self) -> None:
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
 
-    def leave_ClassDef(
+    def leave_ClassDef(  # noqa: N802
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
     ) -> cst.ClassDef:
         if original_node.name.value in ("CausalSelfAttention", "MultiHeadAttention"):
@@ -219,7 +219,7 @@ class GQATransformer(CSTTransformer):
             return updated_node.with_changes(name=new_name)
         return updated_node
 
-    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
         if original_node.value in ("CausalSelfAttention", "MultiHeadAttention"):
             self.changes.append(
                 {
@@ -236,9 +236,9 @@ class QKNormTransformer(CSTTransformer):
     """Augments attention classes by renaming to QKNorm-prefixed variants."""
 
     def __init__(self) -> None:
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
 
-    def leave_ClassDef(
+    def leave_ClassDef(  # noqa: N802
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
     ) -> cst.ClassDef:
         if original_node.name.value in ("CausalSelfAttention", "Attention"):
@@ -254,9 +254,9 @@ class PreLNTransformer(CSTTransformer):
     """Renames Block → PreLNBlock to signal pre-norm ordering."""
 
     def __init__(self) -> None:
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
 
-    def leave_ClassDef(
+    def leave_ClassDef(  # noqa: N802
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
     ) -> cst.ClassDef:
         if original_node.name.value == "Block":
@@ -265,7 +265,7 @@ class PreLNTransformer(CSTTransformer):
             return updated_node.with_changes(name=new_name)
         return updated_node
 
-    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
         if original_node.value == "Block":
             self.changes.append({"type": "rename_reference", "from": "Block", "to": "PreLNBlock"})
             return cst.Name("PreLNBlock")
@@ -276,9 +276,9 @@ class RoPETransformer(CSTTransformer):
     """Renames positional embedding references to RoPE variants."""
 
     def __init__(self) -> None:
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
 
-    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
         targets = {"PositionalEncoding", "position_embedding", "pos_emb", "wpe"}
         if original_node.value in targets:
             replacement = (
@@ -295,9 +295,9 @@ class ALiBiTransformer(CSTTransformer):
     """Renames positional embedding references to ALiBi variants."""
 
     def __init__(self) -> None:
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
 
-    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
         targets = {"PositionalEncoding", "position_embedding", "pos_emb", "wpe"}
         if original_node.value in targets:
             replacement = "alibi_bias" if original_node.value.islower() else "ALiBiPositionalBias"
@@ -314,9 +314,9 @@ class GenericRenameTransformer(CSTTransformer):
     def __init__(self, original: str, replacement: str) -> None:
         self.original = original
         self.replacement = replacement
-        self.changes: List[Dict] = []
+        self.changes: list[dict] = []
 
-    def leave_ClassDef(
+    def leave_ClassDef(  # noqa: N802
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
     ) -> cst.ClassDef:
         if original_node.name.value == self.original:
@@ -326,7 +326,7 @@ class GenericRenameTransformer(CSTTransformer):
             return updated_node.with_changes(name=cst.Name(self.replacement))
         return updated_node
 
-    def leave_FunctionDef(
+    def leave_FunctionDef(  # noqa: N802
         self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
     ) -> cst.FunctionDef:
         if original_node.name.value == self.original:
@@ -336,7 +336,7 @@ class GenericRenameTransformer(CSTTransformer):
             return updated_node.with_changes(name=cst.Name(self.replacement))
         return updated_node
 
-    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
         if original_node.value == self.original:
             self.changes.append(
                 {"type": "rename_reference", "from": self.original, "to": self.replacement}
@@ -349,7 +349,7 @@ class GenericRenameTransformer(CSTTransformer):
 # Algorithm → transformer mapping
 # ---------------------------------------------------------------------------
 
-_TRANSFORMER_REGISTRY: Dict[str, Any] = {
+_TRANSFORMER_REGISTRY: dict[str, Any] = {
     "rmsnorm": lambda orig, repl: RMSNormTransformer(orig, repl),
     "swiglu": lambda orig, repl: SwiGLUTransformer(),
     "geglu": lambda orig, repl: GEGLUTransformer(),
@@ -385,7 +385,7 @@ def _get_transformer(algorithm: str, original: str, replacement: str) -> CSTTran
 # ---------------------------------------------------------------------------
 
 
-def _template_rmsnorm(spec: Dict) -> str:
+def _template_rmsnorm(spec: dict) -> str:
     paper = spec.get("paper", {})
     algorithm = spec.get("algorithm", {})
     authors = ", ".join(paper.get("authors", []))
@@ -432,7 +432,7 @@ def _template_rmsnorm(spec: Dict) -> str:
     ''')
 
 
-def _template_swiglu(spec: Dict) -> str:
+def _template_swiglu(spec: dict) -> str:
     paper = spec.get("paper", {})
     algorithm = spec.get("algorithm", {})
     description = algorithm.get("description", "")
@@ -473,7 +473,7 @@ def _template_swiglu(spec: Dict) -> str:
     ''')
 
 
-def _template_geglu(spec: Dict) -> str:
+def _template_geglu(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -511,7 +511,7 @@ def _template_geglu(spec: Dict) -> str:
     ''')
 
 
-def _template_flashattention(spec: Dict) -> str:
+def _template_flashattention(spec: dict) -> str:
     paper = spec.get("paper", {})
     version = "2" if "2" in spec.get("algorithm", {}).get("name", "") else ""
     return textwrap.dedent(f'''\
@@ -567,7 +567,7 @@ def _template_flashattention(spec: Dict) -> str:
     ''')
 
 
-def _template_gqa(spec: Dict) -> str:
+def _template_gqa(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -628,7 +628,7 @@ def _template_gqa(spec: Dict) -> str:
     ''')
 
 
-def _template_qknorm(spec: Dict) -> str:
+def _template_qknorm(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -687,7 +687,7 @@ def _template_qknorm(spec: Dict) -> str:
     ''')
 
 
-def _template_preln(spec: Dict) -> str:
+def _template_preln(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -727,7 +727,7 @@ def _template_preln(spec: Dict) -> str:
     ''')
 
 
-def _template_rope(spec: Dict) -> str:
+def _template_rope(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -782,7 +782,7 @@ def _template_rope(spec: Dict) -> str:
     ''')
 
 
-def _template_alibi(spec: Dict) -> str:
+def _template_alibi(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -843,7 +843,7 @@ def _template_alibi(spec: Dict) -> str:
     ''')
 
 
-def _template_lion(spec: Dict) -> str:
+def _template_lion(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -908,7 +908,7 @@ def _template_lion(spec: Dict) -> str:
     ''')
 
 
-def _template_weight_decay_fused(spec: Dict) -> str:
+def _template_weight_decay_fused(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -950,7 +950,7 @@ def _template_weight_decay_fused(spec: Dict) -> str:
     ''')
 
 
-def _template_cosine_warmup(spec: Dict) -> str:
+def _template_cosine_warmup(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -983,7 +983,7 @@ def _template_cosine_warmup(spec: Dict) -> str:
     ''')
 
 
-def _template_dropout_variants(spec: Dict) -> str:
+def _template_dropout_variants(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -1042,7 +1042,7 @@ def _template_dropout_variants(spec: Dict) -> str:
     ''')
 
 
-def _template_mistral(spec: Dict) -> str:
+def _template_mistral(spec: dict) -> str:
     paper = spec.get("paper", {})
     return textwrap.dedent(f'''\
         """
@@ -1108,7 +1108,7 @@ def _template_mistral(spec: Dict) -> str:
 
 
 # Template registry
-_TEMPLATE_REGISTRY: Dict[str, Any] = {
+_TEMPLATE_REGISTRY: dict[str, Any] = {
     "rmsnorm": _template_rmsnorm,
     "swiglu": _template_swiglu,
     "geglu": _template_geglu,
@@ -1127,7 +1127,7 @@ _TEMPLATE_REGISTRY: Dict[str, Any] = {
 }
 
 # Algorithm name → canonical file name
-_ALGORITHM_FILE_NAMES: Dict[str, str] = {
+_ALGORITHM_FILE_NAMES: dict[str, str] = {
     "rmsnorm": "rmsnorm.py",
     "swiglu": "swiglu.py",
     "geglu": "geglu.py",
@@ -1166,12 +1166,12 @@ class PatchGenerator:
     def __init__(
         self,
         repo_path: Path,
-        llm_assistant: "LLMResearchAssistant | None" = None,
+        llm_assistant: LLMResearchAssistant | None = None,
     ) -> None:
         self.repo_path = Path(repo_path)
         self.llm_assistant = llm_assistant
 
-    def generate(self, mapping_result: Dict) -> Patch:
+    def generate(self, mapping_result: dict) -> Patch:
         spec = mapping_result.get("research_spec", {})
 
         new_files = self._create_new_files(spec)
@@ -1200,9 +1200,9 @@ class PatchGenerator:
     # New file creation
     # ------------------------------------------------------------------
 
-    def _create_new_files(self, spec: Dict) -> List[NewFile]:
+    def _create_new_files(self, spec: dict) -> list[NewFile]:
         """Create standalone implementation files for the algorithm."""
-        new_files: List[NewFile] = []
+        new_files: list[NewFile] = []
 
         algorithm_name = spec.get("algorithm", {}).get("name", "").lower()
         # Normalise to registry key form
@@ -1228,7 +1228,7 @@ class PatchGenerator:
 
         return new_files
 
-    def _synthesise_with_llm(self, spec: Dict) -> Optional[NewFile]:
+    def _synthesise_with_llm(self, spec: dict) -> NewFile | None:
         """Use the LLM assistant to synthesise an implementation file."""
         if self.llm_assistant is None:
             return None
@@ -1262,7 +1262,7 @@ class PatchGenerator:
             )
             if plan is not None and plan.steps:
                 # Extract code blocks from plan steps
-                code_blocks: List[str] = []
+                code_blocks: list[str] = []
                 for step in plan.steps:
                     code = step.get("code", "")
                     if code:
@@ -1297,8 +1297,8 @@ class PatchGenerator:
     # Transformations
     # ------------------------------------------------------------------
 
-    def _create_transformations(self, mapping_result: Dict) -> List[Transformation]:
-        transformations: List[Transformation] = []
+    def _create_transformations(self, mapping_result: dict) -> list[Transformation]:
+        transformations: list[Transformation] = []
 
         targets = mapping_result.get("targets", [])
         spec = mapping_result.get("research_spec", {})

@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from .audit import AuditEventType, AuditLogger
+from .rate_limit import RateLimitConfig, RateLimiter
 from .types import (
     APIKey,
     AuthConfig,
@@ -19,8 +21,6 @@ from .types import (
     KeyScope,
     UserProfile,
 )
-from .audit import AuditLogger, AuditEventType
-from .rate_limit import RateLimiter, RateLimitConfig
 
 
 class AuthStore:

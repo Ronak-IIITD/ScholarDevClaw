@@ -338,7 +338,7 @@ class KnowledgeTransferEngine:
 
     @staticmethod
     def _shared_languages(a: RepoProfile, b: RepoProfile) -> list[str]:
-        return sorted({l.lower() for l in a.languages} & {l.lower() for l in b.languages})
+        return sorted({l.lower() for l in a.languages} & {l.lower() for l in b.languages})  # noqa: E741
 
     # ------------------------------------------------------------------
     # Summary

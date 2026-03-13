@@ -1,7 +1,6 @@
 """Tests for audit logging"""
 
 import tempfile
-import json
 
 import pytest
 
@@ -16,14 +15,14 @@ class TestAuditLogging:
             yield tmpdir
 
     def test_audit_logger_initialization(self, temp_audit_dir):
-        from scholardevclaw.auth.audit import AuditLogger, AuditEventType
+        from scholardevclaw.auth.audit import AuditEventType, AuditLogger
 
         logger = AuditLogger(temp_audit_dir)
         logger.log(event_type=AuditEventType.KEY_ADDED, provider="test")
         assert logger.audit_file.exists()
 
     def test_audit_log_event(self, temp_audit_dir):
-        from scholardevclaw.auth.audit import AuditLogger, AuditEventType
+        from scholardevclaw.auth.audit import AuditEventType, AuditLogger
 
         logger = AuditLogger(temp_audit_dir)
         event = logger.log(
@@ -38,7 +37,7 @@ class TestAuditLogging:
         assert event.key_id == "key_123"
 
     def test_audit_log_persists(self, temp_audit_dir):
-        from scholardevclaw.auth.audit import AuditLogger, AuditEventType
+        from scholardevclaw.auth.audit import AuditEventType, AuditLogger
 
         logger = AuditLogger(temp_audit_dir)
         logger.log(
@@ -51,7 +50,7 @@ class TestAuditLogging:
         assert len(events) == 1
 
     def test_get_events_by_key_id(self, temp_audit_dir):
-        from scholardevclaw.auth.audit import AuditLogger, AuditEventType
+        from scholardevclaw.auth.audit import AuditEventType, AuditLogger
 
         logger = AuditLogger(temp_audit_dir)
         logger.log(event_type=AuditEventType.KEY_ADDED, key_id="key_1", provider="anthropic")
@@ -62,7 +61,7 @@ class TestAuditLogging:
         assert len(events) == 2
 
     def test_get_events_by_type(self, temp_audit_dir):
-        from scholardevclaw.auth.audit import AuditLogger, AuditEventType
+        from scholardevclaw.auth.audit import AuditEventType, AuditLogger
 
         logger = AuditLogger(temp_audit_dir)
         logger.log(event_type=AuditEventType.KEY_ADDED, key_id="key_1")
@@ -73,7 +72,7 @@ class TestAuditLogging:
         assert len(events) == 2
 
     def test_get_failed_logins(self, temp_audit_dir):
-        from scholardevclaw.auth.audit import AuditLogger, AuditEventType
+        from scholardevclaw.auth.audit import AuditEventType, AuditLogger
 
         logger = AuditLogger(temp_audit_dir)
         logger.log(
@@ -89,7 +88,7 @@ class TestAuditLogging:
         assert all(not e.success for e in failed)
 
     def test_audit_event_serialization(self, temp_audit_dir):
-        from scholardevclaw.auth.audit import AuditLogger, AuditEventType, AuditEvent
+        from scholardevclaw.auth.audit import AuditEvent, AuditEventType, AuditLogger
 
         logger = AuditLogger(temp_audit_dir)
         event = logger.log(
@@ -105,7 +104,7 @@ class TestAuditLogging:
         assert restored.details["reason"] == "scheduled"
 
     def test_audit_key_fingerprint(self, temp_audit_dir):
-        from scholardevclaw.auth.audit import AuditLogger, AuditEventType
+        from scholardevclaw.auth.audit import AuditEventType, AuditLogger
 
         logger = AuditLogger(temp_audit_dir)
         import hashlib

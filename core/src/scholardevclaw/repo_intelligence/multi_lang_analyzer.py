@@ -7,9 +7,6 @@ enabling ScholarDevClaw to analyze any codebase regardless of language.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Any
-import os
-
 
 # Language configurations
 LANGUAGE_EXTENSIONS = {
@@ -48,11 +45,11 @@ class CodeElement:
     end_line: int = 0
     language: str = ""
     visibility: str = "public"  # public, private, protected
-    parameters: List[str] = field(default_factory=list)
+    parameters: list[str] = field(default_factory=list)
     return_type: str = ""
-    decorators: List[str] = field(default_factory=list)
-    parent_class: Optional[str] = None
-    dependencies: List[str] = field(default_factory=list)
+    decorators: list[str] = field(default_factory=list)
+    parent_class: str | None = None
+    dependencies: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -60,11 +57,11 @@ class ImportStatement:
     """Represents an import statement"""
 
     module: str
-    names: List[str]  # imported names
+    names: list[str]  # imported names
     file: str
     line: int
     is_from: bool = False
-    alias: Optional[str] = None
+    alias: str | None = None
 
 
 @dataclass
@@ -83,21 +80,21 @@ class RepoAnalysis:
     """Complete repository analysis"""
 
     root_path: Path
-    languages: List[str]
-    language_stats: List[LanguageStats]
-    elements: List[CodeElement] = field(default_factory=list)
-    imports: List[ImportStatement] = field(default_factory=list)
-    entry_points: List[str] = field(default_factory=list)
-    dependencies: Dict[str, List[str]] = field(default_factory=dict)
-    frameworks: List[str] = field(default_factory=list)
-    test_files: List[str] = field(default_factory=list)
+    languages: list[str]
+    language_stats: list[LanguageStats]
+    elements: list[CodeElement] = field(default_factory=list)
+    imports: list[ImportStatement] = field(default_factory=list)
+    entry_points: list[str] = field(default_factory=list)
+    dependencies: dict[str, list[str]] = field(default_factory=dict)
+    frameworks: list[str] = field(default_factory=list)
+    test_files: list[str] = field(default_factory=list)
 
 
 class LanguageDetector:
     """Detects programming languages in a repository"""
 
     @staticmethod
-    def detect_from_file(file_path: Path) -> Optional[str]:
+    def detect_from_file(file_path: Path) -> str | None:
         """Detect language from file extension"""
         ext = file_path.suffix.lower()
 
@@ -108,7 +105,7 @@ class LanguageDetector:
         return None
 
     @staticmethod
-    def detect_from_content(file_path: Path, content: str) -> Optional[str]:
+    def detect_from_content(file_path: Path, content: str) -> str | None:
         """Detect language from file content (heuristic)"""
         first_lines = content.split("\n")[:10]
         combined = " ".join(first_lines).lower()
@@ -131,9 +128,9 @@ class LanguageDetector:
         return LanguageDetector.detect_from_file(file_path)
 
     @staticmethod
-    def detect_repo_languages(repo_path: Path) -> List[str]:
+    def detect_repo_languages(repo_path: Path) -> list[str]:
         """Detect all languages in a repository"""
-        languages: Set[str] = set()
+        languages: set[str] = set()
 
         for file_path in repo_path.rglob("*"):
             if file_path.is_file() and not LanguageDetector._should_ignore(file_path):
@@ -231,7 +228,7 @@ class MultiLanguageAnalyzer:
             dependencies=self._build_dependency_graph(imports),
         )
 
-    def _count_language_stats(self, languages: List[str]) -> List[LanguageStats]:
+    def _count_language_stats(self, languages: list[str]) -> list[LanguageStats]:
         """Count files and lines per language"""
         stats = []
 
@@ -246,7 +243,7 @@ class MultiLanguageAnalyzer:
                         file_count += 1
                         try:
                             line_count += len(file_path.read_text().splitlines())
-                        except:
+                        except Exception:
                             pass
 
             if file_count > 0:
@@ -262,7 +259,7 @@ class MultiLanguageAnalyzer:
 
         return stats
 
-    def _find_code_elements(self) -> List[CodeElement]:
+    def _find_code_elements(self) -> list[CodeElement]:
         """Find all code elements (functions, classes, etc.)"""
         elements = []
 
@@ -273,12 +270,12 @@ class MultiLanguageAnalyzer:
             try:
                 content = file_path.read_text()
                 elements.extend(self._parse_python(file_path, content))
-            except:
+            except Exception:
                 pass
 
         return elements
 
-    def _parse_python(self, file_path: Path, content: str) -> List[CodeElement]:
+    def _parse_python(self, file_path: Path, content: str) -> list[CodeElement]:
         """Parse Python file using simple regex patterns"""
         import re
 
@@ -342,7 +339,7 @@ class MultiLanguageAnalyzer:
 
         return elements
 
-    def _find_imports(self) -> List[ImportStatement]:
+    def _find_imports(self) -> list[ImportStatement]:
         """Find all import statements"""
         imports = []
 
@@ -384,12 +381,12 @@ class MultiLanguageAnalyzer:
                                     is_from=True,
                                 )
                             )
-            except:
+            except Exception:
                 pass
 
         return imports
 
-    def _find_entry_points(self) -> List[str]:
+    def _find_entry_points(self) -> list[str]:
         """Find entry points (main files)"""
         entry_points = []
 
@@ -415,8 +412,8 @@ class MultiLanguageAnalyzer:
         return entry_points
 
     def _detect_frameworks(
-        self, imports: List[ImportStatement], elements: List[CodeElement]
-    ) -> List[str]:
+        self, imports: list[ImportStatement], elements: list[CodeElement]
+    ) -> list[str]:
         """Detect frameworks used in the codebase"""
         frameworks = []
 
@@ -430,7 +427,7 @@ class MultiLanguageAnalyzer:
             "vue": ["vue"],
             "angular": ["@angular"],
             "nextjs": ["next"],
-            "flask": ["flask"],
+            "flask": ["flask"],  # noqa: F601
             "torch": ["torch", "torch.nn"],
             "tensorflow": ["tensorflow", "tf."],
             "pytorch": ["torch"],
@@ -445,7 +442,7 @@ class MultiLanguageAnalyzer:
 
         return frameworks
 
-    def _find_test_files(self) -> List[str]:
+    def _find_test_files(self) -> list[str]:
         """Find test files"""
         test_files = []
 
@@ -467,9 +464,9 @@ class MultiLanguageAnalyzer:
 
         return test_files
 
-    def _build_dependency_graph(self, imports: List[ImportStatement]) -> Dict[str, List[str]]:
+    def _build_dependency_graph(self, imports: list[ImportStatement]) -> dict[str, list[str]]:
         """Build dependency graph"""
-        graph: Dict[str, List[str]] = {}
+        graph: dict[str, list[str]] = {}
 
         for imp in imports:
             if imp.file not in graph:
@@ -478,9 +475,9 @@ class MultiLanguageAnalyzer:
 
         return graph
 
-    def find_patterns_for_improvement(self) -> Dict[str, List[str]]:
+    def find_patterns_for_improvement(self) -> dict[str, list[str]]:
         """Find code patterns that could be improved with research papers"""
-        patterns: Dict[str, List[str]] = {
+        patterns: dict[str, list[str]] = {
             "normalization": [],
             "attention": [],
             "activation": [],
@@ -490,7 +487,7 @@ class MultiLanguageAnalyzer:
 
         for element in self.elements:
             name_lower = element.name.lower()
-            file_lower = element.file.lower()
+            element.file.lower()
 
             # Find normalization patterns
             if any(p in name_lower for p in ["norm", "normalize", "batch"]):

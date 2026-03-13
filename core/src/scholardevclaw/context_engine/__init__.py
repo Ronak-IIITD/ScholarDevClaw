@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable  # noqa: F401
+from typing import Any
 
-from .store import ContextStore, ProjectContext, IntegrationRecord, UserPreferences, ProjectMemory
 from .brain import AgentBrain, BrainResult
+from .store import (  # noqa: F401
+    ContextStore,
+    IntegrationRecord,
+    ProjectContext,
+    ProjectMemory,
+    UserPreferences,
+)
 
 
 def get_context_store(store_dir: str | None = None) -> ContextStore:

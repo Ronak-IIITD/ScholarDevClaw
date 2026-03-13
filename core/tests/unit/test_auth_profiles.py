@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from scholardevclaw.auth.store import AuthStore
-from scholardevclaw.auth.types import AuthProvider, KeyScope
+from scholardevclaw.auth.types import AuthProvider
 
 
 @pytest.fixture
@@ -184,7 +184,7 @@ class TestKeyExpiration:
 
     def test_deactivate_expired_keys(self, store):
         expires = (datetime.now() - timedelta(days=1)).isoformat()
-        key = store.add_api_key("sk-test-123", "key1", AuthProvider.CUSTOM, expires_at=expires)
+        store.add_api_key("sk-test-123", "key1", AuthProvider.CUSTOM, expires_at=expires)
         deactivated = store.deactivate_expired_keys()
         assert len(deactivated) == 1
         assert deactivated[0].is_active is False
@@ -261,7 +261,7 @@ class TestKeyExpiration:
 
     def test_expiry_with_bad_format_in_data_gracefully_handled(self, store, temp_dir):
         """Keys with invalid expires_at format should be skipped, not crash."""
-        key = store.add_api_key("sk-test", "k", AuthProvider.CUSTOM)
+        store.add_api_key("sk-test", "k", AuthProvider.CUSTOM)
         # Manually set a bad expiry
         config = store.get_config()
         config.api_keys[0].expires_at = "not-a-valid-date"

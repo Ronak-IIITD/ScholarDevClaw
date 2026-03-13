@@ -20,9 +20,9 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from .client import LLMClient, LLMAPIError, LLMConfigError
+from .client import LLMAPIError, LLMClient, LLMConfigError
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +36,11 @@ logger = logging.getLogger(__name__)
 class ExtractedSpec:
     """Structured specification extracted from a research paper."""
 
-    paper: Dict[str, Any]
-    algorithm: Dict[str, Any]
-    implementation: Dict[str, Any]
-    changes: Dict[str, Any]
-    validation: Dict[str, Any]
+    paper: dict[str, Any]
+    algorithm: dict[str, Any]
+    implementation: dict[str, Any]
+    changes: dict[str, Any]
+    validation: dict[str, Any]
     raw_response: str = ""
 
 
@@ -49,8 +49,8 @@ class CodeAnalysis:
     """Result of LLM-powered code analysis."""
 
     summary: str
-    patterns_found: List[str]
-    improvement_opportunities: List[Dict[str, Any]]
+    patterns_found: list[str]
+    improvement_opportunities: list[dict[str, Any]]
     complexity_assessment: str = ""
     raw_response: str = ""
 
@@ -59,11 +59,11 @@ class CodeAnalysis:
 class ImplementationPlan:
     """LLM-generated plan for implementing a paper's ideas into code."""
 
-    steps: List[Dict[str, Any]]
+    steps: list[dict[str, Any]]
     estimated_difficulty: str = "medium"
-    target_files: List[str] = field(default_factory=list)
-    risks: List[str] = field(default_factory=list)
-    expected_benefits: List[str] = field(default_factory=list)
+    target_files: list[str] = field(default_factory=list)
+    risks: list[str] = field(default_factory=list)
+    expected_benefits: list[str] = field(default_factory=list)
     raw_response: str = ""
 
 
@@ -72,7 +72,7 @@ class ImplementationPlan:
 # ---------------------------------------------------------------------------
 
 
-def _extract_json(text: str) -> Optional[Dict[str, Any]]:
+def _extract_json(text: str) -> dict[str, Any] | None:
     """Best-effort extraction of a JSON object from LLM text output.
 
     Handles:
@@ -164,7 +164,7 @@ class LLMResearchAssistant:
         model: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 0.0,
-    ) -> "LLMResearchAssistant":
+    ) -> LLMResearchAssistant:
         """Try to build an assistant from env vars / explicit params.
 
         Returns an *offline* assistant (``is_available == False``) when no
@@ -195,7 +195,7 @@ class LLMResearchAssistant:
         *,
         paper_title: str = "",
         target_language: str = "python",
-    ) -> Optional[ExtractedSpec]:
+    ) -> ExtractedSpec | None:
         """Extract a structured implementation spec from paper text.
 
         Returns ``None`` when the LLM is unavailable.
@@ -286,7 +286,7 @@ Return a JSON object with exactly these top-level keys:
         file_path: str = "",
         language: str = "python",
         focus: str = "",
-    ) -> Optional[CodeAnalysis]:
+    ) -> CodeAnalysis | None:
         """Analyse a code snippet for patterns and improvement opportunities.
 
         Returns ``None`` when the LLM is unavailable.
@@ -353,11 +353,11 @@ Return a JSON object:
 
     def generate_implementation_plan(
         self,
-        paper_spec: Dict[str, Any],
+        paper_spec: dict[str, Any],
         code_context: str,
         *,
         language: str = "python",
-    ) -> Optional[ImplementationPlan]:
+    ) -> ImplementationPlan | None:
         """Create a step-by-step implementation plan.
 
         Combines the paper specification with existing code context to
@@ -430,8 +430,8 @@ Return a JSON object:
     def summarise_search_results(
         self,
         query: str,
-        results: List[Dict[str, Any]],
-    ) -> Optional[str]:
+        results: list[dict[str, Any]],
+    ) -> str | None:
         """Produce a concise summary of web/GitHub search results.
 
         Returns ``None`` when the LLM is unavailable.
@@ -469,9 +469,9 @@ any notable repositories, papers, or implementations."""
 
     def analyse_github_repo_content(
         self,
-        repo_info: Dict[str, Any],
-        file_contents: Dict[str, str],
-    ) -> Optional[Dict[str, Any]]:
+        repo_info: dict[str, Any],
+        file_contents: dict[str, str],
+    ) -> dict[str, Any] | None:
         """Analyse fetched GitHub repo files for relevant implementations.
 
         Parameters
@@ -538,7 +538,7 @@ Return a JSON object:
         if self._client is not None:
             self._client.close()
 
-    def __enter__(self) -> "LLMResearchAssistant":
+    def __enter__(self) -> LLMResearchAssistant:
         return self
 
     def __exit__(self, *args: Any) -> None:

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .manager import RollbackManager
 from .store import RollbackStore
 from .types import (
-    ChangeRecord,
-    ChangeType,
-    FileSnapshot,
-    GitSnapshot,
+    ChangeRecord,  # noqa: F401
+    ChangeType,  # noqa: F401
+    FileSnapshot,  # noqa: F401
+    GitSnapshot,  # noqa: F401
     RollbackResult,
     RollbackSnapshot,
     RollbackStatus,
