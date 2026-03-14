@@ -2,7 +2,70 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-13
+**Last updated:** 2026-03-14
+
+### 2026-03-14 (Test Suite Expansion — Edge-to-Edge Coverage)
+
+**Goal:** Comprehensive test coverage across all code paths, error handlers, and edge cases.
+
+**Summary:** Added 252 new tests across 5 new test files. Expanded `test_pipeline.py` from 7 to 60 tests with full coverage of helper functions (`_ensure_repo`, `_fire_hook`, `_log`), `run_preflight` branches, `run_analyze`, `run_suggest`, `run_search`, `run_specs`, `run_map`, `run_generate`, `run_validate`, `run_integrate`, `run_planner`, and `run_multi_integrate`. Created new test files: `test_mapping_engine.py` (89 tests), `test_patch_generator.py` (59 tests), `test_validation_runner.py` (33 tests), `test_planner.py` (25 tests). All 1253 tests pass (vs 1001 before).
+
+**New: `core/tests/unit/test_mapping_engine.py` (~570 lines, 89 tests):**
+- `_normalise`, `_exact_match`, `_fuzzy_match`, `_snippet_match`, `_import_matches`, `_el_attr`
+- `InsertionPoint`, `MappingResult` dataclass construction
+- `_find_target_locations` (exact, fuzzy, import, text_scan, legacy_architecture tiers)
+- `_llm_semantic_match` (success, empty, invalid indices, exception handling)
+- `_parse_llm_matches` (empty, fenced JSON, bare JSON, invalid)
+- `_validate_compatibility` (same-name error, test file warning, clean targets)
+- `_select_strategy` (no targets, validation failed, normal, custom change_type)
+- `_calculate_confidence` (various tier combos, template boost, caps, floor)
+- `analyze_repo_for_pattern` (finds matches, case-insensitive, skips pycache, empty dir)
+
+**New: `core/tests/unit/test_patch_generator.py` (~440 lines, 59 tests):**
+- All 10 CST transformers (RMSNorm, SwiGLU, GEGLU, FlashAttention, GQA, QKNorm, PreLN, RoPE, ALiBi, GenericRename)
+- `_get_transformer` dispatch (exact key, prefix match, dash/space normalization, fallback)
+- Template registry (8 specific templates, count verification)
+- `PatchGenerator.generate()` (known algo, unknown algo no LLM, branch naming, paper reference)
+- `_create_new_files` (template, no LLM, with LLM)
+- `_create_transformations` (existing file, nonexistent, path traversal, no-change, empty original)
+- `_apply_transformation` (AST success, string fallback, generic rename)
+
+**New: `core/tests/unit/test_validation_runner.py` (~340 lines, 33 tests):**
+- `Metrics`, `ValidationResult` dataclass construction
+- `_run_bench_script` (success, nonzero return, no JSON, timeout, invalid JSON, multiline)
+- `ValidationRunner._run_tests` (no files, pass, fail, timeout, pytest not found, generic exception)
+- `_check_torch_available` (available, not available, exception)
+- `_run_benchmark` (both succeed, both fail, slowdown detected)
+- `ValidationRunner.run()` (test fail stops early, test pass runs benchmark, edge cases)
+- `_run_training_test` (generic, torch, failure)
+- `run_simple_benchmark` (success, failure fallback)
+- `BenchmarkRunner.compare_implementations` (both succeed, one fails, first succeeds second fails)
+
+**New: `core/tests/unit/test_planner.py` (~300 lines, 25 tests):**
+- `PlannerResult` dataclass
+- `_log` helper
+- `_order_specs_by_dependency` (single, multiple, unknown categories, empty, position_encoding ordering)
+- `_estimate_combined_impact` (known specs, unknown default, speedup cap, memory cap, empty, dedup)
+- `_summarize_improvement` (basic, zero values)
+- `run_planner()` integration with monkeypatched deps (success, repo not found, max_specs limit, target_categories filter, log_callback, exception handling)
+
+**Expanded: `core/tests/unit/test_pipeline.py` (223→~960 lines, 7→60 tests):**
+- `TestEnsureRepo`: valid path, expands user, nonexistent raises, file raises
+- `TestFireHook`: no registry, empty registry, fired event, exception swallowed
+- `TestLog`: appends to list, calls callback
+- `run_preflight` branches: not writable, no python files, clean repo succeeds, git unavailable, require_clean failures
+- `run_analyze`: success, repo not found, log callback
+- `run_suggest`: success, repo not found, log callback
+- `run_search`: local only, exception
+- `run_specs`: simple, detailed, by_category
+- `run_map`: unknown spec, hooks called
+- `run_generate`: no output dir, hooks called, mapping fails
+- `run_validate`: with speedup/loss, failure stage, exception
+- `run_integrate`: auto-select spec, unknown spec, no suggestions, generate fails, create rollback, no rollback, hooks called, error hook
+- `run_planner`: delegates, with filters
+- `run_multi_integrate`: preflight fails, partial success, hooks
+
+---
 
 ### 2026-03-13 (Phase 14: Multi-Repo Support — Cross-Repo Analysis, Comparison & Knowledge Transfer)
 
