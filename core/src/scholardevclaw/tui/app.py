@@ -46,37 +46,288 @@ class AgentLog(Message):
         self.line = line
 
 
+class AgentResponse(Message):
+    def __init__(self, response: str):
+        super().__init__()
+        self.response = response
+
+
 class ScholarDevClawApp(App[None]):
     TITLE = "ScholarDevClaw"
-    SUB_TITLE = "Research-driven programming assistant"
-
-    # Key bindings
-    BINDINGS = [
-        ("ctrl+c", "exit_app", "Exit TUI"),
-        ("escape", "handle_escape", "Stop Agent"),
-    ]
+    SUB_TITLE = "Research → Code Assistant"
 
     CSS = """
+    /* ========================================
+       PREMIUM MODERN DARK THEME
+       Glassmorphism + Gradient Accents
+       ======================================== */
+
     Screen {
         layout: vertical;
-        background: #020617;
-        color: #dbeafe;
+        background: #0a0a0f;
+        color: #e2e8f0;
     }
 
+    /* Header with gradient border */
     Header {
-        background: #0b1b3b;
-        color: #dbeafe;
+        background: linear-gradient(90deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+        color: #f1f5f9;
+        dock: top;
+        height: 3;
     }
 
+    Header > .header--clock {
+        color: #22d3ee;
+    }
+
+    /* Footer */
     Footer {
-        background: #081124;
-        color: #93c5fd;
+        background: #0f172a;
+        color: #64748b;
+        dock: bottom;
+        height: 1;
     }
 
+    /* Main container with subtle border */
+    #main-container {
+        height: 100%;
+        padding: 1 2;
+        background: #0a0a0f;
+    }
+
+    /* Glass panel base style */
+    .glass-panel {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(56, 189, 248, 0.15);
+        backdrop-blur: 12px;
+        border-radius: 12px;
+        padding: 1;
+    }
+
+    /* Section titles */
+    .section-title {
+        text-style: bold;
+        color: #22d3ee;
+        text-shadow: 0 0 10px rgba(34, 211, 238, 0.3);
+        margin-bottom: 1;
+        dock: top;
+        height: auto;
+    }
+
+    .section-subtitle {
+        color: #94a3b8;
+        margin-bottom: 1;
+        dock: top;
+        height: auto;
+    }
+
+    /* Left panel - Workflow Wizard */
+    #wizard-panel {
+        width: 38%;
+        border: solid rgba(59, 130, 246, 0.4);
+        background: rgba(15, 23, 42, 0.6);
+        border-radius: 12px;
+        padding: 1 1;
+        margin-right: 1;
+    }
+
+    /* Right panel - Output */
+    #output-panel {
+        width: 62%;
+        border: solid rgba(139, 92, 246, 0.4);
+        background: rgba(15, 23, 42, 0.6);
+        border-radius: 12px;
+        padding: 1 1;
+    }
+
+    /* Agent Interactive Panel */
+    #agent-panel {
+        height: 35%;
+        dock: bottom;
+        border: solid rgba(34, 211, 238, 0.5);
+        background: rgba(8, 47, 73, 0.5);
+        border-radius: 12px 12px 0 0;
+        margin: 0 2;
+        padding: 1;
+    }
+
+    /* Result display */
+    #result {
+        height: 12;
+        border: none;
+        background: rgba(2, 6, 23, 0.8);
+        border-radius: 8px;
+        padding: 0 1;
+    }
+
+    /* Logs area */
+    #logs {
+        height: 10;
+        border: none;
+        background: rgba(2, 6, 23, 0.8);
+        border-radius: 8px;
+        margin-top: 1;
+    }
+
+    /* Run history */
+    #history {
+        height: 6;
+        border: none;
+        background: rgba(2, 6, 23, 0.8);
+        border-radius: 8px;
+        margin-top: 1;
+    }
+
+    /* Run details */
+    #run-details {
+        height: 10;
+        border: none;
+        background: rgba(2, 6, 23, 0.8);
+        border-radius: 8px;
+        margin-top: 1;
+    }
+
+    /* Agent logs */
+    #agent-logs {
+        height: 1fr;
+        border: none;
+        background: rgba(2, 6, 23, 0.9);
+        border-radius: 8px;
+    }
+
+    /* Prompt bar */
+    #prompt-bar {
+        dock: bottom;
+        height: 3;
+        background: rgba(15, 23, 42, 0.9);
+        border-top: 1px solid rgba(34, 211, 238, 0.3);
+        padding: 0 1;
+        margin-bottom: 0;
+    }
+
+    #prompt-input {
+        width: 100%;
+        border: none;
+        background: transparent;
+        color: #22d3ee;
+        text-style: bold;
+    }
+
+    #prompt-input::placeholder {
+        color: #475569;
+    }
+
+    /* Input styling */
+    Input {
+        background: rgba(2, 6, 23, 0.8);
+        color: #e2e8f0;
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 8px;
+        padding: 0 1;
+    }
+
+    Input:focus {
+        border: 1px solid #22d3ee;
+        box-shadow: 0 0 15px rgba(34, 211, 238, 0.2);
+    }
+
+    Input::placeholder {
+        color: #475569;
+    }
+
+    /* Select widget */
+    Select {
+        background: rgba(2, 6, 23, 0.8);
+        color: #e2e8f0;
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 8px;
+    }
+
+    Select:focus {
+        border: 1px solid #22d3ee;
+    }
+
+    /* Checkbox */
+    Checkbox {
+        color: #94a3b8;
+    }
+
+    Checkbox:focus {
+        color: #22d3ee;
+    }
+
+    /* Buttons */
+    Button {
+        border: none;
+        background: rgba(59, 130, 246, 0.2);
+        color: #93c5fd;
+        border-radius: 8px;
+        padding: 0 2;
+        min-width: 16;
+    }
+
+    Button:hover {
+        background: rgba(59, 130, 246, 0.4);
+        border: 1px solid #3b82f6;
+    }
+
+    Button.-primary {
+        background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%);
+        color: #ffffff;
+        text-style: bold;
+        border: none;
+    }
+
+    Button.-primary:hover {
+        background: linear-gradient(135deg, #38bdf8 0%, #60a5fa 100%);
+        box-shadow: 0 0 20px rgba(14, 165, 233, 0.4);
+    }
+
+    Button.-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: #ffffff;
+        text-style: bold;
+    }
+
+    Button.-success:hover {
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+    }
+
+    Button.-error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: #ffffff;
+        text-style: bold;
+    }
+
+    Button.-error:hover {
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+    }
+
+    Button:disabled {
+        opacity: 0.4;
+    }
+
+    /* Labels */
+    Label {
+        color: #94a3b8;
+    }
+
+    /* Status bar */
+    #run-status {
+        dock: top;
+        height: 1;
+        background: rgba(15, 23, 42, 0.9);
+        color: #22d3ee;
+        text-style: bold;
+        padding: 0 1;
+        border-radius: 4px;
+    }
+
+    /* Warning bar */
     #warning-bar {
         dock: bottom;
-        background: #1a0a0a;
-        color: #ef4444;
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
         padding: 0 1;
         height: 1;
         text-style: bold;
@@ -87,147 +338,72 @@ class ScholarDevClawApp(App[None]):
         display: block;
     }
 
-    #hero {
-        dock: top;
-        background: #0b1220;
-        color: #93c5fd;
-        border-bottom: solid #1d4ed8;
-        padding: 0 1;
-        height: 1;
-        text-style: bold;
-    }
-
-    #main-row {
-        height: 1fr;
-        padding: 0 1;
-    }
-
-    #wizard {
-        width: 45%;
-        border: tall #1d4ed8;
-        background: #0b1220;
-        padding: 1;
-        margin-right: 1;
-    }
-
-    #output {
-        width: 55%;
-        border: tall #2563eb;
-        background: #0b1220;
-        padding: 1;
-    }
-
-    #agent-row {
-        height: 16;
-        border: tall #0ea5e9;
-        background: #030712;
-        padding: 1;
-        margin: 0 1;
-    }
-
-    #agent-logs {
-        height: 1fr;
-        border: round #1e40af;
-    }
-
-    #result {
-        height: 14;
-        border: round #1d4ed8;
-        background: #020617;
-        padding: 0 1;
-    }
-
-    #logs {
-        height: 10;
-        border: round #1e40af;
-    }
-
-    #history {
-        height: 8;
-        border: round #1e3a8a;
-    }
-
-    #run-details {
-        height: 12;
-        border: round #0f766e;
-        background: #03151a;
-    }
-
-    #artifact-view {
-        height: 12;
-        border: round #155e75;
-        background: #041018;
-    }
-
-    #run-status {
-        margin-top: 1;
-        background: #082f49;
-        color: #bfdbfe;
-        border: round #0ea5e9;
-        padding: 0 1;
-        text-style: bold;
-    }
-
-    Input,
-    Select,
-    TextArea,
-    Pretty {
-        background: #020617;
-        color: #dbeafe;
-    }
-
-    Input,
-    Select {
-        border: round #1d4ed8;
-    }
-
-    Input:focus,
-    Select:focus,
-    TextArea:focus {
-        border: round #38bdf8;
-    }
-
-    Checkbox {
-        color: #bfdbfe;
-    }
-
-    Button {
-        border: round #1e40af;
-    }
-
-    Button.-primary {
-        background: #1d4ed8;
-        color: #eff6ff;
-    }
-
-    Button.-success {
-        background: #0369a1;
-        color: #eff6ff;
-    }
-
-    Button.-error {
-        background: #1e3a8a;
-        color: #eff6ff;
-    }
-
-    Button:hover {
-        border: round #38bdf8;
-    }
-
-    .section-title {
-        text-style: bold;
-        margin-bottom: 1;
-        color: #93c5fd;
-    }
-
+    /* Spacing */
     .spaced {
         margin-top: 1;
+    }
+
+    .spaced-small {
+        margin-top: 0;
+    }
+
+    /* Horizontal containers */
+    Horizontal {
+        height: auto;
+    }
+
+    /* Vertical containers */
+    Vertical {
+        height: auto;
+    }
+
+    /* Pretty widget */
+    Pretty {
+        background: transparent;
+        color: #e2e8f0;
+    }
+
+    /* TextArea */
+    TextArea {
+        background: rgba(2, 6, 23, 0.8);
+        color: #94a3b8;
+        border: none;
+        border-radius: 8px;
+    }
+
+    TextArea:focus {
+        border: 1px solid rgba(34, 211, 238, 0.3);
+    }
+
+    /* Agent status indicator */
+    .agent-status {
+        dock: top;
+        height: 1;
+        color: #64748b;
+    }
+
+    .agent-status.online {
+        color: #10b981;
+        text-style: bold;
+    }
+
+    .agent-status.offline {
+        color: #ef4444;
+    }
+
+    /* Quick action buttons */
+    .quick-actions {
+        height: 3;
+        dock: top;
+        background: rgba(15, 23, 42, 0.5);
+        padding: 0 1;
     }
     """
 
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+r", "run_selected", "Run"),
+        ("escape", "handle_escape", "Stop Agent"),
     ]
 
     action_mode_options = [
@@ -250,67 +426,69 @@ class ScholarDevClawApp(App[None]):
         self._next_run_id = 1
         self._active_run_request: dict[str, Any] | None = None
         self._active_run_started_at = 0.0
-        # Escape key state for agent stop
         self._escape_pressed_count = 0
         self._escape_warning_shown = False
         self._last_escape_time = 0.0
+        self._agent_stdin: Any = None
+        self._agent_running = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield Label("ScholarDevClaw TUI · Research → Code", id="hero")
-        with Horizontal(id="main-row"):
-            with Vertical(id="wizard"):
-                yield Label("Workflow Wizard", classes="section-title")
+
+        with Horizontal(id="main-container"):
+            # Left Panel - Workflow Wizard
+            with Vertical(id="wizard-panel", classes="glass-panel"):
+                yield Label("⚡ Workflow Wizard", classes="section-title")
+                yield Label("Configure your research-to-code pipeline", classes="section-subtitle")
                 yield Select(self.action_mode_options, value="analyze", id="action")
-                yield Label("Repository path")
                 yield Input(
                     value=str(Path.cwd()), placeholder="/path/to/repository", id="repo-path"
                 )
-                yield Label("Search query")
-                yield Input(value="layer normalization", id="query")
-                with Horizontal(classes="spaced"):
+                yield Input(value="layer normalization", placeholder="Search query...", id="query")
+                with Horizontal(classes="spaced-small"):
                     yield Checkbox("Include arXiv", value=False, id="search-arxiv")
                     yield Checkbox("Include web", value=False, id="search-web")
-                yield Label("Search language filter")
-                yield Input(value="python", id="search-language")
-                yield Label("Search max results")
-                yield Input(value="10", id="search-max-results")
-                yield Label("Spec name (for map/generate/integrate)")
-                yield Input(value="rmsnorm", id="spec")
-                yield Label("Output directory (generate only, optional)")
-                yield Input(value="", placeholder="/tmp/sdclaw-patch", id="output-dir")
-                with Horizontal(classes="spaced"):
-                    yield Checkbox("Integrate dry-run", value=False, id="integrate-dry-run")
+                yield Input(value="python", placeholder="Language filter", id="search-language")
+                yield Input(value="10", placeholder="Max results", id="search-max-results")
+                yield Input(value="rmsnorm", placeholder="Spec name", id="spec")
+                yield Input(value="", placeholder="Output directory (optional)", id="output-dir")
+                with Horizontal(classes="spaced-small"):
+                    yield Checkbox("Dry-run", value=False, id="integrate-dry-run")
                     yield Checkbox("Require clean git", value=False, id="integrate-require-clean")
                 yield Label("Status: Idle", id="run-status")
                 with Horizontal(classes="spaced"):
-                    yield Button("Run", id="run", variant="success")
-                    yield Button("Clear output", id="clear", variant="default")
-            with Vertical(id="output"):
-                yield Label("Result", classes="section-title")
+                    yield Button("▶ Run", id="run", variant="success")
+                    yield Button("Clear", id="clear", variant="default")
+
+            # Right Panel - Output
+            with Vertical(id="output-panel", classes="glass-panel"):
+                yield Label("📊 Results", classes="section-title")
                 yield Pretty({}, id="result")
-                yield Label("Execution logs", classes="section-title")
+                yield Label("Execution Logs", classes="section-title")
                 yield TextArea("", id="logs", read_only=True)
                 yield Label("Run History", classes="section-title")
                 yield TextArea("No runs yet.", id="history", read_only=True)
-                with Horizontal(classes="spaced"):
-                    yield Input(value="", placeholder="Run ID (blank = last)", id="history-id")
+                with Horizontal(classes="spaced-small"):
+                    yield Input(value="", placeholder="Run ID", id="history-id")
                     yield Button("Rerun", id="rerun-history", variant="primary")
-                    yield Button("View run", id="view-history", variant="default")
-                yield Label("Run Details", classes="section-title")
-                yield TextArea("No run details yet.", id="run-details", read_only=True)
-                with Horizontal(classes="spaced"):
-                    yield Input(value="", placeholder="Artifact # (blank = 1)", id="artifact-id")
-                    yield Button("View artifact", id="view-artifact", variant="default")
-                yield Label("Artifact Viewer", classes="section-title")
-                yield TextArea("No artifacts yet.", id="artifact-view", read_only=True)
+                    yield Button("View", id="view-history", variant="default")
 
-        with Vertical(id="agent-row"):
-            yield Label("Agent Mode (Launcher)", classes="section-title")
-            with Horizontal():
-                yield Button("Launch agent", id="launch-agent", variant="primary")
-                yield Button("Stop agent", id="stop-agent", variant="error")
+        # Agent Interactive Panel
+        with Vertical(id="agent-panel", classes="glass-panel"):
+            yield Label("🤖 Agent Interactive Mode", classes="section-title")
+            with Horizontal(classes="quick-actions"):
+                yield Button("🚀 Launch Agent", id="launch-agent", variant="primary")
+                yield Button("⏹ Stop Agent", id="stop-agent", variant="error")
+                yield Label("", id="agent-status", classes="agent-status offline")
             yield TextArea("", id="agent-logs", read_only=True)
+
+        # Prompt Bar
+        with Horizontal(id="prompt-bar"):
+            yield Input(
+                value="",
+                placeholder="> Type your request to the agent... (e.g., 'Analyze /path/to/repo')",
+                id="prompt-input",
+            )
 
         yield Label("", id="warning-bar")
         yield Footer()
@@ -326,9 +504,9 @@ class ScholarDevClawApp(App[None]):
     ) -> list[str]:
         report = evaluate_payload_compatibility(payload, expected_types=expected_types)
         lines: list[str] = []
-        lines.extend([f"Compatibility issue: {item}" for item in report.issues])
-        lines.extend([f"Compatibility warning: {item}" for item in report.warnings])
-        lines.extend([f"Compatibility note: {item}" for item in report.notes])
+        lines.extend([f"⚠️ {item}" for item in report.issues])
+        lines.extend([f"📝 {item}" for item in report.warnings])
+        lines.extend([f"ℹ️ {item}" for item in report.notes])
         return lines
 
     def _extract_artifacts(self, record: dict[str, Any]) -> list[dict[str, str]]:
@@ -351,39 +529,22 @@ class ScholarDevClawApp(App[None]):
             if not path:
                 continue
             artifacts.append(
-                {
-                    "label": f"new_file:{path}",
-                    "content": content or f"No in-memory content available for {path}.",
-                }
+                {"label": f"📄 {path}", "content": content or f"No content for {path}"}
             )
 
         for file_path in generation.get("written_files", []) or []:
             artifacts.append(
-                {
-                    "label": f"written_file:{file_path}",
-                    "content": f"Artifact written to disk at:\n{file_path}",
-                }
+                {"label": f"💾 {file_path}", "content": f"Written to disk:\n{file_path}"}
             )
 
         for item in generation.get("transformations", []) or []:
             if not isinstance(item, dict):
                 continue
             file_name = item.get("file") or "unknown"
-            changes = item.get("changes") or []
-            summary_lines = [
-                f"Transformation target: {file_name}",
-                f"Declared changes: {len(changes)}",
-                "",
-                "Original snippet:",
-                str(item.get("original", ""))[:1200] or "(none)",
-                "",
-                "Modified snippet:",
-                str(item.get("modified", ""))[:1200] or "(none)",
-            ]
             artifacts.append(
                 {
-                    "label": f"transformation:{file_name}",
-                    "content": "\n".join(summary_lines),
+                    "label": f"✏️ {file_name}",
+                    "content": f"Original:\n{item.get('original', '')[:500]}\n\nModified:\n{item.get('modified', '')[:500]}",
                 }
             )
 
@@ -392,40 +553,19 @@ class ScholarDevClawApp(App[None]):
     def _render_artifact_preview(
         self, record: dict[str, Any] | None, artifact_id_raw: str = ""
     ) -> None:
-        artifact_view = self.query_one("#artifact-view", TextArea)
-        artifact_input = self.query_one("#artifact-id", Input)
-
         if record is None:
-            artifact_view.load_text("No artifacts yet.")
-            artifact_input.value = ""
             return
 
         artifacts = self._extract_artifacts(record)
         if not artifacts:
-            artifact_view.load_text("No artifacts available for this run.")
-            artifact_input.value = ""
             return
 
-        if artifact_id_raw:
-            try:
-                artifact_index = int(artifact_id_raw)
-            except ValueError:
-                self._append_logs("logs", [f"Invalid artifact id: {artifact_id_raw}"])
-                artifact_index = 1
-        else:
-            artifact_index = 1
+        lines = ["=== Artifacts ==="]
+        for i, art in enumerate(artifacts, 1):
+            lines.append(f"\n[{i}] {art['label']}")
+            lines.append(art["content"][:300])
 
-        artifact_index = max(1, min(artifact_index, len(artifacts)))
-        artifact_input.value = str(artifact_index)
-
-        artifact = artifacts[artifact_index - 1]
-        body = [
-            f"Run #{record.get('id')} artifact {artifact_index}/{len(artifacts)}",
-            f"Label: {artifact.get('label', 'unknown')}",
-            "",
-            artifact.get("content", ""),
-        ]
-        artifact_view.load_text("\n".join(body))
+        self._append_logs("agent-logs", lines)
 
     def _capture_run_request(self) -> dict[str, Any]:
         return {
@@ -464,118 +604,34 @@ class ScholarDevClawApp(App[None]):
         if not self._run_history:
             self.query_one("#history", TextArea).load_text("No runs yet.")
             return
-
-        lines: list[str] = []
-        for item in self._run_history:
-            lines.append(
-                f"#{item['id']} | {item['action']} | {item['status']} | {item['duration_s']:.2f}s"
-            )
+        lines = [
+            f"#{item['id']} | {item['action']} | {item['status']} | {item['duration_s']:.2f}s"
+            for item in self._run_history
+        ]
         self.query_one("#history", TextArea).load_text("\n".join(lines))
 
     def _resolve_history_record(self, history_id_raw: str) -> dict[str, Any] | None:
         if not self._run_history:
             return None
-
         if not history_id_raw:
             return self._run_history[0]
-
         try:
             history_id = int(history_id_raw)
         except ValueError:
-            self._append_logs("logs", [f"Invalid run id: {history_id_raw}"])
             return None
-
-        record = next((entry for entry in self._run_history if entry["id"] == history_id), None)
-        if record is None:
-            self._append_logs("logs", [f"Run id not found: {history_id}"])
-            return None
-        return record
+        return next((entry for entry in self._run_history if entry["id"] == history_id), None)
 
     def _render_run_details(self, record: dict[str, Any] | None) -> None:
         details = self.query_one("#run-details", TextArea)
         if record is None:
-            details.load_text("No run details yet.")
+            details.load_text("No run details.")
             return
-
         request = record.get("request", {})
-        result = record.get("result", {})
-
         lines = [
-            f"Run #{record.get('id')}",
-            f"Action: {record.get('action')}",
-            f"Status: {record.get('status')}",
-            f"Duration: {record.get('duration_s', 0.0):.2f}s",
-            f"Title: {record.get('title') or 'n/a'}",
-            f"Error: {record.get('error') or 'none'}",
-            "",
-            "Inputs:",
-            f"  repo_path: {request.get('repo_path', '')}",
-            f"  spec: {request.get('spec', '') or 'auto'}",
+            f"Run #{record.get('id')} | {record.get('action')} | {record.get('status')}",
+            f"Duration: {record.get('duration_s', 0):.2f}s | Error: {record.get('error') or 'none'}",
+            f"Repo: {request.get('repo_path', 'n/a')}",
         ]
-
-        meta = result.get("_meta") if isinstance(result, dict) else None
-        if isinstance(meta, dict):
-            lines.extend(
-                [
-                    f"  schema_version: {meta.get('schema_version')}",
-                    f"  payload_type: {meta.get('payload_type')}",
-                ]
-            )
-
-        if request.get("action") == "search":
-            lines.extend(
-                [
-                    f"  query: {request.get('query', '')}",
-                    f"  include_arxiv: {bool(request.get('include_arxiv', False))}",
-                    f"  include_web: {bool(request.get('include_web', False))}",
-                    f"  max_results: {request.get('max_results_raw', '10')}",
-                ]
-            )
-        if request.get("action") == "integrate":
-            lines.extend(
-                [
-                    f"  dry_run: {bool(request.get('integrate_dry_run', False))}",
-                    f"  require_clean: {bool(request.get('integrate_require_clean', False))}",
-                ]
-            )
-
-        lines.append("")
-        lines.append("Outputs:")
-        if isinstance(result, dict):
-            if result.get("step"):
-                lines.append(f"  failed_step: {result.get('step')}")
-            if "spec" in result:
-                lines.append(f"  selected_spec: {result.get('spec')}")
-            mapping = result.get("mapping")
-            if isinstance(mapping, dict):
-                lines.append(f"  mapping_targets: {len(mapping.get('targets', []))}")
-            validation = result.get("validation")
-            if isinstance(validation, dict):
-                lines.append(f"  validation_stage: {validation.get('stage')}")
-                lines.append(f"  validation_passed: {validation.get('passed')}")
-                scorecard = validation.get("scorecard")
-                if isinstance(scorecard, dict):
-                    lines.append(f"  validation_summary: {scorecard.get('summary')}")
-                    highlights = scorecard.get("highlights") or []
-                    if highlights:
-                        lines.append("  validation_highlights:")
-                        lines.extend([f"    - {item}" for item in highlights[:4]])
-            generation = result.get("generation")
-            if isinstance(generation, dict):
-                written_files = generation.get("written_files") or []
-                if written_files:
-                    lines.append("  written_files:")
-                    lines.extend([f"    - {item}" for item in written_files[:8]])
-                else:
-                    new_files = generation.get("new_files") or []
-                    if new_files:
-                        lines.append("  generated_files:")
-                        lines.extend([f"    - {item.get('path')}" for item in new_files[:8]])
-            guidance = result.get("guidance")
-            if isinstance(guidance, list) and guidance:
-                lines.append("  guidance:")
-                lines.extend([f"    - {item}" for item in guidance[:8]])
-
         details.load_text("\n".join(lines))
 
     def _append_history(
@@ -624,8 +680,20 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#integrate-dry-run", Checkbox).disabled = not is_integrate
         self.query_one("#integrate-require-clean", Checkbox).disabled = not is_integrate
 
+    def _update_agent_status(self, online: bool) -> None:
+        status = self.query_one("#agent-status", Label)
+        if online:
+            status.update("● Online")
+            status.add_class("online")
+            status.remove_class("offline")
+        else:
+            status.update("○ Offline")
+            status.add_class("offline")
+            status.remove_class("online")
+
     def on_mount(self) -> None:
         self._refresh_action_input_state()
+        self._update_agent_status(False)
 
     def action_run_selected(self) -> None:
         self._run_selected_workflow()
@@ -638,9 +706,7 @@ class ScholarDevClawApp(App[None]):
     def on_clear_button(self) -> None:
         self.query_one("#result", Pretty).update({})
         self.query_one("#logs", TextArea).load_text("")
-        self.query_one("#run-details", TextArea).load_text("No run details yet.")
-        self.query_one("#artifact-view", TextArea).load_text("No artifacts yet.")
-        self.query_one("#artifact-id", Input).value = ""
+        self.query_one("#run-details", TextArea).load_text("")
 
     @on(Select.Changed, "#action")
     def on_action_changed(self) -> None:
@@ -649,51 +715,27 @@ class ScholarDevClawApp(App[None]):
     @on(Button.Pressed, "#rerun-history")
     def on_rerun_history(self) -> None:
         history_id_raw = self.query_one("#history-id", Input).value.strip()
-
         if not self._run_history:
-            self._append_logs("logs", ["No history available to rerun."])
+            self._append_logs("logs", ["No history to rerun."])
             return
-
         record = self._resolve_history_record(history_id_raw)
         if record is None:
             return
-
         request = record["request"]
         self._apply_run_request(request)
-        self._render_run_details(record)
-        self._render_artifact_preview(record)
-        self._append_logs("logs", [f"Rerunning from history #{record['id']} ({record['action']})"])
+        self._append_logs("logs", [f"Rerunning run #{record['id']}"])
         self._run_selected_workflow(override_request=request)
 
     @on(Button.Pressed, "#view-history")
     def on_view_history(self) -> None:
         history_id_raw = self.query_one("#history-id", Input).value.strip()
         record = self._resolve_history_record(history_id_raw)
-        if record is None:
-            if not self._run_history:
-                self._append_logs("logs", ["No history available to inspect."])
-            return
-
-        self._render_run_details(record)
-        self._render_artifact_preview(record)
-        self._append_logs("logs", [f"Showing details for run #{record['id']} ({record['action']})"])
-
-    @on(Button.Pressed, "#view-artifact")
-    def on_view_artifact(self) -> None:
-        history_id_raw = self.query_one("#history-id", Input).value.strip()
-        artifact_id_raw = self.query_one("#artifact-id", Input).value.strip()
-        record = self._resolve_history_record(history_id_raw)
-        if record is None:
-            if not self._run_history:
-                self._append_logs("logs", ["No history available to inspect artifacts."])
-            return
-
-        self._render_artifact_preview(record, artifact_id_raw=artifact_id_raw)
-        self._append_logs("logs", [f"Showing artifact for run #{record['id']}"])
+        if record:
+            self._render_run_details(record)
+            self._append_logs("logs", [f"Viewing run #{record['id']}"])
 
     def _run_selected_workflow(self, override_request: dict[str, Any] | None = None) -> None:
         request = override_request or self._capture_run_request()
-
         action = request.get("action", "analyze")
         repo_path = request.get("repo_path", "")
         query = request.get("query", "")
@@ -717,8 +759,7 @@ class ScholarDevClawApp(App[None]):
         run_button.disabled = True
         self.query_one("#rerun-history", Button).disabled = True
         self.query_one("#view-history", Button).disabled = True
-        self.query_one("#view-artifact", Button).disabled = True
-        self.query_one("#run-status", Label).update(f"Status: Running '{action}'...")
+        self.query_one("#run-status", Label).update(f"⚡ Running '{action}'...")
         self._live_logs_enabled = True
         self._active_run_request = request
         self._active_run_started_at = time.perf_counter()
@@ -744,10 +785,7 @@ class ScholarDevClawApp(App[None]):
                 result = run_map(repo_path, spec or "rmsnorm", log_callback=_emit)
             elif action == "generate":
                 result = run_generate(
-                    repo_path,
-                    spec or "rmsnorm",
-                    output_dir=output_dir,
-                    log_callback=_emit,
+                    repo_path, spec or "rmsnorm", output_dir=output_dir, log_callback=_emit
                 )
             elif action == "validate":
                 result = run_validate(repo_path, log_callback=_emit)
@@ -764,34 +802,21 @@ class ScholarDevClawApp(App[None]):
                 result = run_specs(detailed=True, log_callback=_emit)
 
             self.post_message(
-                TaskCompleted(
-                    result.title,
-                    result.payload,
-                    result.logs,
-                    result.error,
-                )
+                TaskCompleted(result.title, result.payload, result.logs, result.error)
             )
 
         threading.Thread(target=_runner, daemon=True).start()
-        self._append_logs("logs", [f"Started workflow: {action}"])
+        self._append_logs("logs", [f"🚀 Started: {action}"])
 
     @on(TaskCompleted)
     def on_task_completed(self, message: TaskCompleted) -> None:
-        payload = {
-            "title": message.title,
-            "error": message.error,
-            "result": message.result,
-        }
+        payload = {"title": message.title, "error": message.error, "result": message.result}
         self.query_one("#result", Pretty).update(payload)
-        expected_types = (
-            {"integration"}
-            if message.title == "Integration"
-            else {"validation"}
-            if message.title == "Validation"
-            else None
-        )
         compat_messages = self._payload_compat_messages(
-            message.result, expected_types=expected_types
+            message.result,
+            expected_types={"integration", "validation"}
+            if message.title in ("Integration", "Validation")
+            else None,
         )
         if compat_messages:
             self._append_logs("logs", compat_messages)
@@ -801,9 +826,8 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#run", Button).disabled = False
         self.query_one("#rerun-history", Button).disabled = False
         self.query_one("#view-history", Button).disabled = False
-        self.query_one("#view-artifact", Button).disabled = False
-        status = "Done" if message.error is None else "Failed"
-        self.query_one("#run-status", Label).update(f"Status: {status} ({message.title})")
+        status = "✅ Done" if message.error is None else "❌ Failed"
+        self.query_one("#run-status", Label).update(f"{status} ({message.title})")
         action = (self._active_run_request or {}).get("action", "unknown")
         duration_s = max(0.0, time.perf_counter() - self._active_run_started_at)
         if self._active_run_request is not None:
@@ -826,36 +850,48 @@ class ScholarDevClawApp(App[None]):
     @on(Button.Pressed, "#launch-agent")
     def on_launch_agent(self) -> None:
         if self._agent_process and self._agent_process.poll() is None:
-            self._append_logs("agent-logs", ["Agent already running."])
+            self._append_logs("agent-logs", ["🤖 Agent already running."])
             return
 
         project_root = Path(__file__).resolve().parents[4]
         agent_dir = project_root / "agent"
 
         if not agent_dir.exists():
-            self._append_logs("agent-logs", [f"Agent folder not found: {agent_dir}"])
+            self._append_logs("agent-logs", [f"❌ Agent folder not found: {agent_dir}"])
             return
 
         try:
             self._agent_process = subprocess.Popen(
-                ["bun", "run", "start"],
+                ["bun", "run", "start", "--repl"],
                 cwd=agent_dir,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
             )
+            self._agent_stdin = self._agent_process.stdin
+            self._agent_running = True
+            self._update_agent_status(True)
         except Exception as exc:
-            self._append_logs("agent-logs", [f"Failed to launch agent: {exc}"])
+            self._append_logs("agent-logs", [f"❌ Failed to launch: {exc}"])
             return
 
-        self._append_logs("agent-logs", [f"Launched agent in: {agent_dir}"])
+        self._append_logs(
+            "agent-logs",
+            [
+                "🚀 Agent launched in REPL mode",
+                f"📁 Working dir: {agent_dir}",
+                "💡 Type 'help' for commands, 'exit' to quit",
+            ],
+        )
 
         def _read_logs() -> None:
             if not self._agent_process or not self._agent_process.stdout:
                 return
             for line in self._agent_process.stdout:
-                self.post_message(AgentLog(line.rstrip()))
+                if line.strip():
+                    self.post_message(AgentLog(line.rstrip()))
 
         threading.Thread(target=_read_logs, daemon=True).start()
 
@@ -866,46 +902,72 @@ class ScholarDevClawApp(App[None]):
     @on(Button.Pressed, "#stop-agent")
     def on_stop_agent(self) -> None:
         if not self._agent_process or self._agent_process.poll() is not None:
-            self._append_logs("agent-logs", ["No running agent process."])
+            self._append_logs("agent-logs", ["🤖 No running agent."])
+            self._update_agent_status(False)
             return
+        self._agent_running = False
         self._agent_process.terminate()
-        self._append_logs("agent-logs", ["Sent terminate signal to agent."])
+        self._update_agent_status(False)
+        self._append_logs("agent-logs", ["🛑 Agent stopped."])
+
+    @on(Input.Submitted, "#prompt-input")
+    def on_prompt_submit(self, event: Input.Submitted) -> None:
+        prompt = event.value.strip()
+        if not prompt:
+            return
+
+        event.input.value = ""
+
+        if not self._agent_running or not self._agent_stdin:
+            self._append_logs("agent-logs", ["❌ Agent not running. Click 'Launch Agent' first."])
+            return
+
+        if prompt.lower() in ("exit", "quit"):
+            self.on_stop_agent()
+            return
+
+        if prompt.lower() == "help":
+            self._append_logs(
+                "agent-logs",
+                [
+                    "📖 Available commands:",
+                    "  help  - Show this help",
+                    "  exit  - Stop agent",
+                    "  Or type your request naturally...",
+                ],
+            )
+            return
+
+        self._append_logs("agent-logs", [f"\n👤 You: {prompt}"])
+
+        try:
+            self._agent_stdin.write(prompt + "\n")
+            self._agent_stdin.flush()
+        except Exception as exc:
+            self._append_logs("agent-logs", [f"❌ Error sending to agent: {exc}"])
 
     def on_unmount(self) -> None:
         if self._agent_process and self._agent_process.poll() is None:
             self._agent_process.terminate()
 
-    def action_exit_app(self) -> None:
-        """Handle Ctrl+C to exit the TUI."""
-        self.exit()
-
     def action_handle_escape(self) -> None:
-        """Handle Esc key - first press shows warning, second stops agent."""
-        import time
-
         current_time = time.time()
-
-        # Reset if more than 2 seconds since last escape
         if current_time - self._last_escape_time > 2.0:
             self._escape_pressed_count = 0
             self._escape_warning_shown = False
-
         self._last_escape_time = current_time
         self._escape_pressed_count += 1
 
         if self._escape_pressed_count == 1:
-            # First Esc - show warning
-            self._show_warning_bar("⚠️  Press ESC again to stop running agent...")
+            self._show_warning_bar("⚠️ Press ESC again to stop agent...")
             self._escape_warning_shown = True
         elif self._escape_pressed_count >= 2 and self._escape_warning_shown:
-            # Second Esc - stop agent
             self._hide_warning_bar()
-            self._stop_agent()
+            self.on_stop_agent()
             self._escape_pressed_count = 0
             self._escape_warning_shown = False
 
     def _show_warning_bar(self, message: str) -> None:
-        """Show the warning bar with a message."""
         try:
             warning_bar = self.query_one("#warning-bar", Label)
             warning_bar.update(message)
@@ -914,26 +976,12 @@ class ScholarDevClawApp(App[None]):
             pass
 
     def _hide_warning_bar(self) -> None:
-        """Hide the warning bar."""
         try:
             warning_bar = self.query_one("#warning-bar", Label)
             warning_bar.update("")
             warning_bar.remove_class("visible")
         except Exception:
             pass
-
-    def _stop_agent(self) -> None:
-        """Stop the running agent process."""
-        if not self._agent_process or self._agent_process.poll() is not None:
-            self._append_logs("agent-logs", ["No running agent to stop."])
-            return
-
-        self._agent_process.terminate()
-        try:
-            self._agent_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self._agent_process.kill()
-        self._append_logs("agent-logs", ["🛑 Agent stopped by user."])
 
 
 def run_tui() -> None:

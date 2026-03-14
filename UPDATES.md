@@ -4,6 +4,35 @@
 
 **Last updated:** 2026-03-14
 
+### 2026-03-14 (Interactive Agent TUI + Premium Design)
+
+**Goal:** Transform the TUI into a Claude Code/OpenCode-style interactive experience with premium design.
+
+**Summary:** Added interactive prompt bar to TUI, implemented REPL mode for the TypeScript agent, and redesigned the entire TUI with premium Modern Dark theme featuring glassmorphism. Users can now type prompts directly to the agent within the TUI, and the agent stays running for continuous interaction.
+
+**TUI Redesign (`core/src/scholardevclaw/tui/app.py`):**
+- Added interactive prompt bar at the bottom for typing requests to the agent
+- Premium Modern Dark CSS with glassmorphism panels
+- Gradient accents (cyan → blue → purple)
+- Agent status indicator (Online/Offline)
+- Smooth animations and glow effects
+- Reorganized layout: Workflow Wizard (left), Output (right), Agent Panel (bottom)
+
+**Agent REPL Mode (`agent/src/index.ts`):**
+- New REPL mode: `bun run start --repl`
+- Interactive command loop via readline
+- Commands: `analyze`, `suggest`, `integrate`, `search`, `set repo`, `set spec`, `context`
+- Agent stays running until user types `exit`
+- Context persistence between commands
+
+**TUI → Agent Communication:**
+- TUI prompt bar sends input to agent via stdin
+- Agent stdout streams back to TUI agent-logs panel
+- Launch/Stop buttons control agent lifecycle
+- Real-time streaming of agent responses
+
+---
+
 ### 2026-03-14 (Test Suite Expansion — Edge-to-Edge Coverage)
 
 **Goal:** Comprehensive test coverage across all code paths, error handlers, and edge cases.
