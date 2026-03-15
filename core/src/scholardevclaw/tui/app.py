@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 import threading
 import time
@@ -46,31 +48,42 @@ class AgentLog(Message):
         self.line = line
 
 
-class AgentResponse(Message):
-    def __init__(self, response: str):
+class AgentPhase(Message):
+    def __init__(self, phase: str, progress: float):
         super().__init__()
-        self.response = response
+        self.phase = phase
+        self.progress = progress
 
 
 class ScholarDevClawApp(App[None]):
     TITLE = "ScholarDevClaw"
     SUB_TITLE = "Research → Code Assistant"
 
+    PHASES = [
+        ("idle", "Idle", 0),
+        ("analyzing", "🔍 Analyzing...", 0.1),
+        ("research", "📚 Researching...", 0.3),
+        ("mapping", "🗺 Mapping...", 0.5),
+        ("generating", "⚡ Generating...", 0.7),
+        ("validating", "✅ Validating...", 0.9),
+        ("complete", "✨ Complete!", 1.0),
+    ]
+
     CSS = """
     /* ========================================
-       PREMIUM MODERN DARK THEME
-       Glassmorphism + Gradient Accents
+       PREMIUM MODERN DARK THEME V2
+       Enhanced with Phase Progress + Glows
        ======================================== */
 
     Screen {
         layout: vertical;
-        background: #0a0a0f;
+        background: #06090d;
         color: #e2e8f0;
     }
 
-    /* Header with gradient border */
+    /* Header */
     Header {
-        background: linear-gradient(90deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+        background: linear-gradient(90deg, #0c1222 0%, #1e1b4b 50%, #0c1222 100%);
         color: #f1f5f9;
         dock: top;
         height: 3;
@@ -82,25 +95,25 @@ class ScholarDevClawApp(App[None]):
 
     /* Footer */
     Footer {
-        background: #0f172a;
-        color: #64748b;
+        background: #0c1222;
+        color: #475569;
         dock: bottom;
         height: 1;
     }
 
-    /* Main container with subtle border */
+    /* Main container */
     #main-container {
         height: 100%;
         padding: 1 2;
-        background: #0a0a0f;
+        background: #06090d;
     }
 
-    /* Glass panel base style */
+    /* Glass panels */
     .glass-panel {
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid rgba(56, 189, 248, 0.15);
-        backdrop-blur: 12px;
-        border-radius: 12px;
+        background: rgba(12, 18, 34, 0.8);
+        border: 1px solid rgba(56, 189, 248, 0.12);
+        backdrop-blur: 16px;
+        border-radius: 16px;
         padding: 1;
     }
 
@@ -108,82 +121,90 @@ class ScholarDevClawApp(App[None]):
     .section-title {
         text-style: bold;
         color: #22d3ee;
-        text-shadow: 0 0 10px rgba(34, 211, 238, 0.3);
+        text-shadow: 0 0 20px rgba(34, 211, 238, 0.4);
         margin-bottom: 1;
-        dock: top;
-        height: auto;
     }
 
     .section-subtitle {
-        color: #94a3b8;
+        color: #64748b;
         margin-bottom: 1;
-        dock: top;
-        height: auto;
     }
 
-    /* Left panel - Workflow Wizard */
+    /* Panels */
     #wizard-panel {
-        width: 38%;
-        border: solid rgba(59, 130, 246, 0.4);
-        background: rgba(15, 23, 42, 0.6);
-        border-radius: 12px;
+        width: 35%;
+        border: solid rgba(59, 130, 246, 0.3);
+        background: rgba(12, 18, 34, 0.6);
+        border-radius: 16px;
         padding: 1 1;
         margin-right: 1;
     }
 
-    /* Right panel - Output */
     #output-panel {
-        width: 62%;
-        border: solid rgba(139, 92, 246, 0.4);
-        background: rgba(15, 23, 42, 0.6);
-        border-radius: 12px;
+        width: 65%;
+        border: solid rgba(139, 92, 246, 0.3);
+        background: rgba(12, 18, 34, 0.6);
+        border-radius: 16px;
         padding: 1 1;
     }
 
-    /* Agent Interactive Panel */
+    /* Agent panel */
     #agent-panel {
-        height: 35%;
+        height: 32%;
         dock: bottom;
-        border: solid rgba(34, 211, 238, 0.5);
-        background: rgba(8, 47, 73, 0.5);
-        border-radius: 12px 12px 0 0;
+        border: solid rgba(34, 211, 238, 0.4);
+        background: rgba(8, 47, 73, 0.4);
+        border-radius: 16px 16px 0 0;
         margin: 0 2;
         padding: 1;
     }
 
-    /* Result display */
+    /* Phase progress bar */
+    #phase-bar {
+        dock: top;
+        height: 2;
+        background: rgba(30, 41, 59, 0.8);
+        margin-bottom: 1;
+    }
+
+    #phase-progress {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, #06b6d4, #3b82f6, #8b5cf6);
+        transition: width 0.5s ease;
+    }
+
+    #phase-label {
+        dock: top;
+        height: 1;
+        color: #94a3b8;
+        text-style: bold;
+    }
+
+    /* Result */
     #result {
-        height: 12;
+        height: 10;
         border: none;
-        background: rgba(2, 6, 23, 0.8);
-        border-radius: 8px;
+        background: rgba(2, 10, 18, 0.9);
+        border-radius: 12px;
         padding: 0 1;
     }
 
-    /* Logs area */
+    /* Logs */
     #logs {
-        height: 10;
+        height: 8;
         border: none;
-        background: rgba(2, 6, 23, 0.8);
-        border-radius: 8px;
+        background: rgba(2, 10, 18, 0.9);
+        border-radius: 12px;
         margin-top: 1;
     }
 
-    /* Run history */
+    /* History */
     #history {
-        height: 6;
+        height: 5;
         border: none;
-        background: rgba(2, 6, 23, 0.8);
-        border-radius: 8px;
-        margin-top: 1;
-    }
-
-    /* Run details */
-    #run-details {
-        height: 10;
-        border: none;
-        background: rgba(2, 6, 23, 0.8);
-        border-radius: 8px;
+        background: rgba(2, 10, 18, 0.9);
+        border-radius: 12px;
         margin-top: 1;
     }
 
@@ -191,18 +212,17 @@ class ScholarDevClawApp(App[None]):
     #agent-logs {
         height: 1fr;
         border: none;
-        background: rgba(2, 6, 23, 0.9);
-        border-radius: 8px;
+        background: rgba(2, 10, 18, 0.95);
+        border-radius: 12px;
     }
 
     /* Prompt bar */
     #prompt-bar {
         dock: bottom;
         height: 3;
-        background: rgba(15, 23, 42, 0.9);
-        border-top: 1px solid rgba(34, 211, 238, 0.3);
+        background: rgba(12, 18, 34, 0.95);
+        border-top: 1px solid rgba(34, 211, 238, 0.2);
         padding: 0 1;
-        margin-bottom: 0;
     }
 
     #prompt-input {
@@ -214,42 +234,48 @@ class ScholarDevClawApp(App[None]):
     }
 
     #prompt-input::placeholder {
-        color: #475569;
+        color: #334155;
     }
 
-    /* Input styling */
+    /* Quick actions */
+    #quick-actions {
+        dock: top;
+        height: 3;
+        background: rgba(12, 18, 34, 0.5);
+        padding: 0 1;
+    }
+
+    /* Inputs */
     Input {
-        background: rgba(2, 6, 23, 0.8);
+        background: rgba(2, 10, 18, 0.8);
         color: #e2e8f0;
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        border-radius: 8px;
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 10px;
         padding: 0 1;
     }
 
     Input:focus {
         border: 1px solid #22d3ee;
-        box-shadow: 0 0 15px rgba(34, 211, 238, 0.2);
+        box-shadow: 0 0 20px rgba(34, 211, 238, 0.25);
     }
 
     Input::placeholder {
-        color: #475569;
+        color: #334155;
     }
 
-    /* Select widget */
     Select {
-        background: rgba(2, 6, 23, 0.8);
+        background: rgba(2, 10, 18, 0.8);
         color: #e2e8f0;
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        border-radius: 8px;
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 10px;
     }
 
     Select:focus {
         border: 1px solid #22d3ee;
     }
 
-    /* Checkbox */
     Checkbox {
-        color: #94a3b8;
+        color: #64748b;
     }
 
     Checkbox:focus {
@@ -259,74 +285,85 @@ class ScholarDevClawApp(App[None]):
     /* Buttons */
     Button {
         border: none;
-        background: rgba(59, 130, 246, 0.2);
-        color: #93c5fd;
-        border-radius: 8px;
-        padding: 0 2;
-        min-width: 16;
+        background: rgba(59, 130, 246, 0.15);
+        color: #60a5fa;
+        border-radius: 10px;
+        padding: 0 1;
+        min-width: 14;
     }
 
     Button:hover {
-        background: rgba(59, 130, 246, 0.4);
+        background: rgba(59, 130, 246, 0.3);
         border: 1px solid #3b82f6;
+        box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
     }
 
     Button.-primary {
-        background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%);
+        background: linear-gradient(135deg, #0891b2 0%, #3b82f6 100%);
         color: #ffffff;
         text-style: bold;
         border: none;
     }
 
     Button.-primary:hover {
-        background: linear-gradient(135deg, #38bdf8 0%, #60a5fa 100%);
-        box-shadow: 0 0 20px rgba(14, 165, 233, 0.4);
+        box-shadow: 0 0 25px rgba(14, 165, 233, 0.5);
     }
 
     Button.-success {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        background: linear-gradient(135deg, #059669 0%, #10b981 100%);
         color: #ffffff;
         text-style: bold;
     }
 
     Button.-success:hover {
-        box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+        box-shadow: 0 0 25px rgba(16, 185, 129, 0.5);
     }
 
     Button.-error {
-        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
         color: #ffffff;
         text-style: bold;
     }
 
     Button.-error:hover {
-        box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+        box-shadow: 0 0 25px rgba(239, 68, 68, 0.5);
     }
 
     Button:disabled {
-        opacity: 0.4;
+        opacity: 0.3;
     }
 
-    /* Labels */
+    /* Quick action buttons */
+    .quick-btn {
+        background: rgba(139, 92, 246, 0.15);
+        color: #a78bfa;
+        border-radius: 8px;
+        padding: 0 1;
+        min-width: 12;
+    }
+
+    .quick-btn:hover {
+        background: rgba(139, 92, 246, 0.35);
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+    }
+
     Label {
-        color: #94a3b8;
+        color: #64748b;
     }
 
-    /* Status bar */
     #run-status {
         dock: top;
         height: 1;
-        background: rgba(15, 23, 42, 0.9);
+        background: rgba(12, 18, 34, 0.9);
         color: #22d3ee;
         text-style: bold;
         padding: 0 1;
-        border-radius: 4px;
+        border-radius: 6px;
     }
 
-    /* Warning bar */
     #warning-bar {
         dock: bottom;
-        background: rgba(239, 68, 68, 0.2);
+        background: rgba(239, 68, 68, 0.15);
         color: #f87171;
         padding: 0 1;
         height: 1;
@@ -338,48 +375,29 @@ class ScholarDevClawApp(App[None]):
         display: block;
     }
 
-    /* Spacing */
-    .spaced {
-        margin-top: 1;
-    }
+    .spaced { margin-top: 1; }
+    .spaced-small { margin-top: 0; }
 
-    .spaced-small {
-        margin-top: 0;
-    }
-
-    /* Horizontal containers */
-    Horizontal {
-        height: auto;
-    }
-
-    /* Vertical containers */
-    Vertical {
-        height: auto;
-    }
-
-    /* Pretty widget */
     Pretty {
         background: transparent;
         color: #e2e8f0;
     }
 
-    /* TextArea */
     TextArea {
-        background: rgba(2, 6, 23, 0.8);
+        background: rgba(2, 10, 18, 0.85);
         color: #94a3b8;
         border: none;
-        border-radius: 8px;
+        border-radius: 12px;
     }
 
     TextArea:focus {
-        border: 1px solid rgba(34, 211, 238, 0.3);
+        border: 1px solid rgba(34, 211, 238, 0.2);
     }
 
-    /* Agent status indicator */
     .agent-status {
         dock: top;
         height: 1;
-        color: #64748b;
+        color: #475569;
     }
 
     .agent-status.online {
@@ -391,19 +409,15 @@ class ScholarDevClawApp(App[None]):
         color: #ef4444;
     }
 
-    /* Quick action buttons */
-    .quick-actions {
-        height: 3;
-        dock: top;
-        background: rgba(15, 23, 42, 0.5);
-        padding: 0 1;
-    }
+    Horizontal { height: auto; }
+    Vertical { height: auto; }
     """
 
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+r", "run_selected", "Run"),
-        ("escape", "handle_escape", "Stop Agent"),
+        ("escape", "handle_escape", "Stop"),
+        ("ctrl+l", "clear_logs", "Clear"),
     ]
 
     action_mode_options = [
@@ -431,54 +445,142 @@ class ScholarDevClawApp(App[None]):
         self._last_escape_time = 0.0
         self._agent_stdin: Any = None
         self._agent_running = False
+        self._current_phase = "idle"
+        self._command_history: list[str] = []
+        self._history_index = -1
+
+    def _parse_natural_command(self, prompt: str) -> tuple[str, dict[str, Any]]:
+        """Parse natural language into structured command."""
+        prompt = prompt.strip().lower()
+        ctx: dict[str, Any] = {}
+        command = "help"
+
+        # Check for repo path patterns
+        repo_match = re.search(r"(?:to|on|in|at)\s+([/\w~.-]+)", prompt)
+        if repo_match:
+            ctx["repo_path"] = repo_match.group(1)
+
+        # Check for spec names
+        spec_match = re.search(
+            r"(?:apply|use|with)\s+(rmsnorm|flashattention|swiglu|geglu|gqa|rope|preln|ali|bi|qknorm)",
+            prompt,
+        )
+        if spec_match:
+            ctx["spec"] = spec_match.group(1).lower()
+
+        # Detect command intent
+        if any(kw in prompt for kw in ["analyze", "scan", "inspect", "examine"]):
+            command = "analyze"
+        elif any(kw in prompt for kw in ["suggest", "recommend", "improve", "ideas"]):
+            command = "suggest"
+        elif any(kw in prompt for kw in ["integrate", "apply", "implement", "add"]):
+            command = "integrate"
+        elif any(kw in prompt for kw in ["search", "find", "look"]):
+            command = "search"
+            # Extract query
+            query_match = re.search(r'search(?:ing)?\s+(?:for\s+)?["\']?([^"\']+)["\']?', prompt)
+            if query_match:
+                ctx["query"] = query_match.group(1).strip()
+            elif "query" not in ctx:
+                ctx["query"] = (
+                    prompt.replace("search", "").replace("find", "").strip() or "machine learning"
+                )
+        elif any(kw in prompt for kw in ["map", "connect", "link"]):
+            command = "map"
+        elif any(kw in prompt for kw in ["generate", "create", "make"]):
+            command = "generate"
+        elif any(kw in prompt for kw in ["validate", "test", "check"]):
+            command = "validate"
+        elif any(kw in prompt for kw in ["specs", "list", "show"]):
+            command = "specs"
+
+        return command, ctx
+
+    def _set_phase(self, phase: str) -> None:
+        """Update the current phase and progress bar."""
+        self._current_phase = phase
+        for phase_name, label, progress in self.PHASES:
+            if phase_name == phase:
+                try:
+                    progress_bar = self.query_one("#phase-progress")
+                    progress_bar.styles.width = f"{int(progress * 100)}%"
+                    phase_label = self.query_one("#phase-label")
+                    phase_label.update(label)
+                except Exception:
+                    pass
+                break
+
+    def _format_json_output(self, data: dict[str, Any]) -> str:
+        """Format JSON with syntax highlighting."""
+        try:
+            formatted = json.dumps(data, indent=2)
+            # Add some basic formatting
+            lines = formatted.split("\n")
+            result_lines = []
+            for line in lines:
+                # Highlight keys
+                line = re.sub(r'("[\w]+":)', r"§\1§", line)
+                # Highlight values
+                line = re.sub(r':\s*(".*?"|\d+\.?\d*|true|false|null)', r": §\1§", line)
+                result_lines.append(line)
+            return "\n".join(result_lines)
+        except Exception:
+            return str(data)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
 
         with Horizontal(id="main-container"):
-            # Left Panel - Workflow Wizard
+            # Left Panel
             with Vertical(id="wizard-panel", classes="glass-panel"):
                 yield Label("⚡ Workflow Wizard", classes="section-title")
-                yield Label("Configure your research-to-code pipeline", classes="section-subtitle")
+                yield Label("Configure your pipeline", classes="section-subtitle")
                 yield Select(self.action_mode_options, value="analyze", id="action")
                 yield Input(
                     value=str(Path.cwd()), placeholder="/path/to/repository", id="repo-path"
                 )
                 yield Input(value="layer normalization", placeholder="Search query...", id="query")
                 with Horizontal(classes="spaced-small"):
-                    yield Checkbox("Include arXiv", value=False, id="search-arxiv")
-                    yield Checkbox("Include web", value=False, id="search-web")
-                yield Input(value="python", placeholder="Language filter", id="search-language")
+                    yield Checkbox("arXiv", value=False, id="search-arxiv")
+                    yield Checkbox("Web", value=False, id="search-web")
+                yield Input(value="python", placeholder="Language", id="search-language")
                 yield Input(value="10", placeholder="Max results", id="search-max-results")
                 yield Input(value="rmsnorm", placeholder="Spec name", id="spec")
-                yield Input(value="", placeholder="Output directory (optional)", id="output-dir")
+                yield Input(value="", placeholder="Output dir (optional)", id="output-dir")
                 with Horizontal(classes="spaced-small"):
                     yield Checkbox("Dry-run", value=False, id="integrate-dry-run")
-                    yield Checkbox("Require clean git", value=False, id="integrate-require-clean")
+                    yield Checkbox("Clean git", value=False, id="integrate-require-clean")
                 yield Label("Status: Idle", id="run-status")
                 with Horizontal(classes="spaced"):
                     yield Button("▶ Run", id="run", variant="success")
                     yield Button("Clear", id="clear", variant="default")
 
-            # Right Panel - Output
+            # Right Panel
             with Vertical(id="output-panel", classes="glass-panel"):
+                # Phase progress
+                yield Label("✨ Ready", id="phase-label")
+                with Horizontal(id="phase-bar"):
+                    yield Label("", id="phase-progress")
                 yield Label("📊 Results", classes="section-title")
                 yield Pretty({}, id="result")
                 yield Label("Execution Logs", classes="section-title")
                 yield TextArea("", id="logs", read_only=True)
-                yield Label("Run History", classes="section-title")
+                yield Label("History", classes="section-title")
                 yield TextArea("No runs yet.", id="history", read_only=True)
                 with Horizontal(classes="spaced-small"):
                     yield Input(value="", placeholder="Run ID", id="history-id")
-                    yield Button("Rerun", id="rerun-history", variant="primary")
-                    yield Button("View", id="view-history", variant="default")
+                    yield Button("↻", id="rerun-history", variant="primary", tooltip="Rerun")
+                    yield Button("👁", id="view-history", variant="default", tooltip="View")
 
-        # Agent Interactive Panel
+        # Agent Panel
         with Vertical(id="agent-panel", classes="glass-panel"):
-            yield Label("🤖 Agent Interactive Mode", classes="section-title")
-            with Horizontal(classes="quick-actions"):
-                yield Button("🚀 Launch Agent", id="launch-agent", variant="primary")
-                yield Button("⏹ Stop Agent", id="stop-agent", variant="error")
+            yield Label("🤖 Agent Interactive", classes="section-title")
+            with Horizontal(id="quick-actions"):
+                yield Button("🚀 Launch", id="launch-agent", variant="primary")
+                yield Button("⏹ Stop", id="stop-agent", variant="error")
+                yield Button("📋 Analyze", id="quick-analyze", classes="quick-btn")
+                yield Button("💡 Suggest", id="quick-suggest", classes="quick-btn")
+                yield Button("🔗 Integrate", id="quick-integrate", classes="quick-btn")
                 yield Label("", id="agent-status", classes="agent-status offline")
             yield TextArea("", id="agent-logs", read_only=True)
 
@@ -486,7 +588,7 @@ class ScholarDevClawApp(App[None]):
         with Horizontal(id="prompt-bar"):
             yield Input(
                 value="",
-                placeholder="> Type your request to the agent... (e.g., 'Analyze /path/to/repo')",
+                placeholder="> Type naturally... (e.g., 'Apply rmsnorm to /path/to/repo')",
                 id="prompt-input",
             )
 
@@ -513,59 +615,30 @@ class ScholarDevClawApp(App[None]):
         result = record.get("result", {})
         if not isinstance(result, dict):
             return []
-
         generation = result.get("generation")
         if not isinstance(generation, dict):
             if any(key in result for key in ("new_files", "transformations", "written_files")):
                 generation = result
             else:
                 generation = {}
-
         artifacts: list[dict[str, str]] = []
-
         for item in generation.get("new_files", []) or []:
             path = item.get("path") if isinstance(item, dict) else None
             content = item.get("content") if isinstance(item, dict) else None
-            if not path:
-                continue
-            artifacts.append(
-                {"label": f"📄 {path}", "content": content or f"No content for {path}"}
-            )
-
+            if path:
+                artifacts.append({"label": f"📄 {path}", "content": content or "No content"})
         for file_path in generation.get("written_files", []) or []:
-            artifacts.append(
-                {"label": f"💾 {file_path}", "content": f"Written to disk:\n{file_path}"}
-            )
-
+            artifacts.append({"label": f"💾 {file_path}", "content": f"Written: {file_path}"})
         for item in generation.get("transformations", []) or []:
-            if not isinstance(item, dict):
-                continue
-            file_name = item.get("file") or "unknown"
-            artifacts.append(
-                {
-                    "label": f"✏️ {file_name}",
-                    "content": f"Original:\n{item.get('original', '')[:500]}\n\nModified:\n{item.get('modified', '')[:500]}",
-                }
-            )
-
+            if isinstance(item, dict):
+                file_name = item.get("file") or "unknown"
+                artifacts.append(
+                    {
+                        "label": f"✏️ {file_name}",
+                        "content": f"Original:\n{item.get('original', '')[:300]}\n\nModified:\n{item.get('modified', '')[:300]}",
+                    }
+                )
         return artifacts
-
-    def _render_artifact_preview(
-        self, record: dict[str, Any] | None, artifact_id_raw: str = ""
-    ) -> None:
-        if record is None:
-            return
-
-        artifacts = self._extract_artifacts(record)
-        if not artifacts:
-            return
-
-        lines = ["=== Artifacts ==="]
-        for i, art in enumerate(artifacts, 1):
-            lines.append(f"\n[{i}] {art['label']}")
-            lines.append(art["content"][:300])
-
-        self._append_logs("agent-logs", lines)
 
     def _capture_run_request(self) -> dict[str, Any]:
         return {
@@ -605,7 +678,7 @@ class ScholarDevClawApp(App[None]):
             self.query_one("#history", TextArea).load_text("No runs yet.")
             return
         lines = [
-            f"#{item['id']} | {item['action']} | {item['status']} | {item['duration_s']:.2f}s"
+            f"#{item['id']} | {item['action']} | {item['status']} | {item['duration_s']:.1f}s"
             for item in self._run_history
         ]
         self.query_one("#history", TextArea).load_text("\n".join(lines))
@@ -620,19 +693,6 @@ class ScholarDevClawApp(App[None]):
         except ValueError:
             return None
         return next((entry for entry in self._run_history if entry["id"] == history_id), None)
-
-    def _render_run_details(self, record: dict[str, Any] | None) -> None:
-        details = self.query_one("#run-details", TextArea)
-        if record is None:
-            details.load_text("No run details.")
-            return
-        request = record.get("request", {})
-        lines = [
-            f"Run #{record.get('id')} | {record.get('action')} | {record.get('status')}",
-            f"Duration: {record.get('duration_s', 0):.2f}s | Error: {record.get('error') or 'none'}",
-            f"Repo: {request.get('repo_path', 'n/a')}",
-        ]
-        details.load_text("\n".join(lines))
 
     def _append_history(
         self,
@@ -660,8 +720,6 @@ class ScholarDevClawApp(App[None]):
         self._run_history = self._run_history[: self._history_limit]
         self.query_one("#history-id", Input).value = str(record["id"])
         self._render_history()
-        self._render_run_details(record)
-        self._render_artifact_preview(record)
 
     def _refresh_action_input_state(self) -> None:
         action = self.query_one("#action", Select).value
@@ -669,7 +727,6 @@ class ScholarDevClawApp(App[None]):
         needs_spec = action in {"map", "generate", "integrate"}
         supports_output_dir = action == "generate"
         is_integrate = action == "integrate"
-
         self.query_one("#query", Input).disabled = not is_search
         self.query_one("#search-arxiv", Checkbox).disabled = not is_search
         self.query_one("#search-web", Checkbox).disabled = not is_search
@@ -691,12 +748,33 @@ class ScholarDevClawApp(App[None]):
             status.add_class("offline")
             status.remove_class("online")
 
+    def _execute_quick_action(self, action: str) -> None:
+        """Execute a quick action button."""
+        repo_path = self.query_one("#repo-path", Input).value.strip()
+        spec = self.query_one("#spec", Input).value.strip() or "rmsnorm"
+
+        if not repo_path:
+            self._append_logs("agent-logs", ["⚠️ Please set repository path first"])
+            return
+
+        self.query_one("#action", Select).value = action
+        if action == "integrate":
+            self.query_one("#spec", Input).value = spec
+
+        self._set_phase("analyzing")
+        self._run_selected_workflow()
+
     def on_mount(self) -> None:
         self._refresh_action_input_state()
         self._update_agent_status(False)
+        self._set_phase("idle")
 
     def action_run_selected(self) -> None:
         self._run_selected_workflow()
+
+    def action_clear_logs(self) -> None:
+        self.query_one("#result", Pretty).update({})
+        self.query_one("#logs", TextArea).load_text("")
 
     @on(Button.Pressed, "#run")
     def on_run_button(self) -> None:
@@ -704,9 +782,7 @@ class ScholarDevClawApp(App[None]):
 
     @on(Button.Pressed, "#clear")
     def on_clear_button(self) -> None:
-        self.query_one("#result", Pretty).update({})
-        self.query_one("#logs", TextArea).load_text("")
-        self.query_one("#run-details", TextArea).load_text("")
+        self.action_clear_logs()
 
     @on(Select.Changed, "#action")
     def on_action_changed(self) -> None:
@@ -716,23 +792,30 @@ class ScholarDevClawApp(App[None]):
     def on_rerun_history(self) -> None:
         history_id_raw = self.query_one("#history-id", Input).value.strip()
         if not self._run_history:
-            self._append_logs("logs", ["No history to rerun."])
             return
         record = self._resolve_history_record(history_id_raw)
-        if record is None:
-            return
-        request = record["request"]
-        self._apply_run_request(request)
-        self._append_logs("logs", [f"Rerunning run #{record['id']}"])
-        self._run_selected_workflow(override_request=request)
+        if record:
+            self._apply_run_request(record["request"])
+            self._run_selected_workflow(override_request=record["request"])
 
     @on(Button.Pressed, "#view-history")
     def on_view_history(self) -> None:
         history_id_raw = self.query_one("#history-id", Input).value.strip()
         record = self._resolve_history_record(history_id_raw)
         if record:
-            self._render_run_details(record)
-            self._append_logs("logs", [f"Viewing run #{record['id']}"])
+            self._append_logs("logs", [f"Viewing run #{record['id']}: {record['action']}"])
+
+    @on(Button.Pressed, "#quick-analyze")
+    def on_quick_analyze(self) -> None:
+        self._execute_quick_action("analyze")
+
+    @on(Button.Pressed, "#quick-suggest")
+    def on_quick_suggest(self) -> None:
+        self._execute_quick_action("suggest")
+
+    @on(Button.Pressed, "#quick-integrate")
+    def on_quick_integrate(self) -> None:
+        self._execute_quick_action("integrate")
 
     def _run_selected_workflow(self, override_request: dict[str, Any] | None = None) -> None:
         request = override_request or self._capture_run_request()
@@ -763,6 +846,19 @@ class ScholarDevClawApp(App[None]):
         self._live_logs_enabled = True
         self._active_run_request = request
         self._active_run_started_at = time.perf_counter()
+
+        # Set phase based on action
+        phase_map = {
+            "analyze": "analyzing",
+            "suggest": "research",
+            "search": "research",
+            "map": "mapping",
+            "generate": "generating",
+            "validate": "validating",
+            "integrate": "analyzing",
+            "specs": "idle",
+        }
+        self._set_phase(phase_map.get(action, "analyzing"))
 
         def _runner() -> None:
             def _emit(line: str) -> None:
@@ -810,6 +906,7 @@ class ScholarDevClawApp(App[None]):
 
     @on(TaskCompleted)
     def on_task_completed(self, message: TaskCompleted) -> None:
+        self._set_phase("complete")
         payload = {"title": message.title, "error": message.error, "result": message.result}
         self.query_one("#result", Pretty).update(payload)
         compat_messages = self._payload_compat_messages(
@@ -850,7 +947,7 @@ class ScholarDevClawApp(App[None]):
     @on(Button.Pressed, "#launch-agent")
     def on_launch_agent(self) -> None:
         if self._agent_process and self._agent_process.poll() is None:
-            self._append_logs("agent-logs", ["🤖 Agent already running."])
+            self._append_logs("agent-logs", ["🤖 Agent already running"])
             return
 
         project_root = Path(__file__).resolve().parents[4]
@@ -881,8 +978,8 @@ class ScholarDevClawApp(App[None]):
             "agent-logs",
             [
                 "🚀 Agent launched in REPL mode",
-                f"📁 Working dir: {agent_dir}",
-                "💡 Type 'help' for commands, 'exit' to quit",
+                "💡 Type naturally or use commands: analyze, suggest, integrate...",
+                "📝 Try: 'apply rmsnorm to /path/to/repo'",
             ],
         )
 
@@ -898,17 +995,31 @@ class ScholarDevClawApp(App[None]):
     @on(AgentLog)
     def on_agent_log(self, message: AgentLog) -> None:
         self._append_logs("agent-logs", [message.line])
+        # Update phase based on agent output
+        line_lower = message.line.lower()
+        if "analyzing" in line_lower:
+            self._set_phase("analyzing")
+        elif "research" in line_lower or "searching" in line_lower:
+            self._set_phase("research")
+        elif "mapping" in line_lower:
+            self._set_phase("mapping")
+        elif "generating" in line_lower or "creating" in line_lower:
+            self._set_phase("generating")
+        elif "validating" in line_lower or "testing" in line_lower:
+            self._set_phase("validating")
+        elif "complete" in line_lower or "done" in line_lower or "finished" in line_lower:
+            self._set_phase("complete")
 
     @on(Button.Pressed, "#stop-agent")
     def on_stop_agent(self) -> None:
         if not self._agent_process or self._agent_process.poll() is not None:
-            self._append_logs("agent-logs", ["🤖 No running agent."])
+            self._append_logs("agent-logs", ["🤖 No running agent"])
             self._update_agent_status(False)
             return
         self._agent_running = False
         self._agent_process.terminate()
         self._update_agent_status(False)
-        self._append_logs("agent-logs", ["🛑 Agent stopped."])
+        self._append_logs("agent-logs", ["🛑 Agent stopped"])
 
     @on(Input.Submitted, "#prompt-input")
     def on_prompt_submit(self, event: Input.Submitted) -> None:
@@ -916,10 +1027,29 @@ class ScholarDevClawApp(App[None]):
         if not prompt:
             return
 
+        # Add to history
+        self._command_history.append(prompt)
+        self._history_index = len(self._command_history)
+
         event.input.value = ""
 
         if not self._agent_running or not self._agent_stdin:
-            self._append_logs("agent-logs", ["❌ Agent not running. Click 'Launch Agent' first."])
+            # Parse as natural command and run locally
+            command, ctx = self._parse_natural_command(prompt)
+            self._append_logs("agent-logs", [f"👤 {prompt}"])
+            self._append_logs("agent-logs", [f"🔧 Parsed: {command} with {ctx}"])
+
+            # Apply to UI and run
+            if "repo_path" in ctx:
+                self.query_one("#repo-path", Input).value = ctx["repo_path"]
+            if "spec" in ctx:
+                self.query_one("#spec", Input).value = ctx["spec"]
+            if "query" in ctx:
+                self.query_one("#query", Input).value = ctx["query"]
+
+            self.query_one("#action", Select).value = command
+            self._set_phase("analyzing")
+            self._run_selected_workflow()
             return
 
         if prompt.lower() in ("exit", "quit"):
@@ -930,21 +1060,24 @@ class ScholarDevClawApp(App[None]):
             self._append_logs(
                 "agent-logs",
                 [
-                    "📖 Available commands:",
-                    "  help  - Show this help",
-                    "  exit  - Stop agent",
-                    "  Or type your request naturally...",
+                    "📖 Commands: analyze, suggest, integrate, search, map, generate, validate",
+                    "💡 Or type naturally: 'apply rmsnorm to /path/to/repo'",
+                    "🔧 Quick: 'set repo /path', 'set spec rmsnorm'",
                 ],
             )
             return
 
-        self._append_logs("agent-logs", [f"\n👤 You: {prompt}"])
+        if prompt.lower().startswith("set "):
+            self._append_logs("agent-logs", [f"⚙️ {prompt}"])
+            return
+
+        self._append_logs("agent-logs", [f"\n👤 {prompt}"])
 
         try:
             self._agent_stdin.write(prompt + "\n")
             self._agent_stdin.flush()
         except Exception as exc:
-            self._append_logs("agent-logs", [f"❌ Error sending to agent: {exc}"])
+            self._append_logs("agent-logs", [f"❌ Error: {exc}"])
 
     def on_unmount(self) -> None:
         if self._agent_process and self._agent_process.poll() is None:
@@ -959,7 +1092,7 @@ class ScholarDevClawApp(App[None]):
         self._escape_pressed_count += 1
 
         if self._escape_pressed_count == 1:
-            self._show_warning_bar("⚠️ Press ESC again to stop agent...")
+            self._show_warning_bar("⚠️ Press ESC again to stop...")
             self._escape_warning_shown = True
         elif self._escape_pressed_count >= 2 and self._escape_warning_shown:
             self._hide_warning_bar()
