@@ -15,22 +15,17 @@ interface ParsedCommand {
   repoPath?: string;
   spec?: string;
   query?: string;
-  paperUrl?: string;
 }
 
 function parseNaturalInput(input: string): ParsedCommand {
   const lower = input.toLowerCase().trim();
-  
-  // Default to help
   const result: ParsedCommand = { command: 'help' };
   
-  // Extract repo path - look for paths starting with /, ~/, or ./ 
-  const pathMatch = input.match(/(?:\s|^)([\/~.][^\s]+|\/[a-zA-Z]:[^\s]+)/);
+  const pathMatch = input.match(/(?:\s|^)([\/~.][^\s]+)/);
   if (pathMatch) {
     result.repoPath = pathMatch[1];
   }
   
-  // Extract spec name
   const specs = ['rmsnorm', 'flashattention', 'swiglu', 'geglu', 'gqa', 'rope', 'preln', 'alibi', 'qknorm'];
   for (const spec of specs) {
     if (lower.includes(spec)) {
@@ -39,40 +34,27 @@ function parseNaturalInput(input: string): ParsedCommand {
     }
   }
   
-  // Detect command intent
   if (lower.includes('analyze') || lower.includes('scan') || lower.includes('inspect')) {
     result.command = 'analyze';
   } else if (lower.includes('suggest') || lower.includes('recommend') || lower.includes('ideas')) {
     result.command = 'suggest';
-  } else if (lower.includes('integrate') || lower.includes('apply') || lower.includes('implement') || lower.includes('add')) {
+  } else if (lower.includes('integrate') || lower.includes('apply') || lower.includes('implement')) {
     result.command = 'integrate';
-  } else if (lower.includes('search') || lower.includes('find') || lower.includes('look for')) {
+  } else if (lower.includes('search') || lower.includes('find')) {
     result.command = 'search';
-    // Extract query
-    const queryMatch = lower.match(/(?:search|find|look for)\s+(?:for\s+)?["']?(.+?)(?:["']|$)/);
-    if (queryMatch) {
-      result.query = queryMatch[1].trim();
-    } else if (!result.query) {
-      // Use remaining text as query
-      let q = lower.replace(/(?:search|find|look for|for)/g, '').trim();
-      if (q) result.query = q;
-    }
-  } else if (lower.includes('map') || lower.includes('connect')) {
+    const queryMatch = lower.match(/(?:search|find)\s+(?:for\s+)?["']?(.+)/);
+    if (queryMatch) result.query = queryMatch[1].trim();
+  } else if (lower.includes('map')) {
     result.command = 'map';
-  } else if (lower.includes('generate') || lower.includes('create patch')) {
+  } else if (lower.includes('generate')) {
     result.command = 'generate';
   } else if (lower.includes('validate') || lower.includes('test')) {
     result.command = 'validate';
-  } else if (lower.includes('specs') || lower.includes('list') || lower.includes('show')) {
+  } else if (lower.includes('specs') || lower.includes('list')) {
     result.command = 'specs';
   } else if (lower.startsWith('set ')) {
     result.command = 'set';
-  } else if (lower === 'context' || lower === 'status') {
-    result.command = 'context';
-  }
-  
-  // If no explicit command but has repo path, assume analyze
-  if (result.command === 'help' && result.repoPath) {
+  } else if (result.repoPath) {
     result.command = 'analyze';
   }
   
@@ -80,14 +62,12 @@ function parseNaturalInput(input: string): ParsedCommand {
 }
 
 async function runRepl(): Promise<void> {
-  console.log('🤖 ScholarDevClaw Agent - Interactive Mode');
-  console.log('═'.repeat(50));
-  console.log('💡 Type naturally! Examples:');
-  console.log('   → "analyze /path/to/repo"');
-  console.log('   → "apply rmsnorm to my project"');
-  console.log('   → "suggest improvements for /repo"');
-  console.log('   → "search for transformer attention"');
-  console.log('═'.repeat(50));
+  console.log('ScholarDevClaw Agent - Interactive Mode');
+  console.log('='.repeat(40));
+  console.log('Commands: analyze, suggest, integrate, search, map, generate, validate, specs');
+  console.log('Usage: <command> <path> [spec]');
+  console.log('Or: set repo <path>, set spec <name>');
+  console.log('='.repeat(40));
   console.log('');
 
   const orchestrator = new ScholarDevClawOrchestrator(true);
@@ -96,17 +76,12 @@ async function runRepl(): Promise<void> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: '🔮 ',
+    prompt: '> ',
   });
 
-  const currentContext: {
-    repoPath?: string;
-    paperSpec?: string;
-  } = {};
+  const currentContext: { repoPath?: string; paperSpec?: string } = {};
 
-  // Banner
-  console.log('✅ Agent ready! Type your request or "help" for commands.\n');
-
+  console.log('Agent ready. Type "help" for commands.\n');
   rl.prompt();
 
   rl.on('line', async (line) => {
@@ -118,46 +93,43 @@ async function runRepl(): Promise<void> {
     }
 
     if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
-      console.log('👋 Goodbye!');
+      console.log('Goodbye!');
       rl.close();
       return;
     }
 
     if (input.toLowerCase() === 'help') {
-      console.log('📖 Commands:');
-      console.log('  analyze <path>         - Analyze a repository');
-      console.log('  suggest <path>         - Get improvement suggestions');
-      console.log('  search <query>        - Search research papers');
+      console.log('Commands:');
+      console.log('  analyze <path>       - Analyze a repository');
+      console.log('  suggest <path>      - Get improvement suggestions');
+      console.log('  search <query>     - Search research papers');
       console.log('  integrate <path> [spec] - Run full integration');
-      console.log('  map <path> <spec>     - Map spec to repository');
-      console.log('  generate <path> <spec> - Generate patch');
-      console.log('  validate <path>      - Validate repository');
-      console.log('  specs                 - List available specs');
-      console.log('  set repo <path>       - Set default repository');
-      console.log('  set spec <name>       - Set default spec');
-      console.log('  context               - Show current context');
+      console.log('  map <path> <spec>  - Map spec to repository');
+      console.log('  generate <path> <spec> - Generate patches');
+      console.log('  validate <path>    - Validate repository');
+      console.log('  specs              - List available specs');
+      console.log('  set repo <path>   - Set default repository');
+      console.log('  set spec <name>   - Set default spec');
       console.log('');
-      console.log('💡 Natural language works too!');
-      console.log('   "apply rmsnorm to /path/to/repo"');
-      console.log('   "what improvements can you suggest for my project?"\n');
+      console.log('Natural language also works!');
+      console.log('  apply rmsnorm to /path/to/repo');
+      console.log('  suggest improvements for /repo\n');
       rl.prompt();
       return;
     }
 
-    if (input.toLowerCase() === 'context' || input.toLowerCase() === 'status') {
-      console.log('📋 Current context:');
-      console.log(`  Repository: ${currentContext.repoPath || '— (not set)'}`);
-      console.log(`  Spec: ${currentContext.paperSpec || '— (not set)'}`);
+    if (input.toLowerCase() === 'context') {
+      console.log('Context:');
+      console.log(`  Repository: ${currentContext.repoPath || '(not set)'}`);
+      console.log(`  Spec: ${currentContext.paperSpec || '(not set)'}`);
       console.log('');
       rl.prompt();
       return;
     }
 
-    // Parse natural language
+    const parts = input.split(/\s+/);
     const parsed = parseNaturalInput(input);
     
-    // Override with explicit values from input if present
-    const parts = input.split(/\s+/);
     if (parts[0] === 'set' && parts[1] === 'repo' && parts[2]) {
       parsed.command = 'set';
       parsed.repoPath = parts.slice(2).join(' ');
@@ -177,110 +149,87 @@ async function runRepl(): Promise<void> {
 
     try {
       switch (parsed.command) {
-        case 'set': {
+        case 'set':
           if (parsed.repoPath) {
             currentContext.repoPath = parsed.repoPath;
-            console.log(`✅ Set repository to: ${parsed.repoPath}`);
+            console.log(`Repository set to: ${parsed.repoPath}`);
           } else if (parsed.spec) {
             currentContext.paperSpec = parsed.spec;
-            console.log(`✅ Set spec to: ${parsed.spec}`);
-          } else {
-            console.log('Usage: set repo <path> | set spec <name>');
+            console.log(`Spec set to: ${parsed.spec}`);
           }
           break;
-        }
 
-        case 'analyze': {
-          const path = parsed.repoPath || currentContext.repoPath;
-          if (!path) {
-            console.log('❌ Please provide a path: analyze <path>');
-            console.log('   Or set default: set repo /path/to/repo');
+        case 'analyze':
+          const analyzePath = parsed.repoPath || currentContext.repoPath;
+          if (!analyzePath) {
+            console.log('Error: Provide path or set default: set repo /path');
           } else {
-            console.log(`🔍 Analyzing: ${path}`);
-            console.log('⏳ This may take a moment...');
-            await orchestrator.runIntegration({ repoUrl: path, mode: 'autonomous' });
-            console.log('✅ Analysis complete!');
+            console.log(`Analyzing: ${analyzePath}`);
+            await orchestrator.runIntegration({ repoUrl: analyzePath, mode: 'autonomous' });
+            console.log('Analysis complete');
           }
           break;
-        }
 
-        case 'suggest': {
-          const path = parsed.repoPath || currentContext.repoPath;
-          if (!path) {
-            console.log('❌ Please provide a path');
+        case 'suggest':
+          const suggestPath = parsed.repoPath || currentContext.repoPath;
+          if (!suggestPath) {
+            console.log('Error: Provide path');
           } else {
-            console.log(`💡 Getting suggestions for: ${path}`);
-            await orchestrator.runIntegration({ repoUrl: path, mode: 'autonomous' });
-            console.log('✅ Suggestions ready!');
+            console.log(`Getting suggestions for: ${suggestPath}`);
+            await orchestrator.runIntegration({ repoUrl: suggestPath, mode: 'autonomous' });
+            console.log('Suggestions ready');
           }
           break;
-        }
 
-        case 'search': {
+        case 'search':
           const query = parsed.query || input.replace(/^(search|find)\s+/i, '').trim() || 'machine learning';
-          console.log(`🔎 Searching for: ${query}`);
-          console.log('(Search via REPL coming soon - use TUI for now)');
+          console.log(`Searching for: ${query}`);
+          console.log('(Search via TUI for full results)');
           break;
-        }
 
-        case 'integrate': {
-          const path = parsed.repoPath || currentContext.repoPath;
+        case 'integrate':
+          const intPath = parsed.repoPath || currentContext.repoPath;
           const spec = parsed.spec || currentContext.paperSpec || 'rmsnorm';
-          if (!path) {
-            console.log('❌ Please provide a path');
+          if (!intPath) {
+            console.log('Error: Provide path');
           } else {
-            console.log(`🚀 Integrating ${spec} into: ${path}`);
-            console.log('⏳ Running full workflow...');
-            await orchestrator.runIntegration({
-              repoUrl: path,
-              paperUrl: `spec:${spec}`,
-              mode: 'autonomous',
-            });
-            console.log('✅ Integration complete!');
+            console.log(`Integrating ${spec} into: ${intPath}`);
+            await orchestrator.runIntegration({ repoUrl: intPath, paperUrl: `spec:${spec}`, mode: 'autonomous' });
+            console.log('Integration complete');
           }
           break;
-        }
 
-        case 'map': {
-          const path = parsed.repoPath || currentContext.repoPath;
-          const spec = parsed.spec || currentContext.paperSpec || 'rmsnorm';
-          if (!path) {
-            console.log('❌ Please provide a path');
-          } else {
-            console.log(`🗺 Mapping ${spec} to: ${path}`);
-            await orchestrator.runIntegration({ repoUrl: path, mode: 'autonomous' });
-            console.log('✅ Mapping complete!');
+        case 'map':
+          const mapPath = parsed.repoPath || currentContext.repoPath;
+          const mapSpec = parsed.spec || currentContext.paperSpec || 'rmsnorm';
+          if (!mapPath) console.log('Error: Provide path');
+          else {
+            console.log(`Mapping ${mapSpec} to: ${mapPath}`);
+            await orchestrator.runIntegration({ repoUrl: mapPath, mode: 'autonomous' });
           }
           break;
-        }
 
-        case 'generate': {
-          const path = parsed.repoPath || currentContext.repoPath;
-          const spec = parsed.spec || currentContext.paperSpec || 'rmsnorm';
-          if (!path) {
-            console.log('❌ Please provide a path');
-          } else {
-            console.log(`⚡ Generating patches for: ${path}`);
-            await orchestrator.runIntegration({ repoUrl: path, mode: 'autonomous' });
-            console.log('✅ Generation complete!');
+        case 'generate':
+          const genPath = parsed.repoPath || currentContext.repoPath;
+          const genSpec = parsed.spec || currentContext.paperSpec || 'rmsnorm';
+          if (!genPath) console.log('Error: Provide path');
+          else {
+            console.log(`Generating patches for: ${genPath}`);
+            await orchestrator.runIntegration({ repoUrl: genPath, mode: 'autonomous' });
           }
           break;
-        }
 
-        case 'validate': {
-          const path = parsed.repoPath || currentContext.repoPath;
-          if (!path) {
-            console.log('❌ Please provide a path');
-          } else {
-            console.log(`✅ Validating: ${path}`);
-            await orchestrator.runIntegration({ repoUrl: path, mode: 'autonomous' });
-            console.log('✅ Validation complete!');
+        case 'validate':
+          const valPath = parsed.repoPath || currentContext.repoPath;
+          if (!valPath) console.log('Error: Provide path');
+          else {
+            console.log(`Validating: ${valPath}`);
+            await orchestrator.runIntegration({ repoUrl: valPath, mode: 'autonomous' });
           }
           break;
-        }
 
-        case 'specs': {
-          console.log('📋 Available specs:');
+        case 'specs':
+          console.log('Available specs:');
           console.log('  rmsnorm        - Root Mean Square Layer Normalization');
           console.log('  flashattention - Flash Attention');
           console.log('  swiglu         - SwiGLU Activation');
@@ -291,24 +240,19 @@ async function runRepl(): Promise<void> {
           console.log('  alibi          - ALiBi Position Embedding');
           console.log('  qknorm         - Query-Key Normalization');
           break;
-        }
 
-        default: {
-          console.log(`❓ "${input}" - I didn\'t understand that.`);
-          console.log('   Type "help" for available commands.');
-        }
+        default:
+          console.log(`Unknown: ${input}. Type "help" for commands.`);
       }
     } catch (error) {
-      console.log(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`Error: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     console.log('');
     rl.prompt();
   });
 
-  rl.on('close', () => {
-    process.exit(0);
-  });
+  rl.on('close', () => process.exit(0));
 }
 
 async function run(): Promise<void> {
@@ -329,36 +273,20 @@ async function run(): Promise<void> {
     const paperPdfPath = getArg('--paper-pdf');
     const mode = getArg('--mode') as 'step_approval' | 'autonomous' | undefined;
 
-    if (!repoUrl) {
-      throw new Error('Missing required argument: --repo <path-or-url>');
-    }
-    if (!paperUrl && !paperPdfPath) {
-      throw new Error('Provide one research source: --paper-url <arxiv-id/url> or --paper-pdf <path>');
-    }
+    if (!repoUrl) throw new Error('Missing required argument: --repo <path-or-url>');
+    if (!paperUrl && !paperPdfPath) throw new Error('Provide: --paper-url <url> or --paper-pdf <path>');
 
-    await orchestrator.runIntegration({
-      repoUrl,
-      paperUrl,
-      paperPdfPath,
-      mode,
-    });
-
-    logger.info('Run command completed');
+    await orchestrator.runIntegration({ repoUrl, paperUrl, paperPdfPath, mode });
+    logger.info('Run completed');
     return;
   }
 
   if (command === 'resume') {
     const runId = getArg('--run-id');
-    if (!runId) {
-      throw new Error('Missing required argument: --run-id <run-id>');
-    }
-
+    if (!runId) throw new Error('Missing required argument: --run-id <run-id>');
     const resumed = await orchestrator.resumeRun(runId);
-    if (!resumed) {
-      throw new Error(`Resume failed for run id: ${runId}`);
-    }
-
-    logger.info('Resume command completed', { runId });
+    if (!resumed) throw new Error(`Resume failed for run id: ${runId}`);
+    logger.info('Resume completed', { runId });
     return;
   }
 

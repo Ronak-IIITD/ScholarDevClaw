@@ -24,38 +24,6 @@ from scholardevclaw.application.pipeline import (
     run_suggest,
     run_validate,
 )
-from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
-
-
-# ANSI colors for terminal output
-class Colors:
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-
-    # Foreground colors
-    BLACK = "\033[30m"
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    CYAN = "\033[36m"
-    WHITE = "\033[37m"
-
-    # Bright foreground
-    BRIGHT_RED = "\033[91m"
-    BRIGHT_GREEN = "\033[92m"
-    BRIGHT_YELLOW = "\033[93m"
-    BRIGHT_BLUE = "\033[94m"
-    BRIGHT_MAGENTA = "\033[95m"
-    BRIGHT_CYAN = "\033[96m"
-
-    # Background
-    BG_BLACK = "\033[40m"
-    BG_BLUE = "\033[44m"
-    BG_CYAN = "\033[46m"
-    BG_MAGENTA = "\033[45m"
 
 
 class TaskCompleted(Message):
@@ -79,22 +47,18 @@ class AgentLog(Message):
         self.line = line
 
 
-class LoadingComplete(Message):
-    pass
-
-
 class ScholarDevClawApp(App[None]):
     TITLE = "ScholarDevClaw"
-    SUB_TITLE = "Research → Code Assistant"
+    SUB_TITLE = "Research-to-Code Assistant"
 
     PHASES = [
-        ("idle", "💤 Ready", 0),
-        ("analyzing", "🔍 Analyzing repository...", 0.15),
-        ("research", "📚 Fetching research papers...", 0.3),
-        ("mapping", "🗺 Mapping code patterns...", 0.5),
-        ("generating", "⚡ Generating patches...", 0.7),
-        ("validating", "✅ Running validation...", 0.85),
-        ("complete", "✨ Complete!", 1.0),
+        ("idle", "Ready", 0),
+        ("analyzing", "Analyzing repository...", 0.15),
+        ("research", "Fetching research...", 0.3),
+        ("mapping", "Mapping patterns...", 0.5),
+        ("generating", "Generating patches...", 0.7),
+        ("validating", "Validating...", 0.85),
+        ("complete", "Complete", 1.0),
     ]
 
     AVAILABLE_SPECS = [
@@ -110,32 +74,24 @@ class ScholarDevClawApp(App[None]):
     ]
 
     CSS = """
-    /* ========================================
-       PREMIUM DARK THEME V3
-       Enhanced with Animations + Glows
-       ======================================== */
+    /* Professional Dark Theme */
 
     Screen {
         layout: vertical;
-        background: #030712;
-        color: #e2e8f0;
+        background: $surface;
+        color: $text;
     }
 
     Header {
-        background: linear-gradient(90deg, #0c1929 0%, #1e1b4b 50%, #0c1929 100%);
-        color: #f1f5f9;
+        background: $header;
+        color: $text;
         dock: top;
         height: 3;
     }
 
-    Header > .header--clock {
-        color: #22d3ee;
-        text-style: bold;
-    }
-
     Footer {
-        background: #0c1929;
-        color: #475569;
+        background: $header;
+        color: $text-muted;
         dock: bottom;
         height: 1;
     }
@@ -143,277 +99,220 @@ class ScholarDevClawApp(App[None]):
     #main-container {
         height: 100%;
         padding: 1 2;
-        background: #030712;
+        background: $surface;
     }
 
-    .glass-panel {
-        background: rgba(12, 25, 41, 0.85);
-        border: 1px solid rgba(56, 189, 248, 0.1);
-        backdrop-blur: 20px;
-        border-radius: 20px;
+    .panel {
+        background: $panel;
+        border: solid $border;
+        border-radius: 8px;
         padding: 1;
     }
 
     .section-title {
         text-style: bold;
-        color: #22d3ee;
-        text-shadow: 0 0 25px rgba(34, 211, 238, 0.5);
+        color: $accent;
         margin-bottom: 1;
     }
 
-    .section-subtitle {
-        color: #475569;
-        margin-bottom: 1;
-    }
-
-    /* Panels */
     #wizard-panel {
-        width: 32%;
-        border: solid rgba(59, 130, 246, 0.25);
-        background: rgba(12, 25, 41, 0.6);
-        border-radius: 20px;
+        width: 30%;
+        background: $panel;
+        border: solid $border;
+        border-radius: 8px;
         padding: 1 1;
         margin-right: 1;
     }
 
     #output-panel {
-        width: 68%;
-        border: solid rgba(139, 92, 246, 0.25);
-        background: rgba(12, 25, 41, 0.6);
-        border-radius: 20px;
+        width: 70%;
+        background: $panel;
+        border: solid $border;
+        border-radius: 8px;
         padding: 1 1;
     }
 
     #agent-panel {
-        height: 30%;
+        height: 28%;
         dock: bottom;
-        border: solid rgba(34, 211, 238, 0.35);
-        background: rgba(8, 47, 73, 0.35);
-        border-radius: 20px 20px 0 0;
+        background: $panel;
+        border: solid $border;
+        border-radius: 8px 8px 0 0;
         margin: 0 2;
         padding: 1;
     }
 
-    /* Animated progress bar */
     #phase-container {
         dock: top;
-        height: 3;
-        background: rgba(15, 23, 42, 0.6);
-        border-radius: 10px;
+        height: 2;
+        background: $surface-dark;
+        border-radius: 4px;
         margin-bottom: 1;
     }
 
     #phase-progress {
         width: 0%;
         height: 100%;
-        background: linear-gradient(90deg, #06b6d4, #3b82f6, #8b5cf6, #06b6d4);
-        background-size: 300% 100%;
-        border-radius: 10px;
-    }
-
-    #phase-progress.animated {
-        animation: gradient-shift 2s ease infinite;
-    }
-
-    @keyframes gradient-shift {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
+        background: $accent;
+        border-radius: 4px;
     }
 
     #phase-label {
         dock: top;
         height: 1;
-        color: #22d3ee;
-        text-style: bold;
+        color: $text-muted;
     }
 
-    /* Loading spinner */
-    #spinner {
-        dock: top;
-        height: 1;
-        color: #22d3ee;
-        display: none;
-    }
-
-    #spinner.visible {
-        display: block;
-    }
-
-    /* Result with syntax highlighting */
     #result {
         height: 10;
-        border: none;
-        background: rgba(3, 7, 18, 0.95);
-        border-radius: 16px;
+        background: $surface-dark;
+        border-radius: 6px;
         padding: 0 1;
     }
 
     #logs {
         height: 7;
-        border: none;
-        background: rgba(3, 7, 18, 0.95);
-        border-radius: 16px;
+        background: $surface-dark;
+        border-radius: 6px;
         margin-top: 1;
     }
 
     #history {
         height: 4;
-        border: none;
-        background: rgba(3, 7, 18, 0.95);
-        border-radius: 16px;
+        background: $surface-dark;
+        border-radius: 6px;
         margin-top: 1;
     }
 
     #agent-logs {
         height: 1fr;
-        border: none;
-        background: rgba(3, 7, 18, 0.98);
-        border-radius: 16px;
+        background: $surface-dark;
+        border-radius: 6px;
     }
 
-    /* Prompt bar */
     #prompt-bar {
         dock: bottom;
         height: 3;
-        background: rgba(12, 25, 41, 0.98);
-        border-top: 1px solid rgba(34, 211, 238, 0.15);
+        background: $panel;
+        border-top: 1px solid $border;
         padding: 0 1;
     }
 
     #prompt-input {
         width: 100%;
-        border: none;
         background: transparent;
-        color: #22d3ee;
-        text-style: bold;
+        color: $accent;
     }
 
     #prompt-input::placeholder {
-        color: #1e3a5f;
+        color: $text-muted;
     }
 
-    /* Quick actions */
     #quick-actions {
         dock: top;
         height: 3;
-        background: rgba(12, 25, 41, 0.5);
+        background: transparent;
         padding: 0 1;
     }
 
-    /* Inputs */
     Input {
-        background: rgba(3, 7, 18, 0.85);
-        color: #e2e8f0;
-        border: 1px solid rgba(59, 130, 246, 0.15);
-        border-radius: 14px;
+        background: $surface-dark;
+        color: $text;
+        border: solid $border;
+        border-radius: 6px;
         padding: 0 1;
     }
 
     Input:focus {
-        border: 1px solid #22d3ee;
-        box-shadow: 0 0 25px rgba(34, 211, 238, 0.3);
+        border: $accent;
     }
 
     Input::placeholder {
-        color: #1e3a5f;
+        color: $text-muted;
     }
 
     Select {
-        background: rgba(3, 7, 18, 0.85);
-        color: #e2e8f0;
-        border: 1px solid rgba(59, 130, 246, 0.15);
-        border-radius: 14px;
+        background: $surface-dark;
+        color: $text;
+        border: solid $border;
+        border-radius: 6px;
     }
 
     Select:focus {
-        border: 1px solid #22d3ee;
+        border: $accent;
     }
 
     Checkbox {
-        color: #475569;
+        color: $text-muted;
     }
 
     Checkbox:focus {
-        color: #22d3ee;
+        color: $accent;
     }
 
-    /* Buttons */
     Button {
         border: none;
-        background: rgba(59, 130, 246, 0.12);
-        color: #60a5fa;
-        border-radius: 14px;
+        background: $button;
+        color: $text;
+        border-radius: 6px;
         padding: 0 1;
         min-width: 12;
     }
 
     Button:hover {
-        background: rgba(59, 130, 246, 0.25);
-        border: 1px solid #3b82f6;
-        box-shadow: 0 0 20px rgba(59, 130, 246, 0.35);
+        background: $button-hover;
     }
 
     Button.-primary {
-        background: linear-gradient(135deg, #0891b2 0%, #3b82f6 100%);
-        color: #ffffff;
+        background: $accent;
+        color: $text-inverse;
         text-style: bold;
-        border: none;
     }
 
     Button.-primary:hover {
-        box-shadow: 0 0 30px rgba(14, 165, 233, 0.6);
+        background: $accent-hover;
     }
 
     Button.-success {
-        background: linear-gradient(135deg, #047857 0%, #10b981 100%);
-        color: #ffffff;
+        background: $success;
+        color: $text-inverse;
         text-style: bold;
-    }
-
-    Button.-success:hover {
-        box-shadow: 0 0 30px rgba(16, 185, 129, 0.6);
     }
 
     Button.-error {
-        background: linear-gradient(135deg, #b91c1c 0%, #ef4444 100%);
-        color: #ffffff;
+        background: $error;
+        color: $text-inverse;
         text-style: bold;
     }
 
-    Button.-error:hover {
-        box-shadow: 0 0 30px rgba(239, 68, 68, 0.6);
-    }
-
     Button:disabled {
-        opacity: 0.25;
+        opacity: 0.4;
     }
 
     .quick-btn {
-        background: rgba(139, 92, 246, 0.12);
-        color: #a78bfa;
-        border-radius: 12px;
+        background: transparent;
+        color: $text-muted;
+        border: 1px solid $border;
+        border-radius: 6px;
         padding: 0 1;
         min-width: 10;
     }
 
     .quick-btn:hover {
-        background: rgba(139, 92, 246, 0.3);
-        box-shadow: 0 0 20px rgba(139, 92, 246, 0.45);
+        background: $button-hover;
+        color: $text;
     }
 
     Label {
-        color: #475569;
+        color: $text-muted;
     }
 
     #run-status {
         dock: top;
         height: 1;
-        background: rgba(12, 25, 41, 0.9);
-        color: #22d3ee;
-        text-style: bold;
+        background: transparent;
+        color: $text-muted;
         padding: 0 1;
-        border-radius: 8px;
     }
 
     .spaced { margin-top: 1; }
@@ -421,49 +320,61 @@ class ScholarDevClawApp(App[None]):
 
     Pretty {
         background: transparent;
-        color: #e2e8f0;
+        color: $text;
     }
 
     TextArea {
-        background: rgba(3, 7, 18, 0.9);
-        color: #64748b;
+        background: $surface-dark;
+        color: $text-muted;
         border: none;
-        border-radius: 16px;
+        border-radius: 6px;
     }
 
     TextArea:focus {
-        border: 1px solid rgba(34, 211, 238, 0.15);
+        border: 1px solid $border;
     }
 
     .agent-status {
         dock: top;
         height: 1;
-        color: #475569;
+        color: $text-muted;
     }
 
     .agent-status.online {
-        color: #10b981;
-        text-style: bold;
+        color: $success;
     }
 
     .agent-status.offline {
-        color: #ef4444;
+        color: $text-muted;
     }
 
     Horizontal { height: auto; }
     Vertical { height: auto; }
+
+    $surface: #0d1117;
+    $surface-dark: #161b22;
+    $panel: #21262d;
+    $border: #30363d;
+    $text: #c9d1d9;
+    $text-muted: #8b949e;
+    $accent: #58a6ff;
+    $accent-hover: #79c0ff;
+    $button: #21262d;
+    $button-hover: #30363d;
+    $success: #238636;
+    $error: #da3633;
+    $text-inverse: #ffffff;
+    $header: #161b22;
     """
 
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+r", "run_selected", "Run"),
-        ("ctrl+e", "run_selected", "Run"),
         ("escape", "handle_escape", "Stop"),
         ("ctrl+l", "clear_logs", "Clear"),
         ("ctrl+a", "quick_action_analyze", "Analyze"),
         ("ctrl+s", "quick_action_suggest", "Suggest"),
         ("ctrl+i", "quick_action_integrate", "Integrate"),
-        ("ctrl+h", "show_help", "Help"),
     ]
 
     action_mode_options = [
@@ -499,7 +410,6 @@ class ScholarDevClawApp(App[None]):
         self._load_context()
 
     def _load_context(self) -> None:
-        """Load saved context from file."""
         try:
             if self._context_file.exists():
                 self._saved_context = json.loads(self._context_file.read_text())
@@ -507,7 +417,6 @@ class ScholarDevClawApp(App[None]):
             self._saved_context = {}
 
     def _save_context(self) -> None:
-        """Save context to file."""
         try:
             self._context_file.parent.mkdir(parents=True, exist_ok=True)
             self._context_file.write_text(json.dumps(self._saved_context, indent=2))
@@ -515,69 +424,23 @@ class ScholarDevClawApp(App[None]):
             pass
 
     def _update_saved_context(self, key: str, value: Any) -> None:
-        """Update and persist context."""
         self._saved_context[key] = value
         self._save_context()
 
-    def _get_completions(self, partial: str) -> list[str]:
-        """Get tab completions for input."""
-        completions = []
-        partial_lower = partial.lower()
-
-        # Common commands
-        commands = [
-            "analyze",
-            "suggest",
-            "integrate",
-            "search",
-            "map",
-            "generate",
-            "validate",
-            "specs",
-            "set repo",
-            "set spec",
-            "help",
-            "exit",
-            "context",
-            "clear",
-        ]
-        completions.extend([c for c in commands if c.startswith(partial_lower)])
-
-        # Spec names
-        completions.extend([s for s in self.AVAILABLE_SPECS if s.startswith(partial_lower)])
-
-        # Paths (simple)
-        if partial.startswith("/") or partial.startswith("."):
-            try:
-                base = Path(partial).parent if "/" in partial else Path(".")
-                if base.exists():
-                    for p in base.iterdir():
-                        name = p.name
-                        if name.startswith(Path(partial).name):
-                            completions.append(str(p))
-            except Exception:
-                pass
-
-        return completions[:10]
-
     def _parse_natural_command(self, prompt: str) -> tuple[str, dict[str, Any]]:
-        """Parse natural language into structured command."""
         prompt_lower = prompt.strip().lower()
         ctx: dict[str, Any] = {}
         command = "help"
 
-        # Extract repo path
         path_match = re.search(r"(?:to|on|in|at|for)\s+([/\w~.][^\s]+)", prompt)
         if path_match:
             ctx["repo_path"] = path_match.group(1)
 
-        # Extract spec
         for spec in self.AVAILABLE_SPECS:
             if spec in prompt_lower:
                 ctx["spec"] = spec
                 break
 
-        # Detect intent
         if any(kw in prompt_lower for kw in ["analyze", "scan", "inspect", "examine"]):
             command = "analyze"
         elif any(kw in prompt_lower for kw in ["suggest", "recommend", "improvement", "ideas"]):
@@ -586,9 +449,6 @@ class ScholarDevClawApp(App[None]):
             command = "integrate"
         elif any(kw in prompt_lower for kw in ["search", "find", "look for"]):
             command = "search"
-            q_match = re.search(r'search(?:ing)?\s+(?:for\s+)?["\']?(.+)', prompt_lower)
-            if q_match:
-                ctx["query"] = q_match.group(1).strip().strip("\"'")
         elif any(kw in prompt_lower for kw in ["map", "connect"]):
             command = "map"
         elif any(kw in prompt_lower for kw in ["generate", "create patch"]):
@@ -601,87 +461,28 @@ class ScholarDevClawApp(App[None]):
         return command, ctx
 
     def _set_phase(self, phase: str) -> None:
-        """Update phase with animation."""
         self._current_phase = phase
         for phase_name, label, progress in self.PHASES:
             if phase_name == phase:
                 try:
                     bar = self.query_one("#phase-progress")
                     bar.styles.width = f"{int(progress * 100)}%"
-                    bar.add_class("animated") if progress > 0 else bar.remove_class("animated")
-
                     label_widget = self.query_one("#phase-label")
                     label_widget.update(label)
                 except Exception:
                     pass
                 break
 
-    def _format_rich_output(self, data: dict[str, Any]) -> str:
-        """Format output with colors and structure."""
-        lines = []
-
-        # Title
-        title = data.get("title", "")
-        if title:
-            lines.append(f"{Colors.BRIGHT_CYAN}{Colors.BOLD}▶ {title}{Colors.RESET}")
-            lines.append("")
-
-        # Status
-        error = data.get("error")
-        if error:
-            lines.append(f"{Colors.BRIGHT_RED}✗ Error: {error}{Colors.RESET}")
-        elif data.get("result"):
-            lines.append(f"{Colors.BRIGHT_GREEN}✓ Success{Colors.RESET}")
-
-        # Key info
-        result = data.get("result", {})
-        if isinstance(result, dict):
-            # Languages
-            if "languages" in result:
-                langs = result["languages"]
-                lines.append(
-                    f"{Colors.CYAN}Languages:{Colors.RESET} {', '.join(langs) if isinstance(langs, list) else langs}"
-                )
-
-            # Specs
-            if "spec" in result:
-                lines.append(f"{Colors.MAGENTA}Spec:{Colors.RESET} {result['spec']}")
-
-            # Suggestions count
-            if "suggestions" in result:
-                count = len(result["suggestions"])
-                lines.append(f"{Colors.YELLOW}Suggestions:{Colors.RESET} {count} found")
-
-            # Written files
-            gen = result.get("generation") or result
-            if "written_files" in gen:
-                files = gen["written_files"]
-                lines.append(f"{Colors.GREEN}Files written:{Colors.RESET}")
-                for f in (files if isinstance(files, list) else [])[:5]:
-                    lines.append(f"  • {f}")
-
-            # Validation
-            if "scorecard" in result:
-                sc = result["scorecard"]
-                summary = sc.get("summary", "unknown")
-                status_color = Colors.BRIGHT_GREEN if summary == "pass" else Colors.BRIGHT_YELLOW
-                lines.append(f"{status_color}Validation:{Colors.RESET} {summary}")
-
-        return "\n".join(lines) if lines else json.dumps(data, indent=2)
-
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
 
-        # Phase progress
-        yield Label("💤 Ready", id="phase-label")
+        yield Label("Ready", id="phase-label")
         with Horizontal(id="phase-container"):
             yield Label("", id="phase-progress")
 
         with Horizontal(id="main-container"):
-            # Left Panel
-            with Vertical(id="wizard-panel", classes="glass-panel"):
-                yield Label("⚡ Workflow", classes="section-title")
-                yield Label("Pipeline configuration", classes="section-subtitle")
+            with Vertical(id="wizard-panel", classes="panel"):
+                yield Label("Workflow", classes="section-title")
                 yield Select(
                     self.action_mode_options,
                     value=self._saved_context.get("last_action", "analyze"),
@@ -689,12 +490,12 @@ class ScholarDevClawApp(App[None]):
                 )
                 yield Input(
                     value=self._saved_context.get("last_repo", str(Path.cwd())),
-                    placeholder="/path/to/repo",
+                    placeholder="/path/to/repository",
                     id="repo-path",
                 )
                 yield Input(
                     value=self._saved_context.get("last_query", "layer normalization"),
-                    placeholder="Search query...",
+                    placeholder="Search query",
                     id="query",
                 )
                 with Horizontal(classes="spaced-small"):
@@ -715,14 +516,13 @@ class ScholarDevClawApp(App[None]):
                 with Horizontal(classes="spaced-small"):
                     yield Checkbox("Dry-run", value=False, id="integrate-dry-run")
                     yield Checkbox("Clean git", value=False, id="integrate-require-clean")
-                yield Label("Status: Ready", id="run-status")
+                yield Label("Ready", id="run-status")
                 with Horizontal(classes="spaced"):
-                    yield Button("▶ Run", id="run", variant="success")
-                    yield Button("↺", id="clear", variant="default", tooltip="Clear")
+                    yield Button("Run", id="run", variant="primary")
+                    yield Button("Clear", id="clear")
 
-            # Right Panel
-            with Vertical(id="output-panel", classes="glass-panel"):
-                yield Label("📊 Results", classes="section-title")
+            with Vertical(id="output-panel", classes="panel"):
+                yield Label("Results", classes="section-title")
                 yield Pretty({}, id="result")
                 yield Label("Logs", classes="section-title")
                 yield TextArea("", id="logs", read_only=True)
@@ -730,27 +530,24 @@ class ScholarDevClawApp(App[None]):
                 yield TextArea("No runs yet.", id="history", read_only=True)
                 with Horizontal(classes="spaced-small"):
                     yield Input(value="", placeholder="#", id="history-id")
-                    yield Button("↻", id="rerun-history", variant="primary")
-                    yield Button("👁", id="view-history", variant="default")
+                    yield Button("Rerun", id="rerun-history")
+                    yield Button("View", id="view-history")
 
-        # Agent Panel
-        with Vertical(id="agent-panel", classes="glass-panel"):
-            yield Label("🤖 Agent Mode", classes="section-title")
+        with Vertical(id="agent-panel", classes="panel"):
+            yield Label("Agent Mode", classes="section-title")
             with Horizontal(id="quick-actions"):
-                yield Button("🚀 Launch", id="launch-agent", variant="primary")
-                yield Button("⏹ Stop", id="stop-agent", variant="error")
-                yield Button("📋 Analyze", id="quick-analyze", classes="quick-btn")
-                yield Button("💡 Suggest", id="quick-suggest", classes="quick-btn")
-                yield Button("🔗 Integrate", id="quick-integrate", classes="quick-btn")
-                yield Button("❓ Help", id="show-help", classes="quick-btn")
-                yield Label("", id="agent-status", classes="agent-status offline")
+                yield Button("Launch", id="launch-agent", variant="primary")
+                yield Button("Stop", id="stop-agent", variant="error")
+                yield Button("Analyze", id="quick-analyze", classes="quick-btn")
+                yield Button("Suggest", id="quick-suggest", classes="quick-btn")
+                yield Button("Integrate", id="quick-integrate", classes="quick-btn")
+                yield Label("Offline", id="agent-status", classes="agent-status offline")
             yield TextArea("", id="agent-logs", read_only=True)
 
-        # Prompt Bar
         with Horizontal(id="prompt-bar"):
             yield Input(
                 value="",
-                placeholder="> Type naturally... (Try: 'apply rmsnorm to /path')",
+                placeholder="> Type request... (e.g., 'apply rmsnorm to /path')",
                 id="prompt-input",
             )
 
@@ -761,18 +558,6 @@ class ScholarDevClawApp(App[None]):
         current = area.text
         merged = (current + "\n" if current else "") + "\n".join(lines)
         area.load_text(merged)
-        # Auto-scroll
-        area.action_cursor_bottom_end()
-
-    def _payload_compat_messages(
-        self, payload: dict[str, Any], *, expected_types: set[str] | None = None
-    ) -> list[str]:
-        report = evaluate_payload_compatibility(payload, expected_types=expected_types)
-        lines = []
-        lines.extend([f"⚠️ {item}" for item in report.issues])
-        lines.extend([f"📝 {item}" for item in report.warnings])
-        lines.extend([f"ℹ️ {item}" for item in report.notes])
-        return lines
 
     def _capture_run_request(self) -> dict[str, Any]:
         return {
@@ -854,8 +639,6 @@ class ScholarDevClawApp(App[None]):
         self._run_history = self._run_history[: self._history_limit]
         self.query_one("#history-id", Input).value = str(record["id"])
         self._render_history()
-
-        # Save context
         self._update_saved_context("last_action", action)
         self._update_saved_context("last_repo", request.get("repo_path", ""))
         self._update_saved_context("last_spec", request.get("spec", ""))
@@ -879,11 +662,11 @@ class ScholarDevClawApp(App[None]):
     def _update_agent_status(self, online: bool) -> None:
         status = self.query_one("#agent-status", Label)
         if online:
-            status.update("● Online")
+            status.update("Online")
             status.add_class("online")
             status.remove_class("offline")
         else:
-            status.update("○ Offline")
+            status.update("Offline")
             status.add_class("offline")
             status.remove_class("online")
 
@@ -891,31 +674,12 @@ class ScholarDevClawApp(App[None]):
         repo_path = self.query_one("#repo-path", Input).value.strip()
 
         if not repo_path:
-            self._append_logs("agent-logs", ["⚠️ Set repository path first"])
+            self._append_logs("agent-logs", ["Error: Set repository path first"])
             return
 
         self.query_one("#action", Select).value = action
         self._set_phase("analyzing")
         self._run_selected_workflow()
-
-    def action_show_help(self) -> None:
-        self._append_logs(
-            "agent-logs",
-            [
-                f"{Colors.BRIGHT_CYAN}📖 Keyboard Shortcuts:{Colors.RESET}",
-                "  Ctrl+A - Quick Analyze",
-                "  Ctrl+S - Quick Suggest",
-                "  Ctrl+I - Quick Integrate",
-                "  Ctrl+R - Run workflow",
-                "  Ctrl+L - Clear logs",
-                "  Esc   - Stop agent",
-                "",
-                f"{Colors.BRIGHT_YELLOW}💡 Natural Language:{Colors.RESET}",
-                "  'apply rmsnorm to /path'",
-                "  'suggest improvements for /repo'",
-                "  'search for attention mechanism'",
-            ],
-        )
 
     def action_quick_action_analyze(self) -> None:
         self._execute_quick_action("analyze")
@@ -979,10 +743,6 @@ class ScholarDevClawApp(App[None]):
     def on_quick_integrate(self) -> None:
         self._execute_quick_action("integrate")
 
-    @on(Button.Pressed, "#show-help")
-    def on_show_help(self) -> None:
-        self.action_show_help()
-
     def _run_selected_workflow(self, override_request: dict[str, Any] | None = None) -> None:
         request = override_request or self._capture_run_request()
         action = request.get("action", "analyze")
@@ -1019,7 +779,7 @@ class ScholarDevClawApp(App[None]):
             except Exception:
                 pass
 
-        self.query_one("#run-status", Label).update(f"⚡ Running '{action}'...")
+        self.query_one("#run-status", Label).update(f"Running '{action}'...")
         self._live_logs_enabled = True
         self._active_run_request = request
         self._active_run_started_at = time.perf_counter()
@@ -1078,31 +838,17 @@ class ScholarDevClawApp(App[None]):
             )
 
         threading.Thread(target=_runner, daemon=True).start()
-        self._append_logs("logs", [f"🚀 Starting: {action} on {repo_path or 'default'}"])
+        self._append_logs("logs", [f"Started: {action} on {repo_path or 'default'}"])
 
     @on(TaskCompleted)
     def on_task_completed(self, message: TaskCompleted) -> None:
         self._set_phase("complete")
 
-        # Rich output
         payload = {"title": message.title, "error": message.error, "result": message.result}
-        self._format_rich_output(payload)  # Generate formatted text
         self.query_one("#result", Pretty).update(payload)
-
-        compat_messages = self._payload_compat_messages(
-            message.result,
-            expected_types={"integration", "validation"}
-            if message.title in ("Integration", "Validation")
-            else None,
-        )
-        if compat_messages:
-            self._append_logs("logs", compat_messages)
-        if not self._live_logs_enabled:
-            self._append_logs("logs", message.logs)
 
         self._live_logs_enabled = False
 
-        # Re-enable buttons
         run_button = self.query_one("#run", Button)
         run_button.disabled = False
         for btn in [
@@ -1117,11 +863,7 @@ class ScholarDevClawApp(App[None]):
             except Exception:
                 pass
 
-        status = (
-            f"{Colors.BRIGHT_GREEN}✓ Done{Colors.RESET}"
-            if message.error is None
-            else f"{Colors.BRIGHT_RED}✗ Failed{Colors.RESET}"
-        )
+        status = "Done" if message.error is None else "Failed"
         self.query_one("#run-status", Label).update(f"{status} ({message.title})")
 
         action = (self._active_run_request or {}).get("action", "unknown")
@@ -1148,14 +890,14 @@ class ScholarDevClawApp(App[None]):
     @on(Button.Pressed, "#launch-agent")
     def on_launch_agent(self) -> None:
         if self._agent_process and self._agent_process.poll() is None:
-            self._append_logs("agent-logs", ["🤖 Agent already running"])
+            self._append_logs("agent-logs", ["Agent already running"])
             return
 
         project_root = Path(__file__).resolve().parents[4]
         agent_dir = project_root / "agent"
 
         if not agent_dir.exists():
-            self._append_logs("agent-logs", ["❌ Agent folder not found"])
+            self._append_logs("agent-logs", [f"Agent directory not found: {agent_dir}"])
             return
 
         try:
@@ -1172,16 +914,15 @@ class ScholarDevClawApp(App[None]):
             self._agent_running = True
             self._update_agent_status(True)
         except Exception as exc:
-            self._append_logs("agent-logs", [f"❌ Launch failed: {exc}"])
+            self._append_logs("agent-logs", [f"Failed to launch: {exc}"])
             return
 
         self._append_logs(
             "agent-logs",
             [
-                f"{Colors.BRIGHT_GREEN}🚀 Agent ready!{Colors.RESET}",
-                f"{Colors.CYAN}Commands:{Colors.RESET} analyze, suggest, integrate, search...",
-                f"{Colors.YELLOW}Try:{Colors.RESET} 'apply rmsnorm to /path/to/repo'",
-                f"{Colors.DIM}Type 'exit' to stop, 'help' for more{Colors.RESET}",
+                "Agent launched in REPL mode",
+                "Commands: analyze, suggest, integrate, search...",
+                "Type 'help' for more, 'exit' to quit",
             ],
         )
 
@@ -1214,13 +955,13 @@ class ScholarDevClawApp(App[None]):
     @on(Button.Pressed, "#stop-agent")
     def on_stop_agent(self) -> None:
         if not self._agent_process or self._agent_process.poll() is not None:
-            self._append_logs("agent-logs", ["🤖 No running agent"])
+            self._append_logs("agent-logs", ["No running agent"])
             self._update_agent_status(False)
             return
         self._agent_running = False
         self._agent_process.terminate()
         self._update_agent_status(False)
-        self._append_logs("agent-logs", ["🛑 Agent stopped"])
+        self._append_logs("agent-logs", ["Agent stopped"])
 
     @on(Input.Submitted, "#prompt-input")
     def on_prompt_submit(self, event: Input.Submitted) -> None:
@@ -1232,15 +973,20 @@ class ScholarDevClawApp(App[None]):
         self._history_index = len(self._command_history)
         event.input.value = ""
 
-        # Help command
         if prompt.lower() in ("help", "?"):
-            self.action_show_help()
+            self._append_logs(
+                "agent-logs",
+                [
+                    "Commands: analyze, suggest, integrate, search, map, generate, validate",
+                    "Natural language: 'apply rmsnorm to /path'",
+                    "Type 'exit' to quit",
+                ],
+            )
             return
 
         if not self._agent_running or not self._agent_stdin:
-            # Parse and run locally
             command, ctx = self._parse_natural_command(prompt)
-            self._append_logs("agent-logs", [f"👤 {prompt}"])
+            self._append_logs("agent-logs", [f"User: {prompt}"])
 
             if "repo_path" in ctx:
                 self.query_one("#repo-path", Input).value = ctx["repo_path"]
@@ -1254,18 +1000,17 @@ class ScholarDevClawApp(App[None]):
             self._run_selected_workflow()
             return
 
-        # Send to agent
         if prompt.lower() in ("exit", "quit"):
             self.on_stop_agent()
             return
 
-        self._append_logs("agent-logs", [f"\n👤 {prompt}"])
+        self._append_logs("agent-logs", [f"User: {prompt}"])
 
         try:
             self._agent_stdin.write(prompt + "\n")
             self._agent_stdin.flush()
         except Exception as exc:
-            self._append_logs("agent-logs", [f"❌ Error: {exc}"])
+            self._append_logs("agent-logs", [f"Error: {exc}"])
 
     def on_unmount(self) -> None:
         if self._agent_process and self._agent_process.poll() is None:
@@ -1280,7 +1025,7 @@ class ScholarDevClawApp(App[None]):
         self._escape_pressed_count += 1
 
         if self._escape_pressed_count == 1:
-            self._show_warning_bar("⚠️ Press ESC again to stop...")
+            self._show_warning_bar("Press ESC again to stop agent...")
             self._escape_warning_shown = True
         elif self._escape_pressed_count >= 2 and self._escape_warning_shown:
             self._hide_warning_bar()
