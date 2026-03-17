@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+agent/node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+core/.venv/
+.venv/
+venv/
+
+# Build artifacts
+agent/dist/
+core/build/
+core/dist/
+
+# Dev/IDE
+.git/
+.github/
+.vscode/
+.idea/
+*.swp
+
+# Test/CI
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Secrets
+.env
+.env.local
+docker/.env
+auth.json
+*.pem
+*.salt
+
+# Misc
+test_repos/
+vendor/
+web/node_modules/

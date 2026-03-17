@@ -4,6 +4,19 @@
 
 **Last updated:** 2026-03-17
 
+### 2026-03-17 (CI Fix — Docker Build Failures)
+
+**Goal:** Fix Docker build failures in the CI `docker-build` job.
+
+**Summary:** Both `Dockerfile.core` and `Dockerfile.agent` had build-breaking issues. The core image was missing `README.md` and `LICENSE` in the builder stage (required by `pyproject.toml`'s `readme = "README.md"` during `pip install`), and had a broken no-op `apt-get install -y` with no packages in the production stage. The agent image referenced `bun.lockb` (old binary format) but the repo has `bun.lock` (text format), and pinned `bun@1.1.42` which doesn't support the text lockfile format. Also added a `.dockerignore` to exclude `node_modules/`, `.venv/`, build artifacts, and secrets from the build context.
+
+**Fixed files:**
+- `docker/Dockerfile.core` — copy `README.md` + `LICENSE` into builder stage; fix broken `apt-get install` in production stage
+- `docker/Dockerfile.agent` — fix lockfile glob from `bun.lockb*` to `bun.lock*`; update pinned bun from `1.1.42` to `1.3.10` (supports text lockfile format)
+- `.dockerignore` (NEW) — exclude `node_modules/`, `.venv/`, build artifacts, `.git/`, secrets, test repos from Docker build context
+
+---
+
 ### 2026-03-17 (CI Fix — Ruff Lint Errors)
 
 **Goal:** Fix all CI pipeline failures caused by ruff lint errors in test files.

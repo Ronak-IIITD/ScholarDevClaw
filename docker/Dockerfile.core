@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY core/pyproject.toml ./
+COPY core/pyproject.toml core/README.md core/LICENSE ./
 COPY core/src/ ./src/
 
 RUN pip install --no-cache-dir --target=/app/deps .
@@ -18,9 +18,7 @@ WORKDIR /app
 RUN groupadd -r scholardevclaw && useradd -r -g scholardevclaw scholardevclaw
 
 # SECURITY: No curl in production image; use python for health checks instead
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+RUN apt-get update && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 COPY --from=builder /app/deps /usr/local/lib/python3.11/site-packages
 COPY core/src/ /app/src/
