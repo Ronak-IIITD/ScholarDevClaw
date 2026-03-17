@@ -14,13 +14,11 @@ Covers:
 
 from __future__ import annotations
 
-import json
-import sys
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -28,13 +26,12 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from scholardevclaw.validation.runner import (
+    BenchmarkRunner,
     Metrics,
     ValidationResult,
     ValidationRunner,
-    BenchmarkRunner,
     _run_bench_script,
 )
-
 
 # =========================================================================
 # Dataclass tests

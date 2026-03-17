@@ -28,20 +28,19 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from scholardevclaw.mapping.engine import (
-    InsertionPoint,
     CompatibilityIssue,
-    ValidationResult,
-    MappingResult,
+    InsertionPoint,
     MappingEngine,
-    _normalise,
+    MappingResult,
+    ValidationResult,
+    _el_attr,
     _exact_match,
     _fuzzy_match,
-    _snippet_match,
     _import_matches,
-    _el_attr,
+    _normalise,
+    _snippet_match,
     analyze_repo_for_pattern,
 )
-
 
 # =========================================================================
 # Helper builders

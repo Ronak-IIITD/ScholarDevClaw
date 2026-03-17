@@ -18,7 +18,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -28,24 +27,23 @@ if str(SRC) not in sys.path:
 import libcst as cst
 
 from scholardevclaw.patch_generation.generator import (
+    _TEMPLATE_REGISTRY,
+    ALiBiTransformer,
+    FlashAttentionTransformer,
+    GEGLUTransformer,
+    GenericRenameTransformer,
+    GQATransformer,
     NewFile,
-    Transformation,
     Patch,
     PatchGenerator,
-    RMSNormTransformer,
-    SwiGLUTransformer,
-    GEGLUTransformer,
-    FlashAttentionTransformer,
-    GQATransformer,
-    QKNormTransformer,
     PreLNTransformer,
+    QKNormTransformer,
+    RMSNormTransformer,
     RoPETransformer,
-    ALiBiTransformer,
-    GenericRenameTransformer,
+    SwiGLUTransformer,
+    Transformation,
     _get_transformer,
-    _TEMPLATE_REGISTRY,
 )
-
 
 # =========================================================================
 # Dataclass tests

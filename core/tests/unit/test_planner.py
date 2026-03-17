@@ -15,7 +15,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -24,13 +23,12 @@ if str(SRC) not in sys.path:
 
 from scholardevclaw.planner import (
     PlannerResult,
-    run_planner,
-    _order_specs_by_dependency,
     _estimate_combined_impact,
-    _summarize_improvement,
     _log,
+    _order_specs_by_dependency,
+    _summarize_improvement,
+    run_planner,
 )
-
 
 # =========================================================================
 # PlannerResult dataclass

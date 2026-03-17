@@ -4,7 +4,7 @@ import importlib
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -900,7 +900,7 @@ def test_run_integrate_error_hook_called(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pipeline, "_fire_hook", capture_hook)
 
-    result = pipeline.run_integrate(str(tmp_path), "nonexistent")
+    pipeline.run_integrate(str(tmp_path), "nonexistent")
 
     assert "on_pipeline_error" in called_hooks
 
@@ -1007,7 +1007,7 @@ def test_run_multi_integrate_hooks(monkeypatch, tmp_path):
         lambda hook_point, **kwargs: called_hooks.append(hook_point) or kwargs.get("payload"),
     )
 
-    result = pipeline.run_multi_integrate(str(tmp_path), ["rmsnorm"])
+    pipeline.run_multi_integrate(str(tmp_path), ["rmsnorm"])
 
     assert "on_pipeline_start" in called_hooks
     assert "on_after_integrate" in called_hooks

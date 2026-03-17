@@ -2,7 +2,25 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-14
+**Last updated:** 2026-03-17
+
+### 2026-03-17 (CI Fix — Ruff Lint Errors)
+
+**Goal:** Fix all CI pipeline failures caused by ruff lint errors in test files.
+
+**Summary:** The CI `python-lint` job was failing due to 21 ruff errors across 5 test files. Fixed all issues: removed unused imports (F401: `typing.Any`, `json`, `unittest.mock.patch`, `unittest.mock.MagicMock`), removed unused variable assignments (F841: `result` in test_pipeline.py), auto-sorted import blocks (I001), and added per-file E402 ignore for test files in `pyproject.toml` (legitimate `sys.path` manipulation before imports). All 1253 tests still pass. Ruff check and format both pass clean.
+
+**Fixed files:**
+- `core/tests/unit/test_mapping_engine.py` — sorted imports (I001)
+- `core/tests/unit/test_patch_generator.py` — removed unused `typing.Any` (F401), sorted imports (I001)
+- `core/tests/unit/test_pipeline.py` — removed unused `unittest.mock.patch` import (F401), removed unused `result` variable assignments (F841)
+- `core/tests/unit/test_planner.py` — removed unused `typing.Any` (F401), sorted imports (I001)
+- `core/tests/unit/test_validation_runner.py` — removed unused `json`, `typing.Any`, `unittest.mock.MagicMock` imports (F401), sorted imports (I001)
+- `core/pyproject.toml` — added `[tool.ruff.lint.per-file-ignores]` to suppress E402 in test files
+
+**Verified:** `ruff check src/ tests/` passes clean. `ruff format --check src/ tests/` passes. 1253 tests pass, 10 skipped.
+
+---
 
 ### 2026-03-14 (Interactive Agent TUI + Premium Design)
 
