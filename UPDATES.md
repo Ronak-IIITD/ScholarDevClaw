@@ -2,7 +2,47 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-17
+**Last updated:** 2026-03-18
+
+### 2026-03-18 (CI/CD Production Hardening)
+
+**Goal:** Comprehensive production hardening of CI/CD pipeline, developer tooling, and Docker builds.
+
+**Summary:** 22 production enhancements across CI, release, Docker, and developer tooling. CI now has proper concurrency control (duplicate runs auto-cancelled), job timeouts (prevents runaway builds), shared pip cache keys, pinned bun version matching Dockerfile, TypeScript typechecking, Docker Buildx with layer caching, path filtering (skips CI for unrelated changes), and `workflow_dispatch` for manual triggers. Release pipeline validates Docker builds before PyPI publish, adds Git SHA tags to images, uses Docker layer caching, and has proper job dependencies. Added `.editorconfig` and `.pre-commit-config.yaml` for consistent code formatting across contributors. Added `.github/dependabot.yml` for automated dependency update PRs. Removed duplicate `package-lock.json` (project uses `bun.lock` only). Added `agent/vitest.config.ts` for proper test configuration.
+
+**CI improvements (`ci.yml`):**
+- Added concurrency groups (`cancel-in-progress: true`) — rapid pushes no longer spawn duplicate runs
+- Added `timeout-minutes` to all jobs (5-20 min limits)
+- Removed mypy `|| true` — typecheck now blocks on failures
+- Added pip cache to `python-lint` with `cache-dependency-path` (shared across all Python jobs)
+- Added `bun` cache (`cache-dependency-glob: "**/bun.lock"`) in agent build
+- Pinned `bun-version: "1.3.10"` in CI to match Dockerfile
+- Added `bun tsc --noEmit` typecheck step in agent build
+- Added Docker Buildx with GHA cache (`type=gha,mode=max`) for layer caching
+- Added path filtering — CI only triggers on changes to `core/`, `agent/`, `docker/`, or workflow files
+- Added `workflow_dispatch` trigger for manual CI runs
+- Added `python-typecheck` to `quality-gate` needs
+- Added Docker `load: true` for local image validation before tagging
+
+**Release improvements (`release.yml`):**
+- Added concurrency groups
+- Added `timeout-minutes` to all jobs
+- Added `docker-build` as prerequisite for `docker-publish` (validates images before PyPI publish)
+- Added Git SHA tags to Docker images (enables tracing containers back to commits)
+- Added GHA Docker layer caching (`cache-from: type=gha`, `cache-to: type=gha,mode=max`)
+- Added pip cache to `publish-pypi` job
+- Added `workflow_dispatch` trigger
+
+**New files:**
+- `.editorconfig` — project-wide editor config (UTF-8, LF, 100-char Python lines, 2-char TS/JSON/YAML indent)
+- `.pre-commit-config.yaml` — pre-commit hooks: trailing whitespace, EOF fixer, large file check, merge conflict check, ruff lint+format
+- `.github/dependabot.yml` — weekly auto-PRs for Python (pip), JavaScript (bun), and GitHub Actions
+- `agent/vitest.config.ts` — vitest config with v8 coverage, node environment, proper test includes
+
+**Other:**
+- Removed `agent/package-lock.json` — project uses `bun.lock` only; added to `.gitignore`
+
+---
 
 ### 2026-03-17 (CI Fix — Docker Build Failures)
 

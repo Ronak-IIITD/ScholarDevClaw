@@ -71,3 +71,4 @@ vendor/openclaw/
 
 # Node.js dependencies
 node_modules/
+agent/package-lock.json

@@ -4,10 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
   id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ──────────────────────────────────────────────
@@ -16,13 +21,17 @@ jobs:
   validate:
     name: "Validate Release"
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.version.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/pyproject.toml
       - id: version
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
@@ -39,6 +48,7 @@ jobs:
             exit 1
           fi
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   # ──────────────────────────────────────────────
   # Run full test suite before release
@@ -47,6 +57,7 @@ jobs:
     name: "Release Tests"
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: core
@@ -56,8 +67,39 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: core/pyproject.toml
       - run: pip install -e ".[dev]"
       - run: python -m pytest tests/ -x -q
+
+  # ──────────────────────────────────────────────
+  # Docker build smoke test (required before push)
+  # ──────────────────────────────────────────────
+  docker-build:
+    name: "Docker Build"
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build core image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.core
+          load: true
+          tags: scholardevclaw-core:validate
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.agent
+          load: true
+          tags: scholardevclaw-agent:validate
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # ──────────────────────────────────────────────
   # Build and publish to PyPI
@@ -66,6 +108,7 @@ jobs:
     name: "Publish to PyPI"
     needs: [validate, test]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: release
     defaults:
       run:
@@ -75,6 +118,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - run: pip install build twine
       - run: python -m build
       - name: Publish to PyPI
@@ -90,6 +134,7 @@ jobs:
     name: "GitHub Release"
     needs: [validate, publish-pypi]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Extract changelog for this version
@@ -106,7 +151,7 @@ jobs:
           if m:
               print(m.group(1).strip())
           else:
-              print('Release v$VERSION')
+              print('Release v\$VERSION')
           " > release_notes.md
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -119,8 +164,9 @@ jobs:
   # ──────────────────────────────────────────────
   docker-publish:
     name: "Docker Publish"
-    needs: [validate, test]
+    needs: [validate, docker-build]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Login to GitHub Container Registry
@@ -129,19 +175,29 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build and push core
         uses: docker/build-push-action@v6
         with:
+          context: .
           file: docker/Dockerfile.core
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/core:${{ needs.validate.outputs.version }}
+            ghcr.io/${{ github.repository }}/core:${{ needs.validate.outputs.sha }}
             ghcr.io/${{ github.repository }}/core:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Build and push agent
         uses: docker/build-push-action@v6
         with:
+          context: .
           file: docker/Dockerfile.agent
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/agent:${{ needs.validate.outputs.version }}
+            ghcr.io/${{ github.repository }}/agent:${{ needs.validate.outputs.sha }}
             ghcr.io/${{ github.repository }}/agent:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
