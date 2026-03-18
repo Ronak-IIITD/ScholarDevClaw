@@ -4,6 +4,65 @@
 
 **Last updated:** 2026-03-18
 
+### 2026-03-18 (Landing Page + One-Command Install)
+
+**Goal:** Match the polished, professional first-impression of tools like OpenClaw and OpenCode with a clean landing page and a one-line install command.
+
+**Summary:** Created a premium dark-themed landing page and a self-contained install script, matching the standard set by OpenClaw/OpenCode. The landing page features animated star/nebula background, terminal demo with live output simulation, feature cards, step-by-step workflow, and 4 install methods. The install script handles Python detection (3.10+), pip validation, package installation from PyPI or GitHub fallback, verification, and next-steps guidance. GitHub Pages deployment is automated via a new CI workflow that deploys from the `landing/` directory on every push.
+
+**New: `landing/index.html` (~400 lines):**
+- Dark cosmic theme (deep navy + animated nebula/stars via pure CSS)
+- Space Grotesk + JetBrains Mono fonts (Google Fonts)
+- Custom SVG logo (circular orbital design with cyan accent)
+- Hero section with animated live-badge, gradient title, one-command install button (click-to-copy)
+- Terminal demo window with macOS-style traffic light dots and simulated CLI output
+- 6-card features grid (Repository Intelligence, Research Intelligence, Smart Mapping, CST Patch Generation, Benchmark Validation, Interactive TUI)
+- 6-step "How it works" with vertical timeline
+- 4-panel install section (shell, pip, pipx, from source)
+- CTA section with radial gradient overlay
+- Responsive design (mobile-friendly)
+- Copy-to-clipboard toast on click
+
+**New: `landing/install.sh` (~260 lines):**
+- Bash installer script with colour output and error handling
+- Detects OS (Linux, macOS, WSL, MSYS)
+- Detects Python 3.10+ (tries python3, python3.12, python3.11, python3.10)
+- Validates pip availability
+- Installs from PyPI with graceful GitHub fallback
+- Detects already-installed version and prompts for upgrade
+- Adds pip bin directory to PATH guidance
+- Supports `--pip`, `--no-venv`, `--prefix=PATH`, `--help` flags
+- One-line: `curl -fsSL https://Ronak-IIITD.github.io/ScholarDevClaw/install.sh | bash`
+
+**New: `landing/favicon.svg`:**
+- Custom SVG favicon matching the orbital logo design (32x32, cyan-on-dark)
+
+**New: `landing/404.html`:**
+- Custom 404 page matching site theme with back-to-home link
+
+**New: `landing/robots.txt`:**
+- Allows all crawlers, points to sitemap
+
+**New: `.github/workflows/pages.yml`:**
+- GitHub Actions workflow to deploy `landing/` directory to GitHub Pages
+- Triggers on push to `main` when `landing/**` changes
+- Uses `actions/deploy-pages@v4` with proper permissions
+- URL: `https://Ronak-IIITD.github.io/ScholarDevClaw/`
+
+**New: `landing/install.sh` executable:**
+- Mode: 755 (executable)
+
+**Updated: `README.md`:**
+- Added one-line install command at the top of Quick Start section
+
+**Note:** To use a custom domain (`scholardevclaw.ai`):
+1. Register the domain and point DNS to GitHub Pages
+2. Create `landing/CNAME` with the domain name
+3. Update install.sh URL from `Ronak-IIITD.github.io/ScholarDevClaw/` to `scholardevclaw.ai/`
+4. Update the landing page install command accordingly
+
+---
+
 ### 2026-03-18 (CI/CD Production Hardening)
 
 **Goal:** Comprehensive production hardening of CI/CD pipeline, developer tooling, and Docker builds.
