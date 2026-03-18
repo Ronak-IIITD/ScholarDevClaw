@@ -25,8 +25,7 @@ jobs:
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./landing
           force_orphan: true
