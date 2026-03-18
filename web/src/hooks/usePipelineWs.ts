@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { WsMessage, PipelineStepResult } from "@/types/api";
+import { createPipelineWebSocket } from "@/lib/api";
 
 /**
  * Hook to manage a WebSocket connection for real-time pipeline updates.
@@ -17,9 +18,7 @@ export function usePipelineWs() {
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const ws = new WebSocket(`${protocol}//${host}/api/ws/pipeline`);
+    const ws = createPipelineWebSocket();
     wsRef.current = ws;
 
     ws.onopen = () => {
