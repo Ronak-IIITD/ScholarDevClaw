@@ -15,14 +15,15 @@ ScholarDevClaw analyzes your codebase, researches relevant papers and implementa
 ## 🚀 Quick Start
 
 ```bash
-# Clone repository
-git clone https://github.com/Ronak-IIITD/ScholarDevClaw.git
-cd ScholarDevClaw
+# One-line install (recommended)
+curl -fsSL https://Ronak-IIITD.github.io/ScholarDevClaw/install.sh | bash
 
-# Setup Python core
-cd core
-python3 -m venv .venv
-source .venv/bin/activate
+# Or via pip
+pip install scholardevclaw
+
+# Or from source
+git clone https://github.com/Ronak-IIITD/ScholarDevClaw.git
+cd ScholarDevClaw/core
 pip install -e ".[arxiv,ml,tui]"
 
 # Test installation

@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ScholarDevClaw — Autonomous ML Research Integration Engine. Analyzes repositories, finds research improvements, and generates validated patches from the latest papers." />
+  <meta name="color-scheme" content="dark" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="ScholarDevClaw" />
+  <meta property="og:description" content="Autonomous ML Research Integration Engine" />
+  <meta property="og:type" content="website" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <title>ScholarDevClaw — ML Research to Code, Automated</title>
+
+  <style>
+    /* ─── Variables ─────────────────────────────── */
+    :root {
+      --bg:        #050810;
+      --surface:   #0d1424;
+      --border:    #1e2d4a;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --cyan:      #00e5cc;
+      --cyan-dim:  rgba(0, 229, 204, 0.12);
+      --coral:     #ff6b6b;
+      --coral-dim: rgba(255, 107, 107, 0.12);
+      --purple:    #a78bfa;
+      --radius:    12px;
+      --font-sans: 'Space Grotesk', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    /* ─── Reset ────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    a { color: var(--cyan); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ─── Animated Background ───────────────────── */
+    .stars, .nebula {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .stars {
+      background:
+        radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.6) 0%, transparent 100%),
+        radial-gradient(1px 1px at 30% 70%, rgba(255,255,255,0.5) 0%, transparent 100%),
+        radial-gradient(1px 1px at 50% 10%, rgba(255,255,255,0.7) 0%, transparent 100%),
+        radial-gradient(1px 1px at 70% 50%, rgba(255,255,255,0.4) 0%, transparent 100%),
+        radial-gradient(1px 1px at 90% 30%, rgba(255,255,255,0.6) 0%, transparent 100%),
+        radial-gradient(1px 1px at 15% 85%, rgba(255,255,255,0.5) 0%, transparent 100%),
+        radial-gradient(1px 1px at 85% 75%, rgba(255,255,255,0.4) 0%, transparent 100%),
+        radial-gradient(1px 1px at 45% 95%, rgba(255,255,255,0.3) 0%, transparent 100%),
+        radial-gradient(1px 1px at 60% 40%, rgba(255,255,255,0.5) 0%, transparent 100%),
+        radial-gradient(1px 1px at 25% 55%, rgba(255,255,255,0.4) 0%, transparent 100%);
+      animation: twinkle 8s ease-in-out infinite alternate;
+    }
+    @keyframes twinkle {
+      0%   { opacity: 0.4; }
+      100% { opacity: 0.9; }
+    }
+    .nebula {
+      background:
+        radial-gradient(ellipse 600px 400px at 20% 30%, var(--cyan-dim) 0%, transparent 70%),
+        radial-gradient(ellipse 500px 300px at 80% 60%, var(--coral-dim) 0%, transparent 70%),
+        radial-gradient(ellipse 400px 400px at 50% 80%, rgba(167,139,250,0.06) 0%, transparent 70%);
+      animation: nebula-drift 20s ease-in-out infinite alternate;
+    }
+    @keyframes nebula-drift {
+      0%   { transform: scale(1) translate(0, 0); }
+      100% { transform: scale(1.1) translate(-20px, 10px); }
+    }
+
+    /* ─── Layout ───────────────────────────────── */
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ─── Nav ──────────────────────────────────── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 16px 0;
+      background: rgba(5, 8, 16, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .nav-logo:hover { text-decoration: none; }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 8px;
+      transition: color 0.2s, background 0.2s;
+      text-decoration: none;
+    }
+    .nav-links a:hover {
+      color: var(--text);
+      background: var(--border);
+      text-decoration: none;
+    }
+    .nav-links .btn {
+      background: var(--cyan);
+      color: var(--bg) !important;
+      font-weight: 600;
+    }
+    .nav-links .btn:hover { background: #00c8b4; }
+
+    /* ─── Hero ─────────────────────────────────── */
+    .hero {
+      padding: 100px 0 80px;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 24px;
+      background: var(--surface);
+    }
+    .hero-badge .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 6px var(--cyan);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .hero-title {
+      font-size: clamp(2.5rem, 7vw, 5rem);
+      font-weight: 700;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+    }
+    .hero-title .accent {
+      background: linear-gradient(135deg, var(--cyan) 0%, var(--purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-sub {
+      font-size: 1.2rem;
+      color: var(--muted);
+      max-width: 560px;
+      margin: 0 auto 48px;
+      line-height: 1.7;
+    }
+    .hero-install {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 24px;
+      margin-bottom: 40px;
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .hero-install:hover {
+      border-color: var(--cyan);
+      box-shadow: 0 0 24px rgba(0, 229, 204, 0.1);
+    }
+    .hero-install .prompt { color: var(--muted); }
+    .hero-install .cmd { color: var(--cyan); }
+    .hero-install .icon { color: var(--coral); }
+    .hero-install .copy-icon {
+      color: var(--muted);
+      margin-left: 8px;
+      font-size: 0.8rem;
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      background: var(--cyan);
+      color: var(--bg);
+      font-weight: 700;
+      font-size: 0.95rem;
+      border-radius: 10px;
+      text-decoration: none;
+      transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+    }
+    .btn-primary:hover {
+      background: #00c8b4;
+      box-shadow: 0 4px 24px rgba(0, 229, 204, 0.3);
+      text-decoration: none;
+    }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-weight: 500;
+      font-size: 0.95rem;
+      border-radius: 10px;
+      text-decoration: none;
+      background: var(--surface);
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .btn-secondary:hover {
+      border-color: var(--muted);
+      background: rgba(255,255,255,0.04);
+      text-decoration: none;
+    }
+
+    /* ─── Terminal Demo ────────────────────────── */
+    .terminal-section {
+      padding: 40px 0 80px;
+    }
+    .terminal-window {
+      background: #0a0f1e;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      max-width: 800px;
+      margin: 0 auto;
+      box-shadow: 0 32px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    }
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #111827;
+      border-bottom: 1px solid var(--border);
+    }
+    .terminal-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+    }
+    .dot-red    { background: #ff5f57; }
+    .dot-yellow { background: #febc2e; }
+    .dot-green  { background: #28c840; }
+    .terminal-bar .title {
+      flex: 1;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .terminal-body {
+      padding: 20px 24px 24px;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      line-height: 1.8;
+      min-height: 320px;
+    }
+    .terminal-body .line { display: flex; align-items: flex-start; gap: 8px; }
+    .terminal-body .line + .line { margin-top: 2px; }
+    .t-prompt   { color: var(--cyan); flex-shrink: 0; }
+    .t-cmd      { color: var(--text); }
+    .t-output    { color: var(--muted); padding-left: 16px; }
+    .t-success   { color: #28c840; }
+    .t-highlight { color: var(--coral); }
+    .t-purple    { color: var(--purple); }
+    .t-cyan      { color: var(--cyan); }
+    .t-dim       { color: #374151; }
+    .t-spacer    { height: 12px; }
+    .typing-cursor {
+      display: inline-block;
+      width: 8px; height: 16px;
+      background: var(--cyan);
+      margin-left: 2px;
+      vertical-align: middle;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ─── Features ──────────────────────────────── */
+    .features { padding: 80px 0; }
+    .section-label {
+      text-align: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 12px;
+    }
+    .section-title {
+      text-align: center;
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+    .section-desc {
+      text-align: center;
+      color: var(--muted);
+      max-width: 520px;
+      margin: 0 auto 60px;
+      font-size: 1rem;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    }
+    .feature-card:hover {
+      border-color: rgba(0, 229, 204, 0.3);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }
+    .feature-icon {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      font-size: 1.2rem;
+    }
+    .icon-cyan  { background: var(--cyan-dim); color: var(--cyan); }
+    .icon-coral { background: var(--coral-dim); color: var(--coral); }
+    .icon-purple { background: rgba(167,139,250,0.12); color: var(--purple); }
+    .feature-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .feature-card p {
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* ─── How It Works ─────────────────────────── */
+    .how-it-works { padding: 80px 0; }
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      max-width: 680px;
+      margin: 0 auto;
+      position: relative;
+    }
+    .steps::before {
+      content: '';
+      position: absolute;
+      left: 20px;
+      top: 40px;
+      bottom: 40px;
+      width: 1px;
+      background: linear-gradient(to bottom, var(--cyan), var(--purple), transparent);
+    }
+    .step {
+      display: flex;
+      gap: 20px;
+      padding: 24px 0;
+    }
+    .step-number {
+      flex-shrink: 0;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--cyan);
+      position: relative;
+      z-index: 1;
+    }
+    .step-content h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .step-content p {
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .step-content code {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      background: var(--surface);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--cyan);
+    }
+
+    /* ─── Install Methods ──────────────────────── */
+    .install-section { padding: 80px 0; }
+    .install-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .install-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+    }
+    .install-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .install-card p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+    .install-code {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #0a0f1e;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .install-code:hover { border-color: var(--cyan); }
+    .install-code .prompt { color: var(--muted); }
+    .install-code .cmd { color: var(--cyan); word-break: break-all; }
+
+    /* ─── CTA ─────────────────────────────────── */
+    .cta-section {
+      padding: 80px 0;
+      text-align: center;
+    }
+    .cta-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 64px 40px;
+      position: relative;
+      overflow: hidden;
+    }
+    .cta-box::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 400px 300px at 50% 0%, var(--cyan-dim) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .cta-box h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      position: relative;
+    }
+    .cta-box p {
+      color: var(--muted);
+      margin-bottom: 32px;
+      position: relative;
+    }
+    .cta-box .btn-primary { position: relative; font-size: 1rem; padding: 14px 28px; }
+
+    /* ─── Footer ──────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 0;
+    }
+    footer .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .footer-links {
+      display: flex;
+      gap: 20px;
+      list-style: none;
+    }
+    .footer-links a {
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover { color: var(--text); }
+
+    /* ─── Responsive ───────────────────────────── */
+    @media (max-width: 640px) {
+      .hero { padding: 60px 0 50px; }
+      .hero-sub { font-size: 1rem; }
+      .nav-links li:not(:last-child) { display: none; }
+      .features-grid { grid-template-columns: 1fr; }
+      .install-grid { grid-template-columns: 1fr; }
+      .cta-box { padding: 40px 24px; }
+      footer .container { flex-direction: column; align-items: flex-start; }
+    }
+
+    /* ─── Copied Toast ─────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-size: 0.85rem;
+      color: var(--text);
+      z-index: 1000;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+  <!-- Animated background -->
+  <div class="nebula"></div>
+  <div class="stars"></div>
+
+  <!-- Nav -->
+  <nav>
+    <div class="container">
+      <a href="/" class="nav-logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="14" cy="14" r="13" stroke="#00e5cc" stroke-width="1.5" fill="none"/>
+          <circle cx="14" cy="14" r="6" fill="#00e5cc" fill-opacity="0.15"/>
+          <circle cx="14" cy="14" r="2.5" fill="#00e5cc"/>
+          <path d="M14 4 L14 8 M14 20 L14 24 M4 14 L8 14 M20 14 L24 14" stroke="#00e5cc" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M7.5 7.5 L10 10 M18 18 L20.5 20.5 M7.5 20.5 L10 18 M18 10 L20.5 7.5" stroke="#00e5cc" stroke-width="1" stroke-linecap="round" stroke-opacity="0.5"/>
+        </svg>
+        ScholarDevClaw
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how-it-works">How it works</a></li>
+        <li><a href="#install">Install</a></li>
+        <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/releases" target="_blank" rel="noopener" class="btn">Star on GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">
+        <span class="dot"></span>
+        v0.1.0 &mdash; Research to Production, Automated
+      </div>
+      <h1 class="hero-title">
+        ML Research<br/><span class="accent">to Production Code</span>
+      </h1>
+      <p class="hero-sub">
+        Analyzes your repository, finds the latest ML research improvements,
+        maps them onto your codebase, and generates validated patches &mdash; all in one pipeline.
+      </p>
+      <div class="hero-install" onclick="copyInstall()" id="install-cmd" title="Click to copy">
+        <span class="prompt">$</span>
+        <span class="cmd">curl -fsSL https://Ronak-IIITD.github.io/ScholarDevClaw/install.sh | bash</span>
+        <span class="copy-icon" id="copy-hint">[Copy]</span>
+      </div>
+      <div class="hero-actions">
+        <a href="#install" class="btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
+          Install Now
+        </a>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank" rel="noopener" class="btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Terminal Demo -->
+  <section class="terminal-section">
+    <div class="container">
+      <div class="terminal-window">
+        <div class="terminal-bar">
+          <div class="terminal-dot dot-red"></div>
+          <div class="terminal-dot dot-yellow"></div>
+          <div class="terminal-dot dot-green"></div>
+          <div class="title">scholardevclaw &mdash; interactive</div>
+        </div>
+        <div class="terminal-body" id="terminal-body">
+          <div class="line"><span class="t-prompt">$</span><span class="t-cmd">scholardevclaw analyze ./my-ml-project</span></div>
+          <div class="line"><span class="t-dim t-output">&nbsp;</span></div>
+          <div class="line"><span class="t-output">Analyzing repository...</span></div>
+          <div class="line"><span class="t-output">Found <span class="t-highlight">2,847</span> lines of code across <span class="t-highlight">24</span> Python files</span></div>
+          <div class="line"><span class="t-output">Detected frameworks: PyTorch, transformers, numpy</span></div>
+          <div class="line"><span class="t-dim t-output">&nbsp;</span></div>
+          <div class="line"><span class="t-prompt">$</span><span class="t-cmd">scholardevclaw suggest</span></div>
+          <div class="line"><span class="t-dim t-output">&nbsp;</span></div>
+          <div class="line"><span class="t-output">Research improvements found:</span></div>
+          <div class="line"><span class="t-output t-cyan">  &rsaquo; RMSNorm</span><span class="t-dim"> &mdash; 30% faster LayerNorm, better training stability</span></div>
+          <div class="line"><span class="t-output t-cyan">  &rsaquo; SwiGLU Activation</span><span class="t-dim"> &mdash; LLM foundation from Switch Transformer paper</span></div>
+          <div class="line"><span class="t-output t-cyan">  &rsaquo; FlashAttention-2</span><span class="t-dim"> &mdash; 2x memory-efficient attention, 1.5x speedup</span></div>
+          <div class="line"><span class="t-dim t-output">&nbsp;</span></div>
+          <div class="line"><span class="t-prompt">$</span><span class="t-cmd">scholardevclaw integrate --spec rmsnorm --validate</span></div>
+          <div class="line"><span class="t-dim t-output">&nbsp;</span></div>
+          <div class="line"><span class="t-output t-success">Patch generated successfully (confidence: 85%)</span></div>
+          <div class="line"><span class="t-output">Validation: <span class="t-success">PASS</span> &mdash; 1.23x speedup on benchmark</span></div>
+          <div class="spacer"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="features" id="features">
+    <div class="container">
+      <div class="section-label">Capabilities</div>
+      <h2 class="section-title">Everything you need to modernize<br/>your ML codebase</h2>
+      <p class="section-desc">From repository analysis to validated production patches — ScholarDevClaw automates the entire research-to-code workflow.</p>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon icon-cyan">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          </div>
+          <h3>Repository Intelligence</h3>
+          <p>AST-level code analysis with tree-sitter. Detects frameworks, architectures, element names, imports, and code patterns automatically.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon icon-coral">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          </div>
+          <h3>Research Intelligence</h3>
+          <p>16 built-in paper specs covering normalization, attention, activation, positional encoding, and optimizers. Live arXiv discovery for new papers.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon icon-purple">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
+          </div>
+          <h3>Smart Mapping Engine</h3>
+          <p>6-tier matching: exact, fuzzy, import, text-scan, legacy-architecture, and LLM semantic. Finds targets with real file:line locations.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon icon-cyan">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          </div>
+          <h3>CST Patch Generation</h3>
+          <p>Safe AST-level code transformations via libcst. 10+ built-in transformers. Safe rollback on failure. No manual diff editing.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon icon-coral">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <h3>Benchmark Validation</h3>
+          <p>Runs real micro-benchmarks with PyTorch or pure Python fallback. Measures speedup, memory, loss delta. Only merges validated patches.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon icon-purple">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <h3>Interactive TUI + API</h3>
+          <p>Rich Textual TUI with wizard workflow, agent REPL, and live streaming. FastAPI server for programmatic integration. CLI for scripts.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it Works -->
+  <section class="how-it-works" id="how-it-works">
+    <div class="container">
+      <div class="section-label">Workflow</div>
+      <h2 class="section-title">From idea to validated patch<br/>in minutes</h2>
+      <p class="section-desc">A fully automated pipeline that turns ML research into production-ready code changes.</p>
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Analyze your repository</h3>
+            <p>Tree-sitter AST analysis detects your ML framework, model architecture, layers, and imports. <code>scholardevclaw analyze ./repo</code></p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Discover research improvements</h3>
+            <p>Match against 16 built-in paper specs. Optional live arXiv search with LLM extraction discovers cutting-edge techniques.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Map specs to code locations</h3>
+            <p>6-tier mapping engine finds exact insertion points with real file:line targets. Validates compatibility with your codebase.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h3>Generate safe patches</h3>
+            <p>libcst AST transformers apply changes safely. Automatic rollback on failure. New files from proven templates.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">5</div>
+          <div class="step-content">
+            <h3>Validate with benchmarks</h3>
+            <p>Real micro-benchmarks measure speedup and memory. Scorecard shows pass/fail per check. Only validated patches proceed.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">6</div>
+          <div class="step-content">
+            <h3>Integrate to production</h3>
+            <p>Apply validated patches to your repo. Git-backed rollback. Hook system for CI integration. Full audit trail.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section class="install-section" id="install">
+    <div class="container">
+      <div class="section-label">Get Started</div>
+      <h2 class="section-title">One command to install</h2>
+      <p class="section-desc">Works on macOS, Linux, and WSL2. Requires Python 3.10+.</p>
+      <div class="install-grid">
+        <div class="install-card">
+          <h3>Shell (Recommended)</h3>
+          <p>The installer script handles everything — Python check, dependencies, and CLI setup.</p>
+          <div class="install-code" onclick="copyInstall()">
+            <span class="prompt">$ </span>
+            <span class="cmd">curl -fsSL https://Ronak-IIITD.github.io/ScholarDevClaw/install.sh | bash</span>
+          </div>
+        </div>
+        <div class="install-card">
+          <h3>pip / pipx</h3>
+          <p>Install via Python package manager. Requires Python 3.10 or later.</p>
+          <div class="install-code" onclick="copyText('pip install scholardevclaw', this)">
+            <span class="prompt">$ </span>
+            <span class="cmd">pip install scholardevclaw</span>
+          </div>
+        </div>
+        <div class="install-card">
+          <h3>pipx (Isolated)</h3>
+          <p>Run in an isolated environment. Best for keeping your system Python clean.</p>
+          <div class="install-code" onclick="copyText('pipx install scholardevclaw', this)">
+            <span class="prompt">$ </span>
+            <span class="cmd">pipx install scholardevclaw</span>
+          </div>
+        </div>
+        <div class="install-card">
+          <h3>From Source</h3>
+          <p>Clone and install manually. For contributors and advanced users.</p>
+          <div class="install-code" onclick="copyText('pip install -e .', this)">
+            <span class="prompt">$ </span>
+            <span class="cmd">git clone https://github.com/Ronak-IIITD/ScholarDevClaw && cd ScholarDevClaw/core && pip install -e .</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="container">
+      <div class="cta-box">
+        <h2>Ready to modernize your ML codebase?</h2>
+        <p>Join researchers and engineers using ScholarDevClaw to automate the research-to-production pipeline.</p>
+        <a href="#install" class="btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
+          Install ScholarDevClaw
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-left">
+        <svg width="18" height="18" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="14" cy="14" r="13" stroke="#64748b" stroke-width="1.5" fill="none"/>
+          <circle cx="14" cy="14" r="6" fill="#64748b" fill-opacity="0.15"/>
+          <circle cx="14" cy="14" r="2.5" fill="#64748b"/>
+          <path d="M14 4 L14 8 M14 20 L14 24 M4 14 L8 14 M20 14 L24 14" stroke="#64748b" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        ScholarDevClaw &copy; 2026 &mdash; Open Source MIT
+      </div>
+      <ul class="footer-links">
+        <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/issues" target="_blank" rel="noopener">Issues</a></li>
+        <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+        <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/LICENSE" target="_blank" rel="noopener">License</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">Copied to clipboard!</div>
+
+  <script>
+    function copyInstall() {
+      navigator.clipboard.writeText('curl -fsSL https://scholardevclaw.ai/install.sh | bash');
+      showToast();
+    }
+    function copyText(text, el) {
+      navigator.clipboard.writeText(text);
+      showToast();
+    }
+    function showToast() {
+      const t = document.getElementById('toast');
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2000);
+    }
+  </script>
+</body>
+</html>
