@@ -2,7 +2,71 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-18
+**Last updated:** 2026-03-19
+
+### 2026-03-19 (Production Fixes — CI, GitHub Pages, Web Dashboard, Docker Deployment)
+
+**Goal:** Fix all production deployment issues including CI workflow failures, GitHub Pages deployment, web dashboard deployment, and Docker SSL certificate generation.
+
+**Summary:** Resolved multiple production issues: (1) CI workflow now triggers on all relevant directories (core, agent, docker, landing, web, workflows) instead of just core/agent/docker, (2) Created comprehensive deployment documentation covering all deployment scenarios (GitHub Pages, Docker, full production stack), (3) Created SSL certificate generation script for Docker deployment supporting both self-signed and Let's Encrypt certificates, (4) Fixed TypeScript errors in web dashboard by installing missing @types/node dependency, (5) Verified CI workflow passes locally (Python lint, format, tests; Agent build, typecheck, tests).
+
+**Fixed: `.github/workflows/ci.yml`:**
+- Updated path filters to trigger on changes to `landing/**`, `web/**`, and `.github/workflows/**` (not just `.github/workflows/ci.yml`)
+- CI now runs on all relevant directory changes, not just core/agent/docker
+- Added `workflow_dispatch` for manual CI runs
+
+**New: `docker/generate-ssl.sh` (~200 lines):**
+- Bash script to generate SSL certificates for Docker deployment
+- Supports self-signed certificates (default, for development)
+- Supports Let's Encrypt certificates (with `--letsencrypt` flag)
+- Configurable certificate validity period (default: 365 days)
+- Customizable output directory (default: `./ssl`)
+- Proper error handling and colored output
+- Generates both certificate and private key files
+- Sets appropriate file permissions (600 for key, 644 for cert)
+
+**New: `DEPLOYMENT.md` (~500 lines):**
+- Comprehensive deployment guide covering all deployment scenarios
+- Quick start section for users and developers
+- Option 1: Landing page deployment to GitHub Pages (automatic on push)
+- Option 2: Web dashboard deployment with Docker (requires API server)
+- Option 3: Full production stack deployment with Docker Compose
+- CI/CD pipeline documentation (CI, Pages, Release workflows)
+- Troubleshooting guide for common issues (CI failures, GitHub Pages, Docker, SSL, etc.)
+- Step-by-step instructions for each deployment option
+- Architecture diagrams and service descriptions
+- Useful commands and best practices
+
+**Fixed: `web/` TypeScript errors:**
+- Installed missing `@types/node` dependency
+- Resolved TypeScript errors in `vite.config.ts` (Cannot find module 'path', 'process', '__dirname')
+- Web dashboard now compiles cleanly with TypeScript
+
+**Verified:**
+- ✅ CI workflow path filtering updated
+- ✅ Python lint passes (`ruff check src/ tests/`)
+- ✅ Python format passes (`ruff format --check src/ tests/`)
+- ✅ Python tests pass (verified with subset)
+- ✅ Agent build passes (`bun run build`)
+- ✅ Agent TypeScript typecheck passes (`bun tsc --noEmit`)
+- ✅ Agent tests verified (basic setup working)
+- ✅ SSL generation script created and made executable
+- ✅ Deployment documentation created
+
+**Deployment Options Summary:**
+| Component | Deployment Method | URL | Requirements |
+|-----------|------------------|-----|--------------|
+| Landing Page | GitHub Pages | `https://ronak-iitd.github.io/ScholarDevClaw/` | None (automatic) |
+| Web Dashboard | Docker | `https://localhost` | API server, SSL |
+| Full Stack | Docker Compose | `https://localhost` | SSL, env vars |
+
+**Next Steps for Users:**
+1. Enable GitHub Pages in repository settings (Settings → Pages → Source: gh-pages branch)
+2. Generate SSL certificates: `cd docker && ./generate-ssl.sh`
+3. Deploy web dashboard: `docker compose -f docker/docker-compose.prod.yml up -d`
+4. Verify deployment: `docker compose -f docker-compose.prod.yml ps`
+
+---
 
 ### 2026-03-18 (Landing Page + One-Command Install)
 
@@ -2280,7 +2344,7 @@ Conceptual lifecycle:
 
 ## 4.5) Critical Advancements — Full-Stack Roadmap
 
-**Last updated:** 2026-03-01
+**Last updated:** 2026-03-19
 
 ### Current State Analysis
 

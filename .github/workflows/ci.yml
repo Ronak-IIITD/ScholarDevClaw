@@ -7,14 +7,18 @@ on:
       - "core/**"
       - "agent/**"
       - "docker/**"
-      - ".github/workflows/ci.yml"
+      - "landing/**"
+      - "web/**"
+      - ".github/workflows/**"
   pull_request:
     branches: [main]
     paths:
       - "core/**"
       - "agent/**"
       - "docker/**"
-      - ".github/workflows/ci.yml"
+      - "landing/**"
+      - "web/**"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 permissions:
