@@ -130,6 +130,24 @@ class ScholarDevClawApp(App[None]):
     # -----------------------------------------------------------------------
 
     CSS = """
+    /* ---- Color tokens ---- */
+
+    $surface: #0d1117;
+    $surface-dark: #161b22;
+    $panel: #21262d;
+    $border: #30363d;
+    $text: #c9d1d9;
+    $text-muted: #8b949e;
+    $accent: #58a6ff;
+    $accent-hover: #79c0ff;
+    $button: #21262d;
+    $button-hover: #30363d;
+    $success: #3fb950;
+    $error: #f85149;
+    $warning: #d29922;
+    $text-inverse: #ffffff;
+    $header: #161b22;
+
     /* ---- Base ---- */
     Screen {
         layout: vertical;
@@ -396,24 +414,6 @@ class ScholarDevClawApp(App[None]):
     .status-success { color: $success; }
     .status-warning { color: $warning; }
     .status-info { color: $text-muted; }
-
-    /* ---- Color tokens ---- */
-
-    $surface: #0d1117;
-    $surface-dark: #161b22;
-    $panel: #21262d;
-    $border: #30363d;
-    $text: #c9d1d9;
-    $text-muted: #8b949e;
-    $accent: #58a6ff;
-    $accent-hover: #79c0ff;
-    $button: #21262d;
-    $button-hover: #30363d;
-    $success: #3fb950;
-    $error: #f85149;
-    $warning: #d29922;
-    $text-inverse: #ffffff;
-    $header: #161b22;
     """
 
     # -----------------------------------------------------------------------
