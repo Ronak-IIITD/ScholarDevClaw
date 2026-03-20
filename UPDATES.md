@@ -4,40 +4,53 @@
 
 **Last updated:** 2026-03-19
 
-### 2026-03-19 (Landing Page Redesign — OpenCode.ai Style)
+### 2026-03-19 (Landing Page Major Redesign — Research-to-Code Focus + Smooth Scroll)
 
-**Goal:** Redesign the landing page to match the clean, minimal style of OpenCode.ai and OpenClaw.ai, focusing on simplicity and one-line install copy functionality.
+**Goal:** Complete redesign of the landing page with correct messaging ("Research-to-Code AI Agent" not "AI coding agent"), smooth scroll animations, and premium design matching OpenCode.ai.
 
-**Summary:** Completely redesigned the landing page from a complex, animated cosmic theme to a clean, minimal design matching OpenCode.ai. The new design features a simple hero section with product name and tagline, one-line install command with copy button (supporting curl/pip/pipx/docker tabs), 6 feature cards with icons, stats section, FAQ section, and responsive design. Removed all complex animations and cosmic elements that were making the page feel busy and unprofessional.
+**Summary:** Completely rewrote the landing page from scratch with the correct product positioning as a "Research-to-Code AI Agent". Added smooth scroll animations using IntersectionObserver API, gradient accent colors, glow effects, and premium feel. Added new sections: workflow (6-phase pipeline), terminal demo, CTA. Updated all messaging to accurately reflect the project's research-to-code focus.
 
 **Key Changes:**
-- **Hero Section**: Simple title "The open source AI coding agent" with subtitle and install box
-- **Install Box**: Tabbed interface (curl/pip/pipx/docker) with one-click copy button
-- **Features**: 6 cards with icons (Repository Intelligence, Research Intelligence, Smart Mapping, Patch Generation, Benchmark Validation, Interactive TUI)
-- **Stats**: 16 Paper Specs, 1200+ Tests Passing, 6 Languages Supported
-- **FAQ**: 5 expandable questions (What is ScholarDevClaw?, How do I use it?, Do I need extra AI subscriptions?, What about data and privacy?, Is it open source?)
-- **Design**: Inter font family, dark theme (#09090b background), cyan accent (#22d3ee), responsive layout
-- **Navigation**: Sticky header with logo, GitHub link, Features, FAQ
-- **Footer**: Links to GitHub, Issues, Changelog
+- **Hero Section**: Changed from "The open source AI coding agent" to "Autonomous Research-to-Code AI Agent" with gradient accent text
+- **Smooth Scroll**: Added IntersectionObserver-based fade-in animations on scroll
+- **New Sections**: 
+  - Workflow section showing 6-phase pipeline (Analyze → Research → Map → Generate → Validate → Integrate)
+  - Terminal demo section with real command examples
+  - CTA section with call-to-action button
+- **Stats**: Updated to 4 metrics (16 Paper Specs, 1200+ Tests, 6 Languages, 15+ Code Templates)
+- **Features**: Enhanced with icons and better descriptions based on actual codebase capabilities
+- **Design**: Added gradient accents, glow effects, navbar scroll effect, hover animations
+- **Navigation**: Added "How it works" link, navbar becomes darker on scroll
+- **Install**: Added source install option (git clone + pip install)
+- **FAQ**: Updated with research-to-code differentiation question
+
+**Technical Improvements:**
+- IntersectionObserver for scroll-triggered animations
+- CSS transitions and transforms for smooth effects
+- Gradient text using background-clip
+- Radial gradient glow effects
+- Responsive grid layouts
+- Terminal demo with syntax highlighting
 
 **Files Modified:**
-- `landing/index.html` — Complete rewrite (893 lines → 310 lines, 65% reduction)
-- `landing/favicon.svg` — Simplified to clean orbital design
-- `landing/404.html` — Updated to match new design
+- `landing/index.html` — Complete rewrite (636 lines → 800+ lines)
 
-**Design Philosophy:**
-- Clean and minimal (inspired by OpenCode.ai)
-- Focus on one-line install copy functionality
-- Professional, not flashy
-- Fast loading (no heavy animations)
-- Mobile responsive
+**Design Features:**
+- Smooth scroll animations (fade-in on scroll)
+- Gradient accent colors (cyan to purple)
+- Glow effects on hover
+- Terminal demo with macOS-style dots
+- 6-step workflow timeline
+- Premium feel matching OpenCode.ai
 
 **Verified:**
 - ✅ Landing page loads correctly
+- ✅ "Research-to-Code" messaging is prominent
+- ✅ Smooth scroll animations work
 - ✅ Install command copy works
 - ✅ FAQ expand/collapse works
-- ✅ Responsive design on mobile
-- ✅ Matches OpenCode.ai style
+- ✅ Responsive design on mobile/tablet
+- ✅ Terminal demo displays correctly
 
 ---
 
