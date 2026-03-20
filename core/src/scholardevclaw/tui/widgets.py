@@ -74,32 +74,35 @@ class Sidebar(Vertical):
         max-width: 28;
         background: $panel;
         border-right: tall $border;
-        padding: 0;
+        padding: 1 0;
     }
 
     Sidebar .sidebar-header {
         width: 100%;
-        height: 3;
+        height: 2;
         padding: 0 1;
         background: $surface-dark;
         border-bottom: solid $border;
         content-align: center middle;
+        margin-bottom: 1;
     }
 
     Sidebar .sidebar-section-title {
         width: 100%;
         height: 1;
-        padding: 0 1;
+        padding: 0 2;
         color: $text-muted;
         text-style: bold;
         margin-top: 1;
+        margin-bottom: 1;
     }
 
     SidebarItem {
         width: 100%;
         height: 1;
-        padding: 0 1;
+        padding: 0 2;
         color: $text-muted;
+        margin-bottom: 1;
     }
 
     SidebarItem:hover {
@@ -125,12 +128,12 @@ class Sidebar(Vertical):
 
     Sidebar .quick-btn {
         width: 100%;
-        margin-bottom: 0;
+        margin-bottom: 1;
         background: transparent;
         color: $text-muted;
         border: none;
         text-align: left;
-        padding: 0 1;
+        padding: 0 2;
         height: 1;
     }
 
@@ -322,6 +325,8 @@ class LogView(VerticalScroll):
         width: 100%;
         height: 1fr;
         background: $surface;
+        border: solid $border;
+        padding: 0 1;
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
     }
@@ -552,9 +557,11 @@ class HistoryPane(VerticalScroll):
         width: 100%;
         height: auto;
         max-height: 15;
-        background: $surface-dark;
+        background: $surface;
+        border: solid $border;
         padding: 0 1;
         scrollbar-size: 1 1;
+        margin-bottom: 1;
     }
 
     HistoryPane .history-entry {

@@ -22,13 +22,13 @@ maps them onto your codebase, generates validated patches, and reports outcomes.
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+R` | Run selected workflow |
-| `Ctrl+K` | Command palette |
-| `Ctrl+H` | Keyboard shortcuts |
-| `Ctrl+L` | Clear logs |
-| `Ctrl+A` | Quick Analyze |
-| `Ctrl+S` | Quick Suggest |
-| `Ctrl+I` | Quick Integrate |
+| `ctrl+r` | run selected workflow |
+| `ctrl+k` | command palette |
+| `ctrl+h` | keyboard shortcuts |
+| `ctrl+l` | clear logs |
+| `ctrl+a` | quick analyze |
+| `ctrl+s` | quick suggest |
+| `ctrl+i` | quick integrate |
 | `Esc` | Stop agent / close overlay |
 
 ## Workflows
@@ -53,39 +53,39 @@ HELP_MD = """
 ## Global
 | Key | Action |
 |-----|--------|
-| `Ctrl+C` | Quit |
-| `Ctrl+R` | Run selected workflow |
-| `Ctrl+K` | Open command palette |
-| `Ctrl+H` | Show this help |
-| `Esc` | Stop agent / close overlay |
-| `Esc` x2 | Stop running agent |
+| `ctrl+c` | quit |
+| `ctrl+r` | run selected workflow |
+| `ctrl+k` | open command palette |
+| `ctrl+h` | show this help |
+| `esc` | stop agent / close overlay |
+| `esc` x2 | stop running agent |
 
 ## Quick Actions
 | Key | Action |
 |-----|--------|
-| `Ctrl+A` | Quick Analyze |
-| `Ctrl+S` | Quick Suggest |
-| `Ctrl+I` | Quick Integrate |
+| `ctrl+a` | quick analyze |
+| `ctrl+s` | quick suggest |
+| `ctrl+i` | quick integrate |
 
 ## Logs
 | Key | Action |
 |-----|--------|
-| `Ctrl+L` | Clear logs |
+| `ctrl+l` | clear logs |
 
 ## Navigation
 | Key | Action |
 |-----|--------|
-| `Tab` | Cycle focus forward |
-| `Shift+Tab` | Cycle focus backward |
-| `Up/Down` | Navigate sidebar items |
-| `Enter` | Activate focused item |
+| `tab` | cycle focus forward |
+| `shift+tab` | cycle focus backward |
+| `up/down` | navigate sidebar items |
+| `enter` | activate focused item |
 
 ## Prompt Bar
 | Key | Action |
 |-----|--------|
-| `Enter` | Submit prompt |
-| `Up` | Previous command in history |
-| `Down` | Next command in history |
+| `enter` | submit prompt |
+| `up` | previous command in history |
+| `down` | next command in history |
 """
 
 
@@ -100,7 +100,7 @@ class WelcomeScreen(ModalScreen[None]):
     CSS = """
     WelcomeScreen {
         align: center middle;
-        background: #000000 70%;
+        background: #11111b 82%;
     }
 
     WelcomeScreen > Container {
@@ -108,8 +108,8 @@ class WelcomeScreen(ModalScreen[None]):
         max-width: 80;
         height: auto;
         max-height: 85%;
-        background: #21262d;
-        border: thick #58a6ff;
+        background: #1e1e2e;
+        border: thick #89b4fa;
         padding: 2 3;
     }
 
@@ -121,7 +121,7 @@ class WelcomeScreen(ModalScreen[None]):
     WelcomeScreen .dismiss-hint {
         width: 100%;
         text-align: center;
-        color: #8b949e;
+        color: #a6adc8;
         margin-top: 1;
     }
     """
@@ -143,7 +143,7 @@ class HelpOverlay(ModalScreen[None]):
     CSS = """
     HelpOverlay {
         align: center middle;
-        background: #000000 70%;
+        background: #11111b 82%;
     }
 
     HelpOverlay > Container {
@@ -151,8 +151,8 @@ class HelpOverlay(ModalScreen[None]):
         max-width: 75;
         height: auto;
         max-height: 80%;
-        background: #21262d;
-        border: thick #58a6ff;
+        background: #1e1e2e;
+        border: thick #89b4fa;
         padding: 2 3;
     }
 
@@ -190,7 +190,7 @@ class CommandPalette(ModalScreen[str | None]):
     CSS = """
     CommandPalette {
         align: center top;
-        background: #000000 55%;
+        background: #11111b 76%;
     }
 
     CommandPalette > Vertical {
@@ -198,8 +198,8 @@ class CommandPalette(ModalScreen[str | None]):
         max-width: 70;
         height: auto;
         max-height: 60%;
-        background: #21262d;
-        border: thick #58a6ff;
+        background: #1e1e2e;
+        border: thick #89b4fa;
         padding: 1;
         margin-top: 8;
     }
@@ -207,8 +207,8 @@ class CommandPalette(ModalScreen[str | None]):
     CommandPalette Input {
         width: 100%;
         margin-bottom: 1;
-        background: #161b22;
-        border: solid #30363d;
+        background: #181825;
+        border: solid #313244;
     }
 
     CommandPalette .command-list {
@@ -221,15 +221,15 @@ class CommandPalette(ModalScreen[str | None]):
     CommandPalette .command-item {
         width: 100%;
         margin-bottom: 1;
-        background: #161b22;
-        border: solid #30363d;
-        color: #c9d1d9;
+        background: #181825;
+        border: solid #313244;
+        color: #cdd6f4;
         text-align: left;
     }
 
     CommandPalette .command-item:hover {
-        background: #1f3042;
-        border: solid #58a6ff;
+        background: #313244;
+        border: solid #89b4fa;
     }
     """
 

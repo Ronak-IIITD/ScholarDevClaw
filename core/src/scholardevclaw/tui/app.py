@@ -131,21 +131,21 @@ class ScholarDevClawApp(App[None]):
     CSS = """
     /* ---- Color tokens ---- */
 
-    $surface: #0d1117;
-    $surface-dark: #161b22;
-    $panel: #21262d;
-    $border: #30363d;
-    $text: #c9d1d9;
-    $text-muted: #8b949e;
-    $accent: #58a6ff;
-    $accent-hover: #79c0ff;
-    $button: #21262d;
-    $button-hover: #30363d;
-    $success: #3fb950;
-    $error: #f85149;
-    $warning: #d29922;
-    $text-inverse: #ffffff;
-    $header: #161b22;
+    $surface: #11111b;
+    $surface-dark: #181825;
+    $panel: #1e1e2e;
+    $border: #313244;
+    $text: #cdd6f4;
+    $text-muted: #a6adc8;
+    $accent: #89b4fa;
+    $accent-hover: #b4befe;
+    $button: #313244;
+    $button-hover: #45475a;
+    $success: #a6e3a1;
+    $error: #f38ba8;
+    $warning: #f9e2af;
+    $text-inverse: #11111b;
+    $header: #181825;
 
     /* ---- Base ---- */
     Screen {
@@ -160,6 +160,7 @@ class ScholarDevClawApp(App[None]):
         dock: top;
         height: 3;
         text-align: center;
+        border-bottom: solid $border;
     }
 
     /* ---- Top-level layout ---- */
@@ -179,9 +180,10 @@ class ScholarDevClawApp(App[None]):
     #top-help-bar {
         width: 100%;
         height: 1;
-        background: #161b22;
-        color: #8b949e;
+        background: $surface-dark;
+        color: $text-muted;
         padding: 0 1;
+        border-bottom: solid $border;
     }
 
     /* ---- Main content split ---- */
@@ -203,6 +205,13 @@ class ScholarDevClawApp(App[None]):
         border-right: tall $border;
         padding: 1 2;
         overflow-y: auto;
+    }
+
+    #config-panel .config-section-title {
+        color: $accent;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 1;
     }
 
     #config-panel .panel-title {
@@ -229,9 +238,10 @@ class ScholarDevClawApp(App[None]):
     #output-panel {
         width: 1fr;
         height: 100%;
-        background: $surface;
+        background: $panel;
         layout: vertical;
         padding: 0 1;
+        border-left: solid $border;
     }
 
     #output-panel .output-header {
@@ -242,6 +252,7 @@ class ScholarDevClawApp(App[None]):
         border-bottom: solid $border;
         color: $accent;
         text-style: bold;
+        margin-bottom: 1;
     }
 
     /* ---- Bottom: agent / prompt bar ---- */
@@ -259,11 +270,12 @@ class ScholarDevClawApp(App[None]):
 
     #agent-header {
         width: 100%;
-        height: 1;
+        height: 2;
         padding: 0 1;
         background: $surface-dark;
         border-bottom: solid $border;
         layout: horizontal;
+        content-align: left middle;
     }
 
     #agent-header .agent-title {
@@ -281,23 +293,24 @@ class ScholarDevClawApp(App[None]):
     #agent-logs {
         width: 100%;
         height: 1fr;
-        background: #0d1117;
-        color: #c9d1d9;
-        border: solid #30363d;
+        background: $surface;
+        color: $text;
+        border: solid $border;
     }
 
     #prompt-bar {
         width: 100%;
         height: 3;
-        background: $panel;
+        background: $surface-dark;
         border-top: solid $border;
         padding: 0 1;
     }
 
     #prompt-input {
         width: 100%;
-        background: transparent;
+        background: $surface;
         color: $accent;
+        border: solid $border;
     }
 
     .panel-section-title {
@@ -312,6 +325,7 @@ class ScholarDevClawApp(App[None]):
         color: $text;
         border: solid $border;
         padding: 0 1;
+        margin-bottom: 1;
     }
 
     Input:focus {
@@ -326,6 +340,7 @@ class ScholarDevClawApp(App[None]):
         background: $surface-dark;
         color: $text;
         border: solid $border;
+        margin-bottom: 1;
     }
 
     Select:focus {
@@ -334,6 +349,7 @@ class ScholarDevClawApp(App[None]):
 
     Checkbox {
         color: $text-muted;
+        margin-right: 2;
     }
 
     Checkbox:focus {
@@ -345,7 +361,8 @@ class ScholarDevClawApp(App[None]):
         background: $button;
         color: $text;
         padding: 0 1;
-        min-width: 10;
+        min-width: 12;
+        margin-right: 1;
     }
 
     Button:hover {
@@ -646,6 +663,7 @@ class ScholarDevClawApp(App[None]):
                             id="action",
                         )
 
+                        yield Label("Repository", classes="config-section-title")
                         yield Label("Repository Path", classes="field-label")
                         yield Input(
                             value=self._saved_context.get(
@@ -656,6 +674,7 @@ class ScholarDevClawApp(App[None]):
                             id="repo-path",
                         )
 
+                        yield Label("Search", classes="config-section-title")
                         yield Label("Search Query", classes="field-label")
                         yield Input(
                             value=self._saved_context.get("last_query", "layer normalization"),
@@ -684,6 +703,7 @@ class ScholarDevClawApp(App[None]):
                             id="search-max-results",
                         )
 
+                        yield Label("Pipeline", classes="config-section-title")
                         yield Label("Spec Name", classes="field-label")
                         yield Input(
                             value=self._saved_context.get(
@@ -743,7 +763,7 @@ class ScholarDevClawApp(App[None]):
         with Horizontal(id="prompt-bar"):
             yield Input(
                 value="",
-                placeholder="> Type request... (Ctrl+K: commands, Ctrl+H: help)",
+                placeholder="type request... (ctrl+k commands, ctrl+h help)",
                 id="prompt-input",
             )
 

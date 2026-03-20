@@ -4,6 +4,45 @@
 
 **Last updated:** 2026-03-20
 
+### 2026-03-20 (TUI Visual System Upgrade — Catppuccin Mocha + Typography Rhythm + Hierarchy)
+
+**Goal:** Move the TUI visual design from ad-hoc dark styling to a coherent production theme system using Catppuccin Mocha, with stronger panel hierarchy, cleaner spacing rhythm, and better readability.
+
+**Summary:** Re-themed the full TUI surface to Catppuccin Mocha tokens and applied structural UI improvements: clearer layer depth, more consistent spacing cadence, improved section hierarchy, and less visual noise. Upgraded `app.py`, `widgets.py`, and `screens.py` so core views, sidebars, overlays, and interactive controls use a consistent color language and rhythm.
+
+**Design System Changes:**
+- **Theme:** switched from mixed GitHub-dark colors to Catppuccin Mocha palette (`#11111b`, `#1e1e2e`, `#181825`, `#313244`, `#cdd6f4`, `#a6adc8`, `#89b4fa`)
+- **Typography rhythm:** normalized heading/label contrast and section titles to reduce visual ambiguity
+- **Spacing system:** introduced more consistent vertical cadence for fields/buttons and section blocks
+- **Panel hierarchy:** made layer depth explicit (surface vs panel vs overlays) and improved separation lines
+
+**Layout / Visual Improvements (`core/src/scholardevclaw/tui/app.py`):**
+- Added Catppuccin token map for all core color variables
+- Header now has explicit bottom border for stronger top-level boundary
+- Top key-hint bar switched to theme tokens + border for legibility
+- Config panel widened (better form readability) and sectioned into: Repository, Search, Pipeline
+- Output panel moved to panel layer with explicit border separation
+- Agent header height increased for clearer control grouping
+- Agent logs restyled to match theme and border system
+- Prompt bar and prompt input restyled for clearer focus target
+- Button sizing and control spacing improved for scanability
+
+**Widget Improvements (`core/src/scholardevclaw/tui/widgets.py`):**
+- Sidebar spacing rhythm improved (header, section titles, items, quick actions)
+- LogView now has explicit border + inner padding for cleaner transcript reading
+- History pane now uses same panel + border hierarchy as output areas
+
+**Overlay Improvements (`core/src/scholardevclaw/tui/screens.py`):**
+- Welcome, help, and command palette overlays now use Catppuccin Mocha colors
+- Command list buttons restyled for better contrast/hover affordance
+- Shortcut labels in docs normalized to lowercase style (`ctrl+k`, `ctrl+h`, etc.)
+
+**Verification:**
+- ✅ Textual smoke flow still passes (`ctrl+k`, `ctrl+h`, prompt submit)
+- ✅ Ruff lint clean on TUI modules
+
+---
+
 ### 2026-03-20 (TUI Stabilization Pass — Usability + Keybind + Prompt Flow Fixes)
 
 **Goal:** Make the redesigned TUI actually usable in day-to-day workflows by fixing command palette crashes, prompt submit errors, confusing key labels, quick-action routing, and layout clarity/alignment issues.
