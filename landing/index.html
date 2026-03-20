@@ -3,32 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="ScholarDevClaw — The open source AI coding agent that researches and implements ML improvements automatically." />
+  <meta name="description" content="ScholarDevClaw — Autonomous Research-to-Code AI Agent. Analyzes your codebase, finds research improvements from ML papers, and generates validated patches automatically." />
   <meta name="color-scheme" content="dark" />
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
 
   <!-- Open Graph -->
-  <meta property="og:title" content="ScholarDevClaw" />
-  <meta property="og:description" content="The open source AI coding agent that researches and implements ML improvements automatically." />
+  <meta property="og:title" content="ScholarDevClaw — Research-to-Code AI Agent" />
+  <meta property="og:description" content="Autonomous Research-to-Code AI Agent. Analyzes your codebase, finds research improvements from ML papers, and generates validated patches automatically." />
   <meta property="og:type" content="website" />
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
-  <title>ScholarDevClaw — The open source AI coding agent</title>
+  <title>ScholarDevClaw — Autonomous Research-to-Code AI Agent</title>
 
   <style>
     :root {
-      --bg:        #09090b;
-      --surface:   #18181b;
-      --border:    #27272a;
-      --text:      #fafafa;
-      --muted:     #a1a1aa;
-      --accent:    #22d3ee;
-      --accent-dim: rgba(34, 211, 238, 0.1);
-      --radius:    8px;
+      --bg: #09090b;
+      --bg-gradient: linear-gradient(180deg, #09090b 0%, #0f172a 100%);
+      --surface: #18181b;
+      --surface-hover: #1f1f23;
+      --border: #27272a;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --accent: #22d3ee;
+      --accent-dim: rgba(34, 211, 238, 0.15);
+      --accent-glow: rgba(34, 211, 238, 0.3);
+      --purple: #a78bfa;
+      --green: #22c55e;
+      --radius: 12px;
       --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
       --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
     }
@@ -37,22 +42,46 @@
     html { scroll-behavior: smooth; }
     body {
       font-family: var(--font-sans);
-      background: var(--bg);
+      background: var(--bg-gradient);
       color: var(--text);
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
     }
     a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    a:hover { text-decoration: none; }
+
+    /* ─── Scroll Animations ─────────────────── */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .fade-in-delay-1 { transition-delay: 0.1s; }
+    .fade-in-delay-2 { transition-delay: 0.2s; }
+    .fade-in-delay-3 { transition-delay: 0.3s; }
+    .fade-in-delay-4 { transition-delay: 0.4s; }
+    .fade-in-delay-5 { transition-delay: 0.5s; }
 
     /* ─── Nav ──────────────────────────────────── */
     nav {
-      position: sticky;
+      position: fixed;
       top: 0;
+      left: 0;
+      right: 0;
       z-index: 100;
       background: rgba(9, 9, 11, 0.8);
-      backdrop-filter: blur(12px);
+      backdrop-filter: blur(20px);
       border-bottom: 1px solid var(--border);
+      transition: all 0.3s ease;
+    }
+    nav.scrolled {
+      background: rgba(9, 9, 11, 0.95);
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
     }
     .nav-inner {
       max-width: 1200px;
@@ -69,77 +98,145 @@
       color: var(--text);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
     .logo svg {
-      width: 24px;
-      height: 24px;
+      width: 28px;
+      height: 28px;
     }
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 24px;
+      gap: 32px;
     }
     .nav-links a {
       color: var(--muted);
       font-size: 14px;
       font-weight: 500;
-      transition: color 0.15s;
+      transition: color 0.2s;
+      position: relative;
     }
     .nav-links a:hover {
       color: var(--text);
-      text-decoration: none;
+    }
+    .nav-links a::after {
+      content: '';
+      position: absolute;
+      bottom: -4px;
+      left: 0;
+      width: 0;
+      height: 2px;
+      background: var(--accent);
+      transition: width 0.2s;
+    }
+    .nav-links a:hover::after {
+      width: 100%;
     }
     .nav-links .github {
       display: flex;
       align-items: center;
       gap: 6px;
+      color: var(--text);
     }
+    .nav-links .github::after { display: none; }
 
     /* ─── Hero ─────────────────────────────────── */
     .hero {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 120px 24px 80px;
+      padding: 160px 24px 120px;
       text-align: center;
+      position: relative;
+    }
+    .hero-glow {
+      position: absolute;
+      top: -100px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 600px;
+      background: radial-gradient(ellipse, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .hero-content {
+      position: relative;
+      z-index: 1;
     }
     .hero-badge {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 16px;
+      padding: 8px 20px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 100px;
       font-size: 13px;
+      font-weight: 500;
       color: var(--muted);
-      margin-bottom: 24px;
+      margin-bottom: 32px;
+      animation: fadeInDown 0.6s ease;
     }
     .hero-badge span {
       color: var(--accent);
     }
+    .hero-badge .pulse {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.2); }
+    }
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
     .hero h1 {
-      font-size: clamp(40px, 6vw, 72px);
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      line-height: 1.1;
-      margin-bottom: 16px;
+      font-size: clamp(48px, 7vw, 80px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
+      margin-bottom: 24px;
+      animation: fadeInUp 0.8s ease;
+    }
+    .hero h1 .accent {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     .hero p {
       font-size: 18px;
       color: var(--muted);
-      max-width: 600px;
-      margin: 0 auto 48px;
+      max-width: 650px;
+      margin: 0 auto 56px;
+      line-height: 1.7;
+      animation: fadeInUp 0.8s ease 0.2s both;
     }
 
     /* ─── Install Box ─────────────────────────── */
     .install-box {
-      max-width: 640px;
+      max-width: 680px;
       margin: 0 auto;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
+      animation: fadeInUp 0.8s ease 0.4s both;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    .install-box:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 40px var(--accent-dim);
     }
     .install-tabs {
       display: flex;
@@ -148,28 +245,29 @@
       gap: 4px;
     }
     .install-tab {
-      padding: 12px 16px;
+      padding: 14px 20px;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 600;
       color: var(--muted);
       cursor: pointer;
       border: none;
       background: none;
       border-bottom: 2px solid transparent;
-      transition: all 0.15s;
+      transition: all 0.2s;
+      font-family: var(--font-sans);
     }
     .install-tab:hover {
       color: var(--text);
     }
     .install-tab.active {
-      color: var(--text);
+      color: var(--accent);
       border-bottom-color: var(--accent);
     }
     .install-content {
       display: flex;
       align-items: center;
-      padding: 16px;
-      gap: 12px;
+      padding: 20px;
+      gap: 16px;
     }
     .install-cmd {
       flex: 1;
@@ -180,117 +278,303 @@
       white-space: nowrap;
     }
     .install-cmd .prompt {
-      color: var(--muted);
+      color: var(--accent);
       user-select: none;
     }
     .copy-btn {
       flex-shrink: 0;
-      padding: 8px 16px;
+      padding: 10px 24px;
       background: var(--accent);
       color: var(--bg);
       border: none;
-      border-radius: var(--radius);
+      border-radius: 8px;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
-      transition: opacity 0.15s;
+      transition: all 0.2s;
+      font-family: var(--font-sans);
     }
     .copy-btn:hover {
-      opacity: 0.9;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px var(--accent-glow);
     }
     .copy-btn.copied {
-      background: #22c55e;
+      background: var(--green);
+    }
+
+    /* ─── Workflow ─────────────────────────────── */
+    .workflow {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 100px 24px;
+    }
+    .workflow-header {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+    .workflow-header h2 {
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+    }
+    .workflow-header p {
+      font-size: 16px;
+      color: var(--muted);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .workflow-steps {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 16px;
+      position: relative;
+    }
+    .workflow-steps::before {
+      content: '';
+      position: absolute;
+      top: 40px;
+      left: 10%;
+      right: 10%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      z-index: 0;
+    }
+    .workflow-step {
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+    .step-number {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 16px;
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      transition: all 0.3s;
+    }
+    .workflow-step:hover .step-number {
+      border-color: var(--accent);
+      box-shadow: 0 0 30px var(--accent-dim);
+      transform: scale(1.1);
+    }
+    .step-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .step-desc {
+      font-size: 12px;
+      color: var(--muted);
     }
 
     /* ─── Features ─────────────────────────────── */
     .features {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 80px 24px;
+      padding: 100px 24px;
+    }
+    .features-header {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+    .features-header h2 {
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+    }
+    .features-header p {
+      font-size: 16px;
+      color: var(--muted);
+      max-width: 600px;
+      margin: 0 auto;
     }
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns: repeat(3, 1fr);
       gap: 24px;
     }
     .feature-card {
-      padding: 24px;
+      padding: 32px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
+      transition: all 0.3s;
     }
-    .feature-card h3 {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 8px;
+    .feature-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-4px);
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3);
+    }
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--accent-dim);
+      border-radius: 12px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: center;
+      margin-bottom: 20px;
     }
-    .feature-card h3 svg {
-      width: 20px;
-      height: 20px;
+    .feature-icon svg {
+      width: 24px;
+      height: 24px;
       color: var(--accent);
+    }
+    .feature-card h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 12px;
     }
     .feature-card p {
       font-size: 14px;
       color: var(--muted);
-      line-height: 1.6;
+      line-height: 1.7;
     }
 
     /* ─── Stats ────────────────────────────────── */
     .stats {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 80px 24px;
+      padding: 100px 24px;
       text-align: center;
     }
     .stats h2 {
-      font-size: 32px;
-      font-weight: 700;
-      margin-bottom: 12px;
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
     }
     .stats > p {
       font-size: 16px;
       color: var(--muted);
       max-width: 600px;
-      margin: 0 auto 48px;
+      margin: 0 auto 64px;
     }
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 24px;
-      max-width: 800px;
+      max-width: 1000px;
       margin: 0 auto;
     }
     .stat-card {
-      padding: 32px 24px;
+      padding: 40px 24px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
+      transition: all 0.3s;
+    }
+    .stat-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-4px);
     }
     .stat-number {
-      font-size: 40px;
-      font-weight: 700;
-      color: var(--accent);
+      font-size: 48px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
       margin-bottom: 8px;
     }
     .stat-label {
       font-size: 14px;
       color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* ─── Terminal Demo ────────────────────────── */
+    .demo {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 100px 24px;
+    }
+    .demo-header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+    .demo-header h2 {
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+    }
+    .demo-header p {
+      font-size: 16px;
+      color: var(--muted);
+    }
+    .terminal {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 16px;
+      background: #161b22;
+      border-bottom: 1px solid var(--border);
+    }
+    .terminal-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .terminal-dot.red { background: #ff5f56; }
+    .terminal-dot.yellow { background: #ffbd2e; }
+    .terminal-dot.green { background: #27c93f; }
+    .terminal-title {
+      margin-left: 12px;
+      font-size: 13px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+    .terminal-body {
+      padding: 24px;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .terminal-line {
+      margin-bottom: 4px;
+    }
+    .terminal-prompt {
+      color: var(--accent);
+    }
+    .terminal-command {
+      color: var(--text);
+    }
+    .terminal-output {
+      color: var(--muted);
+    }
+    .terminal-success {
+      color: var(--green);
     }
 
     /* ─── FAQ ──────────────────────────────────── */
     .faq {
       max-width: 800px;
       margin: 0 auto;
-      padding: 80px 24px;
+      padding: 100px 24px;
     }
     .faq h2 {
-      font-size: 32px;
-      font-weight: 700;
+      font-size: 40px;
+      font-weight: 800;
       text-align: center;
-      margin-bottom: 48px;
+      letter-spacing: -0.03em;
+      margin-bottom: 64px;
     }
     .faq-item {
       border-bottom: 1px solid var(--border);
@@ -309,6 +593,8 @@
       width: 100%;
       text-align: left;
       padding: 0;
+      font-family: var(--font-sans);
+      transition: color 0.2s;
     }
     .faq-question:hover {
       color: var(--accent);
@@ -316,7 +602,8 @@
     .faq-question svg {
       width: 20px;
       height: 20px;
-      transition: transform 0.2s;
+      transition: transform 0.3s;
+      flex-shrink: 0;
     }
     .faq-item.open .faq-question svg {
       transform: rotate(180deg);
@@ -324,16 +611,78 @@
     .faq-answer {
       max-height: 0;
       overflow: hidden;
-      transition: max-height 0.3s ease;
+      transition: max-height 0.4s ease, padding 0.4s ease;
     }
     .faq-item.open .faq-answer {
-      max-height: 200px;
+      max-height: 300px;
     }
     .faq-answer p {
       padding-top: 16px;
-      font-size: 14px;
+      font-size: 15px;
       color: var(--muted);
-      line-height: 1.7;
+      line-height: 1.8;
+    }
+
+    /* ─── CTA ──────────────────────────────────── */
+    .cta {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 100px 24px;
+      text-align: center;
+    }
+    .cta-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 80px 40px;
+      position: relative;
+      overflow: hidden;
+    }
+    .cta-box::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: radial-gradient(ellipse at center, var(--accent-dim) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .cta h2 {
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+      position: relative;
+    }
+    .cta p {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 500px;
+      margin: 0 auto 40px;
+      position: relative;
+    }
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 16px 32px;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      font-family: var(--font-sans);
+      position: relative;
+    }
+    .cta-btn:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 40px var(--accent-glow);
+      text-decoration: none;
     }
 
     /* ─── Footer ───────────────────────────────── */
@@ -350,15 +699,15 @@
     }
     .footer-links {
       display: flex;
-      gap: 24px;
+      gap: 32px;
     }
     .footer-links a {
       color: var(--muted);
       font-size: 14px;
+      transition: color 0.2s;
     }
     .footer-links a:hover {
       color: var(--text);
-      text-decoration: none;
     }
     .footer-copy {
       font-size: 14px;
@@ -366,29 +715,40 @@
     }
 
     /* ─── Responsive ──────────────────────────── */
+    @media (max-width: 1024px) {
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .workflow-steps { grid-template-columns: repeat(3, 1fr); }
+      .workflow-steps::before { display: none; }
+    }
     @media (max-width: 768px) {
       .nav-links { gap: 16px; }
-      .hero { padding: 80px 24px 60px; }
-      .stats-grid { grid-template-columns: 1fr; }
+      .hero { padding: 120px 24px 80px; }
+      .features-grid { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .workflow-steps { grid-template-columns: repeat(2, 1fr); }
       .footer-inner { flex-direction: column; gap: 24px; }
+    }
+    @media (max-width: 480px) {
+      .stats-grid { grid-template-columns: 1fr; }
+      .workflow-steps { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
 
   <!-- Nav -->
-  <nav>
+  <nav id="navbar">
     <div class="nav-inner">
-      <div class="logo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M12 2a10 10 0 0 1 0 20"/>
-          <circle cx="12" cy="12" r="4"/>
-          <line x1="12" y1="2" x2="12" y2="6"/>
-          <line x1="12" y1="18" x2="12" y2="22"/>
+      <a href="#" class="logo">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="16" cy="16" r="14"/>
+          <circle cx="16" cy="16" r="6"/>
+          <line x1="16" y1="2" x2="16" y2="8"/>
+          <line x1="16" y1="24" x2="16" y2="30"/>
         </svg>
         ScholarDevClaw
-      </div>
+      </a>
       <div class="nav-links">
         <a href="https://github.com/Ronak-IIITD/ScholarDevClaw" class="github">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -396,6 +756,7 @@
           </svg>
           GitHub
         </a>
+        <a href="#workflow">How it works</a>
         <a href="#features">Features</a>
         <a href="#faq">FAQ</a>
       </div>
@@ -404,120 +765,215 @@
 
   <!-- Hero -->
   <section class="hero">
-    <div class="hero-badge">
-      <span>●</span> Open source · MIT licensed
-    </div>
-    <h1>The open source AI<br/>coding agent</h1>
-    <p>ScholarDevClaw analyzes your codebase, finds research improvements from the latest ML papers, and generates validated patches automatically.</p>
-
-    <!-- Install Box -->
-    <div class="install-box">
-      <div class="install-tabs">
-        <button class="install-tab active" data-tab="curl">curl</button>
-        <button class="install-tab" data-tab="pip">pip</button>
-        <button class="install-tab" data-tab="pipx">pipx</button>
-        <button class="install-tab" data-tab="docker">docker</button>
+    <div class="hero-glow"></div>
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="pulse"></span>
+        Open source · MIT licensed · v2.0
       </div>
-      <div class="install-content">
-        <code class="install-cmd" id="installCmd">
-          <span class="prompt">$ </span>curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash
-        </code>
-        <button class="copy-btn" onclick="copyInstall()">Copy</button>
+      <h1>
+        Autonomous<br/>
+        <span class="accent">Research-to-Code</span><br/>
+        AI Agent
+      </h1>
+      <p>Analyzes your codebase, finds research improvements from the latest ML papers, maps them to your code, and generates validated patches automatically. Supports Python, JS/TS, Go, Rust, and Java.</p>
+
+      <!-- Install Box -->
+      <div class="install-box">
+        <div class="install-tabs">
+          <button class="install-tab active" data-tab="curl">curl</button>
+          <button class="install-tab" data-tab="pip">pip</button>
+          <button class="install-tab" data-tab="pipx">pipx</button>
+          <button class="install-tab" data-tab="source">source</button>
+        </div>
+        <div class="install-content">
+          <code class="install-cmd" id="installCmd">
+            <span class="prompt">$ </span>curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash
+          </code>
+          <button class="copy-btn" onclick="copyInstall()">Copy</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Workflow -->
+  <section class="workflow" id="workflow">
+    <div class="workflow-header fade-in">
+      <h2>How it works</h2>
+      <p>A 6-phase autonomous pipeline that takes research papers to production code</p>
+    </div>
+    <div class="workflow-steps">
+      <div class="workflow-step fade-in fade-in-delay-1">
+        <div class="step-number">1</div>
+        <div class="step-title">Analyze</div>
+        <div class="step-desc">Tree-sitter AST extraction</div>
+      </div>
+      <div class="workflow-step fade-in fade-in-delay-2">
+        <div class="step-number">2</div>
+        <div class="step-title">Research</div>
+        <div class="step-desc">arXiv & web search</div>
+      </div>
+      <div class="workflow-step fade-in fade-in-delay-3">
+        <div class="step-number">3</div>
+        <div class="step-title">Map</div>
+        <div class="step-desc">6-tier code matching</div>
+      </div>
+      <div class="workflow-step fade-in fade-in-delay-4">
+        <div class="step-number">4</div>
+        <div class="step-title">Generate</div>
+        <div class="step-desc">CST patch generation</div>
+      </div>
+      <div class="workflow-step fade-in fade-in-delay-5">
+        <div class="step-number">5</div>
+        <div class="step-title">Validate</div>
+        <div class="step-desc">Benchmark testing</div>
+      </div>
+      <div class="workflow-step fade-in">
+        <div class="step-number">6</div>
+        <div class="step-title">Integrate</div>
+        <div class="step-desc">Safe PR creation</div>
       </div>
     </div>
   </section>
 
   <!-- Features -->
   <section class="features" id="features">
+    <div class="features-header fade-in">
+      <h2>Built for research engineers</h2>
+      <p>Everything you need to operationalize ML research into production code</p>
+    </div>
     <div class="features-grid">
-      <div class="feature-card">
-        <h3>
+      <div class="feature-card fade-in fade-in-delay-1">
+        <div class="feature-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
           </svg>
-          Repository Intelligence
-        </h3>
-        <p>Analyzes your codebase structure, patterns, and architecture using tree-sitter AST extraction for 6+ languages.</p>
+        </div>
+        <h3>Repository Intelligence</h3>
+        <p>Analyzes codebase structure, patterns, and architecture using tree-sitter AST extraction for 6+ languages. Detects frameworks, dependencies, and improvement opportunities.</p>
       </div>
-      <div class="feature-card">
-        <h3>
+      <div class="feature-card fade-in fade-in-delay-2">
+        <div class="feature-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
             <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
           </svg>
-          Research Intelligence
-        </h3>
-        <p>Searches arXiv, Papers with Code, and the web for the latest ML research papers relevant to your codebase.</p>
+        </div>
+        <h3>Research Intelligence</h3>
+        <p>Searches arXiv, Papers with Code, and the web for the latest ML research. Extracts implementation specs from PDFs and generates paper-to-code mappings.</p>
       </div>
-      <div class="feature-card">
-        <h3>
+      <div class="feature-card fade-in fade-in-delay-3">
+        <div class="feature-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
             <path d="M12 6v6l4 2"/>
           </svg>
-          Smart Mapping
-        </h3>
-        <p>Maps research improvements to your code using 6-tier matching: exact, fuzzy, import, text-scan, legacy, and LLM.</p>
+        </div>
+        <h3>Smart Mapping</h3>
+        <p>Maps research improvements to your code using 6-tier matching: exact name, fuzzy matching, import analysis, text scanning, legacy compatibility, and LLM semantic search.</p>
       </div>
-      <div class="feature-card">
-        <h3>
+      <div class="feature-card fade-in fade-in-delay-1">
+        <div class="feature-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="16 18 22 12 16 6"/>
             <polyline points="8 6 2 12 8 18"/>
           </svg>
-          Patch Generation
-        </h3>
-        <p>Generates validated code patches using 15+ templates, 10+ CST transformers, and LLM synthesis fallback.</p>
+        </div>
+        <h3>Patch Generation</h3>
+        <p>Generates validated code patches using 15+ templates (RMSNorm, SwiGLU, FlashAttention, RoPE, etc.), 10+ CST transformers, and LLM synthesis fallback.</p>
       </div>
-      <div class="feature-card">
-        <h3>
+      <div class="feature-card fade-in fade-in-delay-2">
+        <div class="feature-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
             <polyline points="22 4 12 14.01 9 11.01"/>
           </svg>
-          Benchmark Validation
-        </h3>
-        <p>Validates patches with real subprocess-based benchmarks, measuring speedup and memory impact.</p>
+        </div>
+        <h3>Benchmark Validation</h3>
+        <p>Validates patches with real subprocess-based benchmarks, measuring speedup and memory impact. Ensures improvements don't regress performance.</p>
       </div>
-      <div class="feature-card">
-        <h3>
+      <div class="feature-card fade-in fade-in-delay-3">
+        <div class="feature-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
             <line x1="8" y1="21" x2="16" y2="21"/>
             <line x1="12" y1="17" x2="12" y2="21"/>
           </svg>
-          Interactive TUI
-        </h3>
-        <p>Premium terminal interface with workflow wizard, live logs, run history, and agent orchestration.</p>
+        </div>
+        <h3>Interactive TUI</h3>
+        <p>Premium terminal interface with workflow wizard, live execution logs, run history, artifact viewer, and agent orchestration with approval gates.</p>
       </div>
     </div>
   </section>
 
   <!-- Stats -->
   <section class="stats">
-    <h2>Built for developers</h2>
-    <p>ScholarDevClaw is used by researchers and developers to automatically improve their ML codebases.</p>
+    <h2 class="fade-in">Built for scale</h2>
+    <p class="fade-in">Used by researchers and developers to improve ML codebases</p>
     <div class="stats-grid">
-      <div class="stat-card">
+      <div class="stat-card fade-in fade-in-delay-1">
         <div class="stat-number">16</div>
         <div class="stat-label">Paper Specs</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card fade-in fade-in-delay-2">
         <div class="stat-number">1200+</div>
         <div class="stat-label">Tests Passing</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card fade-in fade-in-delay-3">
         <div class="stat-number">6</div>
-        <div class="stat-label">Languages Supported</div>
+        <div class="stat-label">Languages</div>
+      </div>
+      <div class="stat-card fade-in fade-in-delay-4">
+        <div class="stat-number">15+</div>
+        <div class="stat-label">Code Templates</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Terminal Demo -->
+  <section class="demo" id="demo">
+    <div class="demo-header fade-in">
+      <h2>Try it in seconds</h2>
+      <p>Install and run your first demo in under a minute</p>
+    </div>
+    <div class="terminal fade-in">
+      <div class="terminal-header">
+        <div class="terminal-dot red"></div>
+        <div class="terminal-dot yellow"></div>
+        <div class="terminal-dot green"></div>
+        <span class="terminal-title">scholardevclaw</span>
+      </div>
+      <div class="terminal-body">
+        <div class="terminal-line">
+          <span class="terminal-prompt">$ </span>
+          <span class="terminal-command">curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash</span>
+        </div>
+        <div class="terminal-line terminal-output">Installing ScholarDevClaw...</div>
+        <div class="terminal-line terminal-success">✓ Installed successfully!</div>
+        <div class="terminal-line">&nbsp;</div>
+        <div class="terminal-line">
+          <span class="terminal-prompt">$ </span>
+          <span class="terminal-command">scholardevclaw demo</span>
+        </div>
+        <div class="terminal-line terminal-output">Analyzing nanoGPT repository...</div>
+        <div class="terminal-line terminal-output">Found 5 improvement opportunities</div>
+        <div class="terminal-line terminal-output">Generating patches...</div>
+        <div class="terminal-line terminal-success">✓ 5 patches generated successfully</div>
+        <div class="terminal-line">&nbsp;</div>
+        <div class="terminal-line">
+          <span class="terminal-prompt">$ </span>
+          <span class="terminal-command">scholardevclaw tui</span>
+        </div>
+        <div class="terminal-line terminal-success">✓ Launching interactive TUI...</div>
       </div>
     </div>
   </section>
 
   <!-- FAQ -->
   <section class="faq" id="faq">
-    <h2>Frequently asked questions</h2>
+    <h2 class="fade-in">Frequently asked questions</h2>
 
-    <div class="faq-item">
+    <div class="faq-item fade-in">
       <button class="faq-question" onclick="toggleFaq(this)">
         What is ScholarDevClaw?
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -525,23 +981,23 @@
         </svg>
       </button>
       <div class="faq-answer">
-        <p>ScholarDevClaw is an open source AI coding agent that analyzes your codebase, finds relevant research improvements from the latest ML papers, and generates validated patches automatically. It supports Python, JavaScript, TypeScript, Go, Rust, and Java.</p>
+        <p>ScholarDevClaw is an autonomous Research-to-Code AI Agent that analyzes your codebase, finds relevant research improvements from the latest ML papers, maps them to your code, and generates validated patches automatically. It supports Python, JavaScript, TypeScript, Go, Rust, and Java.</p>
       </div>
     </div>
 
-    <div class="faq-item">
+    <div class="faq-item fade-in">
       <button class="faq-question" onclick="toggleFaq(this)">
-        How do I use ScholarDevClaw?
+        How is it different from other AI coding tools?
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="6 9 12 15 18 9"/>
         </svg>
       </button>
       <div class="faq-answer">
-        <p>Install it with the one-line command above, then run <code>scholardevclaw --help</code> to see all available commands. Use <code>scholardevclaw demo</code> for a quick demo, or <code>scholardevclaw tui</code> for the interactive terminal interface.</p>
+        <p>Unlike generic AI coding assistants, ScholarDevClaw specifically targets research-to-code integration. It reads actual research papers, extracts implementation specs, and maps them to your specific codebase using 6-tier matching. It's built for researchers and engineers who want to operationalize ML innovations.</p>
       </div>
     </div>
 
-    <div class="faq-item">
+    <div class="faq-item fade-in">
       <button class="faq-question" onclick="toggleFaq(this)">
         Do I need extra AI subscriptions?
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -549,11 +1005,11 @@
         </svg>
       </button>
       <div class="faq-answer">
-        <p>ScholarDevClaw works with a built-in knowledge base of 16+ paper specs. For advanced features like LLM-powered research and semantic matching, you can connect any model from any provider (Claude, GPT, Gemini, etc.).</p>
+        <p>ScholarDevClaw works with a built-in knowledge base of 16+ paper specs covering normalization, activation, attention, positional encoding, and more. For advanced features like LLM-powered research extraction and semantic matching, you can connect any model from any provider (Claude, GPT, Gemini, etc.).</p>
       </div>
     </div>
 
-    <div class="faq-item">
+    <div class="faq-item fade-in">
       <button class="faq-question" onclick="toggleFaq(this)">
         What about data and privacy?
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -561,11 +1017,11 @@
         </svg>
       </button>
       <div class="faq-answer">
-        <p>ScholarDevClaw runs entirely on your local machine. Your code never leaves your computer unless you explicitly configure external services. All analysis and patch generation happens locally.</p>
+        <p>ScholarDevClaw runs entirely on your local machine. Your code never leaves your computer unless you explicitly configure external services. All analysis, mapping, and patch generation happens locally. You maintain full control over what gets integrated.</p>
       </div>
     </div>
 
-    <div class="faq-item">
+    <div class="faq-item fade-in">
       <button class="faq-question" onclick="toggleFaq(this)">
         Is ScholarDevClaw open source?
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -573,8 +1029,23 @@
         </svg>
       </button>
       <div class="faq-answer">
-        <p>Yes! ScholarDevClaw is fully open source under the MIT license. You can contribute, fork, or modify it however you like. Check out our GitHub repository for the source code.</p>
+        <p>Yes! ScholarDevClaw is fully open source under the MIT license. You can contribute, fork, or modify it however you like. Check out our GitHub repository for the source code, documentation, and contribution guidelines.</p>
       </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="cta-box fade-in">
+      <h2>Ready to automate your research integration?</h2>
+      <p>Install ScholarDevClaw and run your first demo in under a minute.</p>
+      <a href="#install" class="cta-btn">
+        Get started
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="5" y1="12" x2="19" y2="12"/>
+          <polyline points="12 5 19 12 12 19"/>
+        </svg>
+      </a>
     </div>
   </section>
 
@@ -585,6 +1056,7 @@
         <a href="https://github.com/Ronak-IIITD/ScholarDevClaw">GitHub</a>
         <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/issues">Issues</a>
         <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/DEPLOYMENT.md">Deployment</a>
       </div>
       <div class="footer-copy">
         ©2026 ScholarDevClaw · MIT License
@@ -598,7 +1070,7 @@
       curl: 'curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash',
       pip: 'pip install scholardevclaw',
       pipx: 'pipx install scholardevclaw',
-      docker: 'docker pull ghcr.io/ronak-iitd/scholardevclaw/core:latest'
+      source: 'git clone https://github.com/Ronak-IIITD/ScholarDevClaw.git && cd ScholarDevClaw/core && pip install -e ".[all]"'
     };
 
     // Tab switching
@@ -631,6 +1103,27 @@
       const item = btn.parentElement;
       item.classList.toggle('open');
     }
+
+    // Scroll animations
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+    // Navbar scroll effect
+    window.addEventListener('scroll', () => {
+      const nav = document.getElementById('navbar');
+      if (window.scrollY > 50) {
+        nav.classList.add('scrolled');
+      } else {
+        nav.classList.remove('scrolled');
+      }
+    });
   </script>
 </body>
 </html>
