@@ -110,7 +110,6 @@ class WelcomeScreen(ModalScreen[None]):
         max-height: 85%;
         background: $panel;
         border: thick $accent;
-        border-radius: 8;
         padding: 2 3;
     }
 
@@ -154,7 +153,6 @@ class HelpOverlay(ModalScreen[None]):
         max-height: 80%;
         background: $panel;
         border: thick $accent;
-        border-radius: 8;
         padding: 2 3;
     }
 
@@ -202,7 +200,6 @@ class CommandPalette(ModalScreen[str | None]):
         max-height: 60%;
         background: $panel;
         border: thick $accent;
-        border-radius: 8;
         padding: 1;
         margin-top: 8;
     }
@@ -212,7 +209,6 @@ class CommandPalette(ModalScreen[str | None]):
         margin-bottom: 1;
         background: $surface-dark;
         border: solid $border;
-        border-radius: 6;
     }
 
     CommandPalette .command-list {

@@ -287,7 +287,7 @@ class ScholarDevClawApp(App[None]):
         width: 100%;
         height: 3;
         background: $panel;
-        border-top: 1px solid $border;
+        border-top: solid $border;
         padding: 0 1;
     }
 
@@ -308,7 +308,6 @@ class ScholarDevClawApp(App[None]):
         background: $surface-dark;
         color: $text;
         border: solid $border;
-        border-radius: 6;
         padding: 0 1;
     }
 
@@ -324,7 +323,6 @@ class ScholarDevClawApp(App[None]):
         background: $surface-dark;
         color: $text;
         border: solid $border;
-        border-radius: 6;
     }
 
     Select:focus {
@@ -343,7 +341,6 @@ class ScholarDevClawApp(App[None]):
         border: none;
         background: $button;
         color: $text;
-        border-radius: 6;
         padding: 0 1;
         min-width: 10;
     }
@@ -391,11 +388,10 @@ class ScholarDevClawApp(App[None]):
         background: $surface-dark;
         color: $text-muted;
         border: none;
-        border-radius: 6;
     }
 
     TextArea:focus {
-        border: 1px solid $border;
+        border: solid $border;
     }
 
     /* ---- Status / result classes ---- */

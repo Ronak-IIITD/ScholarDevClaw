@@ -213,14 +213,12 @@ class PhaseTracker(Static):
         height: 100%;
         background: $accent;
         transition: width 0.4s ease;
-        border-radius: 4;
     }
 
     PhaseTracker .progress-track {
         width: 100%;
         height: 1;
         background: $border;
-        border-radius: 4;
         margin-top: 0;
     }
 
@@ -483,7 +481,6 @@ class ResultCard(Static):
         height: auto;
         background: $surface-dark;
         border: solid $border;
-        border-radius: 6;
         padding: 1;
         margin-bottom: 1;
     }
@@ -551,7 +548,6 @@ class HistoryPane(VerticalScroll):
         height: auto;
         max-height: 15;
         background: $surface-dark;
-        border-radius: 6;
         padding: 0 1;
         scrollbar-size: 1 1;
     }
