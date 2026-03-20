@@ -57,6 +57,9 @@ HELP_MD = """
 | `ctrl+r` | run selected workflow |
 | `ctrl+k` | open command palette |
 | `ctrl+h` | show this help |
+| `ctrl+p` | focus prompt |
+| `ctrl+b` | focus sidebar |
+| `ctrl+o` | focus output |
 | `esc` | stop agent / close overlay |
 | `esc` x2 | stop running agent |
 
@@ -75,6 +78,7 @@ HELP_MD = """
 ## Navigation
 | Key | Action |
 |-----|--------|
+| `up/down` | command palette selection |
 | `tab` | cycle focus forward |
 | `shift+tab` | cycle focus backward |
 | `up/down` | navigate sidebar items |
@@ -172,6 +176,9 @@ class CommandPalette(ModalScreen[str | None]):
 
     BINDINGS = [
         ("escape", "dismiss_none", "Close"),
+        ("down", "select_next", "next"),
+        ("up", "select_prev", "prev"),
+        ("enter", "run_selected", "run"),
     ]
 
     PALETTE_COMMANDS = [
@@ -231,6 +238,12 @@ class CommandPalette(ModalScreen[str | None]):
         background: #313244;
         border: solid #89b4fa;
     }
+
+    CommandPalette .command-item.selected {
+        background: #45475a;
+        border: solid #89b4fa;
+        text-style: bold;
+    }
     """
 
     def __init__(self) -> None:
@@ -247,6 +260,7 @@ class CommandPalette(ModalScreen[str | None]):
 
     def on_mount(self) -> None:
         self.query_one("#palette-input", Input).focus()
+        self._refresh_selection()
 
     def action_dismiss_none(self) -> None:
         self.dismiss(None)
@@ -270,13 +284,38 @@ class CommandPalette(ModalScreen[str | None]):
             container.mount(Button(f"{name}  -  {desc}", id=f"cmd-{name}", classes="command-item"))
 
         self._selected_index = 0
+        self._refresh_selection()
 
     @on(Input.Submitted, "#palette-input")
     def on_submit(self) -> None:
-        if self._filtered_commands:
-            self.dismiss(self._filtered_commands[0][2])
-        else:
+        self.action_run_selected()
+
+    def _refresh_selection(self) -> None:
+        buttons = list(self.query(Button))
+        for idx, button in enumerate(buttons):
+            if idx == self._selected_index:
+                button.add_class("selected")
+            else:
+                button.remove_class("selected")
+
+    def action_select_next(self) -> None:
+        if not self._filtered_commands:
+            return
+        self._selected_index = (self._selected_index + 1) % len(self._filtered_commands)
+        self._refresh_selection()
+
+    def action_select_prev(self) -> None:
+        if not self._filtered_commands:
+            return
+        self._selected_index = (self._selected_index - 1) % len(self._filtered_commands)
+        self._refresh_selection()
+
+    def action_run_selected(self) -> None:
+        if not self._filtered_commands:
             self.dismiss(None)
+            return
+        idx = max(0, min(self._selected_index, len(self._filtered_commands) - 1))
+        self.dismiss(self._filtered_commands[idx][2])
 
     @on(Button.Pressed)
     def on_command_click(self, event: Button.Pressed) -> None:

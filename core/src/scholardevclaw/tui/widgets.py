@@ -5,12 +5,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.reactive import reactive
-from textual.widgets import Button, Label, Static
+from textual.widgets import Button, Input, Label, Static
 
 # ---------------------------------------------------------------------------
 # Sidebar Navigation
@@ -19,6 +19,13 @@ from textual.widgets import Button, Label, Static
 
 class SidebarItem(Static):
     """A single sidebar navigation item with icon and label."""
+
+    can_focus = True
+
+    BINDINGS = [
+        ("enter", "activate", "activate"),
+        ("space", "activate", "activate"),
+    ]
 
     def __init__(self, name: str, icon: str, action: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -35,6 +42,38 @@ class SidebarItem(Static):
 
     def on_click(self) -> None:
         self.post_message(self.Selected(self.item_action))
+
+    def action_activate(self) -> None:
+        self.post_message(self.Selected(self.item_action))
+
+    def on_focus(self) -> None:
+        self.add_class("focused")
+
+    def on_blur(self) -> None:
+        self.remove_class("focused")
+
+    def on_key(self, event: events.Key) -> None:
+        key = event.key
+        if key in ("enter", "space"):
+            self.action_activate()
+            event.stop()
+            return
+
+        siblings = list(self.parent.query(SidebarItem)) if self.parent is not None else []
+        if not siblings:
+            return
+
+        try:
+            index = siblings.index(self)
+        except ValueError:
+            return
+
+        if key in ("up", "k"):
+            siblings[max(0, index - 1)].focus()
+            event.stop()
+        elif key in ("down", "j"):
+            siblings[min(len(siblings) - 1, index + 1)].focus()
+            event.stop()
 
     def compose(self) -> ComposeResult:
         yield Label(f" {self.item_icon} {self.item_name}", classes="sidebar-label")
@@ -114,6 +153,11 @@ class Sidebar(Vertical):
         background: $accent 25%;
         color: $accent;
         text-style: bold;
+    }
+
+    SidebarItem.focused {
+        border-left: thick $accent;
+        color: $text;
     }
 
     Sidebar .sidebar-label {
@@ -319,6 +363,8 @@ class LogEntry(Static):
 
 class LogView(VerticalScroll):
     """Scrollable log view with styled entries."""
+
+    can_focus = True
 
     CSS = """
     LogView {
@@ -655,3 +701,23 @@ class AgentStatus(Static):
                 dot.add_class("dot-offline")
         except Exception:
             pass
+
+
+class PromptInput(Input):
+    """Input with keyboard history navigation events."""
+
+    class HistoryPrev(Message):
+        def __init__(self) -> None:
+            super().__init__()
+
+    class HistoryNext(Message):
+        def __init__(self) -> None:
+            super().__init__()
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "up":
+            self.post_message(self.HistoryPrev())
+            event.stop()
+        elif event.key == "down":
+            self.post_message(self.HistoryNext())
+            event.stop()

@@ -48,6 +48,7 @@ from .widgets import (
     HistoryPane,
     LogView,
     PhaseTracker,
+    PromptInput,
     Sidebar,
     StatusBar,
 )
@@ -431,6 +432,9 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+r", "run_selected", "Run"),
         ("ctrl+k", "command_palette", "Command Palette"),
         ("ctrl+h", "help", "Help"),
+        ("ctrl+p", "focus_prompt", "Focus Prompt"),
+        ("ctrl+b", "focus_sidebar", "Focus Sidebar"),
+        ("ctrl+o", "focus_output", "Focus Output"),
         ("escape", "handle_escape", "Stop/Back"),
         ("ctrl+l", "clear_logs", "Clear Logs"),
         ("ctrl+a", "quick_action_analyze", "Quick Analyze"),
@@ -643,7 +647,7 @@ class ScholarDevClawApp(App[None]):
             # Center content
             with Vertical(id="content-area"):
                 yield Label(
-                    "keys: ctrl+k commands | ctrl+h help | ctrl+r run | ctrl+l clear | ctrl+c quit",
+                    "keys: ctrl+k commands | ctrl+h help | ctrl+p prompt | ctrl+b sidebar | ctrl+o output",
                     id="top-help-bar",
                 )
                 # Phase tracker
@@ -761,7 +765,7 @@ class ScholarDevClawApp(App[None]):
 
         # Prompt bar
         with Horizontal(id="prompt-bar"):
-            yield Input(
+            yield PromptInput(
                 value="",
                 placeholder="type request... (ctrl+k commands, ctrl+h help)",
                 id="prompt-input",
@@ -1323,6 +1327,26 @@ class ScholarDevClawApp(App[None]):
         except Exception as exc:
             self._log_to_legacy("agent-logs", [f"Error: {exc}"])
 
+    @on(PromptInput.HistoryPrev)
+    def on_prompt_history_prev(self) -> None:
+        if not self._command_history:
+            return
+        self._history_index = max(0, self._history_index - 1)
+        self.query_one("#prompt-input", PromptInput).value = self._command_history[
+            self._history_index
+        ]
+
+    @on(PromptInput.HistoryNext)
+    def on_prompt_history_next(self) -> None:
+        if not self._command_history:
+            return
+        self._history_index = min(len(self._command_history), self._history_index + 1)
+        prompt_input = self.query_one("#prompt-input", PromptInput)
+        if self._history_index >= len(self._command_history):
+            prompt_input.value = ""
+        else:
+            prompt_input.value = self._command_history[self._history_index]
+
     # -----------------------------------------------------------------------
     # Actions
     # -----------------------------------------------------------------------
@@ -1349,6 +1373,24 @@ class ScholarDevClawApp(App[None]):
 
     def action_quick_action_integrate(self) -> None:
         self._execute_quick("integrate")
+
+    def action_focus_prompt(self) -> None:
+        self.query_one("#prompt-input", Input).focus()
+        self._set_status("Focused prompt", "info")
+
+    def action_focus_sidebar(self) -> None:
+        try:
+            self.query_one("#sidebar-analyze").focus()
+        except Exception:
+            pass
+        self._set_status("Focused sidebar", "info")
+
+    def action_focus_output(self) -> None:
+        try:
+            self.query_one(LogView).focus()
+        except Exception:
+            pass
+        self._set_status("Focused output", "info")
 
     def action_command_palette(self) -> None:
         """Open the command palette overlay."""

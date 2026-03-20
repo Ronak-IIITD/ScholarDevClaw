@@ -4,6 +4,51 @@
 
 **Last updated:** 2026-03-20
 
+### 2026-03-20 (TUI Interaction Pass — Keyboard-First Navigation + Focus System)
+
+**Goal:** Make the TUI feel production-grade for power users by improving keyboard-only navigation, focus control, palette selection behavior, and prompt history workflow.
+
+**Summary:** Implemented a dedicated interaction layer for keyboard-first usage: command palette now supports arrow-key navigation with selected row highlighting and enter-to-run for currently selected item, sidebar items are now focusable and can be navigated/activated with keyboard, and prompt input now supports command history traversal with `up/down`. Added explicit focus shortcuts to jump between major regions (`ctrl+p`, `ctrl+b`, `ctrl+o`) and updated help docs accordingly.
+
+**Interaction Improvements:**
+- **Command Palette (`core/src/scholardevclaw/tui/screens.py`)**
+  - Added bindings: `up`, `down`, `enter`
+  - Added selected-row tracking (`_selected_index`) and `.selected` visual style
+  - `enter` now executes currently selected command (not always first result)
+  - Filter updates preserve a valid selection state
+
+- **Sidebar Keyboard Navigation (`core/src/scholardevclaw/tui/widgets.py`)**
+  - `SidebarItem` made focusable (`can_focus = True`)
+  - Keyboard activation support: `enter` / `space`
+  - Keyboard movement support: `up/down` and `j/k`
+  - Added focused state styling for clear current-item indication
+
+- **Prompt Input History (`core/src/scholardevclaw/tui/widgets.py`, `app.py`)**
+  - Added `PromptInput` subclass that emits `HistoryPrev` / `HistoryNext`
+  - Wired app-level handlers to load previous/next prompt commands
+  - `up/down` in prompt now traverses submitted prompt history correctly
+
+- **Focus Shortcuts (`core/src/scholardevclaw/tui/app.py`)**
+  - `ctrl+p` → focus prompt
+  - `ctrl+b` → focus sidebar
+  - `ctrl+o` → focus output
+  - Top key hint strip updated to include these shortcuts
+
+- **Help Overlay Documentation (`core/src/scholardevclaw/tui/screens.py`)**
+  - Added focus shortcuts to keyboard guide
+  - Navigation docs now reflect palette selection behavior
+
+**Verification:**
+- ✅ Automated Textual interaction smoke flow passes:
+  - `ctrl+k` opens palette; `up/down/enter` selects & executes
+  - `ctrl+h` opens help
+  - `ctrl+p`, `ctrl+b`, `ctrl+o` focus transitions work
+  - Sidebar key navigation + activation works
+  - Prompt history `up/down` works after multiple submissions
+- ✅ Ruff lint clean for updated TUI files
+
+---
+
 ### 2026-03-20 (TUI Visual System Upgrade — Catppuccin Mocha + Typography Rhythm + Hierarchy)
 
 **Goal:** Move the TUI visual design from ad-hoc dark styling to a coherent production theme system using Catppuccin Mocha, with stronger panel hierarchy, cleaner spacing rhythm, and better readability.
