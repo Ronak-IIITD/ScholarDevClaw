@@ -1,3 +1,10 @@
+"""ScholarDevClaw TUI — enhanced terminal interface.
+
+Modern terminal UI inspired by Claude Code and OpenCode, built on Textual.
+Features: sidebar navigation, chat-style logs, command palette, phase
+progress tracker, help overlay, run history, and agent integration.
+"""
+
 from __future__ import annotations
 
 import json
@@ -11,9 +18,19 @@ from typing import Any
 
 from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import Button, Checkbox, Footer, Header, Input, Label, Pretty, Select, TextArea
+from textual.widgets import (
+    Button,
+    Checkbox,
+    Footer,
+    Header,
+    Input,
+    Label,
+    Select,
+    Static,
+    TextArea,
+)
 
 from scholardevclaw.application.pipeline import (
     run_analyze,
@@ -26,6 +43,16 @@ from scholardevclaw.application.pipeline import (
     run_validate,
 )
 
+from .screens import CommandPalette, HelpOverlay, WelcomeScreen
+from .widgets import (
+    AgentStatus,
+    HistoryPane,
+    LogView,
+    PhaseTracker,
+    Sidebar,
+    StatusBar,
+)
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = {
@@ -36,7 +63,13 @@ DEFAULT_CONFIG = {
     "auto_validate": True,
     "require_clean_git": False,
     "theme": "dark",
+    "show_welcome": True,
 }
+
+
+# ---------------------------------------------------------------------------
+# Internal messages
+# ---------------------------------------------------------------------------
 
 
 class TaskCompleted(Message):
@@ -60,13 +93,14 @@ class AgentLog(Message):
         self.line = line
 
 
-class ValidationError(Exception):
-    pass
+# ---------------------------------------------------------------------------
+# Main Application
+# ---------------------------------------------------------------------------
 
 
 class ScholarDevClawApp(App[None]):
     TITLE = "ScholarDevClaw"
-    SUB_TITLE = "Research-to-Code Assistant"
+    SUB_TITLE = "Research-to-Code Agent"
 
     PHASES = [
         ("idle", "Ready", 0),
@@ -91,7 +125,12 @@ class ScholarDevClawApp(App[None]):
         "qknorm",
     ]
 
+    # -----------------------------------------------------------------------
+    # CSS Theme — Modern Dark with gradient accents
+    # -----------------------------------------------------------------------
+
     CSS = """
+    /* ---- Base ---- */
     Screen {
         layout: vertical;
         background: $surface;
@@ -103,6 +142,7 @@ class ScholarDevClawApp(App[None]):
         color: $text;
         dock: top;
         height: 3;
+        text-align: center;
     }
 
     Footer {
@@ -112,103 +152,121 @@ class ScholarDevClawApp(App[None]):
         height: 1;
     }
 
-    #main-container {
+    /* ---- Top-level layout ---- */
+
+    #app-body {
+        width: 100%;
+        height: 1fr;
+        layout: horizontal;
+    }
+
+    #content-area {
+        width: 1fr;
         height: 100%;
-        padding: 1 2;
-        background: $surface;
+        layout: vertical;
     }
 
-    .panel {
+    /* ---- Main content split ---- */
+
+    #main-split {
+        width: 100%;
+        height: 1fr;
+        layout: horizontal;
+    }
+
+    /* ---- Left: configuration panel ---- */
+
+    #config-panel {
+        width: 32;
+        min-width: 28;
+        max-width: 38;
+        height: 100%;
         background: $panel;
-        border: solid $border;
-        border-radius: 8px;
+        border-right: tall $border;
         padding: 1;
+        overflow-y: auto;
     }
 
-    .section-title {
+    #config-panel .panel-title {
         text-style: bold;
         color: $accent;
         margin-bottom: 1;
+        width: 100%;
+        text-align: center;
+        height: 1;
     }
 
-    #wizard-panel {
-        width: 30%;
-        background: $panel;
-        border: solid $border;
-        border-radius: 8px;
-        padding: 1 1;
-        margin-right: 1;
+    #config-panel .field-label {
+        color: $text-muted;
+        margin-top: 1;
+        height: 1;
     }
+
+    #config-panel .spacer {
+        height: 1;
+    }
+
+    /* ---- Right: output panel ---- */
 
     #output-panel {
-        width: 70%;
-        background: $panel;
-        border: solid $border;
-        border-radius: 8px;
-        padding: 1 1;
+        width: 1fr;
+        height: 100%;
+        background: $surface;
+        layout: vertical;
     }
 
-    #agent-panel {
-        height: 28%;
+    #output-panel .output-header {
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        background: $surface-dark;
+        border-bottom: solid $border;
+        color: $accent;
+        text-style: bold;
+    }
+
+    /* ---- Bottom: agent / prompt bar ---- */
+
+    #agent-section {
+        width: 100%;
+        height: 25%;
+        min-height: 8;
+        max-height: 35%;
         dock: bottom;
         background: $panel;
-        border: solid $border;
-        border-radius: 8px 8px 0 0;
-        margin: 0 2;
-        padding: 1;
+        border-top: tall $border;
+        layout: vertical;
     }
 
-    #phase-container {
-        dock: top;
-        height: 2;
-        background: $surface-dark;
-        border-radius: 4px;
-        margin-bottom: 1;
-    }
-
-    #phase-progress {
-        width: 0%;
-        height: 100%;
-        background: $accent;
-        border-radius: 4px;
-        transition: width 0.3s ease;
-    }
-
-    #phase-label {
-        dock: top;
+    #agent-header {
+        width: 100%;
         height: 1;
-        color: $text-muted;
-    }
-
-    #result {
-        height: 10;
-        background: $surface-dark;
-        border-radius: 6px;
         padding: 0 1;
+        background: $surface-dark;
+        border-bottom: solid $border;
+        layout: horizontal;
     }
 
-    #logs {
-        height: 7;
-        background: $surface-dark;
-        border-radius: 6px;
-        margin-top: 1;
+    #agent-header .agent-title {
+        width: 1fr;
+        color: $accent;
+        text-style: bold;
     }
 
-    #history {
-        height: 4;
-        background: $surface-dark;
-        border-radius: 6px;
-        margin-top: 1;
+    #agent-controls {
+        width: auto;
+        layout: horizontal;
+        height: 1;
     }
 
     #agent-logs {
+        width: 100%;
         height: 1fr;
-        background: $surface-dark;
-        border-radius: 6px;
+        background: $surface;
     }
 
     #prompt-bar {
-        dock: bottom;
+        width: 100%;
         height: 3;
         background: $panel;
         border-top: 1px solid $border;
@@ -225,23 +283,25 @@ class ScholarDevClawApp(App[None]):
         color: $text-muted;
     }
 
-    #quick-actions {
-        dock: top;
-        height: 3;
-        background: transparent;
-        padding: 0 1;
+    /* ---- Shared widgets ---- */
+
+    .panel-section-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+        margin-top: 1;
     }
 
     Input {
         background: $surface-dark;
         color: $text;
         border: solid $border;
-        border-radius: 6px;
+        border-radius: 6;
         padding: 0 1;
     }
 
     Input:focus {
-        border: $accent;
+        border: solid $accent;
     }
 
     Input::placeholder {
@@ -249,18 +309,18 @@ class ScholarDevClawApp(App[None]):
     }
 
     Input.invalid {
-        border: $error;
+        border: solid $error;
     }
 
     Select {
         background: $surface-dark;
         color: $text;
         border: solid $border;
-        border-radius: 6px;
+        border-radius: 6;
     }
 
     Select:focus {
-        border: $accent;
+        border: solid $accent;
     }
 
     Checkbox {
@@ -275,9 +335,9 @@ class ScholarDevClawApp(App[None]):
         border: none;
         background: $button;
         color: $text;
-        border-radius: 6px;
+        border-radius: 6;
         padding: 0 1;
-        min-width: 12;
+        min-width: 10;
     }
 
     Button:hover {
@@ -310,38 +370,9 @@ class ScholarDevClawApp(App[None]):
         opacity: 0.4;
     }
 
-    .quick-btn {
-        background: transparent;
-        color: $text-muted;
-        border: 1px solid $border;
-        border-radius: 6px;
-        padding: 0 1;
-        min-width: 10;
-    }
-
-    .quick-btn:hover {
-        background: $button-hover;
-        color: $text;
-    }
-
     Label {
         color: $text-muted;
     }
-
-    #run-status {
-        dock: top;
-        height: 1;
-        background: transparent;
-        color: $text-muted;
-        padding: 0 1;
-    }
-
-    .status-error { color: $error; }
-    .status-success { color: $success; }
-    .status-warning { color: $warning; }
-
-    .spaced { margin-top: 1; }
-    .spaced-small { margin-top: 0; }
 
     Pretty {
         background: transparent;
@@ -352,25 +383,21 @@ class ScholarDevClawApp(App[None]):
         background: $surface-dark;
         color: $text-muted;
         border: none;
-        border-radius: 6px;
+        border-radius: 6;
     }
 
     TextArea:focus {
         border: 1px solid $border;
     }
 
-    .agent-status {
-        dock: top;
-        height: 1;
-        color: $text-muted;
-    }
+    /* ---- Status / result classes ---- */
 
-    .agent-status.online { color: $success; }
-    .agent-status.offline { color: $text-muted; }
-    .agent-status.error { color: $error; }
+    .status-error { color: $error; }
+    .status-success { color: $success; }
+    .status-warning { color: $warning; }
+    .status-info { color: $text-muted; }
 
-    Horizontal { height: auto; }
-    Vertical { height: auto; }
+    /* ---- Color tokens ---- */
 
     $surface: #0d1117;
     $surface-dark: #161b22;
@@ -382,17 +409,23 @@ class ScholarDevClawApp(App[None]):
     $accent-hover: #79c0ff;
     $button: #21262d;
     $button-hover: #30363d;
-    $success: #238636;
-    $error: #da3633;
-    $warning: #9e6a03;
+    $success: #3fb950;
+    $error: #f85149;
+    $warning: #d29922;
     $text-inverse: #ffffff;
     $header: #161b22;
     """
 
+    # -----------------------------------------------------------------------
+    # Key bindings
+    # -----------------------------------------------------------------------
+
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+r", "run_selected", "Run"),
-        ("escape", "handle_escape", "Stop"),
+        ("ctrl+k", "command_palette", "Commands"),
+        ("ctrl+question_mark", "help", "Help"),
+        ("escape", "handle_escape", "Stop/Back"),
         ("ctrl+l", "clear_logs", "Clear"),
         ("ctrl+a", "quick_action_analyze", "Analyze"),
         ("ctrl+s", "quick_action_suggest", "Suggest"),
@@ -409,6 +442,10 @@ class ScholarDevClawApp(App[None]):
         ("Validate", "validate"),
         ("Integrate", "integrate"),
     ]
+
+    # -----------------------------------------------------------------------
+    # Lifecycle
+    # -----------------------------------------------------------------------
 
     def __init__(self) -> None:
         super().__init__()
@@ -434,6 +471,10 @@ class ScholarDevClawApp(App[None]):
         self._context_file = self._config_dir / "tui_context.json"
         self._config = self._load_config()
         self._saved_context: dict[str, Any] = self._load_context()
+
+    # -----------------------------------------------------------------------
+    # Config / context persistence
+    # -----------------------------------------------------------------------
 
     def _load_config(self) -> dict[str, Any]:
         try:
@@ -467,11 +508,13 @@ class ScholarDevClawApp(App[None]):
         except Exception:
             pass
 
+    # -----------------------------------------------------------------------
+    # Validation helpers
+    # -----------------------------------------------------------------------
+
     def _validate_repo_path(self, path: str) -> tuple[bool, str]:
-        """Validate repository path."""
         if not path:
             return False, "Repository path is required"
-
         p = Path(path).expanduser()
         if not p.exists():
             return False, f"Path does not exist: {path}"
@@ -480,15 +523,13 @@ class ScholarDevClawApp(App[None]):
         return True, ""
 
     def _validate_spec(self, spec: str) -> tuple[bool, str]:
-        """Validate spec name."""
         if not spec:
-            return True, ""  # Optional
+            return True, ""
         if spec.lower() not in self.AVAILABLE_SPECS:
             return False, f"Unknown spec: {spec}. Valid: {', '.join(self.AVAILABLE_SPECS)}"
         return True, ""
 
     def _check_git_status(self, path: str) -> tuple[bool, str]:
-        """Check if repo has uncommitted changes."""
         try:
             result = subprocess.run(
                 ["git", "status", "--porcelain"],
@@ -501,72 +542,70 @@ class ScholarDevClawApp(App[None]):
                 return True, "Repository has uncommitted changes"
             return False, ""
         except Exception:
-            return False, ""  # Not a git repo or git not available
+            return False, ""
+
+    # -----------------------------------------------------------------------
+    # UI state helpers
+    # -----------------------------------------------------------------------
 
     def _set_phase(self, phase: str) -> None:
         self._current_phase = phase
-        for phase_name, label, progress in self.PHASES:
-            if phase_name == phase:
-                try:
-                    bar = self.query_one("#phase-progress")
-                    bar.styles.width = f"{int(progress * 100)}%"
-                    label_widget = self.query_one("#phase-label")
-                    label_widget.update(label)
-                except Exception:
-                    pass
-                break
+        try:
+            tracker = self.query_one(PhaseTracker)
+            tracker.set_phase(phase)
+        except Exception:
+            pass
 
     def _set_status(self, message: str, level: str = "info") -> None:
         try:
-            status = self.query_one("#run-status", Label)
-            status.update(message)
-            status.remove_class("status-error", "status-success", "status-warning")
-            if level == "error":
-                status.add_class("status-error")
-            elif level == "success":
-                status.add_class("status-success")
-            elif level == "warning":
-                status.add_class("status-warning")
+            status_bar = self.query_one(StatusBar)
+            status_bar.set_status(message, level)
         except Exception:
             pass
 
     def _update_agent_status(self, status: str) -> None:
         try:
-            label = self.query_one("#agent-status", Label)
-            label.update(status)
-            label.remove_class("online", "offline", "error")
-            if status == "Online":
-                label.add_class("online")
-            elif status == "Error":
-                label.add_class("error")
-            else:
-                label.add_class("offline")
+            agent_dot = self.query_one(AgentStatus)
+            agent_dot.set_status(status)
         except Exception:
             pass
 
-    def _log(self, widget_id: str, lines: list[str]) -> None:
-        area = self.query_one(f"#{widget_id}", TextArea)
-        current = area.text
-        merged = (current + "\n" if current else "") + "\n".join(lines)
-        area.load_text(merged)
+    def _log_to_view(self, lines: list[str]) -> None:
+        """Append lines to the LogView widget."""
+        try:
+            log_view = self.query_one(LogView)
+            log_view.add_logs(lines)
+        except Exception:
+            pass
+
+    def _log_to_legacy(self, widget_id: str, lines: list[str]) -> None:
+        """Append lines to a TextArea widget (agent-logs)."""
+        try:
+            area = self.query_one(f"#{widget_id}", TextArea)
+            current = area.text
+            merged = (current + "\n" if current else "") + "\n".join(lines)
+            area.load_text(merged)
+        except Exception:
+            pass
+
+    # -----------------------------------------------------------------------
+    # Natural language command parsing
+    # -----------------------------------------------------------------------
 
     def _parse_natural_command(self, prompt: str) -> tuple[str, dict[str, Any]]:
         prompt_lower = prompt.strip().lower()
         ctx: dict[str, Any] = {}
         command = "help"
 
-        # Extract path
         path_match = re.search(r"(?:to|on|in|at|for)\s+([/\w~.][^\s]+)", prompt)
         if path_match:
             ctx["repo_path"] = path_match.group(1)
 
-        # Extract spec
         for spec in self.AVAILABLE_SPECS:
             if spec in prompt_lower:
                 ctx["spec"] = spec
                 break
 
-        # Detect intent
         if any(kw in prompt_lower for kw in ["analyze", "scan", "inspect"]):
             command = "analyze"
         elif any(kw in prompt_lower for kw in ["suggest", "recommend", "improvement"]):
@@ -584,101 +623,169 @@ class ScholarDevClawApp(App[None]):
 
         return command, ctx
 
+    # -----------------------------------------------------------------------
+    # Compose — layout definition
+    # -----------------------------------------------------------------------
+
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
 
-        yield Label("Ready", id="phase-label")
-        with Horizontal(id="phase-container"):
-            yield Label("", id="phase-progress")
+        with Horizontal(id="app-body"):
+            # Left sidebar
+            yield Sidebar(id="sidebar")
 
-        with Horizontal(id="main-container"):
-            with Vertical(id="wizard-panel", classes="panel"):
-                yield Label("Workflow", classes="section-title")
-                yield Select(
-                    self.action_mode_options,
-                    value=self._saved_context.get(
-                        "last_action", self._config.get("default_action", "analyze")
-                    ),
-                    id="action",
-                )
-                yield Input(
-                    value=self._saved_context.get(
-                        "last_repo", self._config.get("default_repo", str(Path.cwd()))
-                    ),
-                    placeholder="/path/to/repository",
-                    id="repo-path",
-                )
-                yield Input(
-                    value=self._saved_context.get("last_query", "layer normalization"),
-                    placeholder="Search query",
-                    id="query",
-                )
-                with Horizontal(classes="spaced-small"):
-                    yield Checkbox("arXiv", value=False, id="search-arxiv")
-                    yield Checkbox("Web", value=False, id="search-web")
-                yield Input(
-                    value=self._saved_context.get(
-                        "last_language", self._config.get("default_language", "python")
-                    ),
-                    placeholder="Language",
-                    id="search-language",
-                )
-                yield Input(
-                    value=str(self._config.get("max_results", 10)),
-                    placeholder="Max",
-                    id="search-max-results",
-                )
-                yield Input(
-                    value=self._saved_context.get(
-                        "last_spec", self._config.get("default_spec", "rmsnorm")
-                    ),
-                    placeholder="Spec name",
-                    id="spec",
-                )
-                yield Input(value="", placeholder="Output dir (optional)", id="output-dir")
-                with Horizontal(classes="spaced-small"):
-                    yield Checkbox("Dry-run", value=False, id="integrate-dry-run")
-                    yield Checkbox(
-                        "Clean git",
-                        value=self._config.get("require_clean_git", False),
-                        id="integrate-require-clean",
-                    )
-                yield Label("Ready", id="run-status")
-                with Horizontal(classes="spaced"):
-                    yield Button("Run", id="run", variant="primary")
-                    yield Button("Clear", id="clear")
+            # Center content
+            with Vertical(id="content-area"):
+                # Phase tracker
+                yield PhaseTracker(id="phase-tracker")
 
-            with Vertical(id="output-panel", classes="panel"):
-                yield Label("Results", classes="section-title")
-                yield Pretty({}, id="result")
-                yield Label("Logs", classes="section-title")
-                yield TextArea("", id="logs", read_only=True)
-                yield Label("History", classes="section-title")
-                yield TextArea("No runs yet.", id="history", read_only=True)
-                with Horizontal(classes="spaced-small"):
-                    yield Input(value="", placeholder="#", id="history-id")
-                    yield Button("Rerun", id="rerun-history")
-                    yield Button("View", id="view-history")
+                # Main split: config + output
+                with Horizontal(id="main-split"):
+                    # Left: configuration panel
+                    with VerticalScroll(id="config-panel"):
+                        yield Label("Workflow", classes="panel-title")
+                        yield Select(
+                            self.action_mode_options,
+                            value=self._saved_context.get(
+                                "last_action",
+                                self._config.get("default_action", "analyze"),
+                            ),
+                            id="action",
+                        )
 
-        with Vertical(id="agent-panel", classes="panel"):
-            yield Label("Agent Mode", classes="section-title")
-            with Horizontal(id="quick-actions"):
-                yield Button("Launch", id="launch-agent", variant="primary")
-                yield Button("Stop", id="stop-agent", variant="error")
-                yield Button("Analyze", id="quick-analyze", classes="quick-btn")
-                yield Button("Suggest", id="quick-suggest", classes="quick-btn")
-                yield Button("Integrate", id="quick-integrate", classes="quick-btn")
-                yield Label("Offline", id="agent-status", classes="agent-status offline")
+                        yield Label("Repository Path", classes="field-label")
+                        yield Input(
+                            value=self._saved_context.get(
+                                "last_repo",
+                                self._config.get("default_repo", str(Path.cwd())),
+                            ),
+                            placeholder="/path/to/repository",
+                            id="repo-path",
+                        )
+
+                        yield Label("Search Query", classes="field-label")
+                        yield Input(
+                            value=self._saved_context.get("last_query", "layer normalization"),
+                            placeholder="Search query",
+                            id="query",
+                        )
+
+                        with Horizontal(classes="spacer"):
+                            yield Checkbox("arXiv", value=False, id="search-arxiv")
+                            yield Checkbox("Web", value=False, id="search-web")
+
+                        yield Label("Language", classes="field-label")
+                        yield Input(
+                            value=self._saved_context.get(
+                                "last_language",
+                                self._config.get("default_language", "python"),
+                            ),
+                            placeholder="Language",
+                            id="search-language",
+                        )
+
+                        yield Label("Max Results", classes="field-label")
+                        yield Input(
+                            value=str(self._config.get("max_results", 10)),
+                            placeholder="Max",
+                            id="search-max-results",
+                        )
+
+                        yield Label("Spec Name", classes="field-label")
+                        yield Input(
+                            value=self._saved_context.get(
+                                "last_spec",
+                                self._config.get("default_spec", "rmsnorm"),
+                            ),
+                            placeholder="Spec name",
+                            id="spec",
+                        )
+
+                        yield Label("Output Dir", classes="field-label")
+                        yield Input(
+                            value="",
+                            placeholder="Output dir (optional)",
+                            id="output-dir",
+                        )
+
+                        with Horizontal(classes="spacer"):
+                            yield Checkbox("Dry-run", value=False, id="integrate-dry-run")
+                            yield Checkbox(
+                                "Clean git",
+                                value=self._config.get("require_clean_git", False),
+                                id="integrate-require-clean",
+                            )
+
+                        with Horizontal(classes="spacer"):
+                            yield Button("Run", id="run", variant="primary")
+                            yield Button("Clear", id="clear")
+
+                    # Right: output panel
+                    with Vertical(id="output-panel"):
+                        yield Label("Output", classes="output-header")
+                        yield LogView(id="log-view")
+
+                        # Result display (hidden until there is a result)
+                        yield Static("", id="result-placeholder")
+
+                        # History
+                        yield Label("  History", classes="panel-section-title")
+                        yield HistoryPane(id="history-pane")
+                        with Horizontal(classes="spacer"):
+                            yield Input(value="", placeholder="#", id="history-id")
+                            yield Button("Rerun", id="rerun-history")
+                            yield Button("View", id="view-history")
+
+        # Agent section at the bottom
+        with Vertical(id="agent-section"):
+            with Horizontal(id="agent-header"):
+                yield Label("Agent Mode", classes="agent-title")
+                with Horizontal(id="agent-controls"):
+                    yield Button("Launch", id="launch-agent", variant="primary")
+                    yield Button("Stop", id="stop-agent", variant="error")
+                    yield AgentStatus(id="agent-status")
             yield TextArea("", id="agent-logs", read_only=True)
 
+        # Prompt bar
         with Horizontal(id="prompt-bar"):
             yield Input(
                 value="",
-                placeholder="> Type request... (e.g., 'apply rmsnorm to /path')",
+                placeholder="> Type request... (Ctrl+K for commands, Ctrl+? for help)",
                 id="prompt-input",
             )
 
         yield Footer()
+
+    # -----------------------------------------------------------------------
+    # Mount / unmount
+    # -----------------------------------------------------------------------
+
+    def on_mount(self) -> None:
+        self._refresh_action_state()
+        self._update_agent_status("Offline")
+        self._set_phase("idle")
+
+        # Show welcome on first launch
+        if self._config.get("show_welcome", True):
+            self.call_later(self._maybe_show_welcome)
+
+    def _maybe_show_welcome(self) -> None:
+        marker = self._config_dir / ".welcome_seen"
+        if not marker.exists():
+            self.push_screen(WelcomeScreen())
+            try:
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text("")
+            except Exception:
+                pass
+
+    def on_unmount(self) -> None:
+        if self._agent_process and self._agent_process.poll() is None:
+            self._agent_process.terminate()
+
+    # -----------------------------------------------------------------------
+    # Request capture / apply
+    # -----------------------------------------------------------------------
 
     def _capture_request(self) -> dict[str, Any]:
         return {
@@ -713,6 +820,10 @@ class ScholarDevClawApp(App[None]):
         )
         self._refresh_action_state()
 
+    # -----------------------------------------------------------------------
+    # Action state management
+    # -----------------------------------------------------------------------
+
     def _refresh_action_state(self) -> None:
         action = self.query_one("#action", Select).value
         is_search = action == "search"
@@ -720,7 +831,7 @@ class ScholarDevClawApp(App[None]):
         supports_output_dir = action == "generate"
         is_integrate = action == "integrate"
 
-        for id, widget in [
+        for field_id, widget_cls in [
             ("query", Input),
             ("search-arxiv", Checkbox),
             ("search-web", Checkbox),
@@ -728,13 +839,7 @@ class ScholarDevClawApp(App[None]):
             ("search-max-results", Input),
         ]:
             try:
-                self.query_one(f"#{id}", widget).disabled = not is_search
-            except Exception:
-                pass
-
-        for id, widget in [("spec", Input), ("output-dir", Input)]:
-            try:
-                self.query_one(f"#{id}", widget).disabled = False
+                self.query_one(f"#{field_id}", widget_cls).disabled = not is_search
             except Exception:
                 pass
 
@@ -746,25 +851,17 @@ class ScholarDevClawApp(App[None]):
         except Exception:
             pass
 
-    def _render_history(self) -> None:
-        if not self._run_history:
-            self.query_one("#history", TextArea).load_text("No runs yet.")
-            return
-        lines = [
-            f"#{r['id']} | {r['action'][:4]} | {r['status']} | {r['duration_s']:.1f}s"
-            for r in self._run_history[:10]
-        ]
-        self.query_one("#history", TextArea).load_text("\n".join(lines))
-
-    def _resolve_history(self, raw: str) -> dict[str, Any] | None:
-        if not self._run_history:
-            return None
-        if not raw:
-            return self._run_history[0]
+        # Sync sidebar selection
         try:
-            return next((r for r in self._run_history if r["id"] == int(raw)), None)
-        except ValueError:
-            return None
+            sidebar = self.query_one(Sidebar)
+            if isinstance(action, str):
+                sidebar.set_selected(action)
+        except Exception:
+            pass
+
+    # -----------------------------------------------------------------------
+    # History management
+    # -----------------------------------------------------------------------
 
     def _append_history(
         self,
@@ -790,30 +887,80 @@ class ScholarDevClawApp(App[None]):
         self._next_run_id += 1
         self._run_history.insert(0, record)
         self._run_history = self._run_history[: self._history_limit]
-        self.query_one("#history-id", Input).value = str(record["id"])
-        self._render_history()
+
+        try:
+            history_pane = self.query_one(HistoryPane)
+            history_pane.add_entry(record["id"], action, status, duration)
+            self.query_one("#history-id", Input).value = str(record["id"])
+        except Exception:
+            pass
+
         self._saved_context["last_action"] = action
         self._saved_context["last_repo"] = request.get("repo_path", "")
         self._saved_context["last_spec"] = request.get("spec", "")
         self._save_context()
+
+    def _resolve_history(self, raw: str) -> dict[str, Any] | None:
+        if not self._run_history:
+            return None
+        if not raw:
+            return self._run_history[0]
+        try:
+            return next((r for r in self._run_history if r["id"] == int(raw)), None)
+        except ValueError:
+            return None
+
+    # -----------------------------------------------------------------------
+    # Button states
+    # -----------------------------------------------------------------------
+
+    def _disable_run_buttons(self) -> None:
+        for btn_id in [
+            "run",
+            "rerun-history",
+            "view-history",
+        ]:
+            try:
+                self.query_one(f"#{btn_id}", Button).disabled = True
+            except Exception:
+                pass
+
+    def _enable_run_buttons(self) -> None:
+        for btn_id in [
+            "run",
+            "rerun-history",
+            "view-history",
+        ]:
+            try:
+                self.query_one(f"#{btn_id}", Button).disabled = False
+            except Exception:
+                pass
+
+    # -----------------------------------------------------------------------
+    # Quick actions
+    # -----------------------------------------------------------------------
 
     def _execute_quick(self, action: str) -> None:
         repo = self.query_one("#repo-path", Input).value.strip()
 
         if not repo:
             self._set_status("Error: Set repository path first", "error")
-            self._log("agent-logs", ["Error: Repository path is required"])
+            self._log_to_view(["Error: Repository path is required"])
             return
 
         valid, err = self._validate_repo_path(repo)
         if not valid:
             self._set_status(f"Error: {err}", "error")
-            self._log("agent-logs", [f"Error: {err}"])
+            self._log_to_view([f"Error: {err}"])
             return
 
         self.query_one("#action", Select).value = action
         self._set_phase("validating")
         self._run_workflow()
+
+    # -----------------------------------------------------------------------
+    # Core workflow execution
+    # -----------------------------------------------------------------------
 
     def _run_workflow(self, override: dict[str, Any] | None = None) -> None:
         req = override or self._capture_request()
@@ -821,42 +968,36 @@ class ScholarDevClawApp(App[None]):
         repo = req.get("repo_path", "")
         spec = req.get("spec", "")
 
-        # Validate inputs
+        # Validate
         valid, err = self._validate_repo_path(repo)
         if not valid:
             self._set_status(f"Error: {err}", "error")
-            self._log("logs", [f"Error: {err}"])
+            self._log_to_view([f"Error: {err}"])
             return
 
         if spec:
             valid, err = self._validate_spec(spec)
             if not valid:
                 self._set_status(f"Error: {err}", "error")
-                self._log("logs", [f"Error: {err}"])
+                self._log_to_view([f"Error: {err}"])
                 return
 
-        # Check git if required
+        # Git check
         if req.get("integrate_require_clean"):
             dirty, err = self._check_git_status(repo)
             if dirty:
                 self._set_status("Warning: Uncommitted changes", "warning")
-                self._log("logs", [f"Warning: {err}"])
+                self._log_to_view([f"Warning: {err}"])
 
-        # Disable buttons
-        for btn_id in [
-            "run",
-            "rerun-history",
-            "view-history",
-            "quick-analyze",
-            "quick-suggest",
-            "quick-integrate",
-        ]:
-            try:
-                self.query_one(f"#{btn_id}", Button).disabled = True
-            except Exception:
-                pass
-
+        self._disable_run_buttons()
         self._set_status(f"Running '{action}'...", "info")
+
+        try:
+            status_bar = self.query_one(StatusBar)
+            status_bar.start_timer()
+        except Exception:
+            pass
+
         self._live_logs_enabled = True
         self._active_run_request = req
         self._active_run_started_at = time.perf_counter()
@@ -922,28 +1063,37 @@ class ScholarDevClawApp(App[None]):
                 self.post_message(TaskCompleted(action, {}, [], str(e)))
 
         threading.Thread(target=_run, daemon=True).start()
-        self._log("logs", [f"Started: {action} on {repo}"])
+        self._log_to_view([f"Started: {action} on {repo}"])
 
-    def action_quick_action_analyze(self) -> None:
-        self._execute_quick("analyze")
+    # -----------------------------------------------------------------------
+    # Event handlers
+    # -----------------------------------------------------------------------
 
-    def action_quick_action_suggest(self) -> None:
-        self._execute_quick("suggest")
+    @on(Sidebar.ActionSelected)
+    def on_sidebar_action(self, msg: Sidebar.ActionSelected) -> None:
+        action = msg.action
+        if action in (
+            "analyze",
+            "suggest",
+            "search",
+            "specs",
+            "map",
+            "generate",
+            "validate",
+            "integrate",
+        ):
+            self.query_one("#action", Select).value = action
+            self._refresh_action_state()
+        elif action == "quick-analyze":
+            self._execute_quick("analyze")
+        elif action == "quick-suggest":
+            self._execute_quick("suggest")
+        elif action == "quick-integrate":
+            self._execute_quick("integrate")
 
-    def action_quick_action_integrate(self) -> None:
-        self._execute_quick("integrate")
-
-    def on_mount(self) -> None:
+    @on(Select.Changed, "#action")
+    def on_action_change(self) -> None:
         self._refresh_action_state()
-        self._update_agent_status("Offline")
-        self._set_phase("idle")
-
-    def action_run_selected(self) -> None:
-        self._run_workflow()
-
-    def action_clear_logs(self) -> None:
-        self.query_one("#result", Pretty).update({})
-        self.query_one("#logs", TextArea).load_text("")
 
     @on(Button.Pressed, "#run")
     def on_run(self) -> None:
@@ -952,10 +1102,6 @@ class ScholarDevClawApp(App[None]):
     @on(Button.Pressed, "#clear")
     def on_clear(self) -> None:
         self.action_clear_logs()
-
-    @on(Select.Changed, "#action")
-    def on_action_change(self) -> None:
-        self._refresh_action_state()
 
     @on(Button.Pressed, "#rerun-history")
     def on_rerun(self) -> None:
@@ -970,72 +1116,12 @@ class ScholarDevClawApp(App[None]):
         raw = self.query_one("#history-id", Input).value.strip()
         record = self._resolve_history(raw)
         if record:
-            self._log("logs", [f"Run #{record['id']}: {record['action']} - {record['status']}"])
-
-    @on(Button.Pressed, "#quick-analyze")
-    def on_quick_analyze(self) -> None:
-        self._execute_quick("analyze")
-
-    @on(Button.Pressed, "#quick-suggest")
-    def on_quick_suggest(self) -> None:
-        self._execute_quick("suggest")
-
-    @on(Button.Pressed, "#quick-integrate")
-    def on_quick_integrate(self) -> None:
-        self._execute_quick("integrate")
-
-    @on(TaskCompleted)
-    def on_task_done(self, msg: TaskCompleted) -> None:
-        self._set_phase("complete")
-
-        payload = {"title": msg.title, "error": msg.error, "result": msg.result}
-        self.query_one("#result", Pretty).update(payload)
-
-        if not self._live_logs_enabled:
-            self._log("logs", msg.logs)
-        self._live_logs_enabled = False
-
-        # Re-enable buttons
-        for btn_id in [
-            "run",
-            "rerun-history",
-            "view-history",
-            "quick-analyze",
-            "quick-suggest",
-            "quick-integrate",
-        ]:
-            try:
-                self.query_one(f"#{btn_id}", Button).disabled = False
-            except Exception:
-                pass
-
-        status = "Done" if msg.error is None else "Failed"
-        level = "success" if msg.error is None else "error"
-        self._set_status(f"{status} ({msg.title})", level)
-
-        duration = max(0.0, time.perf_counter() - self._active_run_started_at)
-        if self._active_run_request:
-            self._append_history(
-                self._active_run_request.get("action", "unknown"),
-                status,
-                duration,
-                self._active_run_request,
-                title=msg.title,
-                result=msg.result,
-                error=msg.error,
-            )
-
-        self._active_run_request = None
-        self._active_run_started_at = 0.0
-
-    @on(TaskLog)
-    def on_log(self, msg: TaskLog) -> None:
-        self._log("logs", [msg.line])
+            self._log_to_view([f"Run #{record['id']}: {record['action']} - {record['status']}"])
 
     @on(Button.Pressed, "#launch-agent")
     def on_launch(self) -> None:
         if self._agent_process and self._agent_process.poll() is None:
-            self._log("agent-logs", ["Agent already running"])
+            self._log_to_legacy("agent-logs", ["Agent already running"])
             return
 
         project_root = Path(__file__).resolve().parents[4]
@@ -1043,7 +1129,7 @@ class ScholarDevClawApp(App[None]):
 
         if not agent_dir.exists():
             self._update_agent_status("Error")
-            self._log("agent-logs", [f"Agent directory not found: {agent_dir}"])
+            self._log_to_legacy("agent-logs", [f"Agent directory not found: {agent_dir}"])
             return
 
         try:
@@ -1061,10 +1147,10 @@ class ScholarDevClawApp(App[None]):
             self._update_agent_status("Online")
         except Exception as exc:
             self._update_agent_status("Error")
-            self._log("agent-logs", [f"Failed to launch: {exc}"])
+            self._log_to_legacy("agent-logs", [f"Failed to launch: {exc}"])
             return
 
-        self._log(
+        self._log_to_legacy(
             "agent-logs",
             [
                 "Agent launched in REPL mode",
@@ -1083,7 +1169,7 @@ class ScholarDevClawApp(App[None]):
 
     @on(AgentLog)
     def on_agent_log(self, msg: AgentLog) -> None:
-        self._log("agent-logs", [msg.line])
+        self._log_to_legacy("agent-logs", [msg.line])
         line = msg.line.lower()
         if "analyzing" in line:
             self._set_phase("analyzing")
@@ -1100,14 +1186,70 @@ class ScholarDevClawApp(App[None]):
 
     @on(Button.Pressed, "#stop-agent")
     def on_stop(self) -> None:
-        if not self._agent_process or self._agent_process.poll() is not None:
-            self._log("agent-logs", ["No running agent"])
+        if not self._agent_process or self._agent_process.poll() is None:
+            self._log_to_legacy("agent-logs", ["No running agent"])
             self._update_agent_status("Offline")
             return
         self._agent_running = False
         self._agent_process.terminate()
         self._update_agent_status("Offline")
-        self._log("agent-logs", ["Agent stopped"])
+        self._log_to_legacy("agent-logs", ["Agent stopped"])
+
+    @on(TaskCompleted)
+    def on_task_done(self, msg: TaskCompleted) -> None:
+        self._set_phase("complete")
+        self._enable_run_buttons()
+
+        # Show result in log view
+        if msg.error:
+            self._log_to_view([f"Error: {msg.error}"])
+            self._set_status(f"Failed ({msg.title})", "error")
+        else:
+            # Log a compact result summary
+            result_summary = json.dumps(msg.result, indent=2, default=str)
+            # Truncate very long results
+            if len(result_summary) > 2000:
+                result_summary = result_summary[:2000] + "\n..."
+            self._log_to_view([f"Complete: {msg.title}", result_summary])
+            self._set_status(f"Done ({msg.title})", "success")
+
+        if not self._live_logs_enabled:
+            self._log_to_view(msg.logs)
+        self._live_logs_enabled = False
+
+        # Update timer
+        try:
+            status_bar = self.query_one(StatusBar)
+            status_bar.update_timer()
+        except Exception:
+            pass
+
+        # Record history
+        duration = max(0.0, time.perf_counter() - self._active_run_started_at)
+        if self._active_run_request:
+            self._append_history(
+                self._active_run_request.get("action", "unknown"),
+                "Done" if msg.error is None else "Failed",
+                duration,
+                self._active_run_request,
+                title=msg.title,
+                result=msg.result,
+                error=msg.error,
+            )
+
+        self._active_run_request = None
+        self._active_run_started_at = 0.0
+
+    @on(TaskLog)
+    def on_log(self, msg: TaskLog) -> None:
+        self._log_to_view([msg.line])
+
+        # Update timer during execution
+        try:
+            status_bar = self.query_one(StatusBar)
+            status_bar.update_timer()
+        except Exception:
+            pass
 
     @on(Input.Submitted, "#prompt-input")
     def on_prompt(self, event: Input.Submitted) -> None:
@@ -1120,7 +1262,7 @@ class ScholarDevClawApp(App[None]):
         event.input.value = ""
 
         if prompt.lower() in ("help", "?"):
-            self._log(
+            self._log_to_legacy(
                 "agent-logs",
                 [
                     "Commands: analyze, suggest, integrate, search, map, generate, validate",
@@ -1132,7 +1274,7 @@ class ScholarDevClawApp(App[None]):
 
         if not self._agent_running or not self._agent_stdin:
             cmd, ctx = self._parse_natural_command(prompt)
-            self._log("agent-logs", [f"User: {prompt}"])
+            self._log_to_legacy("agent-logs", [f"User: {prompt}"])
 
             if ctx.get("repo_path"):
                 self.query_one("#repo-path", Input).value = ctx["repo_path"]
@@ -1148,19 +1290,68 @@ class ScholarDevClawApp(App[None]):
             self.on_stop()
             return
 
-        self._log("agent-logs", [f"User: {prompt}"])
+        self._log_to_legacy("agent-logs", [f"User: {prompt}"])
 
         try:
             self._agent_stdin.write(prompt + "\n")
             self._agent_stdin.flush()
         except Exception as exc:
-            self._log("agent-logs", [f"Error: {exc}"])
+            self._log_to_legacy("agent-logs", [f"Error: {exc}"])
 
-    def on_unmount(self) -> None:
-        if self._agent_process and self._agent_process.poll() is None:
-            self._agent_process.terminate()
+    # -----------------------------------------------------------------------
+    # Actions
+    # -----------------------------------------------------------------------
+
+    def action_run_selected(self) -> None:
+        self._run_workflow()
+
+    def action_clear_logs(self) -> None:
+        try:
+            log_view = self.query_one(LogView)
+            log_view.clear_logs()
+        except Exception:
+            pass
+
+    def action_quick_action_analyze(self) -> None:
+        self._execute_quick("analyze")
+
+    def action_quick_action_suggest(self) -> None:
+        self._execute_quick("suggest")
+
+    def action_quick_action_integrate(self) -> None:
+        self._execute_quick("integrate")
+
+    def action_command_palette(self) -> None:
+        """Open the command palette overlay."""
+
+        def handle_result(result: str | None) -> None:
+            if result is None:
+                return
+            if result == "quit":
+                self.exit()
+            elif result == "clear":
+                self.action_clear_logs()
+            elif result in (
+                "analyze",
+                "suggest",
+                "search",
+                "specs",
+                "map",
+                "generate",
+                "validate",
+                "integrate",
+            ):
+                self.query_one("#action", Select).value = result
+                self._refresh_action_state()
+
+        self.push_screen(CommandPalette(), handle_result)
+
+    def action_help(self) -> None:
+        """Show keyboard shortcuts overlay."""
+        self.push_screen(HelpOverlay())
 
     def action_handle_escape(self) -> None:
+        """Handle Esc key: first press warns, second stops agent."""
         t = time.time()
         if t - self._last_escape_time > 2.0:
             self._escape_pressed_count = 0
@@ -1169,29 +1360,18 @@ class ScholarDevClawApp(App[None]):
         self._escape_pressed_count += 1
 
         if self._escape_pressed_count == 1:
-            self._show_warning("Press ESC again to stop agent...")
+            self._set_status("Press ESC again to stop agent...", "warning")
             self._escape_warning_shown = True
         elif self._escape_pressed_count >= 2 and self._escape_warning_shown:
-            self._hide_warning()
+            self._set_status("Ready", "info")
             self.on_stop()
             self._escape_pressed_count = 0
             self._escape_warning_shown = False
 
-    def _show_warning(self, msg: str) -> None:
-        try:
-            bar = self.query_one("#warning-bar", Label)
-            bar.update(msg)
-            bar.add_class("visible")
-        except Exception:
-            pass
 
-    def _hide_warning(self) -> None:
-        try:
-            bar = self.query_one("#warning-bar", Label)
-            bar.update("")
-            bar.remove_class("visible")
-        except Exception:
-            pass
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def run_tui() -> None:

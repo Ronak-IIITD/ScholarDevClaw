@@ -2,7 +2,84 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-19
+**Last updated:** 2026-03-20
+
+### 2026-03-20 (TUI Complete Redesign — Modern Terminal UI Inspired by Claude Code & OpenCode)
+
+**Goal:** Transform the TUI into a premium, modern terminal interface inspired by Claude Code and OpenCode.ai, with sidebar navigation, chat-style log view, command palette, keyboard help overlay, welcome screen, phase progress tracker, enhanced status bar, and better CSS theming.
+
+**Summary:** Completely rewrote the TUI from a basic wizard-style form into a modern multi-panel terminal interface. Split the UI into sidebar (workflow navigation + quick actions), central content area (config panel + log output), agent section (bottom panel), and prompt bar. Added 3 new screen overlays (Welcome, Help, Command Palette), 7 new custom widgets (Sidebar, PhaseTracker, LogView, StatusBar, HistoryPane, AgentStatus, ResultCard), and completely redesigned the CSS theme with GitHub-dark color tokens. All existing functionality preserved (pipeline execution, config persistence, agent management, natural language parsing, history).
+
+**TUI Architecture Changes (`core/src/scholardevclaw/tui/`):**
+
+- **`app.py`** — Complete rewrite (~780 lines → ~820 lines):
+  - New layout: Sidebar + Content Area (Config Panel + Log Output) + Agent Section + Prompt Bar
+  - Integrated PhaseTracker widget for multi-step progress with named phases
+  - Integrated LogView widget with styled, color-coded log entries (auto-detected levels: info, success, error, warning, accent, system)
+  - Integrated Sidebar widget with workflow items (Analyze, Suggest, Search, Specs, Map, Generate, Validate, Integrate) and quick action buttons
+  - Integrated StatusBar widget with left (status message), center, and right (elapsed timer) sections
+  - Integrated HistoryPane widget with clickable history entries
+  - Integrated AgentStatus widget with dot indicator (Offline/Online/Error)
+  - Command palette (`Ctrl+K`) — fuzzy search all workflows and actions
+  - Help overlay (`Ctrl+?`) — full keyboard shortcuts reference
+  - Welcome screen on first launch — product overview with quick start guide
+  - Timer tracking for pipeline runs with live elapsed time display
+  - Separate `_log_to_view()` (LogView) and `_log_to_legacy()` (TextArea) methods
+  - Better button state management with `_disable_run_buttons()` / `_enable_run_buttons()`
+
+- **`screens.py`** — NEW file (~310 lines):
+  - `WelcomeScreen` — ModalScreen with Markdown welcome content, keybindings reference, workflow descriptions
+  - `HelpOverlay` — ModalScreen with full keyboard shortcuts table (Global, Quick Actions, Logs, Navigation, Prompt Bar)
+  - `CommandPalette` — ModalScreen with fuzzy-filtered command list, input field, 10 commands (analyze, suggest, search, specs, map, generate, validate, integrate, clear, quit)
+
+- **`widgets.py`** — Complete rewrite (126 → ~370 lines):
+  - `Sidebar` — Vertical container with workflow items (icon + label), quick action buttons, section titles, hover/selected states
+  - `SidebarItem` — Clickable navigation item with icon and label, posts `Selected` message
+  - `PhaseTracker` — Reactive multi-step progress bar with 8 phases, animated fill bar, color-coded labels (accent for active, success for complete)
+  - `LogView` — VerticalScroll container with styled `LogEntry` items, auto-scroll, auto-level detection, 500-entry cap with trimming
+  - `LogEntry` — Static widget with CSS classes for levels (info, success, error, warning, dim, accent, system)
+  - `StatusBar` — Horizontal status bar with left/center/right sections, timer support, color-coded messages
+  - `ResultCard` — Styled card for displaying pipeline results with title, body, and status indicator
+  - `HistoryPane` — VerticalScroll with clickable history entries, status indicators (success/failed/running), 20-entry cap
+  - `AgentStatus` — Compact dot indicator widget (Offline: gray, Online: green, Error: red)
+
+- **`__init__.py`** — Updated with new exports and lazy imports for all new screens and widgets
+
+**Key Design Decisions:**
+- Chat-style log view instead of raw TextArea — entries are individually styled with auto-detected levels
+- Sidebar navigation mirrors the workflow dropdown — clicking sidebar items syncs with the Select widget
+- Log output uses LogView (styled entries) for pipeline logs, TextArea preserved only for agent logs (raw stream)
+- Command palette provides quick access to all workflows without navigating the config panel
+- Welcome screen shown once on first launch (marker file prevents repeat)
+- All original functionality preserved: config persistence, natural language parsing, agent REPL, history management
+
+**Keyboard Shortcuts:**
+| Key | Action |
+|-----|--------|
+| `Ctrl+C` | Quit |
+| `Ctrl+R` | Run selected workflow |
+| `Ctrl+K` | Command palette |
+| `Ctrl+?` | Help overlay |
+| `Ctrl+A` | Quick Analyze |
+| `Ctrl+S` | Quick Suggest |
+| `Ctrl+I` | Quick Integrate |
+| `Ctrl+L` | Clear logs |
+| `Esc` x2 | Stop running agent |
+
+**Files Modified:**
+- `core/src/scholardevclaw/tui/app.py` — Complete rewrite
+- `core/src/scholardevclaw/tui/screens.py` — NEW
+- `core/src/scholardevclaw/tui/widgets.py` — Complete rewrite
+- `core/src/scholardevclaw/tui/__init__.py` — Updated exports
+
+**Verified:**
+- ✅ All 1253 tests pass
+- ✅ All imports work correctly
+- ✅ Ruff lint clean
+- ✅ Ruff format clean
+- ✅ CLI `scholardevclaw tui` entrypoint preserved
+
+---
 
 ### 2026-03-19 (Landing Page Major Redesign — Research-to-Code Focus + Smooth Scroll)
 
