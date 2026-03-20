@@ -409,13 +409,13 @@ class ScholarDevClawApp(App[None]):
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+r", "run_selected", "Run"),
-        ("ctrl+k", "command_palette", "Commands"),
-        ("ctrl+question_mark", "help", "Help"),
+        ("ctrl+k", "command_palette", "Command Palette"),
+        ("ctrl+h", "help", "Help"),
         ("escape", "handle_escape", "Stop/Back"),
-        ("ctrl+l", "clear_logs", "Clear"),
-        ("ctrl+a", "quick_action_analyze", "Analyze"),
-        ("ctrl+s", "quick_action_suggest", "Suggest"),
-        ("ctrl+i", "quick_action_integrate", "Integrate"),
+        ("ctrl+l", "clear_logs", "Clear Logs"),
+        ("ctrl+a", "quick_action_analyze", "Quick Analyze"),
+        ("ctrl+s", "quick_action_suggest", "Quick Suggest"),
+        ("ctrl+i", "quick_action_integrate", "Quick Integrate"),
     ]
 
     action_mode_options = [
@@ -581,7 +581,7 @@ class ScholarDevClawApp(App[None]):
     def _parse_natural_command(self, prompt: str) -> tuple[str, dict[str, Any]]:
         prompt_lower = prompt.strip().lower()
         ctx: dict[str, Any] = {}
-        command = "help"
+        command = "analyze"
 
         path_match = re.search(r"(?:to|on|in|at|for)\s+([/\w~.][^\s]+)", prompt)
         if path_match:
@@ -736,7 +736,7 @@ class ScholarDevClawApp(App[None]):
         with Horizontal(id="prompt-bar"):
             yield Input(
                 value="",
-                placeholder="> Type request... (Ctrl+K for commands, Ctrl+? for help)",
+                placeholder="> Type request... (Ctrl+K: commands, Ctrl+H: help)",
                 id="prompt-input",
             )
 
@@ -1070,16 +1070,23 @@ class ScholarDevClawApp(App[None]):
         ):
             self.query_one("#action", Select).value = action
             self._refresh_action_state()
-        elif action == "quick-analyze":
-            self._execute_quick("analyze")
-        elif action == "quick-suggest":
-            self._execute_quick("suggest")
-        elif action == "quick-integrate":
-            self._execute_quick("integrate")
 
     @on(Select.Changed, "#action")
     def on_action_change(self) -> None:
         self._refresh_action_state()
+
+    @on(Button.Pressed, "#qa-analyze")
+    def on_quick_analyze_button(self) -> None:
+        self._execute_quick("analyze")
+
+    @on(Button.Pressed, "#qa-suggest")
+    def on_quick_suggest_button(self) -> None:
+        self._execute_quick("suggest")
+
+    @on(Button.Pressed, "#qa-integrate")
+    def on_quick_integrate_button(self) -> None:
+        self._execute_quick("integrate")
+
 
     @on(Button.Pressed, "#run")
     def on_run(self) -> None:

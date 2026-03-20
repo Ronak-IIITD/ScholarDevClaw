@@ -24,7 +24,7 @@ maps them onto your codebase, generates validated patches, and reports outcomes.
 |-----|--------|
 | `Ctrl+R` | Run selected workflow |
 | `Ctrl+K` | Command palette |
-| `Ctrl+?` | Keyboard shortcuts |
+| `Ctrl+H` | Keyboard shortcuts |
 | `Ctrl+L` | Clear logs |
 | `Ctrl+A` | Quick Analyze |
 | `Ctrl+S` | Quick Suggest |
@@ -56,7 +56,7 @@ HELP_MD = """
 | `Ctrl+C` | Quit |
 | `Ctrl+R` | Run selected workflow |
 | `Ctrl+K` | Open command palette |
-| `Ctrl+?` | Show this help |
+| `Ctrl+H` | Show this help |
 | `Esc` | Stop agent / close overlay |
 | `Esc` x2 | Stop running agent |
 

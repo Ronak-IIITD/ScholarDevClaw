@@ -62,9 +62,9 @@ class Sidebar(Vertical):
     ]
 
     QUICK_ACTIONS = [
-        ("quick-analyze", "Quick Analyze"),
-        ("quick-suggest", "Quick Suggest"),
-        ("quick-integrate", "Quick Integrate"),
+        ("qa-analyze", "Quick Analyze"),
+        ("qa-suggest", "Quick Suggest"),
+        ("qa-integrate", "Quick Integrate"),
     ]
 
     CSS = """
@@ -169,8 +169,13 @@ class Sidebar(Vertical):
 
     @on(Button.Pressed, ".quick-btn")
     def on_quick_btn(self, msg: Button.Pressed) -> None:
-        action = (msg.button.id or "").replace("quick-", "")
-        self.post_message(self.ActionSelected(action))
+        button_id = msg.button.id or ""
+        if button_id == "qa-analyze":
+            self.post_message(self.ActionSelected("quick-analyze"))
+        elif button_id == "qa-suggest":
+            self.post_message(self.ActionSelected("quick-suggest"))
+        elif button_id == "qa-integrate":
+            self.post_message(self.ActionSelected("quick-integrate"))
 
 
 # ---------------------------------------------------------------------------
