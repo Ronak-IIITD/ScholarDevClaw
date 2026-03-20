@@ -4,6 +4,43 @@
 
 **Last updated:** 2026-03-19
 
+### 2026-03-19 (Landing Page Redesign — OpenCode.ai Style)
+
+**Goal:** Redesign the landing page to match the clean, minimal style of OpenCode.ai and OpenClaw.ai, focusing on simplicity and one-line install copy functionality.
+
+**Summary:** Completely redesigned the landing page from a complex, animated cosmic theme to a clean, minimal design matching OpenCode.ai. The new design features a simple hero section with product name and tagline, one-line install command with copy button (supporting curl/pip/pipx/docker tabs), 6 feature cards with icons, stats section, FAQ section, and responsive design. Removed all complex animations and cosmic elements that were making the page feel busy and unprofessional.
+
+**Key Changes:**
+- **Hero Section**: Simple title "The open source AI coding agent" with subtitle and install box
+- **Install Box**: Tabbed interface (curl/pip/pipx/docker) with one-click copy button
+- **Features**: 6 cards with icons (Repository Intelligence, Research Intelligence, Smart Mapping, Patch Generation, Benchmark Validation, Interactive TUI)
+- **Stats**: 16 Paper Specs, 1200+ Tests Passing, 6 Languages Supported
+- **FAQ**: 5 expandable questions (What is ScholarDevClaw?, How do I use it?, Do I need extra AI subscriptions?, What about data and privacy?, Is it open source?)
+- **Design**: Inter font family, dark theme (#09090b background), cyan accent (#22d3ee), responsive layout
+- **Navigation**: Sticky header with logo, GitHub link, Features, FAQ
+- **Footer**: Links to GitHub, Issues, Changelog
+
+**Files Modified:**
+- `landing/index.html` — Complete rewrite (893 lines → 310 lines, 65% reduction)
+- `landing/favicon.svg` — Simplified to clean orbital design
+- `landing/404.html` — Updated to match new design
+
+**Design Philosophy:**
+- Clean and minimal (inspired by OpenCode.ai)
+- Focus on one-line install copy functionality
+- Professional, not flashy
+- Fast loading (no heavy animations)
+- Mobile responsive
+
+**Verified:**
+- ✅ Landing page loads correctly
+- ✅ Install command copy works
+- ✅ FAQ expand/collapse works
+- ✅ Responsive design on mobile
+- ✅ Matches OpenCode.ai style
+
+---
+
 ### 2026-03-19 (Production Fixes — CI, GitHub Pages, Web Dashboard, Docker Deployment)
 
 **Goal:** Fix all production deployment issues including CI workflow failures, GitHub Pages deployment, web dashboard deployment, and Docker SSL certificate generation.
