@@ -297,12 +297,6 @@ class ScholarDevClawApp(App[None]):
         color: $accent;
     }
 
-    #prompt-input::placeholder {
-        color: $text-muted;
-    }
-
-    /* ---- Shared widgets ---- */
-
     .panel-section-title {
         text-style: bold;
         color: $accent;
@@ -320,10 +314,6 @@ class ScholarDevClawApp(App[None]):
 
     Input:focus {
         border: solid $accent;
-    }
-
-    Input::placeholder {
-        color: $text-muted;
     }
 
     Input.invalid {
