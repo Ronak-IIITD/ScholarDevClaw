@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual import on
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Markdown
 
@@ -100,7 +100,7 @@ class WelcomeScreen(ModalScreen[None]):
     CSS = """
     WelcomeScreen {
         align: center middle;
-        background: rgba(0, 0, 0, 0.7);
+        background: #000000 70%;
     }
 
     WelcomeScreen > Container {
@@ -108,8 +108,8 @@ class WelcomeScreen(ModalScreen[None]):
         max-width: 80;
         height: auto;
         max-height: 85%;
-        background: $panel;
-        border: thick $accent;
+        background: #21262d;
+        border: thick #58a6ff;
         padding: 2 3;
     }
 
@@ -121,7 +121,7 @@ class WelcomeScreen(ModalScreen[None]):
     WelcomeScreen .dismiss-hint {
         width: 100%;
         text-align: center;
-        color: $text-muted;
+        color: #8b949e;
         margin-top: 1;
     }
     """
@@ -143,7 +143,7 @@ class HelpOverlay(ModalScreen[None]):
     CSS = """
     HelpOverlay {
         align: center middle;
-        background: rgba(0, 0, 0, 0.7);
+        background: #000000 70%;
     }
 
     HelpOverlay > Container {
@@ -151,8 +151,8 @@ class HelpOverlay(ModalScreen[None]):
         max-width: 75;
         height: auto;
         max-height: 80%;
-        background: $panel;
-        border: thick $accent;
+        background: #21262d;
+        border: thick #58a6ff;
         padding: 2 3;
     }
 
@@ -174,7 +174,7 @@ class CommandPalette(ModalScreen[str | None]):
         ("escape", "dismiss_none", "Close"),
     ]
 
-    COMMANDS = [
+    PALETTE_COMMANDS = [
         ("analyze", "Scan repository structure", "analyze"),
         ("suggest", "Discover research improvements", "suggest"),
         ("search", "Search arXiv / web for papers", "search"),
@@ -190,7 +190,7 @@ class CommandPalette(ModalScreen[str | None]):
     CSS = """
     CommandPalette {
         align: center top;
-        background: rgba(0, 0, 0, 0.5);
+        background: #000000 55%;
     }
 
     CommandPalette > Vertical {
@@ -198,8 +198,8 @@ class CommandPalette(ModalScreen[str | None]):
         max-width: 70;
         height: auto;
         max-height: 60%;
-        background: $panel;
-        border: thick $accent;
+        background: #21262d;
+        border: thick #58a6ff;
         padding: 1;
         margin-top: 8;
     }
@@ -207,8 +207,8 @@ class CommandPalette(ModalScreen[str | None]):
     CommandPalette Input {
         width: 100%;
         margin-bottom: 1;
-        background: $surface-dark;
-        border: solid $border;
+        background: #161b22;
+        border: solid #30363d;
     }
 
     CommandPalette .command-list {
@@ -220,42 +220,30 @@ class CommandPalette(ModalScreen[str | None]):
 
     CommandPalette .command-item {
         width: 100%;
-        padding: 0 1;
-        height: auto;
+        margin-bottom: 1;
+        background: #161b22;
+        border: solid #30363d;
+        color: #c9d1d9;
+        text-align: left;
     }
 
     CommandPalette .command-item:hover {
-        background: $accent 20%;
-    }
-
-    CommandPalette .command-item.selected {
-        background: $accent 30%;
-        text-style: bold;
-    }
-
-    CommandPalette .cmd-name {
-        color: $accent;
-        text-style: bold;
-    }
-
-    CommandPalette .cmd-desc {
-        color: $text-muted;
+        background: #1f3042;
+        border: solid #58a6ff;
     }
     """
 
     def __init__(self) -> None:
         super().__init__()
         self._selected_index = 0
-        self._filtered_commands = list(self.COMMANDS)
+        self._filtered_commands = list(self.PALETTE_COMMANDS)
 
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Input(placeholder="Type a command...", id="palette-input")
             with Vertical(classes="command-list", id="command-list"):
-                for name, desc, _ in self.COMMANDS:
-                    with Horizontal(classes="command-item", id=f"cmd-{name}"):
-                        yield Label(f"  {name}", classes="cmd-name")
-                        yield Label(f"  {desc}", classes="cmd-desc")
+                for name, desc, _ in self.PALETTE_COMMANDS:
+                    yield Button(f"{name}  -  {desc}", id=f"cmd-{name}", classes="command-item")
 
     def on_mount(self) -> None:
         self.query_one("#palette-input", Input).focus()
@@ -266,23 +254,20 @@ class CommandPalette(ModalScreen[str | None]):
     @on(Input.Changed, "#palette-input")
     def on_input_changed(self, event: Input.Changed) -> None:
         query = event.value.strip().lower()
-        container = self.query_one("#command-list")
+        container = self.query_one("#command-list", Vertical)
         container.remove_children()
 
         if not query:
-            self._filtered_commands = list(self.COMMANDS)
+            self._filtered_commands = list(self.PALETTE_COMMANDS)
         else:
             self._filtered_commands = [
                 (name, desc, action)
-                for name, desc, action in self.COMMANDS
+                for name, desc, action in self.PALETTE_COMMANDS
                 if query in name or query in desc.lower()
             ]
 
         for name, desc, _ in self._filtered_commands:
-            with container:
-                item = Horizontal(classes="command-item", id=f"cmd-{name}")
-                item.mount(Label(f"  {name}", classes="cmd-name"))
-                item.mount(Label(f"  {desc}", classes="cmd-desc"))
+            container.mount(Button(f"{name}  -  {desc}", id=f"cmd-{name}", classes="command-item"))
 
         self._selected_index = 0
 
@@ -298,7 +283,7 @@ class CommandPalette(ModalScreen[str | None]):
         btn_id = event.button.id or ""
         if btn_id.startswith("cmd-"):
             name = btn_id[4:]
-            for cmd_name, _, action in self.COMMANDS:
+            for cmd_name, _, action in self.PALETTE_COMMANDS:
                 if cmd_name == name:
                     self.dismiss(action)
                     return

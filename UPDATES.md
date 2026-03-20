@@ -4,6 +4,32 @@
 
 **Last updated:** 2026-03-20
 
+### 2026-03-20 (TUI Stabilization Pass — Usability + Keybind + Prompt Flow Fixes)
+
+**Goal:** Make the redesigned TUI actually usable in day-to-day workflows by fixing command palette crashes, prompt submit errors, confusing key labels, quick-action routing, and layout clarity/alignment issues.
+
+**Summary:** Delivered a stabilization pass focused on reliability and usability rather than adding more surface area. Fixed command palette stylesheet variable errors, replaced fragile keybind (`Ctrl+?`) with reliable `Ctrl+h`, fixed prompt parser default so arbitrary prompt input no longer throws invalid action errors, corrected quick-action button routing from sidebar, expanded panel sizing for better alignment/readability, and added explicit in-app key hints in plain lowercase format (`ctrl+k`, `ctrl+h`, etc.). Added run-test smoke checks for `ctrl+k`, `ctrl+h`, and prompt submit flow.
+
+**Fixed Runtime / UX Issues:**
+- **Command palette crash (`ctrl+k`)**: removed undefined theme variable references and switched palette styles to explicit safe color literals
+- **Help key confusion**: changed `ctrl+?` to `ctrl+h` (more reliable across terminals) and updated all prompts/help text
+- **Prompt submit errors**: changed natural-language parser default action from `help` to `analyze` so free-form prompt input cannot set invalid action values
+- **Quick action routing broken**: fixed sidebar quick-action button IDs and mapping so Analyze/Suggest/Integrate buttons trigger correctly
+- **Unclear key legend**: added top in-app help strip using plain format (`ctrl+k`, `ctrl+h`, `ctrl+r`, `ctrl+l`, `ctrl+c`)
+- **Alignment/readability pass**: widened left config panel and increased bottom agent section size for better spatial balance
+
+**Files Modified:**
+- `core/src/scholardevclaw/tui/app.py`
+- `core/src/scholardevclaw/tui/screens.py`
+- `core/src/scholardevclaw/tui/widgets.py`
+
+**Verification:**
+- ✅ Textual run-test smoke flow: `ctrl+k` opens palette, `ctrl+h` opens help, prompt submit works
+- ✅ Ruff lint passes on updated TUI files
+- ✅ No stylesheet parse errors in updated `screens.py` palette overlay
+
+---
+
 ### 2026-03-20 (TUI Complete Redesign — Modern Terminal UI Inspired by Claude Code & OpenCode)
 
 **Goal:** Transform the TUI into a premium, modern terminal interface inspired by Claude Code and OpenCode.ai, with sidebar navigation, chat-style log view, command palette, keyboard help overlay, welcome screen, phase progress tracker, enhanced status bar, and better CSS theming.

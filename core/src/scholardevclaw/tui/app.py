@@ -23,7 +23,6 @@ from textual.message import Message
 from textual.widgets import (
     Button,
     Checkbox,
-    Footer,
     Header,
     Input,
     Label,
@@ -163,13 +162,6 @@ class ScholarDevClawApp(App[None]):
         text-align: center;
     }
 
-    Footer {
-        background: $header;
-        color: $text-muted;
-        dock: bottom;
-        height: 1;
-    }
-
     /* ---- Top-level layout ---- */
 
     #app-body {
@@ -184,6 +176,14 @@ class ScholarDevClawApp(App[None]):
         layout: vertical;
     }
 
+    #top-help-bar {
+        width: 100%;
+        height: 1;
+        background: #161b22;
+        color: #8b949e;
+        padding: 0 1;
+    }
+
     /* ---- Main content split ---- */
 
     #main-split {
@@ -195,13 +195,13 @@ class ScholarDevClawApp(App[None]):
     /* ---- Left: configuration panel ---- */
 
     #config-panel {
-        width: 32;
-        min-width: 28;
-        max-width: 38;
+        width: 40;
+        min-width: 34;
+        max-width: 46;
         height: 100%;
         background: $panel;
         border-right: tall $border;
-        padding: 1;
+        padding: 1 2;
         overflow-y: auto;
     }
 
@@ -231,6 +231,7 @@ class ScholarDevClawApp(App[None]):
         height: 100%;
         background: $surface;
         layout: vertical;
+        padding: 0 1;
     }
 
     #output-panel .output-header {
@@ -247,9 +248,9 @@ class ScholarDevClawApp(App[None]):
 
     #agent-section {
         width: 100%;
-        height: 25%;
-        min-height: 8;
-        max-height: 35%;
+        height: 30%;
+        min-height: 12;
+        max-height: 40%;
         dock: bottom;
         background: $panel;
         border-top: tall $border;
@@ -280,7 +281,9 @@ class ScholarDevClawApp(App[None]):
     #agent-logs {
         width: 100%;
         height: 1fr;
-        background: $surface;
+        background: #0d1117;
+        color: #c9d1d9;
+        border: solid #30363d;
     }
 
     #prompt-bar {
@@ -622,6 +625,10 @@ class ScholarDevClawApp(App[None]):
 
             # Center content
             with Vertical(id="content-area"):
+                yield Label(
+                    "keys: ctrl+k commands | ctrl+h help | ctrl+r run | ctrl+l clear | ctrl+c quit",
+                    id="top-help-bar",
+                )
                 # Phase tracker
                 yield PhaseTracker(id="phase-tracker")
 
@@ -715,7 +722,7 @@ class ScholarDevClawApp(App[None]):
                         yield Static("", id="result-placeholder")
 
                         # History
-                        yield Label("  History", classes="panel-section-title")
+                        yield Label("History", classes="panel-section-title")
                         yield HistoryPane(id="history-pane")
                         with Horizontal(classes="spacer"):
                             yield Input(value="", placeholder="#", id="history-id")
@@ -740,7 +747,7 @@ class ScholarDevClawApp(App[None]):
                 id="prompt-input",
             )
 
-        yield Footer()
+        yield StatusBar(id="status-bar")
 
     # -----------------------------------------------------------------------
     # Mount / unmount
@@ -750,6 +757,12 @@ class ScholarDevClawApp(App[None]):
         self._refresh_action_state()
         self._update_agent_status("Offline")
         self._set_phase("idle")
+        self._set_status("Ready", "info")
+        try:
+            status_bar = self.query_one(StatusBar)
+            status_bar.set_center("keys: ctrl+k commands | ctrl+h help | ctrl+r run | ctrl+c quit")
+        except Exception:
+            pass
 
         # Show welcome on first launch
         if self._config.get("show_welcome", True):
@@ -1087,7 +1100,6 @@ class ScholarDevClawApp(App[None]):
     def on_quick_integrate_button(self) -> None:
         self._execute_quick("integrate")
 
-
     @on(Button.Pressed, "#run")
     def on_run(self) -> None:
         self._run_workflow()
@@ -1302,6 +1314,10 @@ class ScholarDevClawApp(App[None]):
         try:
             log_view = self.query_one(LogView)
             log_view.clear_logs()
+        except Exception:
+            pass
+        try:
+            self.query_one("#agent-logs", TextArea).load_text("")
         except Exception:
             pass
 
