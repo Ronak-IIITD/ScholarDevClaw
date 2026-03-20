@@ -1,68 +1,59 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>404 — Page Not Found | ScholarDevClaw</title>
+  <title>404 — ScholarDevClaw</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #050810; --surface: #0d1424; --border: #1e2d4a;
-      --text: #e2e8f0; --muted: #64748b; --cyan: #00e5cc;
-      --font-sans: 'Space Grotesk', system-ui, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
+      --bg: #09090b;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --accent: #22d3ee;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: var(--font-sans);
+      font-family: 'Inter', system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      text-align: center;
       padding: 24px;
     }
-    .box {
-      text-align: center;
-      max-width: 480px;
-    }
-    .code {
-      font-family: var(--font-mono);
-      font-size: 6rem;
+    h1 {
+      font-size: 120px;
       font-weight: 700;
-      color: var(--cyan);
-      opacity: 0.15;
+      letter-spacing: -0.03em;
+      color: var(--accent);
       line-height: 1;
-      margin-bottom: 24px;
     }
-    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; }
-    p { color: var(--muted); font-size: 0.95rem; margin-bottom: 32px; line-height: 1.6; }
+    p {
+      font-size: 18px;
+      color: var(--muted);
+      margin: 16px 0 32px;
+    }
     a {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 12px 24px; background: var(--cyan); color: var(--bg);
-      font-weight: 700; font-size: 0.9rem; border-radius: 10px;
+      color: var(--text);
       text-decoration: none;
-      transition: background 0.2s;
+      padding: 12px 24px;
+      background: var(--accent);
+      color: #09090b;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      transition: opacity 0.15s;
     }
-    a:hover { background: #00c8b4; text-decoration: none; }
-    a svg { width: 16px; height: 16px; }
+    a:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
-  <div class="box">
-    <div class="code">404</div>
-    <h1>Page not found</h1>
-    <p>This page doesn't exist or has been moved. The install script and docs may be at the root.</p>
-    <a href="./">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
-      </svg>
-      Back to ScholarDevClaw
-    </a>
-  </div>
+  <h1>404</h1>
+  <p>Page not found</p>
+  <a href="/">Go home</a>
 </body>
 </html>
