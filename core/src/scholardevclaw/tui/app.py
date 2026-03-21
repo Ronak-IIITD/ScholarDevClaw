@@ -314,6 +314,14 @@ class ScholarDevClawApp(App[None]):
         border: solid $border;
     }
 
+    #prompt-input:focus {
+        border: solid $accent;
+    }
+
+    #prompt-input.multiline {
+        height: 5;
+    }
+
     .panel-section-title {
         text-style: bold;
         color: $accent;
@@ -435,6 +443,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+p", "focus_prompt", "Focus Prompt"),
         ("ctrl+b", "focus_sidebar", "Focus Sidebar"),
         ("ctrl+o", "focus_output", "Focus Output"),
+        ("ctrl+j", "toggle_multiline_prompt", "Multiline Prompt"),
         ("escape", "handle_escape", "Stop/Back"),
         ("ctrl+l", "clear_logs", "Clear Logs"),
         ("ctrl+a", "quick_action_analyze", "Quick Analyze"),
@@ -474,6 +483,16 @@ class ScholarDevClawApp(App[None]):
         self._current_phase = "idle"
         self._command_history: list[str] = []
         self._history_index = -1
+        self._workflow_steps = {
+            "analyze": (1, 6),
+            "suggest": (2, 6),
+            "search": (2, 6),
+            "map": (3, 6),
+            "generate": (4, 6),
+            "validate": (5, 6),
+            "integrate": (6, 6),
+            "specs": (1, 1),
+        }
 
         # Config
         self._config_dir = Path.home() / ".scholardevclaw"
@@ -577,6 +596,9 @@ class ScholarDevClawApp(App[None]):
         try:
             agent_dot = self.query_one(AgentStatus)
             agent_dot.set_status(status)
+            status_bar = self.query_one(StatusBar)
+            mode = "running" if status == "Online" else "idle"
+            status_bar.set_center(f"agent: {mode}")
         except Exception:
             pass
 
@@ -595,6 +617,20 @@ class ScholarDevClawApp(App[None]):
             current = area.text
             merged = (current + "\n" if current else "") + "\n".join(lines)
             area.load_text(merged)
+        except Exception:
+            pass
+
+    def _mark_sidebar_state(self, action: str, state: str) -> None:
+        try:
+            sidebar = self.query_one(Sidebar)
+            sidebar.clear_item_states()
+            sidebar.set_item_state(action, state)
+        except Exception:
+            pass
+
+    def _set_status_summary(self, text: str) -> None:
+        try:
+            self.query_one(StatusBar).set_status(text, "info")
         except Exception:
             pass
 
@@ -737,6 +773,18 @@ class ScholarDevClawApp(App[None]):
                             yield Button("Run", id="run", variant="primary")
                             yield Button("Clear", id="clear")
 
+                        yield Label("Model / Provider", classes="config-section-title")
+                        yield Select(
+                            [
+                                ("auto", "auto"),
+                                ("openai:gpt-5", "openai:gpt-5"),
+                                ("anthropic:claude-sonnet-4", "anthropic:claude-sonnet-4"),
+                                ("github:copilot", "github:copilot"),
+                            ],
+                            value="auto",
+                            id="model-provider",
+                        )
+
                     # Right: output panel
                     with Vertical(id="output-panel"):
                         yield Label("Output", classes="output-header")
@@ -784,7 +832,8 @@ class ScholarDevClawApp(App[None]):
         self._set_status("Ready", "info")
         try:
             status_bar = self.query_one(StatusBar)
-            status_bar.set_center("keys: ctrl+k commands | ctrl+h help | ctrl+r run | ctrl+c quit")
+            status_bar.set_center("agent: idle")
+            status_bar.set_step(0, 0)
         except Exception:
             pass
 
@@ -1014,10 +1063,13 @@ class ScholarDevClawApp(App[None]):
 
         self._disable_run_buttons()
         self._set_status(f"Running '{action}'...", "info")
+        self._mark_sidebar_state(action, "running")
 
         try:
             status_bar = self.query_one(StatusBar)
             status_bar.start_timer()
+            step = self._workflow_steps.get(action, (0, 0))
+            status_bar.set_step(step[0], step[1])
         except Exception:
             pass
 
@@ -1233,6 +1285,10 @@ class ScholarDevClawApp(App[None]):
         if msg.error:
             self._log_to_view([f"Error: {msg.error}"])
             self._set_status(f"Failed ({msg.title})", "error")
+            if self._active_run_request:
+                self._mark_sidebar_state(
+                    self._active_run_request.get("action", "analyze"), "failed"
+                )
         else:
             # Log a compact result summary
             result_summary = json.dumps(msg.result, indent=2, default=str)
@@ -1241,6 +1297,16 @@ class ScholarDevClawApp(App[None]):
                 result_summary = result_summary[:2000] + "\n..."
             self._log_to_view([f"Complete: {msg.title}", result_summary])
             self._set_status(f"Done ({msg.title})", "success")
+            if self._active_run_request:
+                action = self._active_run_request.get("action", "analyze")
+                self._mark_sidebar_state(action, "done")
+                output_dir = self._active_run_request.get("output_dir")
+                if action == "generate" and output_dir:
+                    self._set_status_summary(f"generated patch artifacts in {output_dir}")
+                elif action == "integrate":
+                    self._set_status_summary("integrated workflow completed")
+                else:
+                    self._set_status_summary(f"{action} completed")
 
         if not self._live_logs_enabled:
             self._log_to_view(msg.logs)
@@ -1250,6 +1316,7 @@ class ScholarDevClawApp(App[None]):
         try:
             status_bar = self.query_one(StatusBar)
             status_bar.update_timer()
+            status_bar.stop_timer()
         except Exception:
             pass
 
@@ -1375,7 +1442,7 @@ class ScholarDevClawApp(App[None]):
         self._execute_quick("integrate")
 
     def action_focus_prompt(self) -> None:
-        self.query_one("#prompt-input", Input).focus()
+        self.query_one("#prompt-input", PromptInput).focus()
         self._set_status("Focused prompt", "info")
 
     def action_focus_sidebar(self) -> None:
@@ -1391,6 +1458,17 @@ class ScholarDevClawApp(App[None]):
         except Exception:
             pass
         self._set_status("Focused output", "info")
+
+    def action_toggle_multiline_prompt(self) -> None:
+        prompt = self.query_one("#prompt-input", PromptInput)
+        if prompt.has_class("multiline"):
+            prompt.remove_class("multiline")
+            prompt.styles.height = 1
+            self._set_status("Prompt mode: single-line", "info")
+        else:
+            prompt.add_class("multiline")
+            prompt.styles.height = 4
+            self._set_status("Prompt mode: multiline", "accent")
 
     def action_command_palette(self) -> None:
         """Open the command palette overlay."""

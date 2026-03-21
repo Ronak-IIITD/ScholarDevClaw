@@ -60,6 +60,7 @@ HELP_MD = """
 | `ctrl+p` | focus prompt |
 | `ctrl+b` | focus sidebar |
 | `ctrl+o` | focus output |
+| `ctrl+j` | toggle multiline prompt |
 | `esc` | stop agent / close overlay |
 | `esc` x2 | stop running agent |
 
@@ -88,6 +89,7 @@ HELP_MD = """
 | Key | Action |
 |-----|--------|
 | `enter` | submit prompt |
+| `ctrl+j` | toggle multiline mode |
 | `up` | previous command in history |
 | `down` | next command in history |
 """

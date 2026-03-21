@@ -78,6 +78,11 @@ class SidebarItem(Static):
     def compose(self) -> ComposeResult:
         yield Label(f" {self.item_icon} {self.item_name}", classes="sidebar-label")
 
+    def set_state(self, state: str) -> None:
+        self.remove_class("running", "done", "failed")
+        if state in {"running", "done", "failed"}:
+            self.add_class(state)
+
 
 class Sidebar(Vertical):
     """Left sidebar with workflow steps, quick actions, and navigation."""
@@ -155,6 +160,21 @@ class Sidebar(Vertical):
         text-style: bold;
     }
 
+    SidebarItem.running {
+        border-left: thick $warning;
+        color: $warning;
+    }
+
+    SidebarItem.done {
+        border-left: thick $success;
+        color: $success;
+    }
+
+    SidebarItem.failed {
+        border-left: thick $error;
+        color: $error;
+    }
+
     SidebarItem.focused {
         border-left: thick $accent;
         color: $text;
@@ -208,6 +228,16 @@ class Sidebar(Vertical):
                 item.add_class("selected")
             else:
                 item.remove_class("selected")
+
+    def set_item_state(self, action: str, state: str) -> None:
+        for item in self.query(SidebarItem):
+            if item.item_action == action:
+                item.set_state(state)
+                break
+
+    def clear_item_states(self) -> None:
+        for item in self.query(SidebarItem):
+            item.set_state("")
 
     @on(SidebarItem.Selected)
     def on_item_selected(self, msg: SidebarItem.Selected) -> None:
@@ -478,6 +508,7 @@ class StatusBar(Static):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._start_time: float = 0.0
+        self._step_text: str = ""
 
     def compose(self) -> ComposeResult:
         yield Static("Ready", classes="status-left", id="status-left")
@@ -509,18 +540,36 @@ class StatusBar(Static):
         except Exception:
             pass
 
+    def set_step(self, current: int, total: int) -> None:
+        if total > 0:
+            self._step_text = f"step {current}/{total}"
+        else:
+            self._step_text = ""
+        self._render_right()
+
     def start_timer(self) -> None:
         """Start the elapsed time tracker."""
         self._start_time = time.perf_counter()
+        self._render_right()
+
+    def stop_timer(self) -> None:
+        self._render_right()
 
     def update_timer(self) -> None:
         """Update the elapsed time display."""
+        self._render_right()
+
+    def _render_right(self) -> None:
+        parts: list[str] = []
+        if self._step_text:
+            parts.append(self._step_text)
         if self._start_time > 0:
             elapsed = time.perf_counter() - self._start_time
-            try:
-                self.query_one("#status-right", Static).update(f" {elapsed:.1f}s")
-            except Exception:
-                pass
+            parts.append(f"{elapsed:.1f}s")
+        try:
+            self.query_one("#status-right", Static).update(" | ".join(parts))
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

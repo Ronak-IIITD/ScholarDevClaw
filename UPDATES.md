@@ -4,6 +4,53 @@
 
 **Last updated:** 2026-03-20
 
+### 2026-03-20 (TUI Quick-Wins Pass — Persistent Status, Workflow States, Model Selector)
+
+**Goal:** Implement high-impact UX wins quickly: clearer hierarchy, persistent status intelligence, command surface improvements, and practical operator feedback for long workflow runs.
+
+**Summary:** Added a production-style persistent status bar model with mode + step/time visibility, integrated workflow-state indicators directly in sidebar items, improved action/result summaries after runs, added a model/provider selector in the UI, and expanded prompt ergonomics with multiline toggle while preserving keyboard-first flow.
+
+**High-Impact Improvements Delivered:**
+- **Persistent status bar intelligence**
+  - Status center now tracks mode (`agent: running` / `agent: idle`)
+  - Right-side status now supports step + elapsed time (`step N/M | 12.4s`)
+  - Added contextual completion summaries (e.g., generate/integrate completion summaries)
+
+- **Workflow states in sidebar**
+  - Sidebar items now show run states: `running`, `done`, `failed`
+  - Visual indicators use warning/success/error borders + text states
+  - Active workflow selection and run-state visibility now co-exist
+
+- **Model / provider surface**
+  - Added `Model / Provider` selector in config panel
+  - Includes `auto`, `openai:gpt-5`, `anthropic:claude-sonnet-4`, `github:copilot`
+  - Establishes the UX surface needed for provider wiring in next phase
+
+- **Input ergonomics**
+  - Added multiline prompt toggle: `ctrl+j`
+  - Prompt mode status feedback (`single-line` / `multiline`)
+  - Prompt focus now uses `PromptInput` type consistently
+
+- **Command/feedback polish**
+  - Command palette + keyboard navigation retained and verified
+  - Sidebar focus/navigation retained and verified
+  - Status messaging reduced ambiguity for run outcomes
+
+**Files Updated:**
+- `core/src/scholardevclaw/tui/app.py`
+- `core/src/scholardevclaw/tui/widgets.py`
+- `core/src/scholardevclaw/tui/screens.py`
+
+**Verification:**
+- ✅ Ruff clean on all updated TUI modules
+- ✅ Textual smoke flow passes for:
+  - `ctrl+k` palette + selection
+  - `ctrl+b` sidebar focus + activation
+  - `ctrl+p` / `ctrl+o` focus jumps
+  - prompt history (`up/down`) and multiline toggle (`ctrl+j`)
+
+---
+
 ### 2026-03-20 (TUI Interaction Pass — Keyboard-First Navigation + Focus System)
 
 **Goal:** Make the TUI feel production-grade for power users by improving keyboard-only navigation, focus control, palette selection behavior, and prompt history workflow.
