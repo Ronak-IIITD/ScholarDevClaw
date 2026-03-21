@@ -13,6 +13,28 @@ from .schema_contract import SCHEMA_VERSION, with_meta
 _logger = logging.getLogger(__name__)
 
 
+def _resolve_llm_selection() -> tuple[str | None, str | None]:
+    provider = os.environ.get("SCHOLARDEVCLAW_API_PROVIDER", "").strip().lower()
+    model = os.environ.get("SCHOLARDEVCLAW_API_MODEL", "").strip()
+    if not provider or provider == "auto":
+        return None, None
+    return provider, model or None
+
+
+def _create_llm_assistant() -> Any | None:
+    provider, model = _resolve_llm_selection()
+    if not provider:
+        return None
+    try:
+        from scholardevclaw.llm.research_assistant import LLMResearchAssistant
+
+        assistant = LLMResearchAssistant.create(provider=provider, model=model)
+        return assistant if assistant.is_available else None
+    except Exception as exc:
+        _logger.debug("LLM assistant unavailable for provider=%s: %s", provider, exc)
+        return None
+
+
 @dataclass(slots=True)
 class PipelineResult:
     ok: bool
@@ -351,7 +373,8 @@ def run_search(
             metadata={"query": query, "language": language, "max_results": max_results},
         )
 
-        extractor = ResearchExtractor()
+        llm_assistant = _create_llm_assistant()
+        extractor = ResearchExtractor(llm_assistant=llm_assistant)
         local_results = extractor.search_by_keyword(query, max_results=max_results)
 
         payload: dict[str, Any] = {
@@ -386,7 +409,7 @@ def run_search(
         if include_web:
             from scholardevclaw.research_intelligence.web_research import SyncWebResearchEngine
 
-            engine = SyncWebResearchEngine()
+            engine = SyncWebResearchEngine(llm_assistant=llm_assistant)
             web_results = engine.search_all(query, language, max_results)
             payload["web"] = {
                 "github_repos": [
@@ -444,7 +467,8 @@ def run_specs(
     logs: list[str] = []
     _log(logs, "Loading specification index", log_callback)
     try:
-        extractor = ResearchExtractor()
+        llm_assistant = _create_llm_assistant()
+        extractor = ResearchExtractor(llm_assistant=llm_assistant)
 
         specs = extractor.list_available_specs()
         categories = extractor.get_categories()
@@ -482,6 +506,7 @@ def _build_mapping_result(
     repo_path: Path,
     spec_name: str,
     *,
+    llm_assistant: Any | None = None,
     log_callback: LogCallback | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     from scholardevclaw.mapping.engine import MappingEngine
@@ -493,7 +518,7 @@ def _build_mapping_result(
         log_callback("Analyzing repository structure for mapping")
     analysis = analyzer.analyze()
 
-    extractor = ResearchExtractor()
+    extractor = ResearchExtractor(llm_assistant=llm_assistant)
     if log_callback is not None:
         log_callback(f"Resolving specification: {spec_name}")
     spec = extractor.get_spec(spec_name)
@@ -539,7 +564,13 @@ def run_map(
             metadata={"repo_path": str(path), "spec_name": spec_name},
         )
 
-        mapping_result, spec = _build_mapping_result(path, spec_name, log_callback=log_callback)
+        llm_assistant = _create_llm_assistant()
+        mapping_result, spec = _build_mapping_result(
+            path,
+            spec_name,
+            llm_assistant=llm_assistant,
+            log_callback=log_callback,
+        )
         targets = mapping_result.get("targets", [])
 
         payload = {
@@ -598,9 +629,15 @@ def run_generate(
             metadata={"repo_path": str(path), "spec_name": spec_name},
         )
 
-        mapping_result, spec = _build_mapping_result(path, spec_name, log_callback=log_callback)
+        llm_assistant = _create_llm_assistant()
+        mapping_result, spec = _build_mapping_result(
+            path,
+            spec_name,
+            llm_assistant=llm_assistant,
+            log_callback=log_callback,
+        )
 
-        generator = PatchGenerator(path)
+        generator = PatchGenerator(path, llm_assistant=llm_assistant)
         _log(logs, "Generating patch artifacts", log_callback)
         patch = generator.generate(mapping_result)
 
@@ -875,7 +912,8 @@ def run_integrate(
             log_callback,
         )
 
-        extractor = ResearchExtractor()
+        llm_assistant = _create_llm_assistant()
+        extractor = ResearchExtractor(llm_assistant=llm_assistant)
         selected_spec_name = spec_name
         selected_spec: dict[str, Any] | None = None
 
@@ -905,6 +943,7 @@ def run_integrate(
         mapping_result, _ = _build_mapping_result(
             path,
             selected_spec_name,
+            llm_assistant=llm_assistant,
             log_callback=log_callback,
         )
         _log(logs, f"Mapping: {len(mapping_result.get('targets', []))} targets", log_callback)
@@ -1120,11 +1159,17 @@ def run_multi_integrate(
         )
 
         results: list[dict[str, Any]] = []
+        llm_assistant = _create_llm_assistant()
 
         for i, spec_name in enumerate(spec_names, 1):
             _log(logs, f"\n--- Spec {i}/{len(spec_names)}: {spec_name} ---", log_callback)
 
-            mapping_result, spec = _build_mapping_result(path, spec_name, log_callback=log_callback)
+            mapping_result, spec = _build_mapping_result(
+                path,
+                spec_name,
+                llm_assistant=llm_assistant,
+                log_callback=log_callback,
+            )
             _log(
                 logs,
                 f"Mapping: {len(mapping_result.get('targets', []))} targets",

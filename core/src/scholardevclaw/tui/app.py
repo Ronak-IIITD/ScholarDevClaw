@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
 import threading
@@ -28,7 +29,6 @@ from textual.widgets import (
     Label,
     Select,
     Static,
-    TextArea,
 )
 
 from scholardevclaw.application.pipeline import (
@@ -45,6 +45,7 @@ from scholardevclaw.application.pipeline import (
 from .screens import CommandPalette, HelpOverlay, WelcomeScreen
 from .widgets import (
     AgentStatus,
+    ChatLog,
     HistoryPane,
     LogView,
     PhaseTracker,
@@ -91,6 +92,13 @@ class AgentLog(Message):
     def __init__(self, line: str):
         super().__init__()
         self.line = line
+
+
+class AgentEvent(Message):
+    def __init__(self, role: str, content: str):
+        super().__init__()
+        self.role = role
+        self.content = content
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +299,7 @@ class ScholarDevClawApp(App[None]):
         height: 1;
     }
 
-    #agent-logs {
+    #agent-chat {
         width: 100%;
         height: 1fr;
         background: $surface;
@@ -305,13 +313,32 @@ class ScholarDevClawApp(App[None]):
         background: $surface-dark;
         border-top: solid $border;
         padding: 0 1;
+        layout: horizontal;
     }
 
     #prompt-input {
-        width: 100%;
+        width: 1fr;
         background: $surface;
         color: $accent;
         border: solid $border;
+    }
+
+    #build-chip {
+        width: auto;
+        background: $panel;
+        color: $accent;
+        border: solid $border;
+        padding: 0 1;
+        margin-left: 1;
+    }
+
+    #provider-chip {
+        width: auto;
+        background: $panel;
+        color: $text-muted;
+        border: solid $border;
+        padding: 0 1;
+        margin-left: 1;
     }
 
     #prompt-input:focus {
@@ -449,6 +476,8 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+a", "quick_action_analyze", "Quick Analyze"),
         ("ctrl+s", "quick_action_suggest", "Quick Suggest"),
         ("ctrl+i", "quick_action_integrate", "Quick Integrate"),
+        ("ctrl+n", "new_session", "New Session"),
+        ("ctrl+e", "export_log", "Export Log"),
     ]
 
     action_mode_options = [
@@ -611,14 +640,73 @@ class ScholarDevClawApp(App[None]):
             pass
 
     def _log_to_legacy(self, widget_id: str, lines: list[str]) -> None:
-        """Append lines to a TextArea widget (agent-logs)."""
+        """Backward-compatible sink: writes to rich chat log."""
+        for line in lines:
+            role = "system"
+            low = line.lower()
+            if line.startswith("User:"):
+                role = "user"
+            elif widget_id == "agent-logs":
+                role = "agent"
+                if low.startswith(
+                    (
+                        "error:",
+                        "agent launched",
+                        "commands:",
+                        "type 'help'",
+                        "agent stopped",
+                        "no running agent",
+                        "failed",
+                    )
+                ):
+                    role = "system"
+            self._add_chat(role, line)
+
+    def _add_chat(self, role: str, content: str) -> None:
         try:
-            area = self.query_one(f"#{widget_id}", TextArea)
-            current = area.text
-            merged = (current + "\n" if current else "") + "\n".join(lines)
-            area.load_text(merged)
+            chat = self.query_one(ChatLog)
+            chat.add_entry(role, content)
         except Exception:
             pass
+
+    def _resolve_model_provider(self) -> tuple[str | None, str | None]:
+        raw = self.query_one("#model-provider", Select).value
+        if not isinstance(raw, str) or raw == "auto":
+            return None, None
+        if ":" not in raw:
+            return None, None
+        provider, model = raw.split(":", 1)
+        mapping = {
+            "github": "github_copilot",
+            "openai": "openai",
+            "anthropic": "anthropic",
+        }
+        provider = mapping.get(provider, provider)
+        return provider, model
+
+    def _apply_provider_env(self) -> dict[str, str | None]:
+        provider, model = self._resolve_model_provider()
+        prev_provider = os.environ.get("SCHOLARDEVCLAW_API_PROVIDER")
+        prev_model = os.environ.get("SCHOLARDEVCLAW_API_MODEL")
+        if provider:
+            os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = provider
+            os.environ["SCHOLARDEVCLAW_API_MODEL"] = model or ""
+        return {
+            "provider": prev_provider,
+            "model": prev_model,
+        }
+
+    def _restore_provider_env(self, prev: dict[str, str | None]) -> None:
+        prev_provider = prev.get("provider")
+        if prev_provider is None:
+            os.environ.pop("SCHOLARDEVCLAW_API_PROVIDER", None)
+        else:
+            os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = prev_provider
+        prev_model = prev.get("model")
+        if prev_model is None:
+            os.environ.pop("SCHOLARDEVCLAW_API_MODEL", None)
+        else:
+            os.environ["SCHOLARDEVCLAW_API_MODEL"] = prev_model
 
     def _mark_sidebar_state(self, action: str, state: str) -> None:
         try:
@@ -631,6 +719,33 @@ class ScholarDevClawApp(App[None]):
     def _set_status_summary(self, text: str) -> None:
         try:
             self.query_one(StatusBar).set_status(text, "info")
+        except Exception:
+            pass
+
+    def _refresh_provider_chip(self) -> None:
+        provider, model = self._resolve_model_provider()
+
+        def _env_for_provider(name: str) -> str:
+            mapping = {
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY",
+                "github_copilot": "GITHUB_TOKEN",
+            }
+            return mapping.get(name, "")
+
+        try:
+            build_chip = self.query_one("#build-chip", Label)
+            provider_chip = self.query_one("#provider-chip", Label)
+            if provider and model:
+                build_chip.update(f"build {model}")
+                key_env = _env_for_provider(provider)
+                has_key = bool(key_env and os.environ.get(key_env, "").strip())
+                provider_chip.update(
+                    f"provider {provider} ({'connected' if has_key else 'no key'})"
+                )
+            else:
+                build_chip.update("build auto")
+                provider_chip.update("provider auto")
         except Exception:
             pass
 
@@ -809,7 +924,7 @@ class ScholarDevClawApp(App[None]):
                     yield Button("Launch", id="launch-agent", variant="primary")
                     yield Button("Stop", id="stop-agent", variant="error")
                     yield AgentStatus(id="agent-status")
-            yield TextArea("", id="agent-logs", read_only=True)
+            yield ChatLog(id="agent-chat")
 
         # Prompt bar
         with Horizontal(id="prompt-bar"):
@@ -818,6 +933,9 @@ class ScholarDevClawApp(App[None]):
                 placeholder="type request... (ctrl+k commands, ctrl+h help)",
                 id="prompt-input",
             )
+
+            yield Label("build auto", id="build-chip")
+            yield Label("provider auto", id="provider-chip")
 
         yield StatusBar(id="status-bar")
 
@@ -828,8 +946,10 @@ class ScholarDevClawApp(App[None]):
     def on_mount(self) -> None:
         self._refresh_action_state()
         self._update_agent_status("Offline")
+        self._refresh_provider_chip()
         self._set_phase("idle")
         self._set_status("Ready", "info")
+        self._add_chat("system", "Welcome. Use /commands or ctrl+k for actions.")
         try:
             status_bar = self.query_one(StatusBar)
             status_bar.set_center("agent: idle")
@@ -872,6 +992,7 @@ class ScholarDevClawApp(App[None]):
             "output_dir": self.query_one("#output-dir", Input).value.strip() or None,
             "integrate_dry_run": self.query_one("#integrate-dry-run", Checkbox).value,
             "integrate_require_clean": self.query_one("#integrate-require-clean", Checkbox).value,
+            "model_provider": self.query_one("#model-provider", Select).value,
         }
 
     def _apply_request(self, request: dict[str, Any]) -> None:
@@ -884,12 +1005,19 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#search-max-results", Input).value = request.get("max_results_raw", "10")
         self.query_one("#spec", Input).value = request.get("spec", "")
         self.query_one("#output-dir", Input).value = request.get("output_dir") or ""
+        mp = request.get("model_provider", "auto")
+        if isinstance(mp, str):
+            try:
+                self.query_one("#model-provider", Select).value = mp
+            except Exception:
+                self.query_one("#model-provider", Select).value = "auto"
         self.query_one("#integrate-dry-run", Checkbox).value = bool(
             request.get("integrate_dry_run", False)
         )
         self.query_one("#integrate-require-clean", Checkbox).value = bool(
             request.get("integrate_require_clean", False)
         )
+        self._refresh_provider_chip()
         self._refresh_action_state()
 
     # -----------------------------------------------------------------------
@@ -1093,6 +1221,7 @@ class ScholarDevClawApp(App[None]):
             def _emit(line: str):
                 self.post_message(TaskLog(line))
 
+            prev_env = self._apply_provider_env()
             try:
                 if action == "analyze":
                     result = run_analyze(repo, log_callback=_emit)
@@ -1136,6 +1265,8 @@ class ScholarDevClawApp(App[None]):
             except Exception as e:
                 logger.exception("Workflow failed")
                 self.post_message(TaskCompleted(action, {}, [], str(e)))
+            finally:
+                self._restore_provider_env(prev_env)
 
         threading.Thread(target=_run, daemon=True).start()
         self._log_to_view([f"Started: {action} on {repo}"])
@@ -1163,6 +1294,10 @@ class ScholarDevClawApp(App[None]):
     @on(Select.Changed, "#action")
     def on_action_change(self) -> None:
         self._refresh_action_state()
+
+    @on(Select.Changed, "#model-provider")
+    def on_model_provider_change(self) -> None:
+        self._refresh_provider_chip()
 
     @on(Button.Pressed, "#qa-analyze")
     def on_quick_analyze_button(self) -> None:
@@ -1214,6 +1349,12 @@ class ScholarDevClawApp(App[None]):
             return
 
         try:
+            env = os.environ.copy()
+            provider, model = self._resolve_model_provider()
+            if provider:
+                env["SCHOLARDEVCLAW_API_PROVIDER"] = provider
+            if model:
+                env["SCHOLARDEVCLAW_API_MODEL"] = model
             self._agent_process = subprocess.Popen(
                 ["bun", "run", "start", "--repl"],
                 cwd=agent_dir,
@@ -1222,6 +1363,7 @@ class ScholarDevClawApp(App[None]):
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
+                env=env,
             )
             self._agent_stdin = self._agent_process.stdin
             self._agent_running = True
@@ -1239,6 +1381,8 @@ class ScholarDevClawApp(App[None]):
                 "Type 'help' for more, 'exit' to quit",
             ],
         )
+        if provider and model:
+            self._add_chat("system", f"model selected: {provider}:{model}")
 
         def _read():
             if self._agent_process and self._agent_process.stdout:
@@ -1353,6 +1497,22 @@ class ScholarDevClawApp(App[None]):
         if not prompt:
             return
 
+        if prompt.startswith("/"):
+            cmd = prompt[1:].strip().lower()
+            event.input.value = ""
+            if cmd in {"commands", "cmd", "palette"}:
+                self.action_command_palette()
+                return
+            if cmd in {"new", "new-session", "reset"}:
+                self.action_new_session()
+                return
+            if cmd in {"export", "export-log"}:
+                self.action_export_log()
+                return
+            if cmd in {"clear", "cls"}:
+                self.action_clear_logs()
+                return
+
         self._command_history.append(prompt)
         self._history_index = len(self._command_history)
         event.input.value = ""
@@ -1428,7 +1588,7 @@ class ScholarDevClawApp(App[None]):
         except Exception:
             pass
         try:
-            self.query_one("#agent-logs", TextArea).load_text("")
+            self.query_one(ChatLog).clear_entries()
         except Exception:
             pass
 
@@ -1440,6 +1600,34 @@ class ScholarDevClawApp(App[None]):
 
     def action_quick_action_integrate(self) -> None:
         self._execute_quick("integrate")
+
+    def action_new_session(self) -> None:
+        self.action_clear_logs()
+        self._run_history.clear()
+        try:
+            self.query_one(HistoryPane).clear_history()
+        except Exception:
+            pass
+        self._active_run_request = None
+        self._active_run_started_at = 0.0
+        self._set_phase("idle")
+        self._set_status("New session started", "success")
+
+    def action_export_log(self) -> None:
+        export_dir = Path.cwd() / "exports"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        path = export_dir / f"tui-log-{stamp}.md"
+        try:
+            chat = self.query_one(ChatLog)
+            path.write_text(chat.export_markdown())
+            self._add_chat("system", f"exported log: `{path}`")
+            self._set_status(f"Exported log to {path}", "success")
+        except Exception as exc:
+            self._set_status(f"Export failed: {exc}", "error")
+
+    def action_show_commands(self) -> None:
+        self.action_command_palette()
 
     def action_focus_prompt(self) -> None:
         self.query_one("#prompt-input", PromptInput).focus()
@@ -1480,6 +1668,10 @@ class ScholarDevClawApp(App[None]):
                 self.exit()
             elif result == "clear":
                 self.action_clear_logs()
+            elif result == "new_session":
+                self.action_new_session()
+            elif result == "export_log":
+                self.action_export_log()
             elif result in (
                 "analyze",
                 "suggest",

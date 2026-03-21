@@ -4,6 +4,67 @@
 
 **Last updated:** 2026-03-20
 
+### 2026-03-20 (TUI World-Class Pass — Rich Chat, Provider Wiring, Command Surface)
+
+**Goal:** Move the TUI from good-looking to genuinely operator-grade by adding richer chat output, practical model/provider controls, action command ergonomics, and persistent run intelligence.
+
+**Summary:** Replaced the old raw agent log area with a markdown-rendered chat timeline, wired the `Model / Provider` selector into both pipeline runs and agent process environment, added session/export workflows to command palette and shortcuts, and upgraded status/workflow feedback to be actionable during long-running operations.
+
+**Major Upgrades:**
+- **Rich chat/log panel (`core/src/scholardevclaw/tui/widgets.py`, `app.py`)**
+  - Added `ChatLog` widget with markdown-rendered entries
+  - Role lanes: `user`, `agent`, `system` with visual distinction
+  - Timestamped entries and exportable markdown timeline
+  - Replaced bottom `TextArea` with `ChatLog` in agent section
+
+- **Provider/model wiring (`core/src/scholardevclaw/tui/app.py`, `core/src/scholardevclaw/application/pipeline.py`)**
+  - TUI `Model / Provider` now applies to workflow runs via env bridge:
+    - `SCHOLARDEVCLAW_API_PROVIDER`
+    - `SCHOLARDEVCLAW_API_MODEL`
+  - Pipeline now creates LLM assistants using selected provider/model where applicable
+    - search/map/generate/integrate/multi-integrate paths updated
+  - Agent launch now forwards selected provider/model env to Bun process
+
+- **OpenCode-style control chips**
+  - Added prompt-bar chips:
+    - `build <model|auto>`
+    - `provider <name|auto> (connected|no key)`
+  - Chips update live when provider selection changes
+
+- **Command surface / session ops**
+  - Command palette expanded with:
+    - `new_session`
+    - `export_log`
+  - Added shortcuts:
+    - `ctrl+n` new session
+    - `ctrl+e` export log
+  - Added slash command aliases:
+    - `/commands`, `/new`, `/export`, `/clear`
+
+- **Persistent status + workflow intelligence**
+  - Sidebar workflow items now show run state: running/done/failed
+  - Status bar now carries:
+    - mode summary (`agent: idle/running`)
+    - step + elapsed time
+    - post-run summary messages
+
+**Files Updated:**
+- `core/src/scholardevclaw/tui/app.py`
+- `core/src/scholardevclaw/tui/widgets.py`
+- `core/src/scholardevclaw/tui/screens.py`
+- `core/src/scholardevclaw/application/pipeline.py`
+
+**Verification:**
+- ✅ Ruff clean for all touched modules
+- ✅ End-to-end Textual smoke scenario passes:
+  - palette selection + actions
+  - slash commands
+  - focus navigation
+  - multiline toggle/history
+  - new session/export log
+
+---
+
 ### 2026-03-20 (TUI Quick-Wins Pass — Persistent Status, Workflow States, Model Selector)
 
 **Goal:** Implement high-impact UX wins quickly: clearer hierarchy, persistent status intelligence, command surface improvements, and practical operator feedback for long workflow runs.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from typing import Any
 
 from textual import events, on
@@ -10,7 +11,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.reactive import reactive
-from textual.widgets import Button, Input, Label, Static
+from textual.widgets import Button, Input, Label, Markdown, Static
 
 # ---------------------------------------------------------------------------
 # Sidebar Navigation
@@ -770,3 +771,65 @@ class PromptInput(Input):
         elif event.key == "down":
             self.post_message(self.HistoryNext())
             event.stop()
+
+
+class ChatLog(VerticalScroll):
+    """Scrollable markdown chat/log timeline for agent and system messages."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._entries: list[str] = []
+
+    CSS = """
+    ChatLog {
+        width: 100%;
+        height: 1fr;
+        background: $surface;
+        border: solid $border;
+        padding: 0 1;
+        scrollbar-size: 1 1;
+    }
+
+    ChatLog .chat-entry {
+        width: 100%;
+        margin-bottom: 1;
+        padding: 0 1;
+        border-left: thick $border;
+        background: $surface-dark;
+    }
+
+    ChatLog .chat-entry.user {
+        border-left: thick $accent;
+    }
+
+    ChatLog .chat-entry.agent {
+        border-left: thick $success;
+    }
+
+    ChatLog .chat-entry.system {
+        border-left: thick $warning;
+    }
+
+    ChatLog Markdown {
+        width: 100%;
+        height: auto;
+    }
+    """
+
+    def add_entry(self, role: str, content: str) -> None:
+        ts = datetime.now().strftime("%H:%M:%S")
+        safe = content.replace("\r", "").strip()
+        block = f"**{role}**  `{ts}`\n\n{safe if safe else '_empty_'}"
+        self._entries.append(block)
+        md = Markdown(block, classes=f"chat-entry {role.lower()}")
+        self.mount(md)
+        self.scroll_end(animate=False)
+
+    def clear_entries(self) -> None:
+        self.remove_children()
+        self._entries.clear()
+
+    def export_markdown(self) -> str:
+        if not self._entries:
+            return "No log entries"
+        return "\n\n---\n\n".join(self._entries)

@@ -57,6 +57,8 @@ HELP_MD = """
 | `ctrl+r` | run selected workflow |
 | `ctrl+k` | open command palette |
 | `ctrl+h` | show this help |
+| `ctrl+n` | new session |
+| `ctrl+e` | export logs |
 | `ctrl+p` | focus prompt |
 | `ctrl+b` | focus sidebar |
 | `ctrl+o` | focus output |
@@ -92,6 +94,14 @@ HELP_MD = """
 | `ctrl+j` | toggle multiline mode |
 | `up` | previous command in history |
 | `down` | next command in history |
+
+## Slash Commands
+| Cmd | Action |
+|-----|--------|
+| `/commands` | open command palette |
+| `/new` | start new session |
+| `/export` | export current chat log |
+| `/clear` | clear logs |
 """
 
 
@@ -193,6 +203,8 @@ class CommandPalette(ModalScreen[str | None]):
         ("validate", "Run tests & benchmarks", "validate"),
         ("integrate", "Full end-to-end pipeline", "integrate"),
         ("clear", "Clear logs and results", "clear"),
+        ("new-session", "Start new clean session", "new_session"),
+        ("export-log", "Export current logs to file", "export_log"),
         ("quit", "Exit ScholarDevClaw", "quit"),
     ]
 
