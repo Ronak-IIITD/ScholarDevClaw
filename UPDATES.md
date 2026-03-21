@@ -4,6 +4,52 @@
 
 **Last updated:** 2026-03-20
 
+### 2026-03-20 (TUI Session Mode Upgrade — Full Chat Workspace + OPENCLAW noise suppression)
+
+**Goal:** Resolve critical usability blockers from live testing: tiny/broken agent output area, lack of immersive session experience, and distracting `OPENCLAW_TOKEN` warning spam in local TUI launches.
+
+**Summary:** Implemented a full chat workspace mode that activates when the user submits a prompt, replacing the cramped bottom output pattern with a large conversation-first layout plus right-side session context panel (OpenCode-style). Also suppressed non-actionable local `OPENCLAW_TOKEN` warning noise by injecting a local dev fallback token only for the spawned agent process.
+
+**What changed:**
+- **Full session chat mode (`core/src/scholardevclaw/tui/app.py`)**
+  - Added `#chat-workspace` with two-pane layout:
+    - Left: full-height chat timeline
+    - Right: session info panel (mode/provider/build/tip)
+  - Submitting prompt now auto-enters chat mode (`_set_chat_mode(True)`)
+  - `new session` returns to standard workspace mode (`_set_chat_mode(False)`)
+
+- **Agent output readability**
+  - Removed tiny embedded output behavior from bottom bar flow
+  - Chat entries render in primary session area via markdown `ChatLog`
+  - Startup system message included for discoverability (`/commands` tip)
+
+- **OPENCLAW token warning suppression (dev UX)**
+  - Agent subprocess now receives local fallback env var when missing:
+    - `OPENCLAW_TOKEN=dev-local-token`
+  - Prevents repeated startup warning noise in local TUI sessions
+  - Scope is subprocess-only (does not persist global shell env)
+
+- **Provider/build sync in session panel**
+  - Session info pane now mirrors selected provider/build
+  - Shows provider connection hint (`connected` / `no key`)
+
+- **Help docs update**
+  - Added note that prompt submit enters full chat mode
+
+**Files Updated:**
+- `core/src/scholardevclaw/tui/app.py`
+- `core/src/scholardevclaw/tui/screens.py`
+
+**Verification:**
+- ✅ Ruff clean on updated modules
+- ✅ Textual smoke flow confirms:
+  - prompt submit enters chat mode
+  - slash actions (`/export`) work in session mode
+  - `ctrl+n` exits to new session baseline
+  - command palette still works in updated layout
+
+---
+
 ### 2026-03-20 (TUI World-Class Pass — Rich Chat, Provider Wiring, Command Surface)
 
 **Goal:** Move the TUI from good-looking to genuinely operator-grade by adding richer chat output, practical model/provider controls, action command ergonomics, and persistent run intelligence.

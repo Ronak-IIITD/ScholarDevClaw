@@ -63,6 +63,7 @@ HELP_MD = """
 | `ctrl+b` | focus sidebar |
 | `ctrl+o` | focus output |
 | `ctrl+j` | toggle multiline prompt |
+| `enter prompt` | enter full chat mode |
 | `esc` | stop agent / close overlay |
 | `esc` x2 | stop running agent |
 

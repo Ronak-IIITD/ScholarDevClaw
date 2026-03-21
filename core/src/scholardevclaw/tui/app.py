@@ -266,11 +266,73 @@ class ScholarDevClawApp(App[None]):
 
     /* ---- Bottom: agent / prompt bar ---- */
 
+    #chat-workspace {
+        display: none;
+        width: 100%;
+        height: 0;
+        layout: horizontal;
+        background: $surface;
+        border-top: solid $border;
+    }
+
+    Screen.chat-mode #app-body {
+        display: none;
+    }
+
+    Screen.chat-mode #chat-workspace {
+        display: block;
+        height: 1fr;
+    }
+
+    #chat-main {
+        width: 1fr;
+        height: 100%;
+        padding: 1;
+    }
+
+    #chat-main-title {
+        height: 1;
+        color: $accent;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #chat-main-log {
+        width: 100%;
+        height: 1fr;
+    }
+
+    #chat-info {
+        width: 34;
+        min-width: 28;
+        max-width: 40;
+        height: 100%;
+        background: $panel;
+        border-left: tall $border;
+        padding: 1 2;
+    }
+
+    #chat-info .info-title {
+        color: $accent;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #chat-info .info-label {
+        color: $text-muted;
+        margin-top: 1;
+    }
+
+    #chat-info .info-value {
+        color: $text;
+        margin-bottom: 1;
+    }
+
     #agent-section {
         width: 100%;
-        height: 30%;
-        min-height: 12;
-        max-height: 40%;
+        height: 3;
+        min-height: 3;
+        max-height: 3;
         dock: bottom;
         background: $panel;
         border-top: tall $border;
@@ -297,14 +359,6 @@ class ScholarDevClawApp(App[None]):
         width: auto;
         layout: horizontal;
         height: 1;
-    }
-
-    #agent-chat {
-        width: 100%;
-        height: 1fr;
-        background: $surface;
-        color: $text;
-        border: solid $border;
     }
 
     #prompt-bar {
@@ -510,6 +564,7 @@ class ScholarDevClawApp(App[None]):
         self._agent_stdin: Any = None
         self._agent_running = False
         self._current_phase = "idle"
+        self._chat_mode = False
         self._command_history: list[str] = []
         self._history_index = -1
         self._workflow_steps = {
@@ -529,6 +584,21 @@ class ScholarDevClawApp(App[None]):
         self._context_file = self._config_dir / "tui_context.json"
         self._config = self._load_config()
         self._saved_context: dict[str, Any] = self._load_context()
+
+    def _set_chat_mode(self, enabled: bool) -> None:
+        self._chat_mode = enabled
+        if enabled:
+            self.add_class("chat-mode")
+            self._set_status("Chat session active", "accent")
+        else:
+            self.remove_class("chat-mode")
+            self._set_status("Ready", "info")
+        try:
+            self.query_one("#chat-mode-value", Label).update(
+                "agent: running" if self._agent_running else "agent: idle"
+            )
+        except Exception:
+            pass
 
     # -----------------------------------------------------------------------
     # Config / context persistence
@@ -628,6 +698,7 @@ class ScholarDevClawApp(App[None]):
             status_bar = self.query_one(StatusBar)
             mode = "running" if status == "Online" else "idle"
             status_bar.set_center(f"agent: {mode}")
+            self.query_one("#chat-mode-value", Label).update(f"agent: {mode}")
         except Exception:
             pass
 
@@ -664,7 +735,7 @@ class ScholarDevClawApp(App[None]):
 
     def _add_chat(self, role: str, content: str) -> None:
         try:
-            chat = self.query_one(ChatLog)
+            chat = self.query_one("#chat-main-log", ChatLog)
             chat.add_entry(role, content)
         except Exception:
             pass
@@ -736,16 +807,21 @@ class ScholarDevClawApp(App[None]):
         try:
             build_chip = self.query_one("#build-chip", Label)
             provider_chip = self.query_one("#provider-chip", Label)
+            chat_build = self.query_one("#chat-build-value", Label)
+            chat_provider = self.query_one("#chat-provider-value", Label)
             if provider and model:
                 build_chip.update(f"build {model}")
+                chat_build.update(model)
                 key_env = _env_for_provider(provider)
                 has_key = bool(key_env and os.environ.get(key_env, "").strip())
-                provider_chip.update(
-                    f"provider {provider} ({'connected' if has_key else 'no key'})"
-                )
+                provider_text = f"{provider} ({'connected' if has_key else 'no key'})"
+                provider_chip.update(f"provider {provider_text}")
+                chat_provider.update(provider_text)
             else:
                 build_chip.update("build auto")
                 provider_chip.update("provider auto")
+                chat_build.update("auto")
+                chat_provider.update("auto")
         except Exception:
             pass
 
@@ -916,6 +992,21 @@ class ScholarDevClawApp(App[None]):
                             yield Button("Rerun", id="rerun-history")
                             yield Button("View", id="view-history")
 
+        with Horizontal(id="chat-workspace"):
+            with Vertical(id="chat-main"):
+                yield Label("Session", id="chat-main-title")
+                yield ChatLog(id="chat-main-log")
+            with Vertical(id="chat-info"):
+                yield Label("Session Info", classes="info-title")
+                yield Label("Mode", classes="info-label")
+                yield Label("agent: idle", classes="info-value", id="chat-mode-value")
+                yield Label("Provider", classes="info-label")
+                yield Label("auto", classes="info-value", id="chat-provider-value")
+                yield Label("Build", classes="info-label")
+                yield Label("auto", classes="info-value", id="chat-build-value")
+                yield Label("Tip", classes="info-label")
+                yield Label("/commands for actions", classes="info-value")
+
         # Agent section at the bottom
         with Vertical(id="agent-section"):
             with Horizontal(id="agent-header"):
@@ -924,7 +1015,6 @@ class ScholarDevClawApp(App[None]):
                     yield Button("Launch", id="launch-agent", variant="primary")
                     yield Button("Stop", id="stop-agent", variant="error")
                     yield AgentStatus(id="agent-status")
-            yield ChatLog(id="agent-chat")
 
         # Prompt bar
         with Horizontal(id="prompt-bar"):
@@ -1355,6 +1445,8 @@ class ScholarDevClawApp(App[None]):
                 env["SCHOLARDEVCLAW_API_PROVIDER"] = provider
             if model:
                 env["SCHOLARDEVCLAW_API_MODEL"] = model
+            if not env.get("OPENCLAW_TOKEN"):
+                env["OPENCLAW_TOKEN"] = "dev-local-token"
             self._agent_process = subprocess.Popen(
                 ["bun", "run", "start", "--repl"],
                 cwd=agent_dir,
@@ -1497,6 +1589,8 @@ class ScholarDevClawApp(App[None]):
         if not prompt:
             return
 
+        self._set_chat_mode(True)
+
         if prompt.startswith("/"):
             cmd = prompt[1:].strip().lower()
             event.input.value = ""
@@ -1611,6 +1705,7 @@ class ScholarDevClawApp(App[None]):
         self._active_run_request = None
         self._active_run_started_at = 0.0
         self._set_phase("idle")
+        self._set_chat_mode(False)
         self._set_status("New session started", "success")
 
     def action_export_log(self) -> None:
