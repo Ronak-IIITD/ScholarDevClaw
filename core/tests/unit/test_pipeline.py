@@ -58,6 +58,9 @@ def _install_fake_extractor(monkeypatch):
     module = ModuleType("scholardevclaw.research_intelligence.extractor")
 
     class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
         def get_spec(self, name: str):
             if name != "rmsnorm":
                 return None
@@ -79,7 +82,7 @@ def _install_fake_patch_generator(monkeypatch):
     module = ModuleType("scholardevclaw.patch_generation.generator")
 
     class FakeGenerator:
-        def __init__(self, repo_path: Path):
+        def __init__(self, repo_path: Path, llm_assistant=None):
             self.repo_path = repo_path
 
         def generate(self, mapping):
@@ -198,7 +201,7 @@ def test_run_integrate_dry_run_skips_generate_and_validate(monkeypatch, tmp_path
 
     pipeline = _pipeline_module()
 
-    def _fake_mapping_result(repo_path, spec_name, *, log_callback=None):
+    def _fake_mapping_result(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
         return {"algorithm": "RMSNorm", "targets": [{"file": "model.py"}]}, {"name": "RMSNorm"}
 
     def _should_not_be_called(*args, **kwargs):
@@ -454,6 +457,9 @@ def test_run_search_local_only(monkeypatch):
     module = ModuleType("scholardevclaw.research_intelligence.extractor")
 
     class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
         def search_by_keyword(self, query, max_results=10):
             return [{"name": "rmsnorm", "category": "normalization"}]
 
@@ -479,6 +485,9 @@ def test_run_search_exception(monkeypatch):
     module = ModuleType("scholardevclaw.research_intelligence.extractor")
 
     class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
         def search_by_keyword(self, query, max_results=10):
             raise Exception("Search failed")
 
@@ -501,6 +510,9 @@ def test_run_specs_simple(monkeypatch):
     module = ModuleType("scholardevclaw.research_intelligence.extractor")
 
     class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
         def list_available_specs(self):
             return ["rmsnorm", "flashattention"]
 
@@ -523,6 +535,9 @@ def test_run_specs_detailed(monkeypatch):
     module = ModuleType("scholardevclaw.research_intelligence.extractor")
 
     class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
         def list_available_specs(self):
             return ["rmsnorm"]
 
@@ -547,6 +562,9 @@ def test_run_specs_by_category(monkeypatch):
     module = ModuleType("scholardevclaw.research_intelligence.extractor")
 
     class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
         def list_available_specs(self):
             return ["rmsnorm"]
 
@@ -644,6 +662,9 @@ def test_run_generate_mapping_fails(monkeypatch, tmp_path):
     module = ModuleType("scholardevclaw.research_intelligence.extractor")
 
     class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
         def get_spec(self, name):
             return None
 
@@ -801,6 +822,9 @@ def test_run_integrate_no_suggestions_raises(monkeypatch, tmp_path):
     module2 = ModuleType("scholardevclaw.research_intelligence.extractor")
 
     class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
         def get_spec(self, name):
             return None
 
@@ -821,7 +845,7 @@ def test_run_integrate_generate_fails(monkeypatch, tmp_path):
     module = ModuleType("scholardevclaw.patch_generation.generator")
 
     class FakeGenerator:
-        def __init__(self, repo_path):
+        def __init__(self, repo_path, llm_assistant=None):
             pass
 
         def generate(self, mapping):
