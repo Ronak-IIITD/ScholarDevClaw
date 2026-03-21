@@ -2,7 +2,19 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-20
+**Last updated:** 2026-03-21
+
+### 2026-03-21 (Fix CI test failures — FakeExtractor/FakeGenerator mock signature mismatch)
+
+**Goal:** Fix failing CI tests caused by test mocks not matching updated production constructor signatures.
+
+**Summary:** The production `ResearchExtractor`, `PatchGenerator`, and `_build_mapping_result` were updated to accept an `llm_assistant` keyword argument, but the test fakes/mocks in `core/tests/unit/test_pipeline.py` were not updated accordingly, causing 3 test failures.
+
+**What changed:**
+- **`core/tests/unit/test_pipeline.py`**
+  - Added `__init__(self, llm_assistant=None)` to all 8 `FakeExtractor` classes
+  - Added `llm_assistant=None` param to both `FakeGenerator.__init__` methods
+  - Added `llm_assistant=None` param to `_fake_mapping_result` helper function
 
 ### 2026-03-20 (TUI Session Mode Upgrade — Full Chat Workspace + OPENCLAW noise suppression)
 
