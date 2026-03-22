@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -326,9 +327,21 @@ class TestLog:
 # =========================================================================
 
 
-@pytest.mark.skip(reason="Platform-specific permission test")
-def test_run_preflight_not_writable(tmp_path):
-    pass
+def test_run_preflight_not_writable(monkeypatch, tmp_path):
+    pipeline = _pipeline_module()
+    real_access = os.access
+
+    def fake_access(path, mode):
+        if mode == os.W_OK and str(path) == str(tmp_path):
+            return False
+        return real_access(path, mode)
+
+    monkeypatch.setattr(pipeline.os, "access", fake_access)
+    result = pipeline.run_preflight(str(tmp_path))
+
+    assert result.ok is False
+    assert "Repository directory is not writable" in result.payload["warnings"]
+    assert "not writable" in result.error
 
 
 def test_run_preflight_no_python_files(tmp_path):
@@ -476,9 +489,45 @@ def test_run_search_local_only(monkeypatch):
     assert result.payload["web"] == {}
 
 
-@pytest.mark.skip(reason="Requires ResearchQuery import mocking - complex")
 def test_run_search_with_arxiv(monkeypatch):
-    pass
+    module = ModuleType("scholardevclaw.research_intelligence.extractor")
+
+    class FakePaper:
+        def __init__(self):
+            self.title = "RMSNorm Paper"
+            self.authors = ["Author A"]
+            self.categories = ["cs.LG"]
+            self.arxiv_id = "1910.07467"
+            self.pdf_url = "https://arxiv.org/pdf/1910.07467"
+            self.published = "2019-10-16"
+            self.abstract = "Root mean square layer normalization."
+
+    class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
+        def search_by_keyword(self, query, max_results=10):
+            return [{"name": "rmsnorm", "category": "normalization"}]
+
+        async def search_arxiv(self, query):
+            return [FakePaper()]
+
+    class FakeResearchQuery:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    module.ResearchExtractor = FakeExtractor
+    module.ResearchQuery = FakeResearchQuery
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    pipeline = _pipeline_module()
+    monkeypatch.setattr(pipeline, "_create_llm_assistant", lambda: None)
+    result = pipeline.run_search("rmsnorm", include_arxiv=True)
+
+    assert result.ok is True
+    assert len(result.payload["arxiv"]) == 1
+    assert result.payload["arxiv"][0]["title"] == "RMSNorm Paper"
+    assert result.payload["arxiv"][0]["arxiv_id"] == "1910.07467"
 
 
 def test_run_search_exception(monkeypatch):
@@ -1042,14 +1091,55 @@ def test_run_multi_integrate_hooks(monkeypatch, tmp_path):
 # =========================================================================
 
 
-@pytest.mark.skip(reason="Multi-repo modules require complex import mocking")
 def test_run_multi_repo_analyze_success(monkeypatch, tmp_path):
-    pass
+    pipeline = _pipeline_module()
+
+    mock_status = SimpleNamespace(value="ready")
+
+    class FakeProfile:
+        def __init__(self, name, status):
+            self.name = name
+            self.status = status
+
+        def to_dict(self):
+            return {"name": self.name, "status": self.status.value}
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            pass
+
+        def add_repo(self, rp):
+            pass
+
+        def analyze_all(self, log_callback=None):
+            return [FakeProfile("repo_a", mock_status)]
+
+    fake_module = ModuleType("scholardevclaw.multi_repo.manager")
+    fake_module.MultiRepoManager = FakeManager
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.manager", fake_module)
+
+    result = pipeline.run_multi_repo_analyze([str(tmp_path)])
+
+    assert result.ok is True
+    assert result.payload["total"] == 1
+    assert result.payload["ready"] == 1
 
 
-@pytest.mark.skip(reason="Multi-repo modules require complex import mocking")
 def test_run_multi_repo_analyze_exception(monkeypatch):
-    pass
+    pipeline = _pipeline_module()
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            raise RuntimeError("workspace corrupted")
+
+    fake_module = ModuleType("scholardevclaw.multi_repo.manager")
+    fake_module.MultiRepoManager = FakeManager
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.manager", fake_module)
+
+    result = pipeline.run_multi_repo_analyze(["/tmp/fake"])
+
+    assert result.ok is False
+    assert "workspace corrupted" in result.error
 
 
 # =========================================================================
@@ -1057,14 +1147,71 @@ def test_run_multi_repo_analyze_exception(monkeypatch):
 # =========================================================================
 
 
-@pytest.mark.skip(reason="Multi-repo modules require complex import mocking")
 def test_run_multi_repo_compare_not_enough_repos(monkeypatch):
-    pass
+    pipeline = _pipeline_module()
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_ready_profiles(self):
+            return []
+
+    fake_mgr = ModuleType("scholardevclaw.multi_repo.manager")
+    fake_mgr.MultiRepoManager = FakeManager
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.manager", fake_mgr)
+
+    fake_analysis = ModuleType("scholardevclaw.multi_repo.analysis")
+    fake_analysis.CrossRepoAnalyzer = type("CrossRepoAnalyzer", (), {})
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.analysis", fake_analysis)
+
+    result = pipeline.run_multi_repo_compare()
+
+    assert result.ok is False
+    assert "at least 2" in result.error
 
 
-@pytest.mark.skip(reason="Multi-repo modules require complex import mocking")
 def test_run_multi_repo_compare_success(monkeypatch):
-    pass
+    pipeline = _pipeline_module()
+
+    class FakeResult:
+        summary = "All repos share Python"
+
+        def to_dict(self):
+            return {"shared_languages": ["Python"]}
+
+    class FakeAnalyzer:
+        def __init__(self, profiles):
+            pass
+
+        def compare(self):
+            return FakeResult()
+
+        def spec_relevance_matrix(self):
+            return {}
+
+    class FakeProfile:
+        pass
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_ready_profiles(self):
+            return [FakeProfile(), FakeProfile()]
+
+    fake_mgr = ModuleType("scholardevclaw.multi_repo.manager")
+    fake_mgr.MultiRepoManager = FakeManager
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.manager", fake_mgr)
+
+    fake_analysis = ModuleType("scholardevclaw.multi_repo.analysis")
+    fake_analysis.CrossRepoAnalyzer = FakeAnalyzer
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.analysis", fake_analysis)
+
+    result = pipeline.run_multi_repo_compare()
+
+    assert result.ok is True
+    assert "shared_languages" in result.payload
 
 
 # =========================================================================
@@ -1072,16 +1219,108 @@ def test_run_multi_repo_compare_success(monkeypatch):
 # =========================================================================
 
 
-@pytest.mark.skip(reason="Multi-repo modules require complex import mocking")
 def test_run_multi_repo_transfer_not_enough_repos(monkeypatch):
-    pass
+    pipeline = _pipeline_module()
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_ready_profiles(self):
+            return []
+
+    fake_mgr = ModuleType("scholardevclaw.multi_repo.manager")
+    fake_mgr.MultiRepoManager = FakeManager
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.manager", fake_mgr)
+
+    fake_transfer = ModuleType("scholardevclaw.multi_repo.transfer")
+    fake_transfer.KnowledgeTransferEngine = type("KnowledgeTransferEngine", (), {})
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.transfer", fake_transfer)
+
+    result = pipeline.run_multi_repo_transfer()
+
+    assert result.ok is False
+    assert "at least 2" in result.error
 
 
-@pytest.mark.skip(reason="Multi-repo modules require complex import mocking")
 def test_run_multi_repo_transfer_success(monkeypatch):
-    pass
+    pipeline = _pipeline_module()
+
+    class FakePlan:
+        summary = "Transfer RMSNorm from repo_a to repo_b"
+        opportunities = [{"name": "rmsnorm"}]
+
+        def to_dict(self):
+            return {"summary": self.summary, "opportunities": self.opportunities}
+
+    class FakeEngine:
+        def __init__(self, profiles):
+            pass
+
+        def discover(self):
+            return [FakePlan()]
+
+    class FakeProfile:
+        pass
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_ready_profiles(self):
+            return [FakeProfile(), FakeProfile()]
+
+    fake_mgr = ModuleType("scholardevclaw.multi_repo.manager")
+    fake_mgr.MultiRepoManager = FakeManager
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.manager", fake_mgr)
+
+    fake_transfer = ModuleType("scholardevclaw.multi_repo.transfer")
+    fake_transfer.KnowledgeTransferEngine = FakeEngine
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.transfer", fake_transfer)
+
+    result = pipeline.run_multi_repo_transfer()
+
+    assert result.ok is True
+    assert result.payload["plan_count"] == 1
+    assert result.payload["total_opportunities"] == 1
 
 
-@pytest.mark.skip(reason="Multi-repo modules require complex import mocking")
 def test_run_multi_repo_transfer_specific_pair(monkeypatch):
-    pass
+    pipeline = _pipeline_module()
+
+    class FakePlan:
+        summary = "Transfer from A to B"
+        opportunities = [{"name": "swiglu"}]
+
+        def to_dict(self):
+            return {"summary": self.summary, "opportunities": self.opportunities}
+
+    class FakeEngine:
+        def __init__(self, profiles):
+            pass
+
+        def discover_for_pair(self, src, tgt):
+            return FakePlan()
+
+    class FakeProfile:
+        pass
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_ready_profiles(self):
+            return [FakeProfile(), FakeProfile()]
+
+    fake_mgr = ModuleType("scholardevclaw.multi_repo.manager")
+    fake_mgr.MultiRepoManager = FakeManager
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.manager", fake_mgr)
+
+    fake_transfer = ModuleType("scholardevclaw.multi_repo.transfer")
+    fake_transfer.KnowledgeTransferEngine = FakeEngine
+    monkeypatch.setitem(sys.modules, "scholardevclaw.multi_repo.transfer", fake_transfer)
+
+    result = pipeline.run_multi_repo_transfer(source_id="repo_a", target_id="repo_b")
+
+    assert result.ok is True
+    assert result.payload["plan_count"] == 1
