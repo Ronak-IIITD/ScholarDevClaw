@@ -56,7 +56,7 @@ class PhaseTracker(Static):
     PhaseTracker .progress-fill {
         height: 100%;
         background: $accent;
-        transition: width 0.3s ease;
+        transition: width 0.3s linear;
     }
 
     PhaseTracker .phase-label {

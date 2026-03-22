@@ -202,7 +202,7 @@ class ScholarDevClawApp(App[None]):
     #phase-fill {
         height: 100%;
         background: $accent;
-        transition: width 0.3s ease;
+        transition: width 0.3s linear;
     }
 
     /* ---- Zone 2: Contextual config ---- */
@@ -548,7 +548,7 @@ class ScholarDevClawApp(App[None]):
     PhaseTracker .progress-fill {
         height: 100%;
         background: $accent;
-        transition: width 0.3s ease;
+        transition: width 0.3s linear;
     }
 
     PhaseTracker .phase-label {
