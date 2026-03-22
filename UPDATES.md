@@ -2,7 +2,21 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-21
+**Last updated:** 2026-03-22
+
+### 2026-03-22 (Implement 10 skipped tests — preflight, arxiv search, multi-repo)
+
+**Goal:** Reduce skipped test count and improve CI coverage by implementing previously stubbed-out tests.
+
+**Summary:** Implemented 10 of 11 skipped tests in `core/tests/unit/test_pipeline.py` by mocking dependencies (MultiRepoManager, CrossRepoAnalyzer, KnowledgeTransferEngine, ResearchQuery, os.access). Test count went from 1253 passed/10 skipped to 1262 passed/1 skipped.
+
+**What changed:**
+- **`core/tests/unit/test_pipeline.py`**
+  - `test_run_preflight_not_writable`: mocks `os.access` to verify non-writable directory handling
+  - `test_run_search_with_arxiv`: mocks `search_arxiv` async method and `ResearchQuery`
+  - `test_run_multi_repo_analyze_success/exception`: mocks `MultiRepoManager`
+  - `test_run_multi_repo_compare_not_enough_repos/success`: mocks `CrossRepoAnalyzer`
+  - `test_run_multi_repo_transfer_not_enough_repos/success/specific_pair`: mocks `KnowledgeTransferEngine`
 
 ### 2026-03-21 (Fix CI test failures — FakeExtractor/FakeGenerator mock signature mismatch)
 
