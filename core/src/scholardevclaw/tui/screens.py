@@ -25,11 +25,10 @@ maps them onto your codebase, generates validated patches, and reports outcomes.
 | `ctrl+r` | run selected workflow |
 | `ctrl+k` | command palette |
 | `ctrl+h` | keyboard shortcuts |
+| `ctrl+o` | toggle config bar |
 | `ctrl+l` | clear logs |
-| `ctrl+a` | quick analyze |
-| `ctrl+s` | quick suggest |
-| `ctrl+i` | quick integrate |
-| `Esc` | Stop agent / close overlay |
+| `ctrl+n` | new session |
+| `Esc` | stop agent / close overlay |
 
 ## Workflows
 
@@ -40,6 +39,9 @@ maps them onto your codebase, generates validated patches, and reports outcomes.
 - **Generate** — Create code patches using concrete-syntax-tree transforms
 - **Validate** — Run tests and benchmarks to verify patches
 - **Integrate** — End-to-end: analyze → suggest → map → generate → validate
+
+You can also type natural language in the prompt bar:
+`analyze ./my-project` or `apply rmsnorm to /path/to/repo`
 
 ---
 
@@ -57,42 +59,17 @@ HELP_MD = """
 | `ctrl+r` | run selected workflow |
 | `ctrl+k` | open command palette |
 | `ctrl+h` | show this help |
+| `ctrl+o` | toggle config bar |
+| `ctrl+l` | clear logs |
 | `ctrl+n` | new session |
 | `ctrl+e` | export logs |
-| `ctrl+p` | focus prompt |
-| `ctrl+b` | focus sidebar |
-| `ctrl+o` | focus output |
-| `ctrl+j` | toggle multiline prompt |
-| `enter prompt` | enter full chat mode |
 | `esc` | stop agent / close overlay |
 | `esc` x2 | stop running agent |
-
-## Quick Actions
-| Key | Action |
-|-----|--------|
-| `ctrl+a` | quick analyze |
-| `ctrl+s` | quick suggest |
-| `ctrl+i` | quick integrate |
-
-## Logs
-| Key | Action |
-|-----|--------|
-| `ctrl+l` | clear logs |
-
-## Navigation
-| Key | Action |
-|-----|--------|
-| `up/down` | command palette selection |
-| `tab` | cycle focus forward |
-| `shift+tab` | cycle focus backward |
-| `up/down` | navigate sidebar items |
-| `enter` | activate focused item |
 
 ## Prompt Bar
 | Key | Action |
 |-----|--------|
 | `enter` | submit prompt |
-| `ctrl+j` | toggle multiline mode |
 | `up` | previous command in history |
 | `down` | next command in history |
 

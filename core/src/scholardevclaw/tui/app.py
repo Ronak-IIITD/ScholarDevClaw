@@ -1,8 +1,11 @@
-"""ScholarDevClaw TUI — enhanced terminal interface.
+"""ScholarDevClaw TUI — clean terminal interface.
 
-Modern terminal UI inspired by Claude Code and OpenCode, built on Textual.
-Features: sidebar navigation, chat-style logs, command palette, phase
-progress tracker, help overlay, run history, and agent integration.
+Three-zone layout inspired by Claude Code:
+  1. Main output area (top) — logs, results, chat
+  2. Contextual config bar (middle) — action-specific fields
+  3. Prompt bar (bottom) — command input with status
+
+Navigation: ctrl+k command palette, ctrl+h help, type /commands.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from typing import Any
 
 from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import (
     Button,
@@ -46,11 +49,9 @@ from .screens import CommandPalette, HelpOverlay, WelcomeScreen
 from .widgets import (
     AgentStatus,
     ChatLog,
-    HistoryPane,
     LogView,
     PhaseTracker,
     PromptInput,
-    Sidebar,
     StatusBar,
 )
 
@@ -112,13 +113,13 @@ class ScholarDevClawApp(App[None]):
 
     PHASES = [
         ("idle", "Ready", 0),
-        ("validating", "Validating input...", 0.05),
-        ("analyzing", "Analyzing repository...", 0.2),
-        ("research", "Fetching research...", 0.4),
-        ("mapping", "Mapping patterns...", 0.55),
-        ("generating", "Generating patches...", 0.7),
-        ("validating_patches", "Validating patches...", 0.85),
-        ("complete", "Complete", 1.0),
+        ("validating", "Validating...", 0.05),
+        ("analyzing", "Analyzing...", 0.2),
+        ("research", "Researching...", 0.4),
+        ("mapping", "Mapping...", 0.55),
+        ("generating", "Generating...", 0.7),
+        ("validating_patches", "Verifying...", 0.85),
+        ("complete", "Done", 1.0),
     ]
 
     AVAILABLE_SPECS = [
@@ -134,148 +135,248 @@ class ScholarDevClawApp(App[None]):
     ]
 
     # -----------------------------------------------------------------------
-    # CSS Theme — Modern Dark with gradient accents
+    # CSS — Catppuccin Mocha, clean 3-zone layout
     # -----------------------------------------------------------------------
 
     CSS = """
-    /* ---- Color tokens ---- */
+    /* ---- Color tokens (Catppuccin Mocha) ---- */
 
-    $surface: #11111b;
+    $surface: #1e1e2e;
     $surface-dark: #181825;
-    $panel: #1e1e2e;
+    $panel: #11111b;
     $border: #313244;
+    $border-light: #45475a;
     $text: #cdd6f4;
-    $text-muted: #a6adc8;
+    $text-dim: #a6adc8;
+    $text-muted: #6c7086;
     $accent: #89b4fa;
-    $accent-hover: #b4befe;
-    $button: #313244;
-    $button-hover: #45475a;
+    $accent-dim: #45475a;
     $success: #a6e3a1;
     $error: #f38ba8;
     $warning: #f9e2af;
-    $text-inverse: #11111b;
-    $header: #181825;
+    $text-inv: #1e1e2e;
 
-    /* ---- Base ---- */
+    /* ---- Screen ---- */
+
     Screen {
         layout: vertical;
-        background: $surface;
+        background: $panel;
         color: $text;
     }
 
     Header {
-        background: $header;
-        color: $text;
+        background: $surface-dark;
+        color: $text-dim;
         dock: top;
-        height: 3;
+        height: 1;
         text-align: center;
         border-bottom: solid $border;
     }
 
-    /* ---- Top-level layout ---- */
+    /* ---- Zone 1: Main output ---- */
 
-    #app-body {
+    #main-area {
         width: 100%;
         height: 1fr;
-        layout: horizontal;
-    }
-
-    #content-area {
-        width: 1fr;
-        height: 100%;
         layout: vertical;
     }
 
-    #top-help-bar {
+    #output {
+        width: 100%;
+        height: 1fr;
+        background: $panel;
+        padding: 0;
+    }
+
+    /* ---- Phase bar (thin, between output and config) ---- */
+
+    #phase-bar {
         width: 100%;
         height: 1;
         background: $surface-dark;
-        color: $text-muted;
-        padding: 0 1;
+        border-top: solid $border;
         border-bottom: solid $border;
+        padding: 0 1;
     }
 
-    /* ---- Main content split ---- */
-
-    #main-split {
-        width: 100%;
-        height: 1fr;
-        layout: horizontal;
-    }
-
-    /* ---- Left: configuration panel ---- */
-
-    #config-panel {
-        width: 40;
-        min-width: 34;
-        max-width: 46;
+    #phase-fill {
         height: 100%;
-        background: $panel;
-        border-right: tall $border;
+        background: $accent;
+        transition: width 0.3s ease;
+    }
+
+    /* ---- Zone 2: Contextual config ---- */
+
+    #config-bar {
+        width: 100%;
+        height: auto;
+        max-height: 12;
+        background: $surface;
+        border-top: solid $border;
         padding: 1 2;
         overflow-y: auto;
     }
 
-    #config-panel .config-section-title {
-        color: $accent;
-        text-style: bold;
-        margin-top: 1;
-        margin-bottom: 1;
+    #config-bar.collapsed {
+        height: 0;
+        max-height: 0;
+        padding: 0;
+        border: none;
     }
 
-    #config-panel .panel-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
+    #config-fields {
         width: 100%;
-        text-align: center;
-        height: 1;
+        height: auto;
+        layout: horizontal;
     }
 
-    #config-panel .field-label {
+    .config-group {
+        width: auto;
+        height: auto;
+        margin-right: 3;
+    }
+
+    .config-label {
         color: $text-muted;
-        margin-top: 1;
+        margin-bottom: 0;
         height: 1;
+        text-style: bold;
     }
 
-    #config-panel .spacer {
-        height: 1;
-    }
-
-    /* ---- Right: output panel ---- */
-
-    #output-panel {
-        width: 1fr;
-        height: 100%;
-        background: $panel;
-        layout: vertical;
+    #config-bar Input {
+        background: $surface-dark;
+        color: $text;
+        border: solid $border;
         padding: 0 1;
-        border-left: solid $border;
+        margin-bottom: 0;
+        height: 1;
+        width: 28;
     }
 
-    #output-panel .output-header {
+    #config-bar Input:focus {
+        border: solid $accent;
+    }
+
+    #config-bar Select {
+        background: $surface-dark;
+        color: $text;
+        border: solid $border;
+        margin-bottom: 0;
+        height: 1;
+        width: 24;
+    }
+
+    #config-bar Select:focus {
+        border: solid $accent;
+    }
+
+    #config-bar Checkbox {
+        color: $text-dim;
+        margin-right: 2;
+        height: 1;
+    }
+
+    #config-actions {
+        width: auto;
+        height: auto;
+        margin-left: 2;
+    }
+
+    #config-actions Button {
+        height: 1;
+        min-width: 8;
+        margin-right: 1;
+        border: none;
+    }
+
+    /* ---- Zone 3: Prompt bar ---- */
+
+    #prompt-zone {
+        width: 100%;
+        height: auto;
+        background: $surface-dark;
+        border-top: thick $accent-dim;
+        dock: bottom;
+    }
+
+    #prompt-row {
         width: 100%;
         height: 1;
         padding: 0 1;
-        background: $surface-dark;
-        border-bottom: solid $border;
-        color: $accent;
-        text-style: bold;
-        margin-bottom: 1;
+        layout: horizontal;
     }
 
-    /* ---- Bottom: agent / prompt bar ---- */
+    #prompt-prefix {
+        width: 3;
+        height: 1;
+        color: $accent;
+        text-style: bold;
+        content-align: right middle;
+    }
+
+    #prompt-input {
+        width: 1fr;
+        height: 1;
+        background: transparent;
+        color: $text;
+        border: none;
+        padding: 0;
+    }
+
+    #prompt-meta {
+        width: auto;
+        height: 1;
+        padding: 0 1;
+    }
+
+    #prompt-meta .chip {
+        color: $text-muted;
+        margin-left: 1;
+    }
+
+    /* ---- Status bar ---- */
+
+    #status-bar {
+        width: 100%;
+        height: 1;
+        background: $panel;
+        border-top: solid $border;
+        padding: 0 1;
+        layout: horizontal;
+        dock: bottom;
+    }
+
+    #status-bar .s-left {
+        width: 1fr;
+        color: $text-muted;
+    }
+
+    #status-bar .s-center {
+        width: 1fr;
+        text-align: center;
+        color: $text-muted;
+    }
+
+    #status-bar .s-right {
+        width: 1fr;
+        text-align: right;
+        color: $text-muted;
+    }
+
+    /* ---- Chat overlay (agent mode) ---- */
 
     #chat-workspace {
         display: none;
         width: 100%;
         height: 0;
         layout: horizontal;
-        background: $surface;
-        border-top: solid $border;
     }
 
-    Screen.chat-mode #app-body {
+    Screen.chat-mode #main-area {
+        display: none;
+    }
+
+    Screen.chat-mode #config-bar {
         display: none;
     }
 
@@ -287,251 +388,233 @@ class ScholarDevClawApp(App[None]):
     #chat-main {
         width: 1fr;
         height: 100%;
+        padding: 0 1;
+    }
+
+    #chat-sidebar {
+        width: 28;
+        min-width: 24;
+        max-width: 34;
+        height: 100%;
+        background: $surface;
+        border-left: tall $border;
         padding: 1;
     }
 
-    #chat-main-title {
-        height: 1;
+    #chat-sidebar .cs-title {
         color: $accent;
         text-style: bold;
         margin-bottom: 1;
     }
 
-    #chat-main-log {
+    #chat-sidebar .cs-label {
+        color: $text-muted;
+        margin-top: 1;
+    }
+
+    #chat-sidebar .cs-value {
+        color: $text-dim;
+        margin-bottom: 0;
+    }
+
+    /* ---- Log styling ---- */
+
+    LogView {
         width: 100%;
         height: 1fr;
-    }
-
-    #chat-info {
-        width: 34;
-        min-width: 28;
-        max-width: 40;
-        height: 100%;
         background: $panel;
-        border-left: tall $border;
-        padding: 1 2;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+        padding: 0 1;
     }
 
-    #chat-info .info-title {
-        color: $accent;
-        text-style: bold;
-        margin-bottom: 1;
-    }
+    LogEntry { width: 100%; height: auto; padding: 0 1; }
+    LogEntry.info { color: $text; }
+    LogEntry.success { color: $success; }
+    LogEntry.error { color: $error; }
+    LogEntry.warning { color: $warning; }
+    LogEntry.accent { color: $accent; }
+    LogEntry.dim { color: $text-muted; }
+    LogEntry.system { color: $text-muted; text-style: italic; }
 
-    #chat-info .info-label {
-        color: $text-muted;
-        margin-top: 1;
-    }
+    /* ---- Chat log ---- */
 
-    #chat-info .info-value {
-        color: $text;
-        margin-bottom: 1;
-    }
-
-    #agent-section {
+    ChatLog {
         width: 100%;
-        height: 3;
-        min-height: 3;
-        max-height: 3;
-        dock: bottom;
+        height: 1fr;
         background: $panel;
-        border-top: tall $border;
-        layout: vertical;
+        scrollbar-size: 1 1;
+        padding: 0 1;
     }
 
-    #agent-header {
+    ChatLog .chat-entry {
         width: 100%;
-        height: 2;
+        margin-bottom: 1;
         padding: 0 1;
+        border-left: thick $border;
         background: $surface-dark;
-        border-bottom: solid $border;
-        layout: horizontal;
-        content-align: left middle;
     }
 
-    #agent-header .agent-title {
-        width: 1fr;
-        color: $accent;
-        text-style: bold;
-    }
+    ChatLog .chat-entry.user { border-left: thick $accent; }
+    ChatLog .chat-entry.agent { border-left: thick $success; }
+    ChatLog .chat-entry.system { border-left: thick $warning; }
 
-    #agent-controls {
-        width: auto;
-        layout: horizontal;
-        height: 1;
-    }
-
-    #prompt-bar {
+    ChatLog Markdown {
         width: 100%;
-        height: 3;
-        background: $surface-dark;
-        border-top: solid $border;
-        padding: 0 1;
-        layout: horizontal;
+        height: auto;
     }
 
-    #prompt-input {
-        width: 1fr;
-        background: $surface;
-        color: $accent;
-        border: solid $border;
-    }
+    /* ---- Status helpers ---- */
 
-    #build-chip {
-        width: auto;
-        background: $panel;
-        color: $accent;
-        border: solid $border;
-        padding: 0 1;
-        margin-left: 1;
-    }
+    .s-error { color: $error; }
+    .s-success { color: $success; }
+    .s-warning { color: $warning; }
+    .s-accent { color: $accent; }
 
-    #provider-chip {
-        width: auto;
-        background: $panel;
-        color: $text-muted;
-        border: solid $border;
-        padding: 0 1;
-        margin-left: 1;
-    }
+    /* ---- Shared widget defaults ---- */
 
-    #prompt-input:focus {
-        border: solid $accent;
-    }
-
-    #prompt-input.multiline {
-        height: 5;
-    }
-
-    .panel-section-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-        margin-top: 1;
-    }
-
-    Input {
-        background: $surface-dark;
-        color: $text;
-        border: solid $border;
-        padding: 0 1;
-        margin-bottom: 1;
-    }
-
-    Input:focus {
-        border: solid $accent;
-    }
-
-    Input.invalid {
-        border: solid $error;
-    }
-
-    Select {
-        background: $surface-dark;
-        color: $text;
-        border: solid $border;
-        margin-bottom: 1;
-    }
-
-    Select:focus {
-        border: solid $accent;
-    }
-
-    Checkbox {
-        color: $text-muted;
-        margin-right: 2;
-    }
-
-    Checkbox:focus {
-        color: $accent;
-    }
+    Label { color: $text-dim; }
 
     Button {
         border: none;
-        background: $button;
+        background: $border;
         color: $text;
         padding: 0 1;
-        min-width: 12;
-        margin-right: 1;
+        min-width: 8;
     }
 
     Button:hover {
-        background: $button-hover;
+        background: $border-light;
     }
 
     Button.-primary {
         background: $accent;
-        color: $text-inverse;
+        color: $text-inv;
         text-style: bold;
     }
 
     Button.-primary:hover {
-        background: $accent-hover;
+        background: #b4befe;
     }
 
     Button.-success {
         background: $success;
-        color: $text-inverse;
+        color: $text-inv;
         text-style: bold;
     }
 
     Button.-error {
         background: $error;
-        color: $text-inverse;
+        color: $text-inv;
         text-style: bold;
     }
 
     Button:disabled {
-        opacity: 0.4;
+        opacity: 0.35;
     }
 
-    Label {
+    /* ---- Agent status dot ---- */
+
+    AgentStatus {
+        width: auto;
+        height: 1;
+        padding: 0 1;
+    }
+
+    AgentStatus .dot-offline { color: $text-muted; }
+    AgentStatus .dot-online { color: $success; }
+    AgentStatus .dot-error { color: $error; }
+
+    /* ---- PhaseTracker ---- */
+
+    PhaseTracker {
+        width: 100%;
+        height: 1;
+        background: $surface-dark;
+        padding: 0 1;
+    }
+
+    PhaseTracker .phase-bar {
+        width: 100%;
+        height: 1;
+    }
+
+    PhaseTracker .progress-track {
+        width: 100%;
+        height: 1;
+        background: $border;
+    }
+
+    PhaseTracker .progress-fill {
+        height: 100%;
+        background: $accent;
+        transition: width 0.3s ease;
+    }
+
+    PhaseTracker .phase-label {
+        width: 100%;
+        height: 1;
+        text-align: center;
         color: $text-muted;
     }
 
-    Pretty {
-        background: transparent;
+    /* ---- HistoryPane ---- */
+
+    HistoryPane {
+        width: 100%;
+        height: auto;
+        max-height: 10;
+        background: $panel;
+        scrollbar-size: 1 1;
+        margin-top: 1;
+    }
+
+    HistoryPane .history-entry {
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        color: $text-muted;
+    }
+
+    HistoryPane .history-entry:hover {
+        background: $accent 15%;
         color: $text;
     }
 
-    TextArea {
-        background: $surface-dark;
-        color: $text-muted;
+    HistoryPane .history-entry.success { border-left: thick $success; }
+    HistoryPane .history-entry.failed { border-left: thick $error; }
+
+    /* ---- PromptInput ---- */
+
+    PromptInput {
+        background: transparent;
+        color: $text;
         border: none;
     }
 
-    TextArea:focus {
-        border: solid $border;
+    PromptInput:focus {
+        border: none;
     }
 
-    /* ---- Status / result classes ---- */
-
-    .status-error { color: $error; }
-    .status-success { color: $success; }
-    .status-warning { color: $warning; }
-    .status-info { color: $text-muted; }
+    PromptInput.multiline {
+        height: 4;
+    }
     """
 
     # -----------------------------------------------------------------------
-    # Key bindings
+    # Key bindings — minimal, memorable
     # -----------------------------------------------------------------------
 
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+r", "run_selected", "Run"),
-        ("ctrl+k", "command_palette", "Command Palette"),
+        ("ctrl+k", "command_palette", "Commands"),
         ("ctrl+h", "help", "Help"),
-        ("ctrl+p", "focus_prompt", "Focus Prompt"),
-        ("ctrl+b", "focus_sidebar", "Focus Sidebar"),
-        ("ctrl+o", "focus_output", "Focus Output"),
-        ("ctrl+j", "toggle_multiline_prompt", "Multiline Prompt"),
-        ("escape", "handle_escape", "Stop/Back"),
-        ("ctrl+l", "clear_logs", "Clear Logs"),
-        ("ctrl+a", "quick_action_analyze", "Quick Analyze"),
-        ("ctrl+s", "quick_action_suggest", "Quick Suggest"),
-        ("ctrl+i", "quick_action_integrate", "Quick Integrate"),
-        ("ctrl+n", "new_session", "New Session"),
-        ("ctrl+e", "export_log", "Export Log"),
+        ("ctrl+l", "clear_logs", "Clear"),
+        ("ctrl+n", "new_session", "New"),
+        ("ctrl+e", "export_log", "Export"),
+        ("ctrl+o", "toggle_config", "Config"),
+        ("escape", "handle_escape", "Back"),
     ]
 
     action_mode_options = [
@@ -565,6 +648,7 @@ class ScholarDevClawApp(App[None]):
         self._agent_running = False
         self._current_phase = "idle"
         self._chat_mode = False
+        self._config_visible = True
         self._command_history: list[str] = []
         self._history_index = -1
         self._workflow_steps = {
@@ -779,20 +863,6 @@ class ScholarDevClawApp(App[None]):
         else:
             os.environ["SCHOLARDEVCLAW_API_MODEL"] = prev_model
 
-    def _mark_sidebar_state(self, action: str, state: str) -> None:
-        try:
-            sidebar = self.query_one(Sidebar)
-            sidebar.clear_item_states()
-            sidebar.set_item_state(action, state)
-        except Exception:
-            pass
-
-    def _set_status_summary(self, text: str) -> None:
-        try:
-            self.query_one(StatusBar).set_status(text, "info")
-        except Exception:
-            pass
-
     def _refresh_provider_chip(self) -> None:
         provider, model = self._resolve_model_provider()
 
@@ -805,23 +875,20 @@ class ScholarDevClawApp(App[None]):
             return mapping.get(name, "")
 
         try:
-            build_chip = self.query_one("#build-chip", Label)
-            provider_chip = self.query_one("#provider-chip", Label)
-            chat_build = self.query_one("#chat-build-value", Label)
+            chip = self.query_one("#provider-chip", Label)
             chat_provider = self.query_one("#chat-provider-value", Label)
+            chat_build = self.query_one("#chat-build-value", Label)
             if provider and model:
-                build_chip.update(f"build {model}")
-                chat_build.update(model)
                 key_env = _env_for_provider(provider)
                 has_key = bool(key_env and os.environ.get(key_env, "").strip())
-                provider_text = f"{provider} ({'connected' if has_key else 'no key'})"
-                provider_chip.update(f"provider {provider_text}")
-                chat_provider.update(provider_text)
+                status = "connected" if has_key else "no key"
+                chip.update(f"{provider}:{model} ({status})")
+                chat_provider.update(f"{provider} ({status})")
+                chat_build.update(model)
             else:
-                build_chip.update("build auto")
-                provider_chip.update("provider auto")
-                chat_build.update("auto")
+                chip.update("auto")
                 chat_provider.update("auto")
+                chat_build.update("auto")
         except Exception:
             pass
 
@@ -861,172 +928,144 @@ class ScholarDevClawApp(App[None]):
         return command, ctx
 
     # -----------------------------------------------------------------------
-    # Compose — layout definition
+    # Compose — clean 3-zone layout
     # -----------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
 
-        with Horizontal(id="app-body"):
-            # Left sidebar
-            yield Sidebar(id="sidebar")
+        # -- Zone 1: Main output area --
+        with Vertical(id="main-area"):
+            yield PhaseTracker(id="phase-tracker")
+            yield LogView(id="log-view")
 
-            # Center content
-            with Vertical(id="content-area"):
-                yield Label(
-                    "keys: ctrl+k commands | ctrl+h help | ctrl+p prompt | ctrl+b sidebar | ctrl+o output",
-                    id="top-help-bar",
-                )
-                # Phase tracker
-                yield PhaseTracker(id="phase-tracker")
-
-                # Main split: config + output
-                with Horizontal(id="main-split"):
-                    # Left: configuration panel
-                    with VerticalScroll(id="config-panel"):
-                        yield Label("Workflow", classes="panel-title")
-                        yield Select(
-                            self.action_mode_options,
-                            value=self._saved_context.get(
-                                "last_action",
-                                self._config.get("default_action", "analyze"),
-                            ),
-                            id="action",
-                        )
-
-                        yield Label("Repository", classes="config-section-title")
-                        yield Label("Repository Path", classes="field-label")
-                        yield Input(
-                            value=self._saved_context.get(
-                                "last_repo",
-                                self._config.get("default_repo", str(Path.cwd())),
-                            ),
-                            placeholder="/path/to/repository",
-                            id="repo-path",
-                        )
-
-                        yield Label("Search", classes="config-section-title")
-                        yield Label("Search Query", classes="field-label")
-                        yield Input(
-                            value=self._saved_context.get("last_query", "layer normalization"),
-                            placeholder="Search query",
-                            id="query",
-                        )
-
-                        with Horizontal(classes="spacer"):
-                            yield Checkbox("arXiv", value=False, id="search-arxiv")
-                            yield Checkbox("Web", value=False, id="search-web")
-
-                        yield Label("Language", classes="field-label")
-                        yield Input(
-                            value=self._saved_context.get(
-                                "last_language",
-                                self._config.get("default_language", "python"),
-                            ),
-                            placeholder="Language",
-                            id="search-language",
-                        )
-
-                        yield Label("Max Results", classes="field-label")
-                        yield Input(
-                            value=str(self._config.get("max_results", 10)),
-                            placeholder="Max",
-                            id="search-max-results",
-                        )
-
-                        yield Label("Pipeline", classes="config-section-title")
-                        yield Label("Spec Name", classes="field-label")
-                        yield Input(
-                            value=self._saved_context.get(
-                                "last_spec",
-                                self._config.get("default_spec", "rmsnorm"),
-                            ),
-                            placeholder="Spec name",
-                            id="spec",
-                        )
-
-                        yield Label("Output Dir", classes="field-label")
-                        yield Input(
-                            value="",
-                            placeholder="Output dir (optional)",
-                            id="output-dir",
-                        )
-
-                        with Horizontal(classes="spacer"):
-                            yield Checkbox("Dry-run", value=False, id="integrate-dry-run")
-                            yield Checkbox(
-                                "Clean git",
-                                value=self._config.get("require_clean_git", False),
-                                id="integrate-require-clean",
-                            )
-
-                        with Horizontal(classes="spacer"):
-                            yield Button("Run", id="run", variant="primary")
-                            yield Button("Clear", id="clear")
-
-                        yield Label("Model / Provider", classes="config-section-title")
-                        yield Select(
-                            [
-                                ("auto", "auto"),
-                                ("openai:gpt-5", "openai:gpt-5"),
-                                ("anthropic:claude-sonnet-4", "anthropic:claude-sonnet-4"),
-                                ("github:copilot", "github:copilot"),
-                            ],
-                            value="auto",
-                            id="model-provider",
-                        )
-
-                    # Right: output panel
-                    with Vertical(id="output-panel"):
-                        yield Label("Output", classes="output-header")
-                        yield LogView(id="log-view")
-
-                        # Result display (hidden until there is a result)
-                        yield Static("", id="result-placeholder")
-
-                        # History
-                        yield Label("History", classes="panel-section-title")
-                        yield HistoryPane(id="history-pane")
-                        with Horizontal(classes="spacer"):
-                            yield Input(value="", placeholder="#", id="history-id")
-                            yield Button("Rerun", id="rerun-history")
-                            yield Button("View", id="view-history")
-
+        # -- Chat overlay (hidden until agent mode) --
         with Horizontal(id="chat-workspace"):
             with Vertical(id="chat-main"):
-                yield Label("Session", id="chat-main-title")
                 yield ChatLog(id="chat-main-log")
-            with Vertical(id="chat-info"):
-                yield Label("Session Info", classes="info-title")
-                yield Label("Mode", classes="info-label")
-                yield Label("agent: idle", classes="info-value", id="chat-mode-value")
-                yield Label("Provider", classes="info-label")
-                yield Label("auto", classes="info-value", id="chat-provider-value")
-                yield Label("Build", classes="info-label")
-                yield Label("auto", classes="info-value", id="chat-build-value")
-                yield Label("Tip", classes="info-label")
-                yield Label("/commands for actions", classes="info-value")
+            with Vertical(id="chat-sidebar"):
+                yield Label("Session", classes="cs-title")
+                yield Label("Mode", classes="cs-label")
+                yield Label("idle", classes="cs-value", id="chat-mode-value")
+                yield Label("Provider", classes="cs-label")
+                yield Label("auto", classes="cs-value", id="chat-provider-value")
+                yield Label("Build", classes="cs-label")
+                yield Label("auto", classes="cs-value", id="chat-build-value")
+                yield Label("Agent", classes="cs-label")
+                yield AgentStatus(id="agent-status")
+                yield Static("")
+                yield Button("Launch Agent", id="launch-agent", variant="primary")
+                yield Button("Stop Agent", id="stop-agent", variant="error")
 
-        # Agent section at the bottom
-        with Vertical(id="agent-section"):
-            with Horizontal(id="agent-header"):
-                yield Label("Agent Mode", classes="agent-title")
-                with Horizontal(id="agent-controls"):
-                    yield Button("Launch", id="launch-agent", variant="primary")
-                    yield Button("Stop", id="stop-agent", variant="error")
-                    yield AgentStatus(id="agent-status")
+        # -- Zone 2: Contextual config bar --
+        with Vertical(id="config-bar"):
+            with Horizontal(id="config-fields"):
+                # Action selector
+                with Vertical(classes="config-group"):
+                    yield Label("Action", classes="config-label")
+                    yield Select(
+                        self.action_mode_options,
+                        value=self._saved_context.get(
+                            "last_action",
+                            self._config.get("default_action", "analyze"),
+                        ),
+                        id="action",
+                    )
 
-        # Prompt bar
-        with Horizontal(id="prompt-bar"):
-            yield PromptInput(
-                value="",
-                placeholder="type request... (ctrl+k commands, ctrl+h help)",
-                id="prompt-input",
-            )
+                # Repo path
+                with Vertical(classes="config-group"):
+                    yield Label("Repository", classes="config-label")
+                    yield Input(
+                        value=self._saved_context.get(
+                            "last_repo",
+                            self._config.get("default_repo", str(Path.cwd())),
+                        ),
+                        placeholder="/path/to/repo",
+                        id="repo-path",
+                    )
 
-            yield Label("build auto", id="build-chip")
-            yield Label("provider auto", id="provider-chip")
+                # Spec (for map/generate/integrate)
+                with Vertical(classes="config-group"):
+                    yield Label("Spec", classes="config-label")
+                    yield Input(
+                        value=self._saved_context.get(
+                            "last_spec",
+                            self._config.get("default_spec", "rmsnorm"),
+                        ),
+                        placeholder="rmsnorm",
+                        id="spec",
+                    )
 
+                # Search query (for search)
+                with Vertical(classes="config-group"):
+                    yield Label("Query", classes="config-label")
+                    yield Input(
+                        value=self._saved_context.get("last_query", "layer normalization"),
+                        placeholder="search query",
+                        id="query",
+                    )
+
+                # Search options (for search)
+                with Vertical(classes="config-group"):
+                    yield Label("Sources", classes="config-label")
+                    with Horizontal():
+                        yield Checkbox("arXiv", value=False, id="search-arxiv")
+                        yield Checkbox("Web", value=False, id="search-web")
+
+                # Output dir (for generate)
+                with Vertical(classes="config-group"):
+                    yield Label("Output", classes="config-label")
+                    yield Input(
+                        value="",
+                        placeholder="output dir",
+                        id="output-dir",
+                    )
+
+                # Options (for integrate)
+                with Vertical(classes="config-group"):
+                    yield Label("Options", classes="config-label")
+                    with Horizontal():
+                        yield Checkbox("Dry-run", value=False, id="integrate-dry-run")
+                        yield Checkbox(
+                            "Clean git",
+                            value=self._config.get("require_clean_git", False),
+                            id="integrate-require-clean",
+                        )
+
+                # Model provider
+                with Vertical(classes="config-group"):
+                    yield Label("Model", classes="config-label")
+                    yield Select(
+                        [
+                            ("auto", "auto"),
+                            ("openai:gpt-5", "openai:gpt-5"),
+                            ("anthropic:claude-sonnet-4", "anthropic:claude-sonnet-4"),
+                            ("github:copilot", "github:copilot"),
+                        ],
+                        value="auto",
+                        id="model-provider",
+                    )
+
+                # Run / Clear
+                with Vertical(id="config-actions"):
+                    yield Label("", classes="config-label")
+                    with Horizontal():
+                        yield Button("Run", id="run", variant="primary")
+                        yield Button("Clear", id="clear")
+
+        # -- Zone 3: Prompt bar --
+        with Vertical(id="prompt-zone"):
+            with Horizontal(id="prompt-row"):
+                yield Label(" ", id="prompt-prefix")
+                yield PromptInput(
+                    value="",
+                    placeholder="type a command or request... (ctrl+k commands, ctrl+h help)",
+                    id="prompt-input",
+                )
+                with Horizontal(id="prompt-meta"):
+                    yield Label("auto", id="provider-chip", classes="chip")
+
+        # -- Status bar --
         yield StatusBar(id="status-bar")
 
     # -----------------------------------------------------------------------
@@ -1039,7 +1078,17 @@ class ScholarDevClawApp(App[None]):
         self._refresh_provider_chip()
         self._set_phase("idle")
         self._set_status("Ready", "info")
-        self._add_chat("system", "Welcome. Use /commands or ctrl+k for actions.")
+        self._log_to_view(
+            [
+                "ScholarDevClaw ready.",
+                "  ctrl+k  command palette",
+                "  ctrl+h  help",
+                "  ctrl+o  toggle config bar",
+                "  ctrl+r  run current action",
+                "",
+                "Or just type what you want: 'analyze ./my-project'",
+            ]
+        )
         try:
             status_bar = self.query_one(StatusBar)
             status_bar.set_center("agent: idle")
@@ -1076,8 +1125,6 @@ class ScholarDevClawApp(App[None]):
             "query": self.query_one("#query", Input).value.strip(),
             "include_arxiv": self.query_one("#search-arxiv", Checkbox).value,
             "include_web": self.query_one("#search-web", Checkbox).value,
-            "search_language": self.query_one("#search-language", Input).value.strip() or "python",
-            "max_results_raw": self.query_one("#search-max-results", Input).value.strip() or "10",
             "spec": self.query_one("#spec", Input).value.strip(),
             "output_dir": self.query_one("#output-dir", Input).value.strip() or None,
             "integrate_dry_run": self.query_one("#integrate-dry-run", Checkbox).value,
@@ -1091,8 +1138,6 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#query", Input).value = request.get("query", "")
         self.query_one("#search-arxiv", Checkbox).value = bool(request.get("include_arxiv", False))
         self.query_one("#search-web", Checkbox).value = bool(request.get("include_web", False))
-        self.query_one("#search-language", Input).value = request.get("search_language", "python")
-        self.query_one("#search-max-results", Input).value = request.get("max_results_raw", "10")
         self.query_one("#spec", Input).value = request.get("spec", "")
         self.query_one("#output-dir", Input).value = request.get("output_dir") or ""
         mp = request.get("model_provider", "auto")
@@ -1111,7 +1156,7 @@ class ScholarDevClawApp(App[None]):
         self._refresh_action_state()
 
     # -----------------------------------------------------------------------
-    # Action state management
+    # Action state management — show/hide contextual fields
     # -----------------------------------------------------------------------
 
     def _refresh_action_state(self) -> None:
@@ -1121,33 +1166,24 @@ class ScholarDevClawApp(App[None]):
         supports_output_dir = action == "generate"
         is_integrate = action == "integrate"
 
-        for field_id, widget_cls in [
-            ("query", Input),
-            ("search-arxiv", Checkbox),
-            ("search-web", Checkbox),
-            ("search-language", Input),
-            ("search-max-results", Input),
+        # Show/hide fields based on action
+        for field_id, widget_cls, visible in [
+            ("query", Input, is_search),
+            ("search-arxiv", Checkbox, is_search),
+            ("search-web", Checkbox, is_search),
+            ("spec", Input, needs_spec),
+            ("output-dir", Input, supports_output_dir),
+            ("integrate-dry-run", Checkbox, is_integrate),
+            ("integrate-require-clean", Checkbox, is_integrate),
         ]:
             try:
-                self.query_one(f"#{field_id}", widget_cls).disabled = not is_search
+                widget = self.query_one(f"#{field_id}", widget_cls)
+                widget.disabled = not visible
+                # Also hide the parent group
+                if hasattr(widget, "parent") and widget.parent:
+                    widget.parent.display = visible
             except Exception:
                 pass
-
-        try:
-            self.query_one("#spec", Input).disabled = not needs_spec
-            self.query_one("#output-dir", Input).disabled = not supports_output_dir
-            self.query_one("#integrate-dry-run", Checkbox).disabled = not is_integrate
-            self.query_one("#integrate-require-clean", Checkbox).disabled = not is_integrate
-        except Exception:
-            pass
-
-        # Sync sidebar selection
-        try:
-            sidebar = self.query_one(Sidebar)
-            if isinstance(action, str):
-                sidebar.set_selected(action)
-        except Exception:
-            pass
 
     # -----------------------------------------------------------------------
     # History management
@@ -1178,75 +1214,28 @@ class ScholarDevClawApp(App[None]):
         self._run_history.insert(0, record)
         self._run_history = self._run_history[: self._history_limit]
 
-        try:
-            history_pane = self.query_one(HistoryPane)
-            history_pane.add_entry(record["id"], action, status, duration)
-            self.query_one("#history-id", Input).value = str(record["id"])
-        except Exception:
-            pass
-
         self._saved_context["last_action"] = action
         self._saved_context["last_repo"] = request.get("repo_path", "")
         self._saved_context["last_spec"] = request.get("spec", "")
         self._save_context()
-
-    def _resolve_history(self, raw: str) -> dict[str, Any] | None:
-        if not self._run_history:
-            return None
-        if not raw:
-            return self._run_history[0]
-        try:
-            return next((r for r in self._run_history if r["id"] == int(raw)), None)
-        except ValueError:
-            return None
 
     # -----------------------------------------------------------------------
     # Button states
     # -----------------------------------------------------------------------
 
     def _disable_run_buttons(self) -> None:
-        for btn_id in [
-            "run",
-            "rerun-history",
-            "view-history",
-        ]:
+        for btn_id in ["run"]:
             try:
                 self.query_one(f"#{btn_id}", Button).disabled = True
             except Exception:
                 pass
 
     def _enable_run_buttons(self) -> None:
-        for btn_id in [
-            "run",
-            "rerun-history",
-            "view-history",
-        ]:
+        for btn_id in ["run"]:
             try:
                 self.query_one(f"#{btn_id}", Button).disabled = False
             except Exception:
                 pass
-
-    # -----------------------------------------------------------------------
-    # Quick actions
-    # -----------------------------------------------------------------------
-
-    def _execute_quick(self, action: str) -> None:
-        repo = self.query_one("#repo-path", Input).value.strip()
-
-        if not repo:
-            self._set_status("Error: Set repository path first", "error")
-            self._log_to_view(["Error: Repository path is required"])
-            return
-
-        valid, err = self._validate_repo_path(repo)
-        if not valid:
-            self._set_status(f"Error: {err}", "error")
-            self._log_to_view([f"Error: {err}"])
-            return
-
-        self.query_one("#action", Select).value = action
-        self._set_phase("validating")
-        self._run_workflow()
 
     # -----------------------------------------------------------------------
     # Core workflow execution
@@ -1281,7 +1270,6 @@ class ScholarDevClawApp(App[None]):
 
         self._disable_run_buttons()
         self._set_status(f"Running '{action}'...", "info")
-        self._mark_sidebar_state(action, "running")
 
         try:
             status_bar = self.query_one(StatusBar)
@@ -1322,7 +1310,7 @@ class ScholarDevClawApp(App[None]):
                         req.get("query") or "layer normalization",
                         include_arxiv=req.get("include_arxiv", False),
                         include_web=req.get("include_web", False),
-                        language=req.get("search_language", "python"),
+                        language="python",
                         max_results=max(1, int(req.get("max_results_raw", 10))),
                         log_callback=_emit,
                     )
@@ -1365,22 +1353,6 @@ class ScholarDevClawApp(App[None]):
     # Event handlers
     # -----------------------------------------------------------------------
 
-    @on(Sidebar.ActionSelected)
-    def on_sidebar_action(self, msg: Sidebar.ActionSelected) -> None:
-        action = msg.action
-        if action in (
-            "analyze",
-            "suggest",
-            "search",
-            "specs",
-            "map",
-            "generate",
-            "validate",
-            "integrate",
-        ):
-            self.query_one("#action", Select).value = action
-            self._refresh_action_state()
-
     @on(Select.Changed, "#action")
     def on_action_change(self) -> None:
         self._refresh_action_state()
@@ -1389,18 +1361,6 @@ class ScholarDevClawApp(App[None]):
     def on_model_provider_change(self) -> None:
         self._refresh_provider_chip()
 
-    @on(Button.Pressed, "#qa-analyze")
-    def on_quick_analyze_button(self) -> None:
-        self._execute_quick("analyze")
-
-    @on(Button.Pressed, "#qa-suggest")
-    def on_quick_suggest_button(self) -> None:
-        self._execute_quick("suggest")
-
-    @on(Button.Pressed, "#qa-integrate")
-    def on_quick_integrate_button(self) -> None:
-        self._execute_quick("integrate")
-
     @on(Button.Pressed, "#run")
     def on_run(self) -> None:
         self._run_workflow()
@@ -1408,21 +1368,6 @@ class ScholarDevClawApp(App[None]):
     @on(Button.Pressed, "#clear")
     def on_clear(self) -> None:
         self.action_clear_logs()
-
-    @on(Button.Pressed, "#rerun-history")
-    def on_rerun(self) -> None:
-        raw = self.query_one("#history-id", Input).value.strip()
-        record = self._resolve_history(raw)
-        if record:
-            self._apply_request(record["request"])
-            self._run_workflow(override=record["request"])
-
-    @on(Button.Pressed, "#view-history")
-    def on_view(self) -> None:
-        raw = self.query_one("#history-id", Input).value.strip()
-        record = self._resolve_history(raw)
-        if record:
-            self._log_to_view([f"Run #{record['id']}: {record['action']} - {record['status']}"])
 
     @on(Button.Pressed, "#launch-agent")
     def on_launch(self) -> None:
@@ -1503,52 +1448,34 @@ class ScholarDevClawApp(App[None]):
 
     @on(Button.Pressed, "#stop-agent")
     def on_stop(self) -> None:
-        if not self._agent_process or self._agent_process.poll() is None:
+        if self._agent_process and self._agent_process.poll() is None:
+            self._agent_running = False
+            self._agent_process.terminate()
+            self._update_agent_status("Offline")
+            self._log_to_legacy("agent-logs", ["Agent stopped"])
+        else:
             self._log_to_legacy("agent-logs", ["No running agent"])
             self._update_agent_status("Offline")
-            return
-        self._agent_running = False
-        self._agent_process.terminate()
-        self._update_agent_status("Offline")
-        self._log_to_legacy("agent-logs", ["Agent stopped"])
 
     @on(TaskCompleted)
     def on_task_done(self, msg: TaskCompleted) -> None:
         self._set_phase("complete")
         self._enable_run_buttons()
 
-        # Show result in log view
         if msg.error:
             self._log_to_view([f"Error: {msg.error}"])
             self._set_status(f"Failed ({msg.title})", "error")
-            if self._active_run_request:
-                self._mark_sidebar_state(
-                    self._active_run_request.get("action", "analyze"), "failed"
-                )
         else:
-            # Log a compact result summary
             result_summary = json.dumps(msg.result, indent=2, default=str)
-            # Truncate very long results
             if len(result_summary) > 2000:
                 result_summary = result_summary[:2000] + "\n..."
-            self._log_to_view([f"Complete: {msg.title}", result_summary])
+            self._log_to_view(["", f"=== {msg.title} complete ===", result_summary])
             self._set_status(f"Done ({msg.title})", "success")
-            if self._active_run_request:
-                action = self._active_run_request.get("action", "analyze")
-                self._mark_sidebar_state(action, "done")
-                output_dir = self._active_run_request.get("output_dir")
-                if action == "generate" and output_dir:
-                    self._set_status_summary(f"generated patch artifacts in {output_dir}")
-                elif action == "integrate":
-                    self._set_status_summary("integrated workflow completed")
-                else:
-                    self._set_status_summary(f"{action} completed")
 
         if not self._live_logs_enabled:
             self._log_to_view(msg.logs)
         self._live_logs_enabled = False
 
-        # Update timer
         try:
             status_bar = self.query_one(StatusBar)
             status_bar.update_timer()
@@ -1556,7 +1483,6 @@ class ScholarDevClawApp(App[None]):
         except Exception:
             pass
 
-        # Record history
         duration = max(0.0, time.perf_counter() - self._active_run_started_at)
         if self._active_run_request:
             self._append_history(
@@ -1575,8 +1501,6 @@ class ScholarDevClawApp(App[None]):
     @on(TaskLog)
     def on_log(self, msg: TaskLog) -> None:
         self._log_to_view([msg.line])
-
-        # Update timer during execution
         try:
             status_bar = self.query_one(StatusBar)
             status_bar.update_timer()
@@ -1686,27 +1610,15 @@ class ScholarDevClawApp(App[None]):
         except Exception:
             pass
 
-    def action_quick_action_analyze(self) -> None:
-        self._execute_quick("analyze")
-
-    def action_quick_action_suggest(self) -> None:
-        self._execute_quick("suggest")
-
-    def action_quick_action_integrate(self) -> None:
-        self._execute_quick("integrate")
-
     def action_new_session(self) -> None:
         self.action_clear_logs()
         self._run_history.clear()
-        try:
-            self.query_one(HistoryPane).clear_history()
-        except Exception:
-            pass
         self._active_run_request = None
         self._active_run_started_at = 0.0
         self._set_phase("idle")
         self._set_chat_mode(False)
         self._set_status("New session started", "success")
+        self._log_to_view(["Session cleared. Ready."])
 
     def action_export_log(self) -> None:
         export_dir = Path.cwd() / "exports"
@@ -1721,37 +1633,18 @@ class ScholarDevClawApp(App[None]):
         except Exception as exc:
             self._set_status(f"Export failed: {exc}", "error")
 
-    def action_show_commands(self) -> None:
-        self.action_command_palette()
-
-    def action_focus_prompt(self) -> None:
-        self.query_one("#prompt-input", PromptInput).focus()
-        self._set_status("Focused prompt", "info")
-
-    def action_focus_sidebar(self) -> None:
+    def action_toggle_config(self) -> None:
+        """Toggle config bar visibility."""
         try:
-            self.query_one("#sidebar-analyze").focus()
+            config_bar = self.query_one("#config-bar")
+            self._config_visible = not self._config_visible
+            config_bar.display = self._config_visible
+            self._set_status(
+                "Config bar visible" if self._config_visible else "Config bar hidden",
+                "info",
+            )
         except Exception:
             pass
-        self._set_status("Focused sidebar", "info")
-
-    def action_focus_output(self) -> None:
-        try:
-            self.query_one(LogView).focus()
-        except Exception:
-            pass
-        self._set_status("Focused output", "info")
-
-    def action_toggle_multiline_prompt(self) -> None:
-        prompt = self.query_one("#prompt-input", PromptInput)
-        if prompt.has_class("multiline"):
-            prompt.remove_class("multiline")
-            prompt.styles.height = 1
-            self._set_status("Prompt mode: single-line", "info")
-        else:
-            prompt.add_class("multiline")
-            prompt.styles.height = 4
-            self._set_status("Prompt mode: multiline", "accent")
 
     def action_command_palette(self) -> None:
         """Open the command palette overlay."""
