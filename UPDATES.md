@@ -4,6 +4,28 @@
 
 **Last updated:** 2026-03-22
 
+### 2026-03-22 (TUI redesign — clean 3-zone layout, remove clutter)
+
+**Goal:** Fix the TUI being too cluttered and hard to navigate. Previous layout had 6+ panels visible simultaneously (sidebar, config panel, output panel, agent section, prompt bar, status bar).
+
+**Summary:** Replaced the 6-panel layout with a clean 3-zone design inspired by Claude Code: main output (full height), collapsible config bar, and single-line prompt. Removed the persistent sidebar in favor of the command palette (ctrl+k). Reduced code by ~450 lines.
+
+**What changed:**
+- **`core/src/scholardevclaw/tui/app.py`**
+  - Replaced `#app-body` (sidebar + content split) with `#main-area` (phase bar + log view, full height)
+  - Config panel → horizontal `#config-bar` (collapsible with `ctrl+o`)
+  - Agent section merged into chat sidebar
+  - Removed: Sidebar import, HistoryPane from output, Quick Action buttons, top help bar
+  - New keybinding: `ctrl+o` toggles config bar
+  - Removed 8 redundant bindings (ctrl+a/s/i/b/p/j + sidebar focus)
+  - Config fields auto-hide based on selected action (search fields hidden for analyze, etc.)
+- **`core/src/scholardevclaw/tui/widgets.py`**
+  - Removed: `SidebarItem`, `Sidebar`, `ResultCard` classes (~120 lines)
+  - Kept: `LogView`, `StatusBar`, `PhaseTracker`, `ChatLog`, `AgentStatus`, `PromptInput`
+  - Fixed `PromptInput.HistoryPrev/HistoryNext` to proper `Message` subclasses
+- **`core/src/scholardevclaw/tui/screens.py`**
+  - Updated welcome/help text to reflect new keybindings
+
 ### 2026-03-22 (Implement 10 skipped tests — preflight, arxiv search, multi-repo)
 
 **Goal:** Reduce skipped test count and improve CI coverage by implementing previously stubbed-out tests.
