@@ -1337,7 +1337,7 @@
     </div>
     <div class="vdivider"></div>
     <div class="strip-stat">
-      <span class="strip-stat-n">1200+</span>
+      <span class="strip-stat-n">1260+</span>
       <span class="strip-stat-l">Tests Passing</span>
     </div>
     <div class="vdivider"></div>
@@ -1347,7 +1347,7 @@
     </div>
     <div class="vdivider"></div>
     <div class="strip-stat">
-      <span class="strip-stat-n">16</span>
+      <span class="strip-stat-n">15</span>
       <span class="strip-stat-l">Paper Specs</span>
     </div>
   </div>
@@ -1392,7 +1392,7 @@
           <div class="step-num">04</div>
           <div class="step-body">
             <div class="step-title">Generate Patches</div>
-            <div class="step-desc">Creates validated patches using 15+ CST templates (RMSNorm, FlashAttention, RoPE, SwiGLU…), 10 CST transformers, and LLM synthesis fallback.</div>
+            <div class="step-desc">Creates validated patches using 15 CST templates (RMSNorm, FlashAttention, RoPE, SwiGLU…), 10 CST transformers, and LLM synthesis fallback.</div>
             <div class="step-bar"><div class="step-progress" id="prog-3"></div></div>
           </div>
         </div>
@@ -1448,11 +1448,11 @@
             <div class="bc-desc">Tree-sitter AST extraction across 6+ languages. Detects frameworks, dependency patterns, and architectural improvement opportunities automatically.</div>
             <div class="lang-grid" style="margin-top:16px">
               <div class="lang-tag go">Python ✓</div>
-              <div class="lang-tag go">JS/TS ✓</div>
+              <div class="lang-tag go">JavaScript ✓</div>
+              <div class="lang-tag go">TypeScript ✓</div>
               <div class="lang-tag go">Go ✓</div>
               <div class="lang-tag go">Rust ✓</div>
               <div class="lang-tag go">Java ✓</div>
-              <div class="lang-tag" style="color:var(--text-3)">C++ 🚧</div>
             </div>
           </div>
           <div class="code-preview">
@@ -1509,8 +1509,8 @@
           </svg>
         </div>
         <div class="bc-title">Patch Generation</div>
-        <div class="bc-desc">15+ CST templates for the most impactful ML optimisations — RMSNorm, FlashAttention, SwiGLU, RoPE and more — plus LLM synthesis fallback.</div>
-        <div class="bc-badge">15+ Templates</div>
+        <div class="bc-desc">15 CST templates for the most impactful ML optimisations — RMSNorm, FlashAttention, SwiGLU, RoPE and more — plus LLM synthesis fallback.</div>
+        <div class="bc-badge">15 Templates</div>
       </div>
 
       <!-- Benchmark Validation -->
@@ -1522,8 +1522,8 @@
           </svg>
         </div>
         <div class="bc-title">Benchmark Validation</div>
-        <div class="bc-desc">Real subprocess benchmarks measure speedup and memory impact. 1200+ tests guarantee patch quality and prevent regressions before any PR is opened.</div>
-        <div class="bc-badge">1200+ Tests</div>
+        <div class="bc-desc">Real subprocess benchmarks measure speedup and memory impact. 1260+ tests guarantee patch quality and prevent regressions before any PR is opened.</div>
+        <div class="bc-badge">1260+ Tests</div>
       </div>
 
       <!-- Interactive TUI — wide -->
@@ -1564,22 +1564,22 @@
     </div>
     <div class="stats-grid reveal reveal-d1">
       <div class="stat-tile">
-        <div class="stat-num" data-target="16">0</div>
+        <div class="stat-num" data-target="15">0</div>
         <div class="stat-lbl">Paper Specs</div>
         <div class="stat-sub">Built-in research implementations</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-num" data-target="1200" data-suffix="+">0</div>
+        <div class="stat-num" data-target="1260" data-suffix="+">0</div>
         <div class="stat-lbl">Tests Passing</div>
         <div class="stat-sub">Full integration &amp; unit coverage</div>
       </div>
       <div class="stat-tile">
         <div class="stat-num" data-target="6">0</div>
         <div class="stat-lbl">Languages</div>
-        <div class="stat-sub">Python, JS/TS, Go, Rust, Java</div>
+        <div class="stat-sub">Python, JS, TS, Go, Rust, Java</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-num" data-target="15" data-suffix="+">0</div>
+        <div class="stat-num" data-target="15">0</div>
         <div class="stat-lbl">Code Templates</div>
         <div class="stat-sub">Battle-tested CST transformers</div>
       </div>
@@ -1683,7 +1683,7 @@
             Do I need an AI API key?
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="faq-a"><p>No. ScholarDevClaw works out of the box with its built-in knowledge base of 16+ paper specs — RMSNorm, FlashAttention, RoPE, SwiGLU, and more. For advanced LLM-powered semantic matching you can optionally connect Claude, GPT, Gemini, or any other provider.</p></div>
+          <div class="faq-a"><p>No. ScholarDevClaw works out of the box with its built-in knowledge base of 15 paper specs — RMSNorm, FlashAttention, RoPE, SwiGLU, and more. For advanced LLM-powered semantic matching you can optionally connect Claude, GPT, Gemini, or any other provider.</p></div>
         </div>
         <div class="faq-item">
           <button class="faq-q" onclick="toggleFaq(this)">
@@ -1819,10 +1819,10 @@
       desc:'6-tier matching finds where each improvement applies: exact name → fuzzy → imports → text scan → legacy → LLM semantic. Every result is confidence-scored.' },
     { title:'Generate Patches',
       icon:'<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
-      desc:'15+ CST templates generate syntactically-correct patches. LLM synthesis handles edge cases. Every patch is reviewed before application with approval gates.' },
+      desc:'15 CST templates generate syntactically-correct patches. LLM synthesis handles edge cases. Every patch is reviewed before application with approval gates.' },
     { title:'Benchmark & Validate',
       icon:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
-      desc:'Subprocess benchmarks measure actual speedup and memory delta. 1200+ tests ensure nothing regresses. Risky patches require explicit approval before proceeding.' },
+      desc:'Subprocess benchmarks measure actual speedup and memory delta. 1260+ tests ensure nothing regresses. Risky patches require explicit approval before proceeding.' },
     { title:'Open a Safe PR',
       icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>',
       desc:'A clean pull request lands on a safe branch with full changelog, benchmark results, and confidence scores attached. Protected-branch blocking prevents accidents.' }
