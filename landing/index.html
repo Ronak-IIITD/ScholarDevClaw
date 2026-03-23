@@ -6,1124 +6,2048 @@
   <meta name="description" content="ScholarDevClaw — Autonomous Research-to-Code AI Agent. Analyzes your codebase, finds research improvements from ML papers, and generates validated patches automatically." />
   <meta name="color-scheme" content="dark" />
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-
-  <!-- Open Graph -->
   <meta property="og:title" content="ScholarDevClaw — Research-to-Code AI Agent" />
-  <meta property="og:description" content="Autonomous Research-to-Code AI Agent. Analyzes your codebase, finds research improvements from ML papers, and generates validated patches automatically." />
+  <meta property="og:description" content="Autonomous Research-to-Code AI Agent. Research papers become production code." />
   <meta property="og:type" content="website" />
-
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-
   <title>ScholarDevClaw — Autonomous Research-to-Code AI Agent</title>
 
+  <!-- Fonts: EB Garamond (editorial headers) + Inter (UI) + JetBrains Mono (code) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;0,700;0,800;1,400;1,600;1,700;1,800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
   <style>
+    /* ══════════════════════════════════════════════
+       DESIGN TOKENS
+    ══════════════════════════════════════════════ */
     :root {
-      --bg: #09090b;
-      --bg-gradient: linear-gradient(180deg, #09090b 0%, #0f172a 100%);
-      --surface: #18181b;
-      --surface-hover: #1f1f23;
-      --border: #27272a;
-      --text: #fafafa;
-      --muted: #a1a1aa;
-      --accent: #22d3ee;
-      --accent-dim: rgba(34, 211, 238, 0.15);
-      --accent-glow: rgba(34, 211, 238, 0.3);
-      --purple: #a78bfa;
-      --green: #22c55e;
-      --radius: 12px;
-      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      /* Backgrounds */
+      --void:       #040509;
+      --bg:         #07080F;
+      --bg-2:       #0B0D1C;
+      --surface:    #101220;
+      --surface-2:  #181A2E;
+      --surface-3:  #1F2240;
+
+      /* Borders */
+      --border:        #1C2040;
+      --border-2:      #2A2E56;
+      --border-active: #4A4E80;
+
+      /* Text */
+      --text:   #EDF0FF;
+      --text-2: #8A90B8;
+      --text-3: #4E5474;
+
+      /* Amber — primary accent (research gold) */
+      --amber:       #F2A83C;
+      --amber-light: #FFD084;
+      --amber-dim:   rgba(242, 168, 60, 0.10);
+      --amber-glow:  rgba(242, 168, 60, 0.28);
+
+      /* Cyan — secondary accent (code/tech) */
+      --cyan:     #00CFEA;
+      --cyan-dim: rgba(0, 207, 234, 0.08);
+      --cyan-glo: rgba(0, 207, 234, 0.22);
+
+      /* Indigo — AI accent */
+      --indigo:     #7C6AF2;
+      --indigo-dim: rgba(124, 106, 242, 0.12);
+      --indigo-glo: rgba(124, 106, 242, 0.26);
+
+      /* Status */
+      --green:  #22C55E;
+      --red:    #FF5F57;
+      --yellow: #FFBD2E;
+
+      /* Typography */
+      --font-serif: 'EB Garamond', Georgia, 'Times New Roman', serif;
+      --font-sans:  'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono:  'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+
+      /* Misc */
+      --radius:    16px;
+      --radius-sm: 10px;
+      --radius-xs: 6px;
+      --ease: cubic-bezier(0.23, 1, 0.32, 1);
     }
 
+    /* ══════════════════════════════════════════════
+       RESET & BASE
+    ══════════════════════════════════════════════ */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
     body {
       font-family: var(--font-sans);
-      background: var(--bg-gradient);
+      background: var(--bg);
       color: var(--text);
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
       overflow-x: hidden;
     }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: none; }
+    a { color: var(--amber); text-decoration: none; }
+    button { font-family: inherit; cursor: pointer; }
+    img { display: block; }
 
-    /* ─── Scroll Animations ─────────────────── */
-    .fade-in {
+    /* ══════════════════════════════════════════════
+       CANVAS BACKGROUND
+    ══════════════════════════════════════════════ */
+    #canvas-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ══════════════════════════════════════════════
+       SCROLL REVEAL
+    ══════════════════════════════════════════════ */
+    .reveal {
       opacity: 0;
-      transform: translateY(30px);
-      transition: opacity 0.8s ease, transform 0.8s ease;
+      transform: translateY(36px);
+      transition: opacity 0.85s var(--ease), transform 0.85s var(--ease);
     }
-    .fade-in.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    .fade-in-delay-1 { transition-delay: 0.1s; }
-    .fade-in-delay-2 { transition-delay: 0.2s; }
-    .fade-in-delay-3 { transition-delay: 0.3s; }
-    .fade-in-delay-4 { transition-delay: 0.4s; }
-    .fade-in-delay-5 { transition-delay: 0.5s; }
+    .reveal.visible { opacity: 1; transform: none; }
+    .reveal-d1 { transition-delay: 0.10s; }
+    .reveal-d2 { transition-delay: 0.20s; }
+    .reveal-d3 { transition-delay: 0.30s; }
+    .reveal-d4 { transition-delay: 0.40s; }
+    .reveal-d5 { transition-delay: 0.50s; }
 
-    /* ─── Nav ──────────────────────────────────── */
+    /* ══════════════════════════════════════════════
+       NAV
+    ══════════════════════════════════════════════ */
     nav {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 100;
-      background: rgba(9, 9, 11, 0.8);
-      backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--border);
-      transition: all 0.3s ease;
+      inset: 0 0 auto 0;
+      z-index: 1000;
+      transition: background 0.4s var(--ease), backdrop-filter 0.4s;
     }
     nav.scrolled {
-      background: rgba(9, 9, 11, 0.95);
-      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+      background: rgba(7, 8, 15, 0.82);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border-bottom: 1px solid var(--border);
     }
     .nav-inner {
-      max-width: 1200px;
+      max-width: 1280px;
       margin: 0 auto;
-      padding: 0 24px;
-      height: 64px;
+      padding: 0 32px;
+      height: 68px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
     .logo {
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--text);
       display: flex;
       align-items: center;
       gap: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.02em;
     }
-    .logo svg {
-      width: 28px;
-      height: 28px;
-    }
-    .nav-links {
+    .logo-mark {
+      width: 32px; height: 32px;
+      background: var(--amber-dim);
+      border: 1px solid rgba(242, 168, 60, 0.28);
+      border-radius: 8px;
       display: flex;
       align-items: center;
-      gap: 32px;
+      justify-content: center;
     }
-    .nav-links a {
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 500;
-      transition: color 0.2s;
-      position: relative;
-    }
-    .nav-links a:hover {
-      color: var(--text);
-    }
-    .nav-links a::after {
-      content: '';
-      position: absolute;
-      bottom: -4px;
-      left: 0;
-      width: 0;
-      height: 2px;
-      background: var(--accent);
-      transition: width 0.2s;
-    }
-    .nav-links a:hover::after {
-      width: 100%;
-    }
-    .nav-links .github {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      color: var(--text);
-    }
-    .nav-links .github::after { display: none; }
-
-    /* ─── Hero ─────────────────────────────────── */
-    .hero {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 160px 24px 120px;
-      text-align: center;
-      position: relative;
-    }
-    .hero-glow {
-      position: absolute;
-      top: -100px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 800px;
-      height: 600px;
-      background: radial-gradient(ellipse, var(--accent-glow) 0%, transparent 70%);
-      pointer-events: none;
-      z-index: 0;
-    }
-    .hero-content {
-      position: relative;
-      z-index: 1;
-    }
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 20px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 100px;
+    .logo-mark svg { width: 18px; height: 18px; }
+    .nav-links { display: flex; align-items: center; gap: 6px; }
+    .nav-link {
+      padding: 8px 14px;
       font-size: 13px;
       font-weight: 500;
-      color: var(--muted);
-      margin-bottom: 32px;
-      animation: fadeInDown 0.6s ease;
+      color: var(--text-2);
+      border-radius: var(--radius-xs);
+      transition: all 0.2s;
     }
-    .hero-badge span {
-      color: var(--accent);
+    .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+    .nav-github {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--surface-2);
+      border: 1px solid var(--border-2);
+      border-radius: var(--radius-xs);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      transition: all 0.2s;
     }
-    .hero-badge .pulse {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      background: var(--accent);
+    .nav-github:hover { background: var(--surface-3); border-color: var(--border-active); }
+
+    /* ══════════════════════════════════════════════
+       HERO
+    ══════════════════════════════════════════════ */
+    .hero-section {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      padding: 110px 0 80px;
+      z-index: 1;
+    }
+    .hero-radial {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 70% 60% at 10% 50%, rgba(242,168,60,0.055) 0%, transparent 55%),
+        radial-gradient(ellipse 55% 70% at 85% 25%, rgba(124,106,242,0.07) 0%, transparent 55%),
+        radial-gradient(ellipse 40% 50% at 60% 90%, rgba(0,207,234,0.045) 0%, transparent 55%);
+      pointer-events: none;
+    }
+    .hero-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 32px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+    }
+
+    /* Hero left */
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px 6px 8px;
+      background: var(--amber-dim);
+      border: 1px solid rgba(242,168,60,0.22);
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: 28px;
+      animation: fadeSlideDown 0.8s var(--ease) both;
+    }
+    .eyebrow-dot {
+      width: 7px; height: 7px;
+      background: var(--amber);
       border-radius: 50%;
-      animation: pulse 2s ease-in-out infinite;
+      animation: pulseDot 2.5s ease-in-out infinite;
     }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.2); }
+    @keyframes pulseDot {
+      0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(242,168,60,.5); }
+      50%      { opacity: .7; box-shadow: 0 0 0 7px rgba(242,168,60,0); }
     }
-    @keyframes fadeInDown {
-      from { opacity: 0; transform: translateY(-20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .hero h1 {
-      font-size: clamp(48px, 7vw, 80px);
+    .hero-headline {
+      font-family: var(--font-serif);
+      font-size: clamp(46px, 5.2vw, 80px);
       font-weight: 800;
-      letter-spacing: -0.04em;
-      line-height: 1.05;
+      font-style: italic;
+      letter-spacing: -0.025em;
+      line-height: 1.04;
+      color: var(--text);
       margin-bottom: 24px;
-      animation: fadeInUp 0.8s ease;
+      animation: fadeSlideUp 0.9s var(--ease) 0.1s both;
     }
-    .hero h1 .accent {
-      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+    .hero-headline .accent {
+      background: linear-gradient(130deg, var(--amber) 0%, var(--amber-light) 60%, var(--amber) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
-    @keyframes fadeInUp {
-      from { opacity: 0; transform: translateY(30px); }
-      to { opacity: 1; transform: translateY(0); }
+    .hero-headline .code-word {
+      font-style: normal;
+      font-family: var(--font-mono);
+      font-size: 0.72em;
+      font-weight: 600;
+      letter-spacing: -0.04em;
+      color: var(--cyan);
+      -webkit-text-fill-color: var(--cyan);
     }
-    .hero p {
-      font-size: 18px;
-      color: var(--muted);
-      max-width: 650px;
-      margin: 0 auto 56px;
-      line-height: 1.7;
-      animation: fadeInUp 0.8s ease 0.2s both;
+    .hero-sub {
+      font-size: 17px;
+      color: var(--text-2);
+      line-height: 1.78;
+      max-width: 510px;
+      margin-bottom: 44px;
+      animation: fadeSlideUp 0.9s var(--ease) 0.2s both;
     }
 
-    /* ─── Install Box ─────────────────────────── */
-    .install-box {
-      max-width: 680px;
-      margin: 0 auto;
+    /* Install widget */
+    .install-widget { animation: fadeSlideUp 0.9s var(--ease) 0.3s both; }
+    .itab-row {
+      display: flex;
+      gap: 2px;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      animation: fadeInUp 0.8s ease 0.4s both;
-      transition: border-color 0.3s, box-shadow 0.3s;
+      border-bottom: none;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      padding: 6px 8px 0;
     }
-    .install-box:hover {
-      border-color: var(--accent);
-      box-shadow: 0 0 40px var(--accent-dim);
-    }
-    .install-tabs {
-      display: flex;
-      border-bottom: 1px solid var(--border);
-      padding: 0 16px;
-      gap: 4px;
-    }
-    .install-tab {
-      padding: 14px 20px;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--muted);
-      cursor: pointer;
-      border: none;
+    .itab {
+      padding: 7px 14px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      font-family: var(--font-mono);
+      color: var(--text-3);
       background: none;
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s;
-      font-family: var(--font-sans);
+      border: none;
+      border-radius: 5px 5px 0 0;
+      transition: all 0.18s;
     }
-    .install-tab:hover {
-      color: var(--text);
-    }
-    .install-tab.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-    }
-    .install-content {
+    .itab:hover { color: var(--text-2); }
+    .itab.active { color: var(--amber); background: var(--surface-2); }
+    .icmd-row {
       display: flex;
       align-items: center;
-      padding: 20px;
-      gap: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+      padding: 14px 18px;
+      gap: 14px;
+      transition: border-color 0.3s;
     }
-    .install-cmd {
+    .icmd-row:hover { border-color: rgba(242,168,60,0.3); }
+    .icmd-prompt {
+      color: var(--amber);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .icmd-text {
       flex: 1;
       font-family: var(--font-mono);
-      font-size: 14px;
+      font-size: 13px;
       color: var(--text);
       overflow-x: auto;
       white-space: nowrap;
     }
-    .install-cmd .prompt {
-      color: var(--accent);
-      user-select: none;
-    }
     .copy-btn {
       flex-shrink: 0;
-      padding: 10px 24px;
-      background: var(--accent);
-      color: var(--bg);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      background: var(--amber);
+      color: #07080F;
       border: none;
-      border-radius: 8px;
-      font-size: 13px;
+      border-radius: var(--radius-xs);
+      font-size: 11px;
       font-weight: 700;
-      cursor: pointer;
+      letter-spacing: 0.04em;
       transition: all 0.2s;
-      font-family: var(--font-sans);
     }
-    .copy-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 20px var(--accent-glow);
+    .copy-btn:hover { background: var(--amber-light); transform: translateY(-1px); box-shadow: 0 4px 18px var(--amber-glow); }
+    .copy-btn.copied { background: var(--green); color: #fff; }
+    .install-note {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--text-3);
     }
-    .copy-btn.copied {
-      background: var(--green);
+    .install-note a { color: var(--text-2); transition: color 0.2s; }
+    .install-note a:hover { color: var(--amber); }
+
+    /* Hero right — animated orb */
+    .hero-right {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeSlideUp 1s var(--ease) 0.25s both;
+    }
+    .orb-svg-wrap { width: 460px; height: 460px; max-width: 100%; }
+
+    /* Orb animations */
+    .ring-1 { animation: spin  14s linear infinite; transform-origin: 230px 230px; }
+    .ring-2 { animation: spinR 22s linear infinite; transform-origin: 230px 230px; }
+    .ring-3 { animation: spin  40s linear infinite; transform-origin: 230px 230px; }
+    .orb-center-g { animation: floatY 4s ease-in-out infinite; }
+    @keyframes spin  { to { transform: rotate( 360deg); } }
+    @keyframes spinR { to { transform: rotate(-360deg); } }
+    @keyframes floatY {
+      0%,100% { transform: translateY(0); }
+      50%      { transform: translateY(-10px); }
+    }
+    .node-pulse { animation: nodePulse 3s ease-in-out infinite; }
+    @keyframes nodePulse {
+      0%,100% { opacity:.65; }
+      50%      { opacity: 1; }
     }
 
-    /* ─── Workflow ─────────────────────────────── */
-    .workflow {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 100px 24px;
-    }
-    .workflow-header {
-      text-align: center;
-      margin-bottom: 64px;
-    }
-    .workflow-header h2 {
-      font-size: 40px;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 16px;
-    }
-    .workflow-header p {
-      font-size: 16px;
-      color: var(--muted);
-      max-width: 600px;
-      margin: 0 auto;
-    }
-    .workflow-steps {
-      display: grid;
-      grid-template-columns: repeat(6, 1fr);
-      gap: 16px;
-      position: relative;
-    }
-    .workflow-steps::before {
-      content: '';
-      position: absolute;
-      top: 40px;
-      left: 10%;
-      right: 10%;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      z-index: 0;
-    }
-    .workflow-step {
-      text-align: center;
+    /* ══════════════════════════════════════════════
+       STRIP
+    ══════════════════════════════════════════════ */
+    .strip {
       position: relative;
       z-index: 1;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-2);
+      padding: 20px 0;
     }
-    .step-number {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 16px;
+    .strip-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+    }
+    .strip-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      flex-shrink: 0;
+      margin-right: 24px;
+    }
+    .lang-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .lang-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
       background: var(--surface);
-      border: 2px solid var(--border);
-      border-radius: 50%;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-2);
+    }
+    .ldot { width: 6px; height: 6px; border-radius: 50%; }
+    .vdivider { width: 1px; height: 28px; background: var(--border); margin: 0 28px; }
+    .strip-stat { display: flex; flex-direction: column; align-items: center; }
+    .strip-stat-n {
+      font-family: var(--font-mono);
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .strip-stat-l {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-3);
+    }
+
+    /* ══════════════════════════════════════════════
+       SHARED SECTION PARTS
+    ══════════════════════════════════════════════ */
+    .sec { position: relative; z-index: 1; }
+    .sec-inner { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+    .sec-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: 14px;
+    }
+    .sec-label::before { content:''; display:block; width:18px; height:1px; background:var(--amber); }
+    .sec-title {
+      font-family: var(--font-serif);
+      font-size: clamp(34px, 3.8vw, 54px);
+      font-weight: 800;
+      font-style: italic;
+      letter-spacing: -0.025em;
+      line-height: 1.1;
+      color: var(--text);
+      margin-bottom: 14px;
+    }
+    .sec-sub {
+      font-size: 16px;
+      color: var(--text-2);
+      line-height: 1.75;
+      max-width: 540px;
+    }
+
+    /* ══════════════════════════════════════════════
+       HOW IT WORKS
+    ══════════════════════════════════════════════ */
+    .how-section { padding: 120px 0; }
+    .how-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 72px;
+      align-items: start;
+      margin-top: 64px;
+    }
+    .how-steps { display: flex; flex-direction: column; }
+    .how-step {
+      display: flex;
+      gap: 22px;
+      padding: 28px 0;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .how-step:first-child { padding-top: 0; }
+    .how-step:last-child { border-bottom: none; padding-bottom: 0; }
+    .step-num {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: var(--text-3);
+      padding-top: 3px;
+      flex-shrink: 0;
+      width: 24px;
+      transition: color 0.2s;
+    }
+    .how-step.active .step-num { color: var(--amber); }
+    .step-body {}
+    .step-title {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-2);
+      margin-bottom: 0;
+      transition: color 0.2s;
+    }
+    .how-step.active .step-title { color: var(--text); }
+    .step-desc {
+      font-size: 13.5px;
+      color: var(--text-3);
+      line-height: 1.72;
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: max-height 0.4s var(--ease), opacity 0.35s, margin 0.3s;
+    }
+    .how-step.active .step-desc { max-height: 100px; opacity: 1; margin-top: 10px; }
+    .step-bar {
+      height: 2px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 14px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .how-step.active .step-bar { opacity: 1; }
+    .step-progress {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, var(--amber), var(--amber-light));
+      border-radius: 2px;
+      transition: width 4.5s linear;
+    }
+    .how-step.active .step-progress { width: 100%; }
+
+    /* Sticky visual panel */
+    .how-visual { position: sticky; top: 110px; }
+    .how-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 48px 36px;
+      min-height: 300px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.4s;
+    }
+    .how-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, var(--amber-dim) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .how-card-icon {
+      width: 64px; height: 64px;
+      margin: 0 auto 22px;
+      background: var(--amber-dim);
+      border: 1px solid rgba(242,168,60,.24);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .how-card-icon svg { width: 30px; height: 30px; color: var(--amber); }
+    .how-card-title {
+      font-family: var(--font-serif);
+      font-size: 30px;
       font-weight: 700;
-      color: var(--accent);
-      transition: all 0.3s;
+      font-style: italic;
+      color: var(--text);
+      margin-bottom: 12px;
+      text-align: center;
     }
-    .workflow-step:hover .step-number {
-      border-color: var(--accent);
-      box-shadow: 0 0 30px var(--accent-dim);
-      transform: scale(1.1);
-    }
-    .step-title {
+    .how-card-desc {
       font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-    .step-desc {
-      font-size: 12px;
-      color: var(--muted);
+      color: var(--text-2);
+      line-height: 1.75;
+      max-width: 280px;
+      margin: 0 auto;
+      text-align: center;
     }
 
-    /* ─── Features ─────────────────────────────── */
-    .features {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 100px 24px;
+    /* ══════════════════════════════════════════════
+       FEATURES — BENTO
+    ══════════════════════════════════════════════ */
+    .features-section {
+      padding: 120px 0;
+      background: var(--bg-2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
     }
-    .features-header {
-      text-align: center;
-      margin-bottom: 64px;
-    }
-    .features-header h2 {
-      font-size: 40px;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 16px;
-    }
-    .features-header p {
-      font-size: 16px;
-      color: var(--muted);
-      max-width: 600px;
-      margin: 0 auto;
-    }
-    .features-grid {
+    .features-hdr { margin-bottom: 56px; }
+    .bento {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
+      gap: 14px;
     }
-    .feature-card {
-      padding: 32px;
+    .bc {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      transition: all 0.3s;
+      padding: 30px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.38s var(--ease), border-color 0.3s, box-shadow 0.3s;
     }
-    .feature-card:hover {
-      border-color: var(--accent);
-      transform: translateY(-4px);
-      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3);
+    .bc::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      box-shadow: inset 0 0 0 1px var(--amber);
+      opacity: 0;
+      transition: opacity 0.35s;
     }
-    .feature-icon {
-      width: 48px;
-      height: 48px;
-      background: var(--accent-dim);
-      border-radius: 12px;
+    .bc:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+    .bc:hover::after { opacity: 1; }
+    .bc.wide { grid-column: span 2; }
+    .bc.tall { grid-row: span 2; }
+    .bc-glow {
+      position: absolute;
+      top: -60px; right: -60px;
+      width: 180px; height: 180px;
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity 0.4s;
+      pointer-events: none;
+    }
+    .bc:hover .bc-glow { opacity: 1; }
+    .bc-amber .bc-glow { background: radial-gradient(circle, rgba(242,168,60,.12), transparent 70%); }
+    .bc-cyan  .bc-glow { background: radial-gradient(circle, rgba(0,207,234,.10), transparent 70%); }
+    .bc-ind   .bc-glow { background: radial-gradient(circle, rgba(124,106,242,.12), transparent 70%); }
+    .bc-green .bc-glow { background: radial-gradient(circle, rgba(34,197,94,.10), transparent 70%); }
+
+    .bento-icon {
+      width: 42px; height: 42px;
+      border-radius: 11px;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 20px;
+      margin-bottom: 18px;
     }
-    .feature-icon svg {
-      width: 24px;
-      height: 24px;
-      color: var(--accent);
-    }
-    .feature-card h3 {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 12px;
-    }
-    .feature-card p {
-      font-size: 14px;
-      color: var(--muted);
-      line-height: 1.7;
-    }
+    .bento-icon svg { width: 20px; height: 20px; }
+    .bc-amber .bento-icon { background:var(--amber-dim); border:1px solid rgba(242,168,60,.2); color:var(--amber); }
+    .bc-cyan  .bento-icon { background:var(--cyan-dim);  border:1px solid rgba(0,207,234,.18); color:var(--cyan); }
+    .bc-ind   .bento-icon { background:var(--indigo-dim);border:1px solid rgba(124,106,242,.2); color:var(--indigo); }
+    .bc-green .bento-icon { background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.18); color:var(--green); }
 
-    /* ─── Stats ────────────────────────────────── */
-    .stats {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 100px 24px;
+    .bc-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .bc-desc {
+      font-size: 13.5px;
+      color: var(--text-2);
+      line-height: 1.72;
+    }
+    .bc-badge {
+      display: inline-flex;
+      margin-top: 14px;
+      padding: 3px 10px;
+      border-radius: 100px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .bc-amber .bc-badge { background:var(--amber-dim); color:var(--amber); border:1px solid rgba(242,168,60,.2); }
+    .bc-cyan  .bc-badge { background:var(--cyan-dim);  color:var(--cyan);  border:1px solid rgba(0,207,234,.18); }
+    .bc-ind   .bc-badge { background:var(--indigo-dim);color:var(--indigo);border:1px solid rgba(124,106,242,.2); }
+    .bc-green .bc-badge { background:rgba(34,197,94,.07);color:var(--green);border:1px solid rgba(34,197,94,.18); }
+
+    /* Code preview inside bento */
+    .code-preview {
+      margin-top: 18px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      line-height: 1.9;
+    }
+    .cp-line { display: flex; gap: 10px; }
+    .cp-ln   { color:var(--text-3); user-select:none; width:14px; text-align:right; flex-shrink:0; }
+    .cp-kw   { color:var(--indigo); }
+    .cp-fn   { color:var(--amber);  }
+    .cp-str  { color:var(--cyan);   }
+    .cp-cm   { color:var(--text-3); font-style:italic; }
+
+    /* Template tags */
+    .tmpl-list { display:flex; flex-direction:column; gap:6px; margin-top:16px; }
+    .tmpl-tag {
+      padding: 6px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--cyan);
+      transition: border-color 0.2s;
+    }
+    .tmpl-tag:hover { border-color: var(--cyan); }
+    .tmpl-faded { color: var(--text-3); }
+
+    /* Lang grid */
+    .lang-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 16px;
+    }
+    .lang-tag {
+      padding: 5px 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xs);
+      font-size: 10px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      color: var(--text-3);
       text-align: center;
     }
-    .stats h2 {
-      font-size: 40px;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 16px;
+    .lang-tag.go { color:var(--green); border-color:rgba(34,197,94,.18); background:rgba(34,197,94,.06); }
+
+    /* TUI mini terminal */
+    .mini-term {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 2;
     }
-    .stats > p {
-      font-size: 16px;
-      color: var(--muted);
-      max-width: 600px;
-      margin: 0 auto 64px;
-    }
+
+    /* ══════════════════════════════════════════════
+       STATS
+    ══════════════════════════════════════════════ */
+    .stats-section { padding: 120px 0; }
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 24px;
-      max-width: 1000px;
-      margin: 0 auto;
-    }
-    .stat-card {
-      padding: 40px 24px;
-      background: var(--surface);
+      grid-template-columns: repeat(4,1fr);
+      gap: 1px;
+      background: var(--border);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      transition: all 0.3s;
+      overflow: hidden;
+      margin-top: 64px;
     }
-    .stat-card:hover {
-      border-color: var(--accent);
-      transform: translateY(-4px);
+    .stat-tile {
+      background: var(--surface);
+      padding: 52px 28px 44px;
+      text-align: center;
+      transition: background 0.3s;
     }
-    .stat-number {
-      font-size: 48px;
+    .stat-tile:hover { background: var(--surface-2); }
+    .stat-num {
+      font-family: var(--font-serif);
+      font-size: clamp(52px, 5vw, 72px);
       font-weight: 800;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+      font-style: italic;
+      line-height: 1;
+      margin-bottom: 6px;
+      background: linear-gradient(135deg, var(--amber) 0%, var(--amber-light) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      margin-bottom: 8px;
     }
-    .stat-label {
-      font-size: 14px;
-      color: var(--muted);
-      font-weight: 500;
+    .stat-lbl {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-2);
+    }
+    .stat-sub {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--text-3);
+      line-height: 1.5;
     }
 
-    /* ─── Terminal Demo ────────────────────────── */
-    .demo {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 100px 24px;
+    /* ══════════════════════════════════════════════
+       DEMO / TERMINAL
+    ══════════════════════════════════════════════ */
+    .demo-section {
+      padding: 120px 0;
+      background: var(--bg-2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
     }
-    .demo-header {
-      text-align: center;
-      margin-bottom: 48px;
+    .demo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.25fr;
+      gap: 64px;
+      align-items: center;
+      margin-top: 64px;
     }
-    .demo-header h2 {
-      font-size: 40px;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 16px;
-    }
-    .demo-header p {
-      font-size: 16px;
-      color: var(--muted);
-    }
-    .terminal {
-      background: #0d1117;
+    .demo-steps { display:flex; flex-direction:column; gap:18px; margin-top:32px; }
+    .demo-step { display:flex; align-items:flex-start; gap:14px; }
+    .ds-dot {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      background: var(--surface-2);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-    }
-    .terminal-header {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 16px;
-      background: #161b22;
-      border-bottom: 1px solid var(--border);
-    }
-    .terminal-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-    }
-    .terminal-dot.red { background: #ff5f56; }
-    .terminal-dot.yellow { background: #ffbd2e; }
-    .terminal-dot.green { background: #27c93f; }
-    .terminal-title {
-      margin-left: 12px;
-      font-size: 13px;
-      color: var(--muted);
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
       font-family: var(--font-mono);
+      color: var(--text-3);
+      flex-shrink: 0;
     }
-    .terminal-body {
-      padding: 24px;
+    .ds-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .ds-cmd {
+      display: inline-block;
+      margin-top: 4px;
       font-family: var(--font-mono);
-      font-size: 14px;
-      line-height: 1.8;
-    }
-    .terminal-line {
-      margin-bottom: 4px;
-    }
-    .terminal-prompt {
-      color: var(--accent);
-    }
-    .terminal-command {
-      color: var(--text);
-    }
-    .terminal-output {
-      color: var(--muted);
-    }
-    .terminal-success {
-      color: var(--green);
+      font-size: 11.5px;
+      color: var(--cyan);
+      background: var(--surface);
+      padding: 3px 10px;
+      border-radius: 4px;
     }
 
-    /* ─── FAQ ──────────────────────────────────── */
-    .faq {
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 100px 24px;
+    /* Terminal */
+    .terminal-wrap { position: relative; }
+    .term-aura {
+      position: absolute;
+      inset: -24px;
+      background: radial-gradient(ellipse at 50% 50%, rgba(0,207,234,.05) 0%, transparent 70%);
+      pointer-events: none;
     }
-    .faq h2 {
-      font-size: 40px;
-      font-weight: 800;
-      text-align: center;
-      letter-spacing: -0.03em;
-      margin-bottom: 64px;
+    .terminal {
+      position: relative;
+      background: #060A12;
+      border: 1px solid #1A2030;
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,.65), 0 0 0 1px rgba(0,207,234,.04);
     }
-    .faq-item {
-      border-bottom: 1px solid var(--border);
-      padding: 24px 0;
+    .term-bar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 12px 18px;
+      background: #0A0F1A;
+      border-bottom: 1px solid #1A2030;
     }
-    .faq-question {
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
+    .tdot { width:11px; height:11px; border-radius:50%; }
+    .tdot-r{background:#FF5F57;} .tdot-y{background:#FFBD2E;} .tdot-g{background:#27C93F;}
+    .term-tab {
+      margin-left: 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-3);
+    }
+    .term-body {
+      padding: 22px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.95;
+      min-height: 340px;
+    }
+    .t-p { color:var(--cyan); }
+    .t-c { color:var(--text); }
+    .t-o { color:var(--text-3); }
+    .t-ok{ color:var(--green); }
+    .t-a { color:var(--amber); }
+    .t-cursor {
+      display: inline-block;
+      width: 7px; height: 14px;
+      background: var(--cyan);
+      vertical-align: text-bottom;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ══════════════════════════════════════════════
+       FAQ
+    ══════════════════════════════════════════════ */
+    .faq-section { padding: 120px 0; }
+    .faq-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 64px;
+      margin-top: 64px;
+    }
+    .faq-sidebar {}
+    .faq-sidebar-text { font-size: 14px; color: var(--text-2); line-height: 1.75; margin-top: 14px; }
+    .faq-links { display:flex; flex-direction:column; gap:8px; margin-top:28px; }
+    .faq-link {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 11px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-2);
+      transition: all 0.2s;
+    }
+    .faq-link:hover { color:var(--text); border-color:var(--border-2); background:var(--surface-2); }
+    .faq-link svg { width:14px; height:14px; }
+    .faq-list { display:flex; flex-direction:column; }
+    .faq-item { border-bottom: 1px solid var(--border); }
+    .faq-q {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      width: 100%;
+      padding: 22px 0;
       background: none;
       border: none;
       color: var(--text);
-      width: 100%;
+      font-size: 15.5px;
+      font-weight: 600;
       text-align: left;
-      padding: 0;
-      font-family: var(--font-sans);
+      gap: 14px;
       transition: color 0.2s;
     }
-    .faq-question:hover {
-      color: var(--accent);
-    }
-    .faq-question svg {
-      width: 20px;
-      height: 20px;
-      transition: transform 0.3s;
-      flex-shrink: 0;
-    }
-    .faq-item.open .faq-question svg {
-      transform: rotate(180deg);
-    }
-    .faq-answer {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.4s ease, padding 0.4s ease;
-    }
-    .faq-item.open .faq-answer {
-      max-height: 300px;
-    }
-    .faq-answer p {
-      padding-top: 16px;
-      font-size: 15px;
-      color: var(--muted);
-      line-height: 1.8;
-    }
+    .faq-q:hover { color: var(--amber); }
+    .faq-q svg { width:17px; height:17px; color:var(--text-3); flex-shrink:0; transition:transform 0.3s var(--ease); }
+    .faq-item.open .faq-q svg { transform: rotate(180deg); }
+    .faq-a { max-height:0; overflow:hidden; transition:max-height 0.4s var(--ease); }
+    .faq-item.open .faq-a { max-height:400px; }
+    .faq-a p { padding-bottom:22px; font-size:14.5px; color:var(--text-2); line-height:1.82; }
 
-    /* ─── CTA ──────────────────────────────────── */
-    .cta {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 100px 24px;
-      text-align: center;
-    }
+    /* ══════════════════════════════════════════════
+       CTA
+    ══════════════════════════════════════════════ */
+    .cta-section { padding: 60px 0 120px; }
     .cta-box {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 24px;
-      padding: 80px 40px;
+      padding: 100px 48px;
+      text-align: center;
       position: relative;
       overflow: hidden;
     }
     .cta-box::before {
       content: '';
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: radial-gradient(ellipse at center, var(--accent-dim) 0%, transparent 70%);
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 80% at 15% -10%, var(--amber-dim) 0%, transparent 55%),
+        radial-gradient(ellipse 50% 70% at 85% 110%, var(--indigo-dim) 0%, transparent 55%);
       pointer-events: none;
     }
-    .cta h2 {
-      font-size: 40px;
+    .cta-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: 22px;
+    }
+    .cta-eyebrow span { display:inline-block; width:20px; height:1px; background:var(--amber); }
+    .cta-title {
+      font-family: var(--font-serif);
+      font-size: clamp(38px, 4.5vw, 62px);
       font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 16px;
-      position: relative;
+      font-style: italic;
+      letter-spacing: -0.025em;
+      line-height: 1.08;
+      color: var(--text);
+      margin-bottom: 18px;
     }
-    .cta p {
-      font-size: 18px;
-      color: var(--muted);
-      max-width: 500px;
-      margin: 0 auto 40px;
-      position: relative;
+    .cta-sub {
+      font-size: 17px;
+      color: var(--text-2);
+      max-width: 460px;
+      margin: 0 auto 36px;
+      line-height: 1.72;
     }
-    .cta-btn {
+    .cta-btns { display:flex; align-items:center; justify-content:center; gap:12px; }
+    .btn-primary {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 16px 32px;
-      background: var(--accent);
-      color: var(--bg);
+      padding: 14px 28px;
+      background: var(--amber);
+      color: #07080F;
       border: none;
-      border-radius: 12px;
-      font-size: 16px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
       font-weight: 700;
-      cursor: pointer;
-      transition: all 0.3s;
-      text-decoration: none;
-      font-family: var(--font-sans);
-      position: relative;
-    }
-    .cta-btn:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 8px 40px var(--accent-glow);
+      letter-spacing: -0.01em;
+      transition: all 0.28s var(--ease);
       text-decoration: none;
     }
+    .btn-primary:hover { background:var(--amber-light); transform:translateY(-2px); box-shadow:0 8px 28px var(--amber-glow); }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border-2);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.28s var(--ease);
+      text-decoration: none;
+    }
+    .btn-secondary:hover { background:var(--surface-3); border-color:var(--border-active); transform:translateY(-2px); }
 
-    /* ─── Footer ───────────────────────────────── */
+    /* ══════════════════════════════════════════════
+       FOOTER
+    ══════════════════════════════════════════════ */
     footer {
       border-top: 1px solid var(--border);
-      padding: 48px 24px;
+      padding: 48px 0 0;
+      position: relative;
+      z-index: 1;
     }
-    .footer-inner {
-      max-width: 1200px;
+    .footer-grid {
+      max-width: 1280px;
       margin: 0 auto;
+      padding: 0 32px;
+      display: grid;
+      grid-template-columns: 1.4fr repeat(3, 1fr);
+      gap: 48px;
+    }
+    .footer-brand-desc {
+      font-size: 13px;
+      color: var(--text-3);
+      line-height: 1.65;
+      max-width: 220px;
+      margin-top: 14px;
+    }
+    .fcol-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 14px;
+    }
+    .footer-links { display:flex; flex-direction:column; gap:9px; }
+    .footer-links a {
+      font-size: 13px;
+      color: var(--text-2);
+      transition: color 0.18s;
+    }
+    .footer-links a:hover { color: var(--text); }
+    .footer-bottom {
+      max-width: 1280px;
+      margin: 32px auto 0;
+      padding: 22px 32px;
+      border-top: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
-    .footer-links {
-      display: flex;
-      gap: 32px;
-    }
-    .footer-links a {
-      color: var(--muted);
-      font-size: 14px;
-      transition: color 0.2s;
-    }
-    .footer-links a:hover {
-      color: var(--text);
-    }
-    .footer-copy {
-      font-size: 14px;
-      color: var(--muted);
+    .footer-copy { font-size: 12px; color: var(--text-3); }
+    .mit-pill {
+      padding: 2px 9px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-2);
     }
 
-    /* ─── Responsive ──────────────────────────── */
-    @media (max-width: 1024px) {
-      .features-grid { grid-template-columns: repeat(2, 1fr); }
-      .stats-grid { grid-template-columns: repeat(2, 1fr); }
-      .workflow-steps { grid-template-columns: repeat(3, 1fr); }
-      .workflow-steps::before { display: none; }
+    /* ══════════════════════════════════════════════
+       KEYFRAMES
+    ══════════════════════════════════════════════ */
+    @keyframes fadeSlideDown {
+      from { opacity:0; transform:translateY(-16px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+    @keyframes fadeSlideUp {
+      from { opacity:0; transform:translateY(24px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+
+    /* ══════════════════════════════════════════════
+       RESPONSIVE
+    ══════════════════════════════════════════════ */
+    @media (max-width: 1080px) {
+      .hero-inner { grid-template-columns: 1fr; gap: 48px; }
+      .hero-right { display: none; }
+      .how-grid { grid-template-columns: 1fr; }
+      .how-visual { position: relative; top: 0; }
+      .bento { grid-template-columns: repeat(2,1fr); }
+      .bc.wide { grid-column: span 2; }
+      .bc.tall { grid-row: span 1; }
+      .stats-grid { grid-template-columns: repeat(2,1fr); }
+      .demo-grid { grid-template-columns: 1fr; }
+      .faq-layout { grid-template-columns: 1fr; }
+      .footer-grid { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 768px) {
-      .nav-links { gap: 16px; }
-      .hero { padding: 120px 24px 80px; }
-      .features-grid { grid-template-columns: 1fr; }
-      .stats-grid { grid-template-columns: repeat(2, 1fr); }
-      .workflow-steps { grid-template-columns: repeat(2, 1fr); }
-      .footer-inner { flex-direction: column; gap: 24px; }
+      .nav-inner { padding: 0 20px; }
+      .nav-link { display: none; }
+      .sec-inner { padding: 0 20px; }
+      .hero-inner { padding: 0 20px; }
+      .bento { grid-template-columns: 1fr; }
+      .bc.wide { grid-column: span 1; }
+      .strip-inner { gap: 12px; }
+      .vdivider { display: none; }
+      .cta-box { padding: 60px 24px; }
+      .cta-btns { flex-direction: column; }
+      .footer-grid { grid-template-columns: 1fr; gap: 28px; padding: 0 20px; }
+      .footer-bottom { flex-direction: column; gap: 10px; padding: 16px 20px; }
     }
-    @media (max-width: 480px) {
-      .stats-grid { grid-template-columns: 1fr; }
-      .workflow-steps { grid-template-columns: 1fr; }
+    @media (max-width: 520px) {
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+      .hero-headline { font-size: 38px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Nav -->
-  <nav id="navbar">
-    <div class="nav-inner">
-      <a href="#" class="logo">
-        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="16" cy="16" r="14"/>
-          <circle cx="16" cy="16" r="6"/>
-          <line x1="16" y1="2" x2="16" y2="8"/>
-          <line x1="16" y1="24" x2="16" y2="30"/>
-        </svg>
-        ScholarDevClaw
-      </a>
-      <div class="nav-links">
-        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw" class="github">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-          </svg>
-          GitHub
-        </a>
-        <a href="#workflow">How it works</a>
-        <a href="#features">Features</a>
-        <a href="#faq">FAQ</a>
-      </div>
-    </div>
-  </nav>
+<!-- ────────── CANVAS ────────── -->
+<canvas id="canvas-bg"></canvas>
 
-  <!-- Hero -->
-  <section class="hero">
-    <div class="hero-glow"></div>
-    <div class="hero-content">
-      <div class="hero-badge">
-        <span class="pulse"></span>
-        Open source · MIT licensed · v2.0
+<!-- ────────── NAV ────────── -->
+<nav id="navbar">
+  <div class="nav-inner">
+    <a href="#" class="logo" aria-label="ScholarDevClaw home">
+      <div class="logo-mark">
+        <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <circle cx="9" cy="9" r="7" stroke="#F2A83C" stroke-width="1.5"/>
+          <circle cx="9" cy="9" r="3" stroke="#F2A83C" stroke-width="1.5"/>
+          <line x1="9" y1="2" x2="9" y2="5"  stroke="#F2A83C" stroke-width="1.5"/>
+          <line x1="9" y1="13" x2="9" y2="16" stroke="#F2A83C" stroke-width="1.5"/>
+        </svg>
       </div>
-      <h1>
-        Autonomous<br/>
-        <span class="accent">Research-to-Code</span><br/>
-        AI Agent
+      ScholarDevClaw
+    </a>
+    <div class="nav-links">
+      <a href="#how"      class="nav-link">How it works</a>
+      <a href="#features" class="nav-link">Features</a>
+      <a href="#demo"     class="nav-link">Demo</a>
+      <a href="#faq"      class="nav-link">FAQ</a>
+      <a href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank" rel="noopener" class="nav-github">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+        </svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- ────────── HERO ────────── -->
+<section class="hero-section">
+  <div class="hero-radial" aria-hidden="true"></div>
+  <div class="hero-inner">
+    <!-- Left -->
+    <div class="hero-left">
+      <div class="hero-eyebrow">
+        <span class="eyebrow-dot" aria-hidden="true"></span>
+        Open Source &middot; MIT Licensed &middot; v2.0
+      </div>
+      <h1 class="hero-headline">
+        Research Papers<br>
+        <span class="accent">Become</span><br>
+        <span class="code-word">production_code()</span>
       </h1>
-      <p>Analyzes your codebase, finds research improvements from the latest ML papers, maps them to your code, and generates validated patches automatically. Supports Python, JS/TS, Go, Rust, and Java.</p>
+      <p class="hero-sub">
+        ScholarDevClaw reads the latest ML research, maps improvements directly to your codebase, and generates validated patches — fully autonomous, runs locally, zero data sharing.
+      </p>
 
-      <!-- Install Box -->
-      <div class="install-box">
-        <div class="install-tabs">
-          <button class="install-tab active" data-tab="curl">curl</button>
-          <button class="install-tab" data-tab="pip">pip</button>
-          <button class="install-tab" data-tab="pipx">pipx</button>
-          <button class="install-tab" data-tab="source">source</button>
+      <!-- Install widget -->
+      <div class="install-widget" id="install">
+        <div class="itab-row" role="tablist">
+          <button class="itab active" data-tab="curl"   role="tab" aria-selected="true">curl</button>
+          <button class="itab"        data-tab="pip"    role="tab">pip</button>
+          <button class="itab"        data-tab="pipx"   role="tab">pipx</button>
+          <button class="itab"        data-tab="source" role="tab">source</button>
         </div>
-        <div class="install-content">
-          <code class="install-cmd" id="installCmd">
-            <span class="prompt">$ </span>curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash
-          </code>
-          <button class="copy-btn" onclick="copyInstall()">Copy</button>
+        <div class="icmd-row">
+          <span class="icmd-prompt" aria-hidden="true">$</span>
+          <code class="icmd-text" id="installCmd">curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash</code>
+          <button class="copy-btn" onclick="copyInstall()" aria-label="Copy install command">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy
+          </button>
+        </div>
+        <p class="install-note">Also via <a href="#" onclick="switchTab('pip');return false;">pip</a> &middot; <a href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank" rel="noopener">View on GitHub →</a></p>
+      </div>
+    </div>
+
+    <!-- Right — animated pipeline orb -->
+    <div class="hero-right" aria-hidden="true">
+      <div class="orb-svg-wrap">
+        <svg viewBox="0 0 460 460" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%">
+          <defs>
+            <radialGradient id="cg" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"   stop-color="#F2A83C" stop-opacity=".28"/>
+              <stop offset="100%" stop-color="#F2A83C" stop-opacity="0"/>
+            </radialGradient>
+            <radialGradient id="bg-g" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"   stop-color="#F2A83C" stop-opacity=".04"/>
+              <stop offset="100%" stop-color="#F2A83C" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%"   stop-color="#F2A83C" stop-opacity="0"/>
+              <stop offset="50%"  stop-color="#F2A83C" stop-opacity=".5"/>
+              <stop offset="100%" stop-color="#00CFEA" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="lg2" x1="100%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%"   stop-color="#7C6AF2" stop-opacity="0"/>
+              <stop offset="50%"  stop-color="#7C6AF2" stop-opacity=".45"/>
+              <stop offset="100%" stop-color="#00CFEA" stop-opacity="0"/>
+            </linearGradient>
+            <filter id="gf"><feGaussianBlur stdDeviation="2.5"/></filter>
+          </defs>
+
+          <!-- ambient bg glow -->
+          <circle cx="230" cy="230" r="200" fill="url(#bg-g)"/>
+
+          <!-- outer decorative ring -->
+          <g class="ring-3">
+            <circle cx="230" cy="230" r="182" stroke="#1C2040" stroke-width="1" stroke-dasharray="3 8"/>
+          </g>
+
+          <!-- middle ring + orbital nodes -->
+          <g class="ring-2">
+            <circle cx="230" cy="230" r="138" stroke="#252848" stroke-width="1" stroke-dasharray="2 5"/>
+
+            <!-- Analyze — top -->
+            <g transform="translate(230,92)" class="node-pulse">
+              <circle r="20" fill="#101220" stroke="#F2A83C" stroke-width="1.5"/>
+              <circle r="6" fill="#F2A83C"/>
+              <text y="36" fill="#8A90B8" font-size="9.5" font-family="JetBrains Mono,monospace" text-anchor="middle">Analyze</text>
+            </g>
+            <!-- Research — top-right -->
+            <g transform="translate(342,161)" class="node-pulse" style="animation-delay:.6s">
+              <circle r="18" fill="#101220" stroke="#7C6AF2" stroke-width="1.5"/>
+              <circle r="5" fill="#7C6AF2"/>
+              <text y="32" fill="#8A90B8" font-size="9.5" font-family="JetBrains Mono,monospace" text-anchor="middle">Search</text>
+            </g>
+            <!-- Generate — bottom-right -->
+            <g transform="translate(330,330)" class="node-pulse" style="animation-delay:1.2s">
+              <circle r="18" fill="#101220" stroke="#00CFEA" stroke-width="1.5"/>
+              <circle r="5" fill="#00CFEA"/>
+              <text y="32" fill="#8A90B8" font-size="9.5" font-family="JetBrains Mono,monospace" text-anchor="middle">Generate</text>
+            </g>
+            <!-- Validate — bottom-left -->
+            <g transform="translate(130,330)" class="node-pulse" style="animation-delay:1.8s">
+              <circle r="18" fill="#101220" stroke="#22C55E" stroke-width="1.5"/>
+              <circle r="5" fill="#22C55E"/>
+              <text y="32" fill="#8A90B8" font-size="9.5" font-family="JetBrains Mono,monospace" text-anchor="middle">Validate</text>
+            </g>
+            <!-- Map — left -->
+            <g transform="translate(118,161)" class="node-pulse" style="animation-delay:2.4s">
+              <circle r="18" fill="#101220" stroke="#F2A83C" stroke-width="1.5" stroke-dasharray="3 3"/>
+              <circle r="5" fill="#F2A83C" opacity=".7"/>
+              <text y="32" fill="#8A90B8" font-size="9.5" font-family="JetBrains Mono,monospace" text-anchor="middle">Map</text>
+            </g>
+          </g>
+
+          <!-- spoke connections -->
+          <line x1="230" y1="112" x2="230" y2="196" stroke="url(#lg1)" stroke-width="1.5" opacity=".6"/>
+          <line x1="324" y1="179" x2="258" y2="222" stroke="url(#lg1)" stroke-width="1.5" opacity=".6"/>
+          <line x1="312" y1="312" x2="256" y2="248" stroke="url(#lg2)" stroke-width="1.5" opacity=".6"/>
+          <line x1="148" y1="312" x2="204" y2="248" stroke="url(#lg2)" stroke-width="1.5" opacity=".6"/>
+          <line x1="136" y1="179" x2="202" y2="222" stroke="url(#lg1)" stroke-width="1.5" opacity=".6"/>
+
+          <!-- inner ring -->
+          <g class="ring-1">
+            <circle cx="230" cy="230" r="78" stroke="#1C2040" stroke-width="1.5"/>
+            <circle cx="230" cy="152" r="3.5" fill="#F2A83C" opacity=".8"/>
+            <circle cx="298" cy="269" r="3"   fill="#7C6AF2" opacity=".65"/>
+            <circle cx="162" cy="269" r="3"   fill="#00CFEA" opacity=".65"/>
+          </g>
+
+          <!-- center orb -->
+          <g class="orb-center-g">
+            <circle cx="230" cy="230" r="48" fill="url(#cg)" opacity=".45"/>
+            <circle cx="230" cy="230" r="36" fill="#0F1120" stroke="#F2A83C" stroke-width="1.5"/>
+            <circle cx="230" cy="230" r="24" fill="#0C0E1C" stroke="#F2A83C" stroke-width=".8" stroke-opacity=".4"/>
+            <text x="230" y="225" fill="#F2A83C" font-size="11.5" font-weight="700" font-family="JetBrains Mono,monospace" text-anchor="middle">SDC</text>
+            <text x="230" y="242" fill="#4E5474" font-size="7"  font-family="Inter,sans-serif" text-anchor="middle">v2.0</text>
+          </g>
+
+          <!-- flowing particles -->
+          <circle r="3" fill="#F2A83C" opacity=".9">
+            <animateMotion dur="3.2s" repeatCount="indefinite" begin="0s">
+              <mpath href="#mp1"/>
+            </animateMotion>
+            <animate attributeName="opacity" values="0;1;1;0" dur="3.2s" repeatCount="indefinite"/>
+          </circle>
+          <circle r="2.5" fill="#7C6AF2" opacity=".9">
+            <animateMotion dur="4.1s" repeatCount="indefinite" begin="1.1s">
+              <mpath href="#mp2"/>
+            </animateMotion>
+            <animate attributeName="opacity" values="0;1;1;0" dur="4.1s" repeatCount="indefinite" begin="1.1s"/>
+          </circle>
+          <circle r="2.5" fill="#00CFEA" opacity=".9">
+            <animateMotion dur="3.7s" repeatCount="indefinite" begin="2.2s">
+              <mpath href="#mp3"/>
+            </animateMotion>
+            <animate attributeName="opacity" values="0;1;1;0" dur="3.7s" repeatCount="indefinite" begin="2.2s"/>
+          </circle>
+          <circle r="2" fill="#22C55E" opacity=".85">
+            <animateMotion dur="3.5s" repeatCount="indefinite" begin="0.7s">
+              <mpath href="#mp4"/>
+            </animateMotion>
+            <animate attributeName="opacity" values="0;1;1;0" dur="3.5s" repeatCount="indefinite" begin="0.7s"/>
+          </circle>
+
+          <!-- hidden motion paths -->
+          <path id="mp1" d="M 230 112 Q 230 171 230 230" fill="none"/>
+          <path id="mp2" d="M 342 179 Q 286 204 230 230" fill="none"/>
+          <path id="mp3" d="M 312 312 Q 271 271 230 230" fill="none"/>
+          <path id="mp4" d="M 148 312 Q 189 271 230 230" fill="none"/>
+
+          <!-- decorative corner: paper icon -->
+          <g transform="translate(22,44)" opacity=".45">
+            <rect width="44" height="56" rx="4" fill="#101220" stroke="#252848" stroke-width="1"/>
+            <line x1="8" y1="14" x2="36" y2="14" stroke="#F2A83C" stroke-width="1.5" stroke-opacity=".55"/>
+            <line x1="8" y1="22" x2="36" y2="22" stroke="#4E5474" stroke-width="1"/>
+            <line x1="8" y1="30" x2="26" y2="30" stroke="#4E5474" stroke-width="1"/>
+            <line x1="8" y1="38" x2="30" y2="38" stroke="#4E5474" stroke-width="1"/>
+            <text x="22" y="52" fill="#4E5474" font-size="7" font-family="JetBrains Mono,monospace" text-anchor="middle">paper.pdf</text>
+          </g>
+
+          <!-- decorative corner: code icon -->
+          <g transform="translate(394,374)" opacity=".45">
+            <rect width="52" height="46" rx="4" fill="#101220" stroke="#252848" stroke-width="1"/>
+            <text x="8" y="18" fill="#7C6AF2" font-size="9" font-family="JetBrains Mono,monospace">def</text>
+            <text x="8" y="32" fill="#00CFEA" font-size="9" font-family="JetBrains Mono,monospace">  opt()</text>
+            <text x="26" y="44" fill="#22C55E" font-size="8" font-family="JetBrains Mono,monospace" text-anchor="middle">✓</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────── LANGUAGE STRIP ────────── -->
+<div class="strip">
+  <div class="strip-inner">
+    <span class="strip-label">Supports</span>
+    <div class="lang-pills">
+      <div class="lang-pill"><span class="ldot" style="background:#3572A5"></span>Python</div>
+      <div class="lang-pill"><span class="ldot" style="background:#F7DF1E"></span>JavaScript</div>
+      <div class="lang-pill"><span class="ldot" style="background:#3178C6"></span>TypeScript</div>
+      <div class="lang-pill"><span class="ldot" style="background:#00ADD8"></span>Go</div>
+      <div class="lang-pill"><span class="ldot" style="background:#CE422B"></span>Rust</div>
+      <div class="lang-pill"><span class="ldot" style="background:#B07219"></span>Java</div>
+    </div>
+    <div class="vdivider"></div>
+    <div class="strip-stat">
+      <span class="strip-stat-n">1200+</span>
+      <span class="strip-stat-l">Tests Passing</span>
+    </div>
+    <div class="vdivider"></div>
+    <div class="strip-stat">
+      <span class="strip-stat-n">MIT</span>
+      <span class="strip-stat-l">Open Source</span>
+    </div>
+    <div class="vdivider"></div>
+    <div class="strip-stat">
+      <span class="strip-stat-n">16</span>
+      <span class="strip-stat-l">Paper Specs</span>
+    </div>
+  </div>
+</div>
+
+<!-- ────────── HOW IT WORKS ────────── -->
+<section class="sec how-section" id="how">
+  <div class="sec-inner">
+    <div class="reveal">
+      <div class="sec-label">Process</div>
+      <h2 class="sec-title">Six phases.<br>One autonomous pipeline.</h2>
+      <p class="sec-sub">From raw research paper to production-ready pull request — ScholarDevClaw handles the entire workflow without human intervention.</p>
+    </div>
+    <div class="how-grid">
+      <!-- Steps -->
+      <div class="how-steps" role="list">
+        <div class="how-step active reveal" id="step-0" onclick="setStep(0)" role="listitem">
+          <div class="step-num">01</div>
+          <div class="step-body">
+            <div class="step-title">Analyze Repository</div>
+            <div class="step-desc">Tree-sitter extracts a full AST from your codebase across 6+ languages. Detects frameworks, patterns, dependencies, and architecture automatically.</div>
+            <div class="step-bar"><div class="step-progress" id="prog-0"></div></div>
+          </div>
+        </div>
+        <div class="how-step reveal reveal-d1" id="step-1" onclick="setStep(1)" role="listitem">
+          <div class="step-num">02</div>
+          <div class="step-body">
+            <div class="step-title">Search Research Papers</div>
+            <div class="step-desc">Searches arXiv (2.4M+ papers), Papers with Code, and GitHub for ML research relevant to your codebase. Extracts implementation specs from PDFs.</div>
+            <div class="step-bar"><div class="step-progress" id="prog-1"></div></div>
+          </div>
+        </div>
+        <div class="how-step reveal reveal-d2" id="step-2" onclick="setStep(2)" role="listitem">
+          <div class="step-num">03</div>
+          <div class="step-body">
+            <div class="step-title">Map to Your Code</div>
+            <div class="step-desc">6-tier matching locates where improvements apply: exact name → fuzzy → imports → text scan → legacy → LLM semantic. Every match is confidence-scored.</div>
+            <div class="step-bar"><div class="step-progress" id="prog-2"></div></div>
+          </div>
+        </div>
+        <div class="how-step reveal reveal-d3" id="step-3" onclick="setStep(3)" role="listitem">
+          <div class="step-num">04</div>
+          <div class="step-body">
+            <div class="step-title">Generate Patches</div>
+            <div class="step-desc">Creates validated patches using 15+ CST templates (RMSNorm, FlashAttention, RoPE, SwiGLU…), 10 CST transformers, and LLM synthesis fallback.</div>
+            <div class="step-bar"><div class="step-progress" id="prog-3"></div></div>
+          </div>
+        </div>
+        <div class="how-step reveal reveal-d4" id="step-4" onclick="setStep(4)" role="listitem">
+          <div class="step-num">05</div>
+          <div class="step-body">
+            <div class="step-title">Benchmark &amp; Validate</div>
+            <div class="step-desc">Real subprocess benchmarks measure actual speedup and memory impact. Mandatory approval gates on low-confidence or risky validations before proceeding.</div>
+            <div class="step-bar"><div class="step-progress" id="prog-4"></div></div>
+          </div>
+        </div>
+        <div class="how-step reveal reveal-d5" id="step-5" onclick="setStep(5)" role="listitem">
+          <div class="step-num">06</div>
+          <div class="step-body">
+            <div class="step-title">Open a Safe PR</div>
+            <div class="step-desc">Creates a clean pull request on a safe branch with full changelog, benchmark results, and confidence scores attached. Protected-branch blocking keeps you safe.</div>
+            <div class="step-bar"><div class="step-progress" id="prog-5"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sticky visual -->
+      <div class="how-visual reveal reveal-d2">
+        <div class="how-card">
+          <div id="how-card-content" style="position:relative;text-align:center;width:100%;"></div>
         </div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- Workflow -->
-  <section class="workflow" id="workflow">
-    <div class="workflow-header fade-in">
-      <h2>How it works</h2>
-      <p>A 6-phase autonomous pipeline that takes research papers to production code</p>
+<!-- ────────── FEATURES BENTO ────────── -->
+<section class="sec features-section" id="features">
+  <div class="sec-inner">
+    <div class="features-hdr reveal">
+      <div class="sec-label">Capabilities</div>
+      <h2 class="sec-title">Built for research engineers</h2>
+      <p class="sec-sub">Production-grade tooling for teams who operationalize ML research at scale.</p>
     </div>
-    <div class="workflow-steps">
-      <div class="workflow-step fade-in fade-in-delay-1">
-        <div class="step-number">1</div>
-        <div class="step-title">Analyze</div>
-        <div class="step-desc">Tree-sitter AST extraction</div>
-      </div>
-      <div class="workflow-step fade-in fade-in-delay-2">
-        <div class="step-number">2</div>
-        <div class="step-title">Research</div>
-        <div class="step-desc">arXiv & web search</div>
-      </div>
-      <div class="workflow-step fade-in fade-in-delay-3">
-        <div class="step-number">3</div>
-        <div class="step-title">Map</div>
-        <div class="step-desc">6-tier code matching</div>
-      </div>
-      <div class="workflow-step fade-in fade-in-delay-4">
-        <div class="step-number">4</div>
-        <div class="step-title">Generate</div>
-        <div class="step-desc">CST patch generation</div>
-      </div>
-      <div class="workflow-step fade-in fade-in-delay-5">
-        <div class="step-number">5</div>
-        <div class="step-title">Validate</div>
-        <div class="step-desc">Benchmark testing</div>
-      </div>
-      <div class="workflow-step fade-in">
-        <div class="step-number">6</div>
-        <div class="step-title">Integrate</div>
-        <div class="step-desc">Safe PR creation</div>
-      </div>
-    </div>
-  </section>
+    <div class="bento">
 
-  <!-- Features -->
-  <section class="features" id="features">
-    <div class="features-header fade-in">
-      <h2>Built for research engineers</h2>
-      <p>Everything you need to operationalize ML research into production code</p>
-    </div>
-    <div class="features-grid">
-      <div class="feature-card fade-in fade-in-delay-1">
-        <div class="feature-icon">
+      <!-- Repository Intelligence — wide -->
+      <div class="bc wide bc-amber reveal reveal-d1">
+        <div class="bc-glow"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start">
+          <div>
+            <div class="bento-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <div class="bc-title">Repository Intelligence</div>
+            <div class="bc-desc">Tree-sitter AST extraction across 6+ languages. Detects frameworks, dependency patterns, and architectural improvement opportunities automatically.</div>
+            <div class="lang-grid" style="margin-top:16px">
+              <div class="lang-tag go">Python ✓</div>
+              <div class="lang-tag go">JS/TS ✓</div>
+              <div class="lang-tag go">Go ✓</div>
+              <div class="lang-tag go">Rust ✓</div>
+              <div class="lang-tag go">Java ✓</div>
+              <div class="lang-tag" style="color:var(--text-3)">C++ 🚧</div>
+            </div>
+          </div>
+          <div class="code-preview">
+            <div class="cp-line"><span class="cp-ln">1</span><span class="cp-cm"># AST Analysis</span></div>
+            <div class="cp-line"><span class="cp-ln">2</span><span class="cp-kw">from</span> <span class="cp-fn">scholardevclaw</span> <span class="cp-kw">import</span> analyze</div>
+            <div class="cp-line"><span class="cp-ln">3</span>&nbsp;</div>
+            <div class="cp-line"><span class="cp-ln">4</span>result = <span class="cp-fn">analyze</span>(<span class="cp-str">"./my-model"</span>)</div>
+            <div class="cp-line"><span class="cp-ln">5</span><span class="cp-cm"># → 6 improvements found</span></div>
+            <div class="cp-line"><span class="cp-ln">6</span><span class="cp-cm"># → RMSNorm candidate: 94%</span></div>
+            <div class="cp-line"><span class="cp-ln">7</span><span class="cp-cm"># → FlashAttn match:   97%</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Research Intelligence -->
+      <div class="bc bc-ind reveal reveal-d2">
+        <div class="bc-glow"></div>
+        <div class="bento-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
           </svg>
         </div>
-        <h3>Repository Intelligence</h3>
-        <p>Analyzes codebase structure, patterns, and architecture using tree-sitter AST extraction for 6+ languages. Detects frameworks, dependencies, and improvement opportunities.</p>
+        <div class="bc-title">Research Intelligence</div>
+        <div class="bc-desc">Searches arXiv (2.4M+ papers), Papers with Code, and GitHub for ML research relevant to your architecture. Extracts implementation specs from PDFs automatically.</div>
+        <div class="bc-badge">2.4M+ arXiv Papers</div>
       </div>
-      <div class="feature-card fade-in fade-in-delay-2">
-        <div class="feature-icon">
+
+      <!-- Smart Mapping — tall -->
+      <div class="bc tall bc-amber reveal reveal-d1">
+        <div class="bc-glow"></div>
+        <div class="bento-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="12" x2="16" y2="14"/>
           </svg>
         </div>
-        <h3>Research Intelligence</h3>
-        <p>Searches arXiv, Papers with Code, and the web for the latest ML research. Extracts implementation specs from PDFs and generates paper-to-code mappings.</p>
+        <div class="bc-title">6-Tier Smart Matching</div>
+        <div class="bc-desc">Exact name → Fuzzy → Imports → Text scan → Legacy → LLM semantic. Every match is confidence-scored with mandatory approval gates on risky mappings.</div>
+        <div class="tmpl-list">
+          <div class="tmpl-tag">→ Exact name match</div>
+          <div class="tmpl-tag">→ Fuzzy matching</div>
+          <div class="tmpl-tag">→ Import analysis</div>
+          <div class="tmpl-tag">→ Text scanning</div>
+          <div class="tmpl-tag">→ LLM semantic</div>
+        </div>
+        <div class="bc-badge" style="margin-top:auto;margin-bottom:0">6 Tiers</div>
       </div>
-      <div class="feature-card fade-in fade-in-delay-3">
-        <div class="feature-icon">
+
+      <!-- Patch Generation -->
+      <div class="bc bc-cyan reveal reveal-d2">
+        <div class="bc-glow"></div>
+        <div class="bento-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M12 6v6l4 2"/>
+            <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
           </svg>
         </div>
-        <h3>Smart Mapping</h3>
-        <p>Maps research improvements to your code using 6-tier matching: exact name, fuzzy matching, import analysis, text scanning, legacy compatibility, and LLM semantic search.</p>
+        <div class="bc-title">Patch Generation</div>
+        <div class="bc-desc">15+ CST templates for the most impactful ML optimisations — RMSNorm, FlashAttention, SwiGLU, RoPE and more — plus LLM synthesis fallback.</div>
+        <div class="bc-badge">15+ Templates</div>
       </div>
-      <div class="feature-card fade-in fade-in-delay-1">
-        <div class="feature-icon">
+
+      <!-- Benchmark Validation -->
+      <div class="bc bc-green reveal reveal-d3">
+        <div class="bc-glow"></div>
+        <div class="bento-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="16 18 22 12 16 6"/>
-            <polyline points="8 6 2 12 8 18"/>
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
           </svg>
         </div>
-        <h3>Patch Generation</h3>
-        <p>Generates validated code patches using 15+ templates (RMSNorm, SwiGLU, FlashAttention, RoPE, etc.), 10+ CST transformers, and LLM synthesis fallback.</p>
+        <div class="bc-title">Benchmark Validation</div>
+        <div class="bc-desc">Real subprocess benchmarks measure speedup and memory impact. 1200+ tests guarantee patch quality and prevent regressions before any PR is opened.</div>
+        <div class="bc-badge">1200+ Tests</div>
       </div>
-      <div class="feature-card fade-in fade-in-delay-2">
-        <div class="feature-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-            <polyline points="22 4 12 14.01 9 11.01"/>
+
+      <!-- Interactive TUI — wide -->
+      <div class="bc wide bc-ind reveal reveal-d2" style="background:var(--surface-2)">
+        <div class="bc-glow"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:center">
+          <div>
+            <div class="bento-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+            </div>
+            <div class="bc-title">Interactive TUI</div>
+            <div class="bc-desc">Premium terminal interface with workflow wizard, live logs, run history, artifact viewer, and approval gates — all in one place.</div>
+          </div>
+          <div class="mini-term">
+            <div style="color:var(--cyan)">$ scholardevclaw tui</div>
+            <div style="color:var(--text-3)">Launching…</div>
+            <div style="color:var(--green)">✓ Wizard ready</div>
+            <div style="color:var(--text-3)">▸ analyze → suggest</div>
+            <div style="color:var(--text-3)">▸ map → generate</div>
+            <div style="color:var(--amber)">⏸ Approval required</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /bento -->
+  </div>
+</section>
+
+<!-- ────────── STATS ────────── -->
+<section class="sec stats-section">
+  <div class="sec-inner">
+    <div class="reveal" style="text-align:center">
+      <div class="sec-label" style="justify-content:center">By the numbers</div>
+      <h2 class="sec-title" style="text-align:center">Precision at scale</h2>
+      <p class="sec-sub" style="margin:0 auto">Every number earned — built on real benchmarks, real tests, and real research integrations.</p>
+    </div>
+    <div class="stats-grid reveal reveal-d1">
+      <div class="stat-tile">
+        <div class="stat-num" data-target="16">0</div>
+        <div class="stat-lbl">Paper Specs</div>
+        <div class="stat-sub">Built-in research implementations</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" data-target="1200" data-suffix="+">0</div>
+        <div class="stat-lbl">Tests Passing</div>
+        <div class="stat-sub">Full integration &amp; unit coverage</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" data-target="6">0</div>
+        <div class="stat-lbl">Languages</div>
+        <div class="stat-sub">Python, JS/TS, Go, Rust, Java</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" data-target="15" data-suffix="+">0</div>
+        <div class="stat-lbl">Code Templates</div>
+        <div class="stat-sub">Battle-tested CST transformers</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────── TERMINAL DEMO ────────── -->
+<section class="sec demo-section" id="demo">
+  <div class="sec-inner">
+    <div class="demo-grid">
+      <div class="reveal">
+        <div class="sec-label">Demo</div>
+        <h2 class="sec-title">Running in under<br>a minute</h2>
+        <p class="sec-sub">Install once, improve any codebase. ScholarDevClaw handles the full research-to-code pipeline autonomously.</p>
+        <div class="demo-steps">
+          <div class="demo-step">
+            <div class="ds-dot">1</div>
+            <div>
+              <div class="ds-title">Install</div>
+              <div class="ds-cmd">curl -fsSL …/install.sh | bash</div>
+            </div>
+          </div>
+          <div class="demo-step">
+            <div class="ds-dot">2</div>
+            <div>
+              <div class="ds-title">Run the demo on nanoGPT</div>
+              <div class="ds-cmd">scholardevclaw demo</div>
+            </div>
+          </div>
+          <div class="demo-step">
+            <div class="ds-dot">3</div>
+            <div>
+              <div class="ds-title">Launch the interactive TUI</div>
+              <div class="ds-cmd">scholardevclaw tui</div>
+            </div>
+          </div>
+          <div class="demo-step">
+            <div class="ds-dot">4</div>
+            <div>
+              <div class="ds-title">Point at your own project</div>
+              <div class="ds-cmd">scholardevclaw analyze .</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="terminal-wrap reveal reveal-d2">
+        <div class="term-aura" aria-hidden="true"></div>
+        <div class="terminal">
+          <div class="term-bar">
+            <div class="tdot tdot-r"></div>
+            <div class="tdot tdot-y"></div>
+            <div class="tdot tdot-g"></div>
+            <span class="term-tab">scholardevclaw — zsh</span>
+          </div>
+          <div class="term-body" id="terminal-output"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────── FAQ ────────── -->
+<section class="sec faq-section" id="faq">
+  <div class="sec-inner">
+    <div class="faq-layout">
+      <div class="reveal">
+        <div class="sec-label">FAQ</div>
+        <h2 class="sec-title" style="font-size:clamp(28px,3vw,40px)">Common questions</h2>
+        <p class="faq-sidebar-text">Have something else in mind? Reach out on GitHub — we respond quickly.</p>
+        <div class="faq-links">
+          <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/issues" target="_blank" rel="noopener" class="faq-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>
+            Open an Issue
+          </a>
+          <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/discussions" target="_blank" rel="noopener" class="faq-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Start a Discussion
+          </a>
+        </div>
+      </div>
+
+      <div class="faq-list reveal reveal-d2">
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            What is ScholarDevClaw?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><p>ScholarDevClaw is an autonomous Research-to-Code AI Agent that analyzes your codebase, finds relevant improvements from the latest ML papers, maps them to your code, and generates validated patches automatically. It supports Python, JS/TS, Go, Rust, and Java — running entirely on your local machine.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            How is it different from Copilot or Cursor?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><p>Generic AI coding assistants complete code you write. ScholarDevClaw proactively reads actual research papers, extracts implementation specs, and autonomously maps them to your specific codebase using 6-tier matching. It's built for researchers and engineers who want to operationalize ML innovations — not just autocomplete.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            Do I need an AI API key?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><p>No. ScholarDevClaw works out of the box with its built-in knowledge base of 16+ paper specs — RMSNorm, FlashAttention, RoPE, SwiGLU, and more. For advanced LLM-powered semantic matching you can optionally connect Claude, GPT, Gemini, or any other provider.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            Does my code leave my machine?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><p>Never. ScholarDevClaw runs entirely locally. Your code is analyzed on your machine and never transmitted anywhere unless you explicitly configure an external LLM service. All analysis, mapping, and patch generation happens locally — you have full control.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            Is ScholarDevClaw open source?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-a"><p>Yes. ScholarDevClaw is fully open source under the MIT license. Fork it, contribute to it, or build on top of it. The source code, docs, and contribution guide are all on GitHub.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────── CTA ────────── -->
+<section class="sec cta-section">
+  <div class="sec-inner">
+    <div class="cta-box reveal">
+      <div class="cta-eyebrow"><span></span>Get started</div>
+      <h2 class="cta-title">Your codebase deserves<br>the latest research.</h2>
+      <p class="cta-sub">Install ScholarDevClaw and run your first research-to-code pipeline in under a minute.</p>
+      <div class="cta-btns">
+        <a href="#install" class="btn-primary" onclick="document.querySelector('.hero-section').scrollIntoView({behavior:'smooth'});return false">
+          Install now
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </a>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank" rel="noopener" class="btn-secondary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────── FOOTER ────────── -->
+<footer>
+  <div class="footer-grid">
+    <div>
+      <div class="logo" style="margin-bottom:14px">
+        <div class="logo-mark">
+          <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <circle cx="9" cy="9" r="7" stroke="#F2A83C" stroke-width="1.5"/>
+            <circle cx="9" cy="9" r="3" stroke="#F2A83C" stroke-width="1.5"/>
+            <line x1="9" y1="2" x2="9" y2="5"  stroke="#F2A83C" stroke-width="1.5"/>
+            <line x1="9" y1="13" x2="9" y2="16" stroke="#F2A83C" stroke-width="1.5"/>
           </svg>
         </div>
-        <h3>Benchmark Validation</h3>
-        <p>Validates patches with real subprocess-based benchmarks, measuring speedup and memory impact. Ensures improvements don't regress performance.</p>
+        ScholarDevClaw
       </div>
-      <div class="feature-card fade-in fade-in-delay-3">
-        <div class="feature-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-            <line x1="8" y1="21" x2="16" y2="21"/>
-            <line x1="12" y1="17" x2="12" y2="21"/>
-          </svg>
-        </div>
-        <h3>Interactive TUI</h3>
-        <p>Premium terminal interface with workflow wizard, live execution logs, run history, artifact viewer, and agent orchestration with approval gates.</p>
-      </div>
+      <p class="footer-brand-desc">Autonomous Research-to-Code AI Agent. Transform any codebase with cutting-edge ML research, automatically.</p>
     </div>
-  </section>
-
-  <!-- Stats -->
-  <section class="stats">
-    <h2 class="fade-in">Built for scale</h2>
-    <p class="fade-in">Used by researchers and developers to improve ML codebases</p>
-    <div class="stats-grid">
-      <div class="stat-card fade-in fade-in-delay-1">
-        <div class="stat-number">16</div>
-        <div class="stat-label">Paper Specs</div>
-      </div>
-      <div class="stat-card fade-in fade-in-delay-2">
-        <div class="stat-number">1200+</div>
-        <div class="stat-label">Tests Passing</div>
-      </div>
-      <div class="stat-card fade-in fade-in-delay-3">
-        <div class="stat-number">6</div>
-        <div class="stat-label">Languages</div>
-      </div>
-      <div class="stat-card fade-in fade-in-delay-4">
-        <div class="stat-number">15+</div>
-        <div class="stat-label">Code Templates</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Terminal Demo -->
-  <section class="demo" id="demo">
-    <div class="demo-header fade-in">
-      <h2>Try it in seconds</h2>
-      <p>Install and run your first demo in under a minute</p>
-    </div>
-    <div class="terminal fade-in">
-      <div class="terminal-header">
-        <div class="terminal-dot red"></div>
-        <div class="terminal-dot yellow"></div>
-        <div class="terminal-dot green"></div>
-        <span class="terminal-title">scholardevclaw</span>
-      </div>
-      <div class="terminal-body">
-        <div class="terminal-line">
-          <span class="terminal-prompt">$ </span>
-          <span class="terminal-command">curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash</span>
-        </div>
-        <div class="terminal-line terminal-output">Installing ScholarDevClaw...</div>
-        <div class="terminal-line terminal-success">✓ Installed successfully!</div>
-        <div class="terminal-line">&nbsp;</div>
-        <div class="terminal-line">
-          <span class="terminal-prompt">$ </span>
-          <span class="terminal-command">scholardevclaw demo</span>
-        </div>
-        <div class="terminal-line terminal-output">Analyzing nanoGPT repository...</div>
-        <div class="terminal-line terminal-output">Found 5 improvement opportunities</div>
-        <div class="terminal-line terminal-output">Generating patches...</div>
-        <div class="terminal-line terminal-success">✓ 5 patches generated successfully</div>
-        <div class="terminal-line">&nbsp;</div>
-        <div class="terminal-line">
-          <span class="terminal-prompt">$ </span>
-          <span class="terminal-command">scholardevclaw tui</span>
-        </div>
-        <div class="terminal-line terminal-success">✓ Launching interactive TUI...</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- FAQ -->
-  <section class="faq" id="faq">
-    <h2 class="fade-in">Frequently asked questions</h2>
-
-    <div class="faq-item fade-in">
-      <button class="faq-question" onclick="toggleFaq(this)">
-        What is ScholarDevClaw?
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
-      </button>
-      <div class="faq-answer">
-        <p>ScholarDevClaw is an autonomous Research-to-Code AI Agent that analyzes your codebase, finds relevant research improvements from the latest ML papers, maps them to your code, and generates validated patches automatically. It supports Python, JavaScript, TypeScript, Go, Rust, and Java.</p>
-      </div>
-    </div>
-
-    <div class="faq-item fade-in">
-      <button class="faq-question" onclick="toggleFaq(this)">
-        How is it different from other AI coding tools?
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
-      </button>
-      <div class="faq-answer">
-        <p>Unlike generic AI coding assistants, ScholarDevClaw specifically targets research-to-code integration. It reads actual research papers, extracts implementation specs, and maps them to your specific codebase using 6-tier matching. It's built for researchers and engineers who want to operationalize ML innovations.</p>
-      </div>
-    </div>
-
-    <div class="faq-item fade-in">
-      <button class="faq-question" onclick="toggleFaq(this)">
-        Do I need extra AI subscriptions?
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
-      </button>
-      <div class="faq-answer">
-        <p>ScholarDevClaw works with a built-in knowledge base of 16+ paper specs covering normalization, activation, attention, positional encoding, and more. For advanced features like LLM-powered research extraction and semantic matching, you can connect any model from any provider (Claude, GPT, Gemini, etc.).</p>
-      </div>
-    </div>
-
-    <div class="faq-item fade-in">
-      <button class="faq-question" onclick="toggleFaq(this)">
-        What about data and privacy?
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
-      </button>
-      <div class="faq-answer">
-        <p>ScholarDevClaw runs entirely on your local machine. Your code never leaves your computer unless you explicitly configure external services. All analysis, mapping, and patch generation happens locally. You maintain full control over what gets integrated.</p>
-      </div>
-    </div>
-
-    <div class="faq-item fade-in">
-      <button class="faq-question" onclick="toggleFaq(this)">
-        Is ScholarDevClaw open source?
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
-      </button>
-      <div class="faq-answer">
-        <p>Yes! ScholarDevClaw is fully open source under the MIT license. You can contribute, fork, or modify it however you like. Check out our GitHub repository for the source code, documentation, and contribution guidelines.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- CTA -->
-  <section class="cta">
-    <div class="cta-box fade-in">
-      <h2>Ready to automate your research integration?</h2>
-      <p>Install ScholarDevClaw and run your first demo in under a minute.</p>
-      <a href="#install" class="cta-btn">
-        Get started
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="5" y1="12" x2="19" y2="12"/>
-          <polyline points="12 5 19 12 12 19"/>
-        </svg>
-      </a>
-    </div>
-  </section>
-
-  <!-- Footer -->
-  <footer>
-    <div class="footer-inner">
+    <div>
+      <div class="fcol-title">Project</div>
       <div class="footer-links">
         <a href="https://github.com/Ronak-IIITD/ScholarDevClaw">GitHub</a>
-        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/issues">Issues</a>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/releases">Releases</a>
         <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/CHANGELOG.md">Changelog</a>
-        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/DEPLOYMENT.md">Deployment</a>
-      </div>
-      <div class="footer-copy">
-        ©2026 ScholarDevClaw · MIT License
       </div>
     </div>
-  </footer>
+    <div>
+      <div class="fcol-title">Docs</div>
+      <div class="footer-links">
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/docs/API.md">API Reference</a>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/GUIDE.md">Guide</a>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/AGENTS.md">Architecture</a>
+      </div>
+    </div>
+    <div>
+      <div class="fcol-title">Community</div>
+      <div class="footer-links">
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/issues">Issues</a>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/discussions">Discussions</a>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/LICENSE">MIT License</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span class="footer-copy">© 2026 ScholarDevClaw · Built with ❤️ for researchers and developers.</span>
+    <span class="mit-pill">MIT</span>
+  </div>
+</footer>
 
-  <script>
-    // Install commands
-    const commands = {
-      curl: 'curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash',
-      pip: 'pip install scholardevclaw',
-      pipx: 'pipx install scholardevclaw',
-      source: 'git clone https://github.com/Ronak-IIITD/ScholarDevClaw.git && cd ScholarDevClaw/core && pip install -e ".[all]"'
-    };
+<script>
+  /* ── Install commands ── */
+  const CMDS = {
+    curl:   'curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash',
+    pip:    'pip install scholardevclaw',
+    pipx:   'pipx install scholardevclaw',
+    source: 'git clone https://github.com/Ronak-IIITD/ScholarDevClaw.git && cd ScholarDevClaw/core && pip install -e ".[all]"'
+  };
 
-    // Tab switching
-    document.querySelectorAll('.install-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.install-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        const cmd = commands[tab.dataset.tab];
-        document.getElementById('installCmd').innerHTML = `<span class="prompt">$ </span>${cmd}`;
-      });
+  document.querySelectorAll('.itab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.itab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('installCmd').textContent = CMDS[tab.dataset.tab];
     });
+  });
 
-    // Copy to clipboard
-    function copyInstall() {
-      const activeTab = document.querySelector('.install-tab.active');
-      const cmd = commands[activeTab.dataset.tab];
-      navigator.clipboard.writeText(cmd).then(() => {
-        const btn = document.querySelector('.copy-btn');
-        btn.textContent = 'Copied!';
-        btn.classList.add('copied');
-        setTimeout(() => {
-          btn.textContent = 'Copy';
-          btn.classList.remove('copied');
-        }, 2000);
-      });
-    }
+  function switchTab(name) {
+    document.querySelectorAll('.itab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.getElementById('installCmd').textContent = CMDS[name];
+  }
 
-    // FAQ toggle
-    function toggleFaq(btn) {
-      const item = btn.parentElement;
-      item.classList.toggle('open');
-    }
+  function copyInstall() {
+    const key = document.querySelector('.itab.active').dataset.tab;
+    navigator.clipboard.writeText(CMDS[key]).then(() => {
+      const btn = document.querySelector('.copy-btn');
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 2000);
+    });
+  }
 
-    // Scroll animations
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-        }
-      });
-    }, { threshold: 0.1 });
+  /* ── How It Works — step data ── */
+  const STEPS = [
+    { title:'Analyze Repository',
+      icon:'<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>',
+      desc:'Tree-sitter parses your entire codebase into an AST. Frameworks, dependencies, and improvement patterns are auto-detected across Python, JS/TS, Go, Rust, and Java.' },
+    { title:'Search Research Papers',
+      icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+      desc:'arXiv (2.4M+ papers), Papers with Code, and GitHub are searched for ML research matching your architecture. Implementation specs are extracted from PDFs automatically.' },
+    { title:'Map to Your Code',
+      icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="12" x2="16" y2="14"/>',
+      desc:'6-tier matching finds where each improvement applies: exact name → fuzzy → imports → text scan → legacy → LLM semantic. Every result is confidence-scored.' },
+    { title:'Generate Patches',
+      icon:'<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+      desc:'15+ CST templates generate syntactically-correct patches. LLM synthesis handles edge cases. Every patch is reviewed before application with approval gates.' },
+    { title:'Benchmark & Validate',
+      icon:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+      desc:'Subprocess benchmarks measure actual speedup and memory delta. 1200+ tests ensure nothing regresses. Risky patches require explicit approval before proceeding.' },
+    { title:'Open a Safe PR',
+      icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>',
+      desc:'A clean pull request lands on a safe branch with full changelog, benchmark results, and confidence scores attached. Protected-branch blocking prevents accidents.' }
+  ];
 
-    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+  let currentStep = 0, stepTimer = null;
 
-    // Navbar scroll effect
-    window.addEventListener('scroll', () => {
-      const nav = document.getElementById('navbar');
-      if (window.scrollY > 50) {
-        nav.classList.add('scrolled');
-      } else {
-        nav.classList.remove('scrolled');
+  function renderCard(idx) {
+    const s = STEPS[idx];
+    document.getElementById('how-card-content').innerHTML = `
+      <div class="how-card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${s.icon}</svg>
+      </div>
+      <div class="how-card-title">${s.title}</div>
+      <div class="how-card-desc">${s.desc}</div>`;
+  }
+
+  function setStep(idx) {
+    document.querySelectorAll('.how-step').forEach((el, i) => el.classList.toggle('active', i === idx));
+    currentStep = idx;
+    renderCard(idx);
+    clearTimeout(stepTimer);
+    stepTimer = setTimeout(() => setStep((currentStep + 1) % STEPS.length), 4500);
+  }
+
+  renderCard(0);
+  stepTimer = setTimeout(() => setStep(1), 4500);
+
+  /* ── FAQ toggle ── */
+  function toggleFaq(btn) { btn.parentElement.classList.toggle('open'); }
+
+  /* ── Scroll reveal ── */
+  const revObs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.reveal').forEach(el => revObs.observe(el));
+
+  /* ── Nav scroll effect ── */
+  window.addEventListener('scroll', () => {
+    document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
+  }, { passive: true });
+
+  /* ── Animated counters ── */
+  function animCounter(el) {
+    const target = +el.dataset.target;
+    const suffix = el.dataset.suffix || '';
+    const dur = 1800, step = 16, steps = Math.ceil(dur / step);
+    let i = 0;
+    const t = setInterval(() => {
+      i++;
+      const ease = 1 - Math.pow(1 - i / steps, 3);
+      el.textContent = Math.round(ease * target) + (i >= steps ? suffix : '');
+      if (i >= steps) clearInterval(t);
+    }, step);
+  }
+  const cntObs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.querySelectorAll('[data-target]').forEach(animCounter);
+        cntObs.unobserve(e.target);
       }
     });
-  </script>
+  }, { threshold: 0.3 });
+  document.querySelectorAll('.stats-grid').forEach(el => cntObs.observe(el));
+
+  /* ── Terminal typewriter ── */
+  const TERM_LINES = [
+    { t:'cmd', s:'curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash' },
+    { t:'out', s:'Downloading ScholarDevClaw v2.0…' },
+    { t:'ok',  s:'✓ Installed to ~/.local/bin/scholardevclaw' },
+    { t:'gap' },
+    { t:'cmd', s:'scholardevclaw demo' },
+    { t:'a',   s:'⟳ Analyzing nanoGPT repository…' },
+    { t:'out', s:'  → Python 3.11 · PyTorch 2.1 detected' },
+    { t:'out', s:'  → AST: 4,280 nodes extracted' },
+    { t:'a',   s:'⟳ Searching arXiv for improvements…' },
+    { t:'out', s:'  → FlashAttention-2  (match: 97%)' },
+    { t:'out', s:'  → RMSNorm           (match: 94%)' },
+    { t:'out', s:'  → SwiGLU activation (match: 88%)' },
+    { t:'a',   s:'⟳ Generating & validating patches…' },
+    { t:'ok',  s:'✓ 3 patches generated' },
+    { t:'ok',  s:'✓ Benchmarks: avg 1.8× speedup' },
+    { t:'gap' },
+    { t:'cmd', s:'scholardevclaw tui' },
+    { t:'ok',  s:'✓ Launching interactive TUI…' },
+    { t:'cur' }
+  ];
+
+  function buildTerminal() {
+    const out = document.getElementById('terminal-output');
+    out.innerHTML = '';
+    let li = 0, ci = 0;
+
+    function next() {
+      if (li >= TERM_LINES.length) return;
+      const line = TERM_LINES[li];
+
+      if (line.t === 'gap') {
+        const d = document.createElement('div'); d.style.height = '8px';
+        out.appendChild(d); li++; ci = 0; setTimeout(next, 80); return;
+      }
+      if (line.t === 'cur') {
+        const d = document.createElement('div'); d.className = 'terminal-line';
+        d.innerHTML = '<span class="t-p">$ </span><span class="t-cursor"></span>';
+        out.appendChild(d); return;
+      }
+
+      let el = out.querySelector(`[data-li="${li}"]`);
+      if (!el) {
+        el = document.createElement('div'); el.className = 'terminal-line'; el.dataset.li = li;
+        const cls = line.t === 'cmd' ? 't-c' : line.t === 'ok' ? 't-ok' : line.t === 'a' ? 't-a' : 't-o';
+        el.innerHTML = line.t === 'cmd'
+          ? `<span class="t-p">$ </span><span class="${cls}" data-c></span>`
+          : `<span class="${cls}" data-c></span>`;
+        out.appendChild(el);
+      }
+
+      const c = el.querySelector('[data-c]');
+      ci++;
+      c.textContent = line.s.substring(0, ci);
+
+      if (ci < line.s.length) {
+        setTimeout(next, line.t === 'cmd' ? 26 : 7);
+      } else {
+        li++; ci = 0;
+        setTimeout(next, line.t === 'cmd' ? 200 : line.t === 'a' ? 650 : 55);
+      }
+    }
+    next();
+  }
+
+  const termObs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) { buildTerminal(); termObs.unobserve(e.target); }
+    });
+  }, { threshold: 0.3 });
+  document.querySelectorAll('.terminal').forEach(el => termObs.observe(el));
+
+  /* ── Canvas particle network ── */
+  (function () {
+    const canvas = document.getElementById('canvas-bg');
+    const ctx = canvas.getContext('2d');
+    let W, H, pts = [];
+
+    function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+    window.addEventListener('resize', resize, { passive: true });
+    resize();
+
+    const COLS = ['rgba(242,168,60,', 'rgba(0,207,234,', 'rgba(124,106,242,'];
+    for (let i = 0; i < 75; i++) {
+      pts.push({
+        x: Math.random() * 1920, y: Math.random() * 1080,
+        vx: (Math.random() - .5) * .28, vy: (Math.random() - .5) * .28,
+        r: Math.random() * 1.4 + .4,
+        col: COLS[Math.floor(Math.random() * COLS.length)],
+        op: Math.random() * .45 + .08
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+          const d = Math.sqrt(dx*dx + dy*dy);
+          if (d < 145) {
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(130,140,190,${(1 - d/145) * .07})`;
+            ctx.lineWidth = .5;
+            ctx.moveTo(pts[i].x, pts[i].y);
+            ctx.lineTo(pts[j].x, pts[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+      pts.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = p.col + p.op + ')';
+        ctx.fill();
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+      });
+      requestAnimationFrame(draw);
+    }
+    draw();
+  })();
+</script>
 </body>
 </html>
