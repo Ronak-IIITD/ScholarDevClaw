@@ -3188,3 +3188,9 @@ ScholarDevClaw is becoming a **research-to-engineering operating system**:
   - `UncertaintyEstimator`: Variance-based uncertainty
 
 - **Total: 803 tests passing** (unchanged)
+
+### Mon Mar 23 2026 - Landing Page Redesign
+- **Refined Fonts:** Replaced the hard-to-read `EB Garamond` serif font with clean `Inter` across all headings and text on the landing page for better legibility.
+- **Removed "AI Slop" Gradients:** Cleaned up the landing page styling by removing complex radial backgrounds, text gradients, bento glows, and linear gradients, replacing them with solid, professional accent colors.
+- **Removed Canvas Particles:** Stripped out the unnecessary canvas particle network effect running in the background to improve performance and maintain a cleaner aesthetic.
+- **Verified Copy:** Confirmed the landing page text correctly aligns with ScholarDevClaw's actual multi-language capabilities (Python, JS/TS, Go, Rust, Java), claims, and project stats based on accurate context retrieval.
