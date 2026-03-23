@@ -3194,3 +3194,11 @@ ScholarDevClaw is becoming a **research-to-engineering operating system**:
 - **Removed "AI Slop" Gradients:** Cleaned up the landing page styling by removing complex radial backgrounds, text gradients, bento glows, and linear gradients, replacing them with solid, professional accent colors.
 - **Removed Canvas Particles:** Stripped out the unnecessary canvas particle network effect running in the background to improve performance and maintain a cleaner aesthetic.
 - **Verified Copy:** Confirmed the landing page text correctly aligns with ScholarDevClaw's actual multi-language capabilities (Python, JS/TS, Go, Rust, Java), claims, and project stats based on accurate context retrieval.
+
+### Fact-Checking Updates to Landing Page
+- Adjusted internal project statistics on the landing page to exactly match the current codebase state.
+- **Languages:** Updated language badges from grouped "JS/TS" + "C++ (Planned)" to correctly display exactly the 6 fully supported tree-sitter parsed languages (`Python`, `JavaScript`, `TypeScript`, `Go`, `Rust`, `Java`).
+- **Tests:** Updated passing test count to `1260+` (based on actual `1263` passing tests in `pytest`).
+- **Specs:** Updated available specs count to exactly `15` based on `_TEMPLATE_REGISTRY` and extractor available specs.
+- **Templates:** Adjusted the template count claim from `15+` to exactly `15` to match `_TEMPLATE_REGISTRY`.
+- Retained accurate, proven claims for `6-tier matching` and `10 CST transformers` after verifying their implementations in `engine.py` and `generator.py`.
