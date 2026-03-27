@@ -2,7 +2,46 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-22
+**Last updated:** 2026-03-27
+
+### 2026-03-27 (TUI UX flow upgrade — validation-first runs, live lifecycle clarity, deterministic reruns)
+
+**Goal:** Make the Textual TUI feel operator-grade with clearer action flow, stronger keyboard-first control, deterministic reruns, and resilient run/log lifecycle feedback.
+
+**Summary:** Upgraded the TUI execution experience end-to-end without changing core pipeline contracts: action-specific guidance + readiness hints now drive input completion, run requests are validated per action before execution, live log streaming now updates phase/status state more reliably, run history is surfaced inline with clickable rerun entries, and keyboard affordances were expanded for fast focus movement and repeatable workflows.
+
+**What changed:**
+- **`core/src/scholardevclaw/tui/app.py`**
+  - Added action metadata + per-action visibility maps to make config inputs context-aware and maintainable.
+  - Added validation-first run gating (`_validate_request_inputs`) with explicit errors/warnings by action type.
+  - Added contextual microcopy (`#action-context`) and dynamic readiness hints (`#validation-hint`).
+  - Added robust run lifecycle guard (`_run_in_progress`) to prevent overlapping runs.
+  - Added live log intelligence:
+    - running log line counter in status center,
+    - phase syncing from streaming log content,
+    - clearer idle/running transitions.
+  - Added integrated run history panel and deterministic rerun flow:
+    - clickable history entries,
+    - `ctrl+shift+r` rerun latest,
+    - request payload replay via `_apply_request` + `_run_workflow`.
+  - Expanded keyboard controls:
+    - `tab` / `shift+tab` focus cycling,
+    - `ctrl+p` focus prompt,
+    - `ctrl+g` focus run history.
+  - Preserved existing architecture seams and pipeline entrypoint usage.
+
+- **`core/src/scholardevclaw/tui/widgets.py`**
+  - Upgraded `HistoryPane` from passive labels to interactive entries using buttons.
+  - Added `HistoryPane.RunSelected` message for deterministic rerun selection.
+  - Added richer history entry formatting (status icon, action, duration, repo/spec context).
+  - Added explicit empty-state rendering when no runs exist.
+
+- **`core/src/scholardevclaw/tui/screens.py`**
+  - Updated help overlay shortcut docs to include rerun/focus/focus-cycle bindings.
+
+**Verification:**
+- ✅ `python -m ruff check src/scholardevclaw/tui/app.py src/scholardevclaw/tui/widgets.py src/scholardevclaw/tui/screens.py`
+- ✅ `python -m pytest tests/unit/test_tui_clipboard.py -q` (21 passed)
 
 ### 2026-03-22 (TUI redesign — clean 3-zone layout, remove clutter)
 

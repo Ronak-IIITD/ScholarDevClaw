@@ -11,7 +11,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.reactive import reactive
-from textual.widgets import Input, Label, Markdown, Static
+from textual.widgets import Button, Input, Label, Markdown, Static
 
 # ---------------------------------------------------------------------------
 # Phase Tracker -- thin progress bar
@@ -319,6 +319,15 @@ class StatusBar(Static):
 class HistoryPane(VerticalScroll):
     """Scrollable history of past runs."""
 
+    can_focus = True
+
+    class RunSelected(Message):
+        """Posted when a specific run entry is activated."""
+
+        def __init__(self, run_id: int):
+            super().__init__()
+            self.run_id = run_id
+
     CSS = """
     HistoryPane {
         width: 100%;
@@ -349,14 +358,36 @@ class HistoryPane(VerticalScroll):
         super().__init__(**kwargs)
         self._entries: list[dict[str, Any]] = []
 
-    def add_entry(self, run_id: int, action: str, status: str, duration: float) -> None:
-        entry = {"id": run_id, "action": action, "status": status, "duration": duration}
+    def add_entry(
+        self,
+        run_id: int,
+        action: str,
+        status: str,
+        duration: float,
+        *,
+        repo: str = "",
+        spec: str = "",
+    ) -> None:
+        entry = {
+            "id": run_id,
+            "action": action,
+            "status": status,
+            "duration": duration,
+            "repo": repo,
+            "spec": spec,
+        }
         self._entries.insert(0, entry)
         self._entries = self._entries[:20]
         self._render_entries()
 
     def _render_entries(self) -> None:
         self.remove_children()
+        if not self._entries:
+            self.mount(
+                Label("No runs yet. Execute a workflow to build history.", classes="history-entry")
+            )
+            return
+
         for entry in self._entries:
             status_class = (
                 "success"
@@ -365,14 +396,35 @@ class HistoryPane(VerticalScroll):
                 if entry["status"] == "Failed"
                 else ""
             )
-            icon = " " if entry["status"] == "Done" else " " if entry["status"] == "Failed" else " "
-            line = f" {icon} #{entry['id']} {entry['action'][:8]:8} {entry['duration']:.1f}s"
-            lbl = Label(line, classes=f"history-entry {status_class}")
-            self.mount(lbl)
+            icon = "✓" if entry["status"] == "Done" else "✗" if entry["status"] == "Failed" else "•"
+
+            repo_name = entry.get("repo", "") or "-"
+            repo_name = repo_name.replace("\\", "/").rstrip("/").split("/")[-1] or "-"
+            spec_name = entry.get("spec", "") or "-"
+            line = (
+                f"#{entry['id']:02d} {entry['action'][:9]:9} {icon} {entry['duration']:>5.1f}s "
+                f"· {repo_name} · {spec_name}"
+            )
+            button = Button(
+                line,
+                id=f"history-run-{entry['id']}",
+                classes=f"history-entry {status_class}",
+            )
+            self.mount(button)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id or ""
+        if not button_id.startswith("history-run-"):
+            return
+        try:
+            run_id = int(button_id.removeprefix("history-run-"))
+        except ValueError:
+            return
+        self.post_message(self.RunSelected(run_id))
 
     def clear_history(self) -> None:
         self._entries.clear()
-        self.remove_children()
+        self._render_entries()
 
 
 # ---------------------------------------------------------------------------

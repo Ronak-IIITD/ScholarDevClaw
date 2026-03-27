@@ -49,6 +49,7 @@ from .screens import CommandPalette, HelpOverlay, WelcomeScreen
 from .widgets import (
     AgentStatus,
     ChatLog,
+    HistoryPane,
     LogView,
     PhaseTracker,
     PromptInput,
@@ -210,11 +211,23 @@ class ScholarDevClawApp(App[None]):
     #config-bar {
         width: 100%;
         height: auto;
-        max-height: 12;
+        max-height: 16;
         background: $surface;
         border-top: solid $border;
         padding: 1 2;
         overflow-y: auto;
+    }
+
+    #action-context {
+        width: 100%;
+        color: $text-dim;
+        margin-bottom: 1;
+    }
+
+    #validation-hint {
+        width: 100%;
+        color: $text-muted;
+        margin-bottom: 1;
     }
 
     #config-bar.collapsed {
@@ -563,10 +576,11 @@ class ScholarDevClawApp(App[None]):
     HistoryPane {
         width: 100%;
         height: auto;
-        max-height: 10;
+        max-height: 7;
         background: $panel;
         scrollbar-size: 1 1;
-        margin-top: 1;
+        margin-top: 0;
+        border-top: solid $border;
     }
 
     HistoryPane .history-entry {
@@ -574,6 +588,10 @@ class ScholarDevClawApp(App[None]):
         height: 1;
         padding: 0 1;
         color: $text-muted;
+        background: transparent;
+        min-width: 1;
+        border: none;
+        text-align: left;
     }
 
     HistoryPane .history-entry:hover {
@@ -583,6 +601,14 @@ class ScholarDevClawApp(App[None]):
 
     HistoryPane .history-entry.success { border-left: thick $success; }
     HistoryPane .history-entry.failed { border-left: thick $error; }
+
+    #history-title {
+        width: 100%;
+        color: $text-muted;
+        margin-top: 0;
+        margin-bottom: 0;
+        padding: 0 1;
+    }
 
     /* ---- PromptInput ---- */
 
@@ -608,11 +634,16 @@ class ScholarDevClawApp(App[None]):
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+r", "run_selected", "Run"),
+        ("ctrl+shift+r", "rerun_last", "Rerun"),
         ("ctrl+k", "command_palette", "Commands"),
         ("ctrl+h", "help", "Help"),
         ("ctrl+l", "clear_logs", "Clear"),
         ("ctrl+n", "new_session", "New"),
         ("ctrl+e", "export_log", "Export"),
+        ("ctrl+p", "focus_prompt", "Prompt"),
+        ("ctrl+g", "focus_history", "History"),
+        ("tab", "focus_next", "Next"),
+        ("shift+tab", "focus_prev", "Prev"),
         ("ctrl+o", "toggle_config", "Config"),
         ("escape", "handle_escape", "Back"),
     ]
@@ -628,6 +659,116 @@ class ScholarDevClawApp(App[None]):
         ("Integrate", "integrate"),
     ]
 
+    ACTION_GUIDE: dict[str, dict[str, str]] = {
+        "analyze": {
+            "summary": "Scan repository structure, languages, and entry points.",
+            "hint": "Needs: repository path",
+        },
+        "suggest": {
+            "summary": "Find high-impact research improvements for this codebase.",
+            "hint": "Needs: repository path",
+        },
+        "search": {
+            "summary": "Search local specs, plus optional arXiv/web sources.",
+            "hint": "Needs: query (repo optional)",
+        },
+        "specs": {
+            "summary": "List available research specs and categories.",
+            "hint": "No required inputs",
+        },
+        "map": {
+            "summary": "Map selected research spec to concrete code targets.",
+            "hint": "Needs: repository path, spec",
+        },
+        "generate": {
+            "summary": "Generate patches for a mapped research spec.",
+            "hint": "Needs: repository path, spec",
+        },
+        "validate": {
+            "summary": "Run tests/benchmarks and summarize confidence.",
+            "hint": "Needs: repository path",
+        },
+        "integrate": {
+            "summary": "Run full pipeline: analyze → suggest → map → generate → validate.",
+            "hint": "Needs: repository path (spec optional)",
+        },
+    }
+
+    ACTION_FIELD_VISIBILITY: dict[str, dict[str, bool]] = {
+        "analyze": {
+            "query": False,
+            "search_sources": False,
+            "spec": False,
+            "output": False,
+            "integrate": False,
+        },
+        "suggest": {
+            "query": False,
+            "search_sources": False,
+            "spec": False,
+            "output": False,
+            "integrate": False,
+        },
+        "search": {
+            "query": True,
+            "search_sources": True,
+            "spec": False,
+            "output": False,
+            "integrate": False,
+        },
+        "specs": {
+            "query": False,
+            "search_sources": False,
+            "spec": False,
+            "output": False,
+            "integrate": False,
+        },
+        "map": {
+            "query": False,
+            "search_sources": False,
+            "spec": True,
+            "output": False,
+            "integrate": False,
+        },
+        "generate": {
+            "query": False,
+            "search_sources": False,
+            "spec": True,
+            "output": True,
+            "integrate": False,
+        },
+        "validate": {
+            "query": False,
+            "search_sources": False,
+            "spec": False,
+            "output": False,
+            "integrate": False,
+        },
+        "integrate": {
+            "query": False,
+            "search_sources": False,
+            "spec": True,
+            "output": True,
+            "integrate": True,
+        },
+    }
+
+    ACTION_REQUIRES_REPO = {"analyze", "suggest", "map", "generate", "validate", "integrate"}
+    ACTION_REQUIRES_SPEC = {"map", "generate"}
+    ACTION_REQUIRES_QUERY = {"search"}
+
+    FOCUS_ORDER = [
+        "#action",
+        "#repo-path",
+        "#spec",
+        "#query",
+        "#model-provider",
+        "#run",
+        "#prompt-input",
+        "#log-view",
+        "#run-history",
+    ]
+
     # -----------------------------------------------------------------------
     # Lifecycle
     # -----------------------------------------------------------------------
@@ -636,6 +777,7 @@ class ScholarDevClawApp(App[None]):
         super().__init__()
         self._agent_process: subprocess.Popen[str] | None = None
         self._live_logs_enabled = False
+        self._live_log_count = 0
         self._run_history: list[dict[str, Any]] = []
         self._history_limit = 20
         self._next_run_id = 1
@@ -651,6 +793,7 @@ class ScholarDevClawApp(App[None]):
         self._config_visible = True
         self._command_history: list[str] = []
         self._history_index = -1
+        self._run_in_progress = False
         self._workflow_steps = {
             "analyze": (1, 6),
             "suggest": (2, 6),
@@ -781,7 +924,8 @@ class ScholarDevClawApp(App[None]):
             agent_dot.set_status(status)
             status_bar = self.query_one(StatusBar)
             mode = "running" if status == "Online" else "idle"
-            status_bar.set_center(f"agent: {mode}")
+            if not self._run_in_progress:
+                status_bar.set_center(f"agent: {mode}")
             self.query_one("#chat-mode-value", Label).update(f"agent: {mode}")
         except Exception:
             pass
@@ -793,6 +937,21 @@ class ScholarDevClawApp(App[None]):
             log_view.add_logs(lines)
         except Exception:
             pass
+
+    def _sync_phase_from_log_line(self, line: str) -> None:
+        text = line.lower()
+        if any(tok in text for tok in ("preflight", "validate", "checking")):
+            self._set_phase("validating")
+        elif any(tok in text for tok in ("analyz", "scan")):
+            self._set_phase("analyzing")
+        elif any(tok in text for tok in ("research", "search", "suggest")):
+            self._set_phase("research")
+        elif "map" in text:
+            self._set_phase("mapping")
+        elif any(tok in text for tok in ("patch", "generat")):
+            self._set_phase("generating")
+        elif any(tok in text for tok in ("benchmark", "test", "validating patch", "verify")):
+            self._set_phase("validating_patches")
 
     def _log_to_legacy(self, widget_id: str, lines: list[str]) -> None:
         """Backward-compatible sink: writes to rich chat log."""
@@ -938,6 +1097,8 @@ class ScholarDevClawApp(App[None]):
         with Vertical(id="main-area"):
             yield PhaseTracker(id="phase-tracker")
             yield LogView(id="log-view")
+            yield Label("Recent runs (enter on item to rerun)", id="history-title")
+            yield HistoryPane(id="run-history")
 
         # -- Chat overlay (hidden until agent mode) --
         with Horizontal(id="chat-workspace"):
@@ -959,9 +1120,11 @@ class ScholarDevClawApp(App[None]):
 
         # -- Zone 2: Contextual config bar --
         with Vertical(id="config-bar"):
+            yield Label("", id="action-context")
+            yield Label("", id="validation-hint")
             with Horizontal(id="config-fields"):
                 # Action selector
-                with Vertical(classes="config-group"):
+                with Vertical(classes="config-group", id="group-action"):
                     yield Label("Action", classes="config-label")
                     yield Select(
                         self.action_mode_options,
@@ -973,7 +1136,7 @@ class ScholarDevClawApp(App[None]):
                     )
 
                 # Repo path
-                with Vertical(classes="config-group"):
+                with Vertical(classes="config-group", id="group-repo"):
                     yield Label("Repository", classes="config-label")
                     yield Input(
                         value=self._saved_context.get(
@@ -985,7 +1148,7 @@ class ScholarDevClawApp(App[None]):
                     )
 
                 # Spec (for map/generate/integrate)
-                with Vertical(classes="config-group"):
+                with Vertical(classes="config-group", id="group-spec"):
                     yield Label("Spec", classes="config-label")
                     yield Input(
                         value=self._saved_context.get(
@@ -997,7 +1160,7 @@ class ScholarDevClawApp(App[None]):
                     )
 
                 # Search query (for search)
-                with Vertical(classes="config-group"):
+                with Vertical(classes="config-group", id="group-query"):
                     yield Label("Query", classes="config-label")
                     yield Input(
                         value=self._saved_context.get("last_query", "layer normalization"),
@@ -1006,14 +1169,14 @@ class ScholarDevClawApp(App[None]):
                     )
 
                 # Search options (for search)
-                with Vertical(classes="config-group"):
+                with Vertical(classes="config-group", id="group-search-sources"):
                     yield Label("Sources", classes="config-label")
                     with Horizontal():
                         yield Checkbox("arXiv", value=False, id="search-arxiv")
                         yield Checkbox("Web", value=False, id="search-web")
 
                 # Output dir (for generate)
-                with Vertical(classes="config-group"):
+                with Vertical(classes="config-group", id="group-output"):
                     yield Label("Output", classes="config-label")
                     yield Input(
                         value="",
@@ -1022,7 +1185,7 @@ class ScholarDevClawApp(App[None]):
                     )
 
                 # Options (for integrate)
-                with Vertical(classes="config-group"):
+                with Vertical(classes="config-group", id="group-integrate"):
                     yield Label("Options", classes="config-label")
                     with Horizontal():
                         yield Checkbox("Dry-run", value=False, id="integrate-dry-run")
@@ -1033,7 +1196,7 @@ class ScholarDevClawApp(App[None]):
                         )
 
                 # Model provider
-                with Vertical(classes="config-group"):
+                with Vertical(classes="config-group", id="group-model"):
                     yield Label("Model", classes="config-label")
                     yield Select(
                         [
@@ -1085,6 +1248,10 @@ class ScholarDevClawApp(App[None]):
                 "  ctrl+h  help",
                 "  ctrl+o  toggle config bar",
                 "  ctrl+r  run current action",
+                "  ctrl+shift+r  rerun last",
+                "  tab/shift+tab  cycle focus",
+                "  ctrl+p  focus prompt",
+                "  ctrl+g  focus run history",
                 "",
                 "Or just type what you want: 'analyze ./my-project'",
             ]
@@ -1095,6 +1262,9 @@ class ScholarDevClawApp(App[None]):
             status_bar.set_step(0, 0)
         except Exception:
             pass
+
+        self._render_history()
+        self.call_later(self.action_focus_prompt)
 
         # Show welcome on first launch
         if self._config.get("show_welcome", True):
@@ -1118,9 +1288,16 @@ class ScholarDevClawApp(App[None]):
     # Request capture / apply
     # -----------------------------------------------------------------------
 
+    def _current_action(self) -> str:
+        raw = self.query_one("#action", Select).value
+        if isinstance(raw, str) and raw in self.ACTION_GUIDE:
+            return raw
+        return "analyze"
+
     def _capture_request(self) -> dict[str, Any]:
+        action = self._current_action()
         return {
-            "action": self.query_one("#action", Select).value,
+            "action": action,
             "repo_path": self.query_one("#repo-path", Input).value.strip(),
             "query": self.query_one("#query", Input).value.strip(),
             "include_arxiv": self.query_one("#search-arxiv", Checkbox).value,
@@ -1129,8 +1306,96 @@ class ScholarDevClawApp(App[None]):
             "output_dir": self.query_one("#output-dir", Input).value.strip() or None,
             "integrate_dry_run": self.query_one("#integrate-dry-run", Checkbox).value,
             "integrate_require_clean": self.query_one("#integrate-require-clean", Checkbox).value,
+            "max_results": int(self._config.get("max_results", 10)),
             "model_provider": self.query_one("#model-provider", Select).value,
         }
+
+    def _refresh_contextual_copy(self) -> None:
+        action = self._current_action()
+        meta = self.ACTION_GUIDE.get(action, self.ACTION_GUIDE["analyze"])
+        try:
+            self.query_one("#action-context", Label).update(
+                f"[bold]{action}[/] — {meta['summary']} ({meta['hint']})"
+            )
+        except Exception:
+            pass
+
+    def _refresh_validation_hint(self) -> None:
+        if self._run_in_progress:
+            try:
+                self.query_one("#validation-hint", Label).update(
+                    "Workflow running… live logs are streaming below"
+                )
+            except Exception:
+                pass
+            return
+
+        req = self._capture_request()
+        action = req.get("action", "analyze")
+        missing: list[str] = []
+
+        if action in self.ACTION_REQUIRES_REPO and not req.get("repo_path"):
+            missing.append("repository")
+        if action in self.ACTION_REQUIRES_SPEC and not req.get("spec"):
+            missing.append("spec")
+        if action in self.ACTION_REQUIRES_QUERY and not req.get("query"):
+            missing.append("query")
+
+        if missing:
+            hint = f"Missing: {', '.join(missing)} · press ctrl+r after completing required inputs"
+        elif action == "search" and not (req.get("include_arxiv") or req.get("include_web")):
+            hint = "Ready · search will use local spec index only (enable arXiv/web for external sources)"
+        else:
+            hint = "Ready · press ctrl+r to run · use ↑/↓ for prompt history"
+
+        try:
+            self.query_one("#validation-hint", Label).update(hint)
+        except Exception:
+            pass
+
+    def _validate_request_inputs(self, req: dict[str, Any]) -> tuple[bool, list[str], list[str]]:
+        action = req.get("action", "analyze")
+        repo = str(req.get("repo_path") or "").strip()
+        spec = str(req.get("spec") or "").strip()
+        query = str(req.get("query") or "").strip()
+        include_arxiv = bool(req.get("include_arxiv", False))
+        include_web = bool(req.get("include_web", False))
+
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        if action in self.ACTION_REQUIRES_REPO:
+            valid, err = self._validate_repo_path(repo)
+            if not valid:
+                errors.append(err)
+
+        if action in self.ACTION_REQUIRES_QUERY and not query:
+            errors.append("Search query is required for Search")
+
+        if action in self.ACTION_REQUIRES_SPEC and not spec:
+            errors.append("Spec is required for this action")
+        elif action in self.ACTION_REQUIRES_SPEC:
+            valid, err = self._validate_spec(spec)
+            if not valid:
+                errors.append(err)
+        elif action == "integrate" and spec:
+            valid, err = self._validate_spec(spec)
+            if not valid:
+                errors.append(err)
+        elif spec:
+            valid, err = self._validate_spec(spec)
+            if not valid:
+                warnings.append(err)
+
+        if action == "search" and not (include_arxiv or include_web):
+            warnings.append("Only local spec index will be used (arXiv/Web disabled)")
+
+        if action == "integrate" and req.get("integrate_require_clean") and repo:
+            dirty, err = self._check_git_status(repo)
+            if dirty:
+                warnings.append(err)
+
+        return not errors, errors, warnings
 
     def _apply_request(self, request: dict[str, Any]) -> None:
         self.query_one("#action", Select).value = request.get("action", "analyze")
@@ -1154,36 +1419,48 @@ class ScholarDevClawApp(App[None]):
         )
         self._refresh_provider_chip()
         self._refresh_action_state()
+        self._refresh_validation_hint()
 
     # -----------------------------------------------------------------------
     # Action state management — show/hide contextual fields
     # -----------------------------------------------------------------------
 
     def _refresh_action_state(self) -> None:
-        action = self.query_one("#action", Select).value
-        is_search = action == "search"
-        needs_spec = action in {"map", "generate", "integrate"}
-        supports_output_dir = action == "generate"
-        is_integrate = action == "integrate"
+        action = self._current_action()
+        visibility = self.ACTION_FIELD_VISIBILITY.get(
+            action, self.ACTION_FIELD_VISIBILITY["analyze"]
+        )
 
-        # Show/hide fields based on action
-        for field_id, widget_cls, visible in [
-            ("query", Input, is_search),
-            ("search-arxiv", Checkbox, is_search),
-            ("search-web", Checkbox, is_search),
-            ("spec", Input, needs_spec),
-            ("output-dir", Input, supports_output_dir),
-            ("integrate-dry-run", Checkbox, is_integrate),
-            ("integrate-require-clean", Checkbox, is_integrate),
-        ]:
+        group_visibility = {
+            "#group-query": visibility["query"],
+            "#group-search-sources": visibility["search_sources"],
+            "#group-spec": visibility["spec"],
+            "#group-output": visibility["output"],
+            "#group-integrate": visibility["integrate"],
+        }
+
+        for selector, is_visible in group_visibility.items():
             try:
-                widget = self.query_one(f"#{field_id}", widget_cls)
-                widget.disabled = not visible
-                # Also hide the parent group
-                if hasattr(widget, "parent") and widget.parent:
-                    widget.parent.display = visible
+                self.query_one(selector).display = is_visible
             except Exception:
                 pass
+
+        for field_id, widget_cls, visible in [
+            ("query", Input, visibility["query"]),
+            ("search-arxiv", Checkbox, visibility["search_sources"]),
+            ("search-web", Checkbox, visibility["search_sources"]),
+            ("spec", Input, visibility["spec"]),
+            ("output-dir", Input, visibility["output"]),
+            ("integrate-dry-run", Checkbox, visibility["integrate"]),
+            ("integrate-require-clean", Checkbox, visibility["integrate"]),
+        ]:
+            try:
+                self.query_one(f"#{field_id}", widget_cls).disabled = not visible
+            except Exception:
+                pass
+
+        self._refresh_contextual_copy()
+        self._refresh_validation_hint()
 
     # -----------------------------------------------------------------------
     # History management
@@ -1217,7 +1494,33 @@ class ScholarDevClawApp(App[None]):
         self._saved_context["last_action"] = action
         self._saved_context["last_repo"] = request.get("repo_path", "")
         self._saved_context["last_spec"] = request.get("spec", "")
+        self._saved_context["last_query"] = request.get("query", "")
         self._save_context()
+
+        self._render_history()
+
+    def _render_history(self) -> None:
+        try:
+            history = self.query_one("#run-history", HistoryPane)
+            history.clear_history()
+            for entry in reversed(self._run_history):
+                request = entry.get("request", {}) if isinstance(entry.get("request"), dict) else {}
+                history.add_entry(
+                    entry.get("id", 0),
+                    str(entry.get("action", "unknown")),
+                    str(entry.get("status", "Unknown")),
+                    float(entry.get("duration_s", 0.0)),
+                    repo=str(request.get("repo_path", "")),
+                    spec=str(request.get("spec", "")),
+                )
+        except Exception:
+            pass
+
+    def _find_history_record(self, run_id: int) -> dict[str, Any] | None:
+        for record in self._run_history:
+            if int(record.get("id", -1)) == run_id:
+                return record
+        return None
 
     # -----------------------------------------------------------------------
     # Button states
@@ -1229,11 +1532,34 @@ class ScholarDevClawApp(App[None]):
                 self.query_one(f"#{btn_id}", Button).disabled = True
             except Exception:
                 pass
+        self._set_form_disabled(True)
 
     def _enable_run_buttons(self) -> None:
         for btn_id in ["run"]:
             try:
                 self.query_one(f"#{btn_id}", Button).disabled = False
+            except Exception:
+                pass
+        self._set_form_disabled(False)
+
+    def _set_form_disabled(self, disabled: bool) -> None:
+        field_map = [
+            ("action", Select),
+            ("repo-path", Input),
+            ("spec", Input),
+            ("query", Input),
+            ("search-arxiv", Checkbox),
+            ("search-web", Checkbox),
+            ("output-dir", Input),
+            ("integrate-dry-run", Checkbox),
+            ("integrate-require-clean", Checkbox),
+            ("model-provider", Select),
+        ]
+        for field_id, widget_cls in field_map:
+            try:
+                widget = self.query_one(f"#{field_id}", widget_cls)
+                if widget.display:
+                    widget.disabled = disabled
             except Exception:
                 pass
 
@@ -1242,31 +1568,39 @@ class ScholarDevClawApp(App[None]):
     # -----------------------------------------------------------------------
 
     def _run_workflow(self, override: dict[str, Any] | None = None) -> None:
-        req = override or self._capture_request()
-        action = req.get("action", "analyze")
-        repo = req.get("repo_path", "")
-        spec = req.get("spec", "")
-
-        # Validate
-        valid, err = self._validate_repo_path(repo)
-        if not valid:
-            self._set_status(f"Error: {err}", "error")
-            self._log_to_view([f"Error: {err}"])
+        if self._run_in_progress:
+            self._set_status("A workflow is already running. Wait for completion.", "warning")
+            self._log_to_view(["Warning: run request ignored because another run is active"])
             return
 
-        if spec:
-            valid, err = self._validate_spec(spec)
-            if not valid:
-                self._set_status(f"Error: {err}", "error")
-                self._log_to_view([f"Error: {err}"])
-                return
+        req = override or self._capture_request()
+        req = dict(req)
+        action = str(req.get("action", "analyze"))
+        repo = str(req.get("repo_path", ""))
+        spec = str(req.get("spec", ""))
+        req["run_id"] = self._next_run_id
 
-        # Git check
-        if req.get("integrate_require_clean"):
-            dirty, err = self._check_git_status(repo)
-            if dirty:
-                self._set_status("Warning: Uncommitted changes", "warning")
-                self._log_to_view([f"Warning: {err}"])
+        self._set_phase("validating")
+
+        ok, errors, warnings = self._validate_request_inputs(req)
+        if not ok:
+            self._set_phase("idle")
+            self._set_status("Cannot run: fix required inputs", "error")
+            for err in errors:
+                self._log_to_view([f"Error: {err}"])
+            self._refresh_validation_hint()
+            return
+
+        for warning in warnings:
+            self._log_to_view([f"Warning: {warning}"])
+        if warnings:
+            self._set_status("Starting with warnings", "warning")
+
+        if action == "search":
+            repo = "(global)"
+
+        self._run_in_progress = True
+        self._live_log_count = 0
 
         self._disable_run_buttons()
         self._set_status(f"Running '{action}'...", "info")
@@ -1276,6 +1610,7 @@ class ScholarDevClawApp(App[None]):
             status_bar.start_timer()
             step = self._workflow_steps.get(action, (0, 0))
             status_bar.set_step(step[0], step[1])
+            status_bar.set_center("workflow: running")
         except Exception:
             pass
 
@@ -1302,32 +1637,36 @@ class ScholarDevClawApp(App[None]):
             prev_env = self._apply_provider_env()
             try:
                 if action == "analyze":
-                    result = run_analyze(repo, log_callback=_emit)
+                    result = run_analyze(str(req.get("repo_path", "")), log_callback=_emit)
                 elif action == "suggest":
-                    result = run_suggest(repo, log_callback=_emit)
+                    result = run_suggest(str(req.get("repo_path", "")), log_callback=_emit)
                 elif action == "search":
                     result = run_search(
-                        req.get("query") or "layer normalization",
+                        str(req.get("query") or "layer normalization"),
                         include_arxiv=req.get("include_arxiv", False),
                         include_web=req.get("include_web", False),
                         language="python",
-                        max_results=max(1, int(req.get("max_results_raw", 10))),
+                        max_results=max(1, int(req.get("max_results", 10))),
                         log_callback=_emit,
                     )
                 elif action == "map":
-                    result = run_map(repo, spec or "rmsnorm", log_callback=_emit)
+                    result = run_map(
+                        str(req.get("repo_path", "")),
+                        spec or "rmsnorm",
+                        log_callback=_emit,
+                    )
                 elif action == "generate":
                     result = run_generate(
-                        repo,
+                        str(req.get("repo_path", "")),
                         spec or "rmsnorm",
                         output_dir=req.get("output_dir"),
                         log_callback=_emit,
                     )
                 elif action == "validate":
-                    result = run_validate(repo, log_callback=_emit)
+                    result = run_validate(str(req.get("repo_path", "")), log_callback=_emit)
                 elif action == "integrate":
                     result = run_integrate(
-                        repo,
+                        str(req.get("repo_path", "")),
                         spec or None,
                         dry_run=req.get("integrate_dry_run", False),
                         require_clean=req.get("integrate_require_clean", False),
@@ -1360,6 +1699,38 @@ class ScholarDevClawApp(App[None]):
     @on(Select.Changed, "#model-provider")
     def on_model_provider_change(self) -> None:
         self._refresh_provider_chip()
+
+    @on(Input.Changed, "#repo-path")
+    @on(Input.Changed, "#spec")
+    @on(Input.Changed, "#query")
+    def on_field_changed(self) -> None:
+        self._refresh_validation_hint()
+
+    @on(Checkbox.Changed, "#search-arxiv")
+    @on(Checkbox.Changed, "#search-web")
+    @on(Checkbox.Changed, "#integrate-require-clean")
+    def on_toggle_changed(self) -> None:
+        self._refresh_validation_hint()
+
+    @on(HistoryPane.RunSelected)
+    def on_history_selected(self, msg: HistoryPane.RunSelected) -> None:
+        record = self._find_history_record(msg.run_id)
+        if not record:
+            self._set_status(f"Run #{msg.run_id:02d} not found", "warning")
+            return
+
+        request = record.get("request")
+        if not isinstance(request, dict):
+            self._set_status(f"Run #{msg.run_id:02d} has no request payload", "warning")
+            return
+
+        if self._run_in_progress:
+            self._set_status("Cannot rerun while another workflow is active", "warning")
+            return
+
+        self._apply_request(request)
+        self._set_status(f"Re-running run #{msg.run_id:02d}", "accent")
+        self._run_workflow(dict(request))
 
     @on(Button.Pressed, "#run")
     def on_run(self) -> None:
@@ -1459,6 +1830,7 @@ class ScholarDevClawApp(App[None]):
 
     @on(TaskCompleted)
     def on_task_done(self, msg: TaskCompleted) -> None:
+        self._run_in_progress = False
         self._set_phase("complete")
         self._enable_run_buttons()
 
@@ -1480,6 +1852,7 @@ class ScholarDevClawApp(App[None]):
             status_bar = self.query_one(StatusBar)
             status_bar.update_timer()
             status_bar.stop_timer()
+            status_bar.set_center("workflow: idle")
         except Exception:
             pass
 
@@ -1495,14 +1868,22 @@ class ScholarDevClawApp(App[None]):
                 error=msg.error,
             )
 
+            run_id = int(self._active_run_request.get("run_id", 0) or 0)
+            if run_id > 0:
+                self._log_to_view([f"Run #{run_id:02d} finished in {duration:.1f}s"])
+
         self._active_run_request = None
         self._active_run_started_at = 0.0
+        self._refresh_validation_hint()
 
     @on(TaskLog)
     def on_log(self, msg: TaskLog) -> None:
+        self._sync_phase_from_log_line(msg.line)
         self._log_to_view([msg.line])
+        self._live_log_count += 1
         try:
             status_bar = self.query_one(StatusBar)
+            status_bar.set_center(f"workflow: running · {self._live_log_count} log lines")
             status_bar.update_timer()
         except Exception:
             pass
@@ -1596,8 +1977,83 @@ class ScholarDevClawApp(App[None]):
     # Actions
     # -----------------------------------------------------------------------
 
+    def _resolve_focus_order(self) -> list[Any]:
+        widgets: list[Any] = []
+        for selector in self.FOCUS_ORDER:
+            try:
+                widget = self.query_one(selector)
+            except Exception:
+                continue
+            try:
+                if getattr(widget, "disabled", False):
+                    continue
+            except Exception:
+                continue
+            if getattr(widget, "display", True):
+                widgets.append(widget)
+        return widgets
+
+    def _cycle_focus(self, reverse: bool = False) -> None:
+        ordered = self._resolve_focus_order()
+        if not ordered:
+            return
+
+        current = self.focused
+        current_index = -1
+        for i, widget in enumerate(ordered):
+            if widget is current:
+                current_index = i
+                break
+
+        if current_index < 0:
+            target = ordered[-1] if reverse else ordered[0]
+        else:
+            step = -1 if reverse else 1
+            target = ordered[(current_index + step) % len(ordered)]
+
+        try:
+            target.focus()
+        except Exception:
+            pass
+
+    def action_focus_next(self) -> None:
+        self._cycle_focus(reverse=False)
+
+    def action_focus_prev(self) -> None:
+        self._cycle_focus(reverse=True)
+
+    def action_focus_prompt(self) -> None:
+        try:
+            self.query_one("#prompt-input", PromptInput).focus()
+        except Exception:
+            pass
+
+    def action_focus_history(self) -> None:
+        try:
+            self.query_one("#run-history", HistoryPane).focus()
+        except Exception:
+            pass
+
     def action_run_selected(self) -> None:
         self._run_workflow()
+
+    def action_rerun_last(self) -> None:
+        if not self._run_history:
+            self._set_status("No previous run to rerun", "warning")
+            return
+        if self._run_in_progress:
+            self._set_status("Cannot rerun while another workflow is active", "warning")
+            return
+
+        latest = self._run_history[0]
+        request = latest.get("request") if isinstance(latest.get("request"), dict) else None
+        if not request:
+            self._set_status("Last run has no stored request", "warning")
+            return
+
+        self._apply_request(request)
+        self._set_status(f"Re-running latest action: {latest.get('action', 'unknown')}", "accent")
+        self._run_workflow(dict(request))
 
     def action_clear_logs(self) -> None:
         try:
@@ -1613,12 +2069,15 @@ class ScholarDevClawApp(App[None]):
     def action_new_session(self) -> None:
         self.action_clear_logs()
         self._run_history.clear()
+        self._render_history()
         self._active_run_request = None
         self._active_run_started_at = 0.0
+        self._run_in_progress = False
         self._set_phase("idle")
         self._set_chat_mode(False)
         self._set_status("New session started", "success")
         self._log_to_view(["Session cleared. Ready."])
+        self._refresh_validation_hint()
 
     def action_export_log(self) -> None:
         export_dir = Path.cwd() / "exports"

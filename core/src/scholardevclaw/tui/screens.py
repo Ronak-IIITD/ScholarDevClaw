@@ -57,12 +57,16 @@ HELP_MD = """
 |-----|--------|
 | `ctrl+c` | quit |
 | `ctrl+r` | run selected workflow |
+| `ctrl+shift+r` | rerun latest workflow |
 | `ctrl+k` | open command palette |
 | `ctrl+h` | show this help |
 | `ctrl+o` | toggle config bar |
 | `ctrl+l` | clear logs |
 | `ctrl+n` | new session |
 | `ctrl+e` | export logs |
+| `tab` / `shift+tab` | cycle focus |
+| `ctrl+p` | focus prompt |
+| `ctrl+g` | focus run history |
 | `esc` | stop agent / close overlay |
 | `esc` x2 | stop running agent |
 
