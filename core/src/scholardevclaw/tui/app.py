@@ -17,6 +17,7 @@ import re
 import subprocess
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -180,30 +181,28 @@ class ScholarDevClawApp(App[None]):
         width: 100%;
         height: 1fr;
         layout: vertical;
+        padding: 1 1 0 1;
     }
 
-    #output {
+    .surface-title {
         width: 100%;
-        height: 1fr;
-        background: $panel;
-        padding: 0;
-    }
-
-    /* ---- Phase bar (thin, between output and config) ---- */
-
-    #phase-bar {
-        width: 100%;
-        height: 1;
-        background: $surface-dark;
-        border-top: solid $border;
-        border-bottom: solid $border;
+        color: $text-muted;
+        text-style: bold;
+        margin-bottom: 0;
         padding: 0 1;
     }
 
-    #phase-fill {
-        height: 100%;
-        background: $accent;
-        transition: width 0.3s linear;
+    #history-title {
+        width: 100%;
+        color: $text-muted;
+        margin-top: 1;
+        margin-bottom: 0;
+        padding: 0 1;
+    }
+
+    #log-view {
+        border: solid $border;
+        margin-top: 0;
     }
 
     /* ---- Zone 2: Contextual config ---- */
@@ -213,9 +212,16 @@ class ScholarDevClawApp(App[None]):
         height: auto;
         max-height: 16;
         background: $surface;
-        border-top: solid $border;
-        padding: 1 2;
+        border-top: solid $border-light;
+        padding: 1 2 1 2;
         overflow-y: auto;
+    }
+
+    #config-title {
+        width: 100%;
+        color: $text-muted;
+        text-style: bold;
+        margin-bottom: 0;
     }
 
     #action-context {
@@ -229,6 +235,11 @@ class ScholarDevClawApp(App[None]):
         color: $text-muted;
         margin-bottom: 1;
     }
+
+    #validation-hint.hint-ready { color: $text-muted; }
+    #validation-hint.hint-warning { color: $warning; }
+    #validation-hint.hint-error { color: $error; }
+    #validation-hint.hint-running { color: $accent; }
 
     #config-bar.collapsed {
         height: 0;
@@ -308,7 +319,7 @@ class ScholarDevClawApp(App[None]):
         width: 100%;
         height: auto;
         background: $surface-dark;
-        border-top: thick $accent-dim;
+        border-top: solid $border-light;
         dock: bottom;
     }
 
@@ -320,7 +331,7 @@ class ScholarDevClawApp(App[None]):
     }
 
     #prompt-prefix {
-        width: 3;
+        width: 4;
         height: 1;
         color: $accent;
         text-style: bold;
@@ -347,13 +358,18 @@ class ScholarDevClawApp(App[None]):
         margin-left: 1;
     }
 
+    #next-action-chip {
+        color: $accent;
+        text-style: bold;
+    }
+
     /* ---- Status bar ---- */
 
     #status-bar {
         width: 100%;
         height: 1;
         background: $panel;
-        border-top: solid $border;
+        border-top: solid $border-light;
         padding: 0 1;
         layout: horizontal;
         dock: bottom;
@@ -542,14 +558,15 @@ class ScholarDevClawApp(App[None]):
 
     PhaseTracker {
         width: 100%;
-        height: 1;
+        height: 2;
         background: $surface-dark;
+        border: solid $border;
         padding: 0 1;
     }
 
     PhaseTracker .phase-bar {
         width: 100%;
-        height: 1;
+        height: 2;
     }
 
     PhaseTracker .progress-track {
@@ -567,7 +584,7 @@ class ScholarDevClawApp(App[None]):
     PhaseTracker .phase-label {
         width: 100%;
         height: 1;
-        text-align: center;
+        text-align: left;
         color: $text-muted;
     }
 
@@ -576,11 +593,11 @@ class ScholarDevClawApp(App[None]):
     HistoryPane {
         width: 100%;
         height: auto;
-        max-height: 7;
+        max-height: 9;
         background: $panel;
         scrollbar-size: 1 1;
         margin-top: 0;
-        border-top: solid $border;
+        border: solid $border;
     }
 
     HistoryPane .history-entry {
@@ -601,13 +618,26 @@ class ScholarDevClawApp(App[None]):
 
     HistoryPane .history-entry.success { border-left: thick $success; }
     HistoryPane .history-entry.failed { border-left: thick $error; }
+    HistoryPane .history-entry.running { border-left: thick $warning; }
+    HistoryPane .history-entry.selected {
+        background: $accent 20%;
+        color: $text;
+        text-style: bold;
+    }
 
-    #history-title {
-        width: 100%;
+    HistoryPane .history-empty {
         color: $text-muted;
-        margin-top: 0;
-        margin-bottom: 0;
-        padding: 0 1;
+        padding: 1 1;
+    }
+
+    LogView .log-empty {
+        color: $text-muted;
+        padding: 1 1;
+    }
+
+    ChatLog .chat-empty {
+        color: $text-muted;
+        padding: 1 1;
     }
 
     /* ---- PromptInput ---- */
@@ -817,9 +847,11 @@ class ScholarDevClawApp(App[None]):
         if enabled:
             self.add_class("chat-mode")
             self._set_status("Chat session active", "accent")
+            self._set_next_action("send a prompt")
         else:
             self.remove_class("chat-mode")
-            self._set_status("Ready", "info")
+            self._set_status("Ready — choose an action and run", "info")
+            self._set_next_action("press Ctrl+R")
         try:
             self.query_one("#chat-mode-value", Label).update(
                 "agent: running" if self._agent_running else "agent: idle"
@@ -1095,9 +1127,10 @@ class ScholarDevClawApp(App[None]):
 
         # -- Zone 1: Main output area --
         with Vertical(id="main-area"):
+            yield Label("Workflow output", classes="surface-title", id="log-title")
             yield PhaseTracker(id="phase-tracker")
             yield LogView(id="log-view")
-            yield Label("Recent runs (enter on item to rerun)", id="history-title")
+            yield Label("Run history · ↑/↓ select · enter rerun", id="history-title")
             yield HistoryPane(id="run-history")
 
         # -- Chat overlay (hidden until agent mode) --
@@ -1120,6 +1153,7 @@ class ScholarDevClawApp(App[None]):
 
         # -- Zone 2: Contextual config bar --
         with Vertical(id="config-bar"):
+            yield Label("Workflow configuration", id="config-title")
             yield Label("", id="action-context")
             yield Label("", id="validation-hint")
             with Horizontal(id="config-fields"):
@@ -1219,13 +1253,14 @@ class ScholarDevClawApp(App[None]):
         # -- Zone 3: Prompt bar --
         with Vertical(id="prompt-zone"):
             with Horizontal(id="prompt-row"):
-                yield Label(" ", id="prompt-prefix")
+                yield Label("›", id="prompt-prefix")
                 yield PromptInput(
                     value="",
-                    placeholder="type a command or request... (ctrl+k commands, ctrl+h help)",
+                    placeholder="Describe what to run…  (Ctrl+K commands · Ctrl+H help)",
                     id="prompt-input",
                 )
                 with Horizontal(id="prompt-meta"):
+                    yield Label("ready", id="next-action-chip", classes="chip")
                     yield Label("auto", id="provider-chip", classes="chip")
 
         # -- Status bar --
@@ -1240,26 +1275,27 @@ class ScholarDevClawApp(App[None]):
         self._update_agent_status("Offline")
         self._refresh_provider_chip()
         self._set_phase("idle")
-        self._set_status("Ready", "info")
+        self._set_status("Ready — choose an action and run", "info")
         self._log_to_view(
             [
                 "ScholarDevClaw ready.",
-                "  ctrl+k  command palette",
-                "  ctrl+h  help",
-                "  ctrl+o  toggle config bar",
-                "  ctrl+r  run current action",
-                "  ctrl+shift+r  rerun last",
-                "  tab/shift+tab  cycle focus",
-                "  ctrl+p  focus prompt",
-                "  ctrl+g  focus run history",
                 "",
-                "Or just type what you want: 'analyze ./my-project'",
+                "Fast keys",
+                "  Ctrl+R        run selected workflow",
+                "  Ctrl+Shift+R  rerun latest",
+                "  Ctrl+K        command palette",
+                "  Ctrl+H        keyboard guide",
+                "  Ctrl+P / Ctrl+G   jump prompt / history",
+                "  Tab / Shift+Tab   move focus",
+                "",
+                "Type naturally in prompt: analyze ./my-project",
             ]
         )
         try:
             status_bar = self.query_one(StatusBar)
             status_bar.set_center("agent: idle")
             status_bar.set_step(0, 0)
+            status_bar.set_status("Ready — choose an action and run", "info")
         except Exception:
             pass
 
@@ -1315,19 +1351,28 @@ class ScholarDevClawApp(App[None]):
         meta = self.ACTION_GUIDE.get(action, self.ACTION_GUIDE["analyze"])
         try:
             self.query_one("#action-context", Label).update(
-                f"[bold]{action}[/] — {meta['summary']} ({meta['hint']})"
+                f"[bold]{action}[/] · {meta['summary']}  [dim]({meta['hint']})[/]"
             )
         except Exception:
             pass
 
+    def _set_next_action(self, text: str) -> None:
+        try:
+            self.query_one("#next-action-chip", Label).update(text)
+        except Exception:
+            pass
+
     def _refresh_validation_hint(self) -> None:
+        hint_level = "ready"
         if self._run_in_progress:
             try:
-                self.query_one("#validation-hint", Label).update(
-                    "Workflow running… live logs are streaming below"
-                )
+                label = self.query_one("#validation-hint", Label)
+                label.update("Workflow running · live logs and phase progress are updating")
+                label.remove_class("hint-ready", "hint-warning", "hint-error")
+                label.add_class("hint-running")
             except Exception:
                 pass
+            self._set_next_action("running")
             return
 
         req = self._capture_request()
@@ -1343,13 +1388,21 @@ class ScholarDevClawApp(App[None]):
 
         if missing:
             hint = f"Missing: {', '.join(missing)} · press ctrl+r after completing required inputs"
+            hint_level = "error"
+            self._set_next_action("complete required fields")
         elif action == "search" and not (req.get("include_arxiv") or req.get("include_web")):
             hint = "Ready · search will use local spec index only (enable arXiv/web for external sources)"
+            hint_level = "warning"
+            self._set_next_action("run local search")
         else:
-            hint = "Ready · press ctrl+r to run · use ↑/↓ for prompt history"
+            hint = "Ready · press Ctrl+R to run · use ↑/↓ for prompt history"
+            self._set_next_action("press Ctrl+R")
 
         try:
-            self.query_one("#validation-hint", Label).update(hint)
+            label = self.query_one("#validation-hint", Label)
+            label.update(hint)
+            label.remove_class("hint-ready", "hint-warning", "hint-error", "hint-running")
+            label.add_class(f"hint-{hint_level}")
         except Exception:
             pass
 
@@ -1482,6 +1535,7 @@ class ScholarDevClawApp(App[None]):
             "action": action,
             "status": status,
             "duration_s": duration,
+            "finished_at": datetime.now().strftime("%H:%M:%S"),
             "request": request,
             "title": title,
             "result": result,
@@ -1512,6 +1566,7 @@ class ScholarDevClawApp(App[None]):
                     float(entry.get("duration_s", 0.0)),
                     repo=str(request.get("repo_path", "")),
                     spec=str(request.get("spec", "")),
+                    finished_at=str(entry.get("finished_at", "--:--:--")),
                 )
         except Exception:
             pass
@@ -1569,7 +1624,7 @@ class ScholarDevClawApp(App[None]):
 
     def _run_workflow(self, override: dict[str, Any] | None = None) -> None:
         if self._run_in_progress:
-            self._set_status("A workflow is already running. Wait for completion.", "warning")
+            self._set_status("Workflow already running — wait for completion", "warning")
             self._log_to_view(["Warning: run request ignored because another run is active"])
             return
 
@@ -1585,7 +1640,7 @@ class ScholarDevClawApp(App[None]):
         ok, errors, warnings = self._validate_request_inputs(req)
         if not ok:
             self._set_phase("idle")
-            self._set_status("Cannot run: fix required inputs", "error")
+            self._set_status("Cannot start — required inputs missing", "error")
             for err in errors:
                 self._log_to_view([f"Error: {err}"])
             self._refresh_validation_hint()
@@ -1594,7 +1649,7 @@ class ScholarDevClawApp(App[None]):
         for warning in warnings:
             self._log_to_view([f"Warning: {warning}"])
         if warnings:
-            self._set_status("Starting with warnings", "warning")
+            self._set_status("Starting with warnings — review output", "warning")
 
         if action == "search":
             repo = "(global)"
@@ -1603,7 +1658,8 @@ class ScholarDevClawApp(App[None]):
         self._live_log_count = 0
 
         self._disable_run_buttons()
-        self._set_status(f"Running '{action}'...", "info")
+        self._set_status(f"Running {action}…", "accent")
+        self._set_next_action("running")
 
         try:
             status_bar = self.query_one(StatusBar)
@@ -1686,7 +1742,7 @@ class ScholarDevClawApp(App[None]):
                 self._restore_provider_env(prev_env)
 
         threading.Thread(target=_run, daemon=True).start()
-        self._log_to_view([f"Started: {action} on {repo}"])
+        self._log_to_view([f"Started {action} · target {repo}"])
 
     # -----------------------------------------------------------------------
     # Event handlers
@@ -1730,6 +1786,7 @@ class ScholarDevClawApp(App[None]):
 
         self._apply_request(request)
         self._set_status(f"Re-running run #{msg.run_id:02d}", "accent")
+        self._set_next_action("running")
         self._run_workflow(dict(request))
 
     @on(Button.Pressed, "#run")
@@ -1831,18 +1888,20 @@ class ScholarDevClawApp(App[None]):
     @on(TaskCompleted)
     def on_task_done(self, msg: TaskCompleted) -> None:
         self._run_in_progress = False
-        self._set_phase("complete")
+        self._set_phase("idle" if msg.error else "complete")
         self._enable_run_buttons()
 
         if msg.error:
             self._log_to_view([f"Error: {msg.error}"])
-            self._set_status(f"Failed ({msg.title})", "error")
+            self._set_status(f"Run failed · {msg.title}", "error")
+            self._set_next_action("fix and rerun")
         else:
             result_summary = json.dumps(msg.result, indent=2, default=str)
             if len(result_summary) > 2000:
                 result_summary = result_summary[:2000] + "\n..."
             self._log_to_view(["", f"=== {msg.title} complete ===", result_summary])
-            self._set_status(f"Done ({msg.title})", "success")
+            self._set_status(f"Run complete · {msg.title}", "success")
+            self._set_next_action("press Ctrl+Shift+R to rerun")
 
         if not self._live_logs_enabled:
             self._log_to_view(msg.logs)
@@ -1883,7 +1942,7 @@ class ScholarDevClawApp(App[None]):
         self._live_log_count += 1
         try:
             status_bar = self.query_one(StatusBar)
-            status_bar.set_center(f"workflow: running · {self._live_log_count} log lines")
+            status_bar.set_center(f"workflow: running · {self._live_log_count} events")
             status_bar.update_timer()
         except Exception:
             pass
@@ -2040,6 +2099,7 @@ class ScholarDevClawApp(App[None]):
     def action_rerun_last(self) -> None:
         if not self._run_history:
             self._set_status("No previous run to rerun", "warning")
+            self._set_next_action("run your first workflow")
             return
         if self._run_in_progress:
             self._set_status("Cannot rerun while another workflow is active", "warning")
@@ -2053,6 +2113,7 @@ class ScholarDevClawApp(App[None]):
 
         self._apply_request(request)
         self._set_status(f"Re-running latest action: {latest.get('action', 'unknown')}", "accent")
+        self._set_next_action("running")
         self._run_workflow(dict(request))
 
     def action_clear_logs(self) -> None:
@@ -2077,6 +2138,7 @@ class ScholarDevClawApp(App[None]):
         self._set_chat_mode(False)
         self._set_status("New session started", "success")
         self._log_to_view(["Session cleared. Ready."])
+        self._set_next_action("press Ctrl+R")
         self._refresh_validation_hint()
 
     def action_export_log(self) -> None:
@@ -2099,7 +2161,7 @@ class ScholarDevClawApp(App[None]):
             self._config_visible = not self._config_visible
             config_bar.display = self._config_visible
             self._set_status(
-                "Config bar visible" if self._config_visible else "Config bar hidden",
+                "Config panel visible" if self._config_visible else "Config panel hidden",
                 "info",
             )
         except Exception:

@@ -4,6 +4,44 @@
 
 **Last updated:** 2026-03-27
 
+### 2026-03-27 (TUI premium polish — calm hierarchy, keyboard-first history, reliable lifecycle language)
+
+**Goal:** Make the TUI feel more intentional and premium with stronger visual hierarchy, clearer next-action affordances, more trustworthy run feedback, and faster keyboard-only operation.
+
+**Summary:** Delivered a focused UX polish pass across app layout, widgets, and overlays without changing pipeline architecture. The UI now has clearer surface boundaries and titles, stronger status/microcopy consistency for idle/running/success/failure states, guided “next action” messaging, richer empty states, keyboard-driven run history navigation (`↑/↓`, `j/k`, `enter/space`), and cleaner command/help overlays.
+
+**What changed:**
+- **`core/src/scholardevclaw/tui/app.py`**
+  - Refined layout hierarchy and spacing (`Workflow output`, `Workflow configuration` surface titles).
+  - Improved visual separation between log/config/prompt/status surfaces.
+  - Added `next-action` chip in prompt metadata for explicit operator guidance.
+  - Upgraded status and lifecycle copy for confidence (`Running…`, `Run complete`, `Run failed`, `Workflow already running`).
+  - Added validation-hint severity styling (`ready`, `warning`, `error`, `running`).
+  - Improved startup microcopy and fast-key onboarding.
+  - Added run `finished_at` timestamp persistence and passed it into history rendering.
+  - Ensured failed runs return phase tracker to `idle` for clearer state trust.
+
+- **`core/src/scholardevclaw/tui/widgets.py`**
+  - Upgraded `PhaseTracker` to 2-line, labeled progress style with percent + state icon (`○/◉/●`).
+  - Added log empty-state placeholder in `LogView`.
+  - Upgraded `HistoryPane`:
+    - more scannable row format (run id, time, action, status, duration, repo/spec),
+    - selected-row highlighting,
+    - keyboard navigation (`up/down`, `j/k`) + activation (`enter/space`),
+    - explicit empty state.
+  - Added chat empty-state placeholder in `ChatLog`.
+
+- **`core/src/scholardevclaw/tui/screens.py`**
+  - Refined welcome/help microcopy and keyboard guidance for current interactions.
+  - Added history-pane keyboard shortcuts to help overlay.
+  - Restyled modal surfaces (border hierarchy, sizing, spacing) for calmer visual tone.
+  - Improved command palette readability with title row, denser command rows, and no-result state.
+
+**Verification:**
+- ✅ `python -m ruff check src/scholardevclaw/tui/app.py src/scholardevclaw/tui/widgets.py src/scholardevclaw/tui/screens.py`
+- ✅ `python -m py_compile src/scholardevclaw/tui/app.py src/scholardevclaw/tui/widgets.py src/scholardevclaw/tui/screens.py`
+- ✅ `python -m pytest tests/unit/test_tui_clipboard.py -q` (21 passed)
+
 ### 2026-03-27 (TUI UX flow upgrade — validation-first runs, live lifecycle clarity, deterministic reruns)
 
 **Goal:** Make the Textual TUI feel operator-grade with clearer action flow, stronger keyboard-first control, deterministic reruns, and resilient run/log lifecycle feedback.

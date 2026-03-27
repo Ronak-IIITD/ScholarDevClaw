@@ -11,23 +11,23 @@ from textual.widgets import Button, Input, Label, Markdown
 WELCOME_MD = """
 # ScholarDevClaw
 
-**Research-to-Code AI Agent**
+**Research-to-Code Control Surface**
 
 ScholarDevClaw analyzes your repository, discovers research improvements,
 maps them onto your codebase, generates validated patches, and reports outcomes.
 
 ---
 
-## Quick Start
+## Start in 10 seconds
 
 | Key | Action |
 |-----|--------|
 | `ctrl+r` | run selected workflow |
 | `ctrl+k` | command palette |
 | `ctrl+h` | keyboard shortcuts |
+| `ctrl+p` / `ctrl+g` | jump prompt / history |
 | `ctrl+o` | toggle config bar |
-| `ctrl+l` | clear logs |
-| `ctrl+n` | new session |
+| `ctrl+shift+r` | rerun latest |
 | `Esc` | stop agent / close overlay |
 
 ## Workflows
@@ -45,7 +45,7 @@ You can also type natural language in the prompt bar:
 
 ---
 
-Press **Enter** or **Esc** to dismiss.
+Press **Enter** or **Esc** to continue.
 """
 
 
@@ -60,7 +60,7 @@ HELP_MD = """
 | `ctrl+shift+r` | rerun latest workflow |
 | `ctrl+k` | open command palette |
 | `ctrl+h` | show this help |
-| `ctrl+o` | toggle config bar |
+| `ctrl+o` | toggle config panel |
 | `ctrl+l` | clear logs |
 | `ctrl+n` | new session |
 | `ctrl+e` | export logs |
@@ -69,6 +69,13 @@ HELP_MD = """
 | `ctrl+g` | focus run history |
 | `esc` | stop agent / close overlay |
 | `esc` x2 | stop running agent |
+
+## History Pane
+| Key | Action |
+|-----|--------|
+| `up` / `k` | previous run |
+| `down` / `j` | next run |
+| `enter` / `space` | rerun selected |
 
 ## Prompt Bar
 | Key | Action |
@@ -102,12 +109,13 @@ class WelcomeScreen(ModalScreen[None]):
     }
 
     WelcomeScreen > Container {
-        width: 70;
-        max-width: 80;
+        width: 76;
+        max-width: 88;
         height: auto;
         max-height: 85%;
         background: #1e1e2e;
-        border: thick #89b4fa;
+        border: round #45475a;
+        border-top: thick #89b4fa;
         padding: 2 3;
     }
 
@@ -120,7 +128,7 @@ class WelcomeScreen(ModalScreen[None]):
         width: 100%;
         text-align: center;
         color: #a6adc8;
-        margin-top: 1;
+        margin-top: 2;
     }
     """
 
@@ -145,12 +153,13 @@ class HelpOverlay(ModalScreen[None]):
     }
 
     HelpOverlay > Container {
-        width: 60;
-        max-width: 75;
+        width: 68;
+        max-width: 84;
         height: auto;
         max-height: 80%;
         background: #1e1e2e;
-        border: thick #89b4fa;
+        border: round #45475a;
+        border-top: thick #89b4fa;
         padding: 2 3;
     }
 
@@ -197,21 +206,29 @@ class CommandPalette(ModalScreen[str | None]):
     }
 
     CommandPalette > Vertical {
-        width: 55;
-        max-width: 70;
+        width: 62;
+        max-width: 78;
         height: auto;
-        max-height: 60%;
+        max-height: 68%;
         background: #1e1e2e;
-        border: thick #89b4fa;
-        padding: 1;
-        margin-top: 8;
+        border: round #45475a;
+        border-top: thick #89b4fa;
+        padding: 1 1;
+        margin-top: 5;
+    }
+
+    CommandPalette .palette-title {
+        color: #a6adc8;
+        text-style: bold;
+        padding: 0 1;
+        margin-bottom: 1;
     }
 
     CommandPalette Input {
         width: 100%;
         margin-bottom: 1;
         background: #181825;
-        border: solid #313244;
+        border: solid #45475a;
     }
 
     CommandPalette .command-list {
@@ -223,22 +240,28 @@ class CommandPalette(ModalScreen[str | None]):
 
     CommandPalette .command-item {
         width: 100%;
-        margin-bottom: 1;
+        margin-bottom: 0;
         background: #181825;
-        border: solid #313244;
+        border: none;
+        border-left: thick #313244;
         color: #cdd6f4;
         text-align: left;
     }
 
     CommandPalette .command-item:hover {
-        background: #313244;
-        border: solid #89b4fa;
+        background: #313244 80%;
+        border-left: thick #89b4fa;
     }
 
     CommandPalette .command-item.selected {
-        background: #45475a;
-        border: solid #89b4fa;
+        background: #313244;
+        border-left: thick #89b4fa;
         text-style: bold;
+    }
+
+    CommandPalette .palette-empty {
+        color: #6c7086;
+        padding: 1 1;
     }
     """
 
@@ -249,10 +272,11 @@ class CommandPalette(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Input(placeholder="Type a command...", id="palette-input")
+            yield Label("Command palette · type to filter · Enter to run", classes="palette-title")
+            yield Input(placeholder="Type a command…", id="palette-input")
             with Vertical(classes="command-list", id="command-list"):
                 for name, desc, _ in self.PALETTE_COMMANDS:
-                    yield Button(f"{name}  -  {desc}", id=f"cmd-{name}", classes="command-item")
+                    yield Button(f"{name:<11}  {desc}", id=f"cmd-{name}", classes="command-item")
 
     def on_mount(self) -> None:
         self.query_one("#palette-input", Input).focus()
@@ -276,8 +300,13 @@ class CommandPalette(ModalScreen[str | None]):
                 if query in name or query in desc.lower()
             ]
 
-        for name, desc, _ in self._filtered_commands:
-            container.mount(Button(f"{name}  -  {desc}", id=f"cmd-{name}", classes="command-item"))
+        if not self._filtered_commands:
+            container.mount(Label("No matching commands", classes="palette-empty"))
+        else:
+            for name, desc, _ in self._filtered_commands:
+                container.mount(
+                    Button(f"{name:<11}  {desc}", id=f"cmd-{name}", classes="command-item")
+                )
 
         self._selected_index = 0
         self._refresh_selection()
