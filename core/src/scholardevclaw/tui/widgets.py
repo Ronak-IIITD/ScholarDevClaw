@@ -8,7 +8,7 @@ from typing import Any
 
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Button, Input, Label, Markdown, Static
@@ -37,21 +37,22 @@ class PhaseTracker(Static):
     CSS = """
     PhaseTracker {
         width: 100%;
-        height: 2;
+        height: 4;
         background: $surface-dark;
         border: solid $border;
-        padding: 0 1;
+        padding: 1;
     }
 
-    PhaseTracker .phase-bar {
+    PhaseTracker .phase-stack {
         width: 100%;
-        height: 2;
+        height: 4;
     }
 
     PhaseTracker .progress-track {
         width: 100%;
         height: 1;
         background: $border;
+        margin-top: 1;
     }
 
     PhaseTracker .progress-fill {
@@ -64,16 +65,23 @@ class PhaseTracker(Static):
         width: 100%;
         height: 1;
         text-align: left;
+        color: $text;
+    }
+
+    PhaseTracker .phase-steps {
+        width: 100%;
+        height: 1;
         color: $text-muted;
+        margin-top: 1;
     }
     """
 
     def compose(self) -> ComposeResult:
-        with Horizontal(classes="phase-bar"):
-            with Vertical():
-                yield Static("", classes="phase-label", id="phase-label-text")
-                with Static(classes="progress-track"):
-                    yield Static("", classes="progress-fill", id="progress-fill")
+        with Vertical(classes="phase-stack"):
+            yield Static("", classes="phase-label", id="phase-label-text")
+            with Static(classes="progress-track"):
+                yield Static("", classes="progress-fill", id="progress-fill")
+            yield Static("", classes="phase-steps", id="phase-steps")
 
     def watch_current_phase(self, old: str, new: str) -> None:
         self._update_phase(new)
@@ -86,6 +94,7 @@ class PhaseTracker(Static):
         try:
             label = self.query_one("#phase-label-text", Static)
             fill = self.query_one("#progress-fill", Static)
+            steps = self.query_one("#phase-steps", Static)
 
             phase_label = "Ready"
             progress = 0
@@ -112,6 +121,15 @@ class PhaseTracker(Static):
                 fill.styles.background = "$accent"
 
             fill.styles.width = f"{pct}%"
+            markers: list[str] = []
+            for idx, (name, step_label) in enumerate(self.PHASES):
+                if name == phase:
+                    markers.append(f"[bold $accent]{step_label}[/]")
+                elif idx < progress:
+                    markers.append(f"[$success]{step_label}[/]")
+                else:
+                    markers.append(f"[dim]{step_label}[/]")
+            steps.update("  •  ".join(markers))
         except Exception:
             pass
 
@@ -129,18 +147,38 @@ class LogEntry(Static):
         width: 100%;
         height: auto;
         padding: 0 1;
+        margin-bottom: 1;
+        border-left: thick $border;
+        background: $surface;
         color: $text;
     }
 
     LogEntry.info { color: $text; }
-    LogEntry.success { color: $success; }
-    LogEntry.error { color: $error; }
-    LogEntry.warning { color: $warning; }
+    LogEntry.success {
+        color: $success;
+        border-left: thick $success;
+        background: $success 8%;
+    }
+    LogEntry.error {
+        color: $error;
+        border-left: thick $error;
+        background: $error 8%;
+    }
+    LogEntry.warning {
+        color: $warning;
+        border-left: thick $warning;
+        background: $warning 8%;
+    }
     LogEntry.dim { color: $text-muted; }
-    LogEntry.accent { color: $accent; }
+    LogEntry.accent {
+        color: $accent;
+        border-left: thick $accent;
+        background: $accent 8%;
+    }
     LogEntry.system {
         color: $text-muted;
         text-style: italic;
+        background: $surface-dark;
     }
     """
 
@@ -162,7 +200,7 @@ class LogView(VerticalScroll):
         background: $panel;
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
-        padding: 0 1;
+        padding: 1;
     }
 
     LogView LogEntry {
@@ -363,24 +401,28 @@ class HistoryPane(VerticalScroll):
     HistoryPane {
         width: 100%;
         height: auto;
-        max-height: 9;
+        max-height: 11;
         background: $panel;
         scrollbar-size: 1 1;
         margin-top: 0;
         border: solid $border;
+        padding: 1;
     }
 
     HistoryPane .history-entry {
         width: 100%;
-        height: 1;
+        height: auto;
+        min-height: 3;
         padding: 0 1;
-        color: $text-muted;
-        border: none;
+        color: $text-dim;
+        background: $surface;
+        border: solid $border;
         text-align: left;
+        margin-bottom: 1;
     }
 
     HistoryPane .history-entry:hover {
-        background: $accent 15%;
+        background: $accent 12%;
         color: $text;
     }
 
@@ -388,7 +430,7 @@ class HistoryPane(VerticalScroll):
     HistoryPane .history-entry.failed { border-left: thick $error; }
     HistoryPane .history-entry.running { border-left: thick $warning; }
     HistoryPane .history-entry.selected {
-        background: $accent 20%;
+        background: $accent 18%;
         color: $text;
         text-style: bold;
     }
@@ -463,8 +505,8 @@ class HistoryPane(VerticalScroll):
             spec_name = entry.get("spec", "") or "-"
             finished_at = str(entry.get("finished_at", "--:--:--"))[-8:]
             line = (
-                f"#{entry['id']:02d} {finished_at} {entry['action'][:9]:9} {icon} {status_word:7} {entry['duration']:>5.1f}s "
-                f"· {repo_name} · {spec_name}"
+                f"#{entry['id']:02d}  {entry['action'][:10].upper():10}  {icon} {status_word.upper():7}  {entry['duration']:>4.1f}s  {finished_at}\n"
+                f"repo {repo_name}  ·  spec {spec_name}"
             )
             selected_class = " selected" if idx == self._selected_index else ""
             button = Button(
@@ -622,7 +664,7 @@ class ChatLog(VerticalScroll):
         height: 1fr;
         background: $panel;
         scrollbar-size: 1 1;
-        padding: 0 1;
+        padding: 1;
     }
 
     ChatLog .chat-entry {
@@ -630,19 +672,22 @@ class ChatLog(VerticalScroll):
         margin-bottom: 1;
         padding: 0 1;
         border-left: thick $border;
-        background: $surface-dark;
+        background: $surface;
     }
 
     ChatLog .chat-entry.user {
         border-left: thick $accent;
+        background: $accent 8%;
     }
 
     ChatLog .chat-entry.agent {
         border-left: thick $success;
+        background: $success 8%;
     }
 
     ChatLog .chat-entry.system {
         border-left: thick $warning;
+        background: $surface-dark;
     }
 
     ChatLog Markdown {

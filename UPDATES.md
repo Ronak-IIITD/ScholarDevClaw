@@ -4,6 +4,36 @@
 
 **Last updated:** 2026-03-29
 
+### 2026-03-29 (TUI design refresh — stronger surface hierarchy and calmer control deck)
+
+**Goal:** Make the Textual TUI feel more intentional and polished by improving visual hierarchy, readability, and operator focus without changing the workflow architecture.
+
+**Summary:** Reworked the TUI presentation layer across the main app, shared widgets, and modal screens. The interface now has a clearer “control surface” header, stronger separation between log/history/config/prompt areas, richer progress and history presentation, and modal screens that match the main workspace instead of looking like a separate theme.
+
+**What changed:**
+- **`core/src/scholardevclaw/tui/app.py`**
+  - Added a new workspace hero panel with live action, phase, and status readouts.
+  - Reframed the main area into explicit surface cards for workflow output and run history.
+  - Upgraded the configuration bar with header chips, more spacious form controls, and card-like field groups.
+  - Restyled the prompt bar into a bordered command surface with clearer helper copy.
+  - Synced the new hero/config labels with existing action, phase, provider, and status updates.
+
+- **`core/src/scholardevclaw/tui/widgets.py`**
+  - Expanded `PhaseTracker` into a richer progress block with step markers.
+  - Restyled log entries as level-aware cards with stronger visual scanning cues.
+  - Upgraded `HistoryPane` rows into more readable multi-line run cards.
+  - Refined chat timeline styling to better match the main workspace surfaces.
+
+- **`core/src/scholardevclaw/tui/screens.py`**
+  - Matched welcome/help/command-palette modal styling to the new workspace look.
+  - Improved command palette density and added supporting subtitle copy.
+
+**Verification:**
+- ✅ `cd core && python -m ruff check src/scholardevclaw/tui/app.py src/scholardevclaw/tui/widgets.py src/scholardevclaw/tui/screens.py`
+- ✅ `cd core && python -m py_compile src/scholardevclaw/tui/app.py src/scholardevclaw/tui/widgets.py src/scholardevclaw/tui/screens.py`
+- ✅ `cd core && python -m pytest tests/unit/test_tui_app.py tests/unit/test_tui_widgets.py tests/unit/test_tui_init.py tests/unit/test_tui_clipboard.py -q`
+  - Result: `36 passed`
+
 ### 2026-03-29 (Massive edge-case test hardening — API/CLI/TUI/pipeline reliability sweep)
 
 **Goal:** Make test coverage significantly more robust for edge cases across the full Python surface area (API, CLI, TUI, and pipeline orchestration), with a focus on failure handling, security boundaries, and regression resistance.

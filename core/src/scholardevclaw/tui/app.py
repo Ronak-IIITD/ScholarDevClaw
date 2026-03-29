@@ -137,28 +137,26 @@ class ScholarDevClawApp(App[None]):
     ]
 
     # -----------------------------------------------------------------------
-    # CSS — Catppuccin Mocha, clean 3-zone layout
+    # CSS — Catppuccin Mocha with stronger workspace hierarchy
     # -----------------------------------------------------------------------
 
     CSS = """
-    /* ---- Color tokens (Catppuccin Mocha) ---- */
-
     $surface: #1e1e2e;
     $surface-dark: #181825;
+    $surface-elevated: #24273a;
     $panel: #11111b;
+    $panel-soft: #151822;
     $border: #313244;
     $border-light: #45475a;
     $text: #cdd6f4;
     $text-dim: #a6adc8;
-    $text-muted: #6c7086;
+    $text-muted: #7f849c;
     $accent: #89b4fa;
-    $accent-dim: #45475a;
+    $accent-soft: #74c7ec;
     $success: #a6e3a1;
     $error: #f38ba8;
     $warning: #f9e2af;
-    $text-inv: #1e1e2e;
-
-    /* ---- Screen ---- */
+    $text-inv: #11111b;
 
     Screen {
         layout: vertical;
@@ -175,71 +173,111 @@ class ScholarDevClawApp(App[None]):
         border-bottom: solid $border;
     }
 
-    /* ---- Zone 1: Main output ---- */
+    Label {
+        color: $text-dim;
+    }
 
     #main-area {
         width: 100%;
         height: 1fr;
         layout: vertical;
-        padding: 1 1 0 1;
+        padding: 1 2 1 2;
+    }
+
+    #hero-panel {
+        width: 100%;
+        height: auto;
+        min-height: 8;
+        layout: horizontal;
+        background: $surface;
+        border: solid $border-light;
+        padding: 1 2;
+        margin-bottom: 1;
+    }
+
+    #hero-copy {
+        width: 1fr;
+        padding-right: 2;
+    }
+
+    #hero-kicker {
+        color: $accent-soft;
+        text-style: bold;
+    }
+
+    #hero-title {
+        color: $text;
+        text-style: bold;
+    }
+
+    #hero-subtitle {
+        color: $text-dim;
+        margin-top: 1;
+    }
+
+    #hero-meta {
+        width: 34;
+        min-width: 28;
+        background: $surface-dark;
+        border-left: solid $border;
+        padding: 0 0 0 2;
+    }
+
+    .hero-meta-label {
+        color: $text-muted;
+        margin-top: 1;
+    }
+
+    .hero-meta-value {
+        color: $text;
+        background: $panel;
+        border: solid $border;
+        padding: 0 1;
+    }
+
+    .surface-card {
+        width: 100%;
+        background: $surface;
+        border: solid $border;
+        padding: 1;
+    }
+
+    .surface-heading {
+        width: 100%;
+        height: auto;
+        layout: horizontal;
+        margin-bottom: 1;
     }
 
     .surface-title {
-        width: 100%;
-        color: $text-muted;
+        width: 1fr;
+        color: $text;
         text-style: bold;
-        margin-bottom: 0;
-        padding: 0 1;
     }
 
-    #history-title {
-        width: 100%;
+    .surface-caption {
+        width: auto;
         color: $text-muted;
-        margin-top: 1;
-        margin-bottom: 0;
-        padding: 0 1;
     }
 
-    #log-view {
-        border: solid $border;
-        margin-top: 0;
+    #log-card {
+        height: 1fr;
+        margin-bottom: 1;
     }
 
-    /* ---- Zone 2: Contextual config ---- */
+    #history-card {
+        height: auto;
+    }
 
     #config-bar {
         width: 100%;
         height: auto;
-        max-height: 16;
-        background: $surface;
+        max-height: 22;
+        background: $surface-dark;
         border-top: solid $border-light;
-        padding: 1 2 1 2;
+        padding: 1 2 2 2;
         overflow-y: auto;
     }
-
-    #config-title {
-        width: 100%;
-        color: $text-muted;
-        text-style: bold;
-        margin-bottom: 0;
-    }
-
-    #action-context {
-        width: 100%;
-        color: $text-dim;
-        margin-bottom: 1;
-    }
-
-    #validation-hint {
-        width: 100%;
-        color: $text-muted;
-        margin-bottom: 1;
-    }
-
-    #validation-hint.hint-ready { color: $text-muted; }
-    #validation-hint.hint-warning { color: $warning; }
-    #validation-hint.hint-error { color: $error; }
-    #validation-hint.hint-running { color: $accent; }
 
     #config-bar.collapsed {
         height: 0;
@@ -248,6 +286,57 @@ class ScholarDevClawApp(App[None]):
         border: none;
     }
 
+    #config-header {
+        width: 100%;
+        height: auto;
+        layout: horizontal;
+        margin-bottom: 1;
+    }
+
+    #config-header-copy {
+        width: 1fr;
+        padding-right: 1;
+    }
+
+    #config-title {
+        color: $text;
+        text-style: bold;
+    }
+
+    #action-context {
+        color: $text-dim;
+        margin-top: 1;
+    }
+
+    #config-header-chips {
+        width: auto;
+        height: auto;
+        padding-top: 1;
+    }
+
+    .config-pill {
+        width: auto;
+        background: $surface-elevated;
+        border: solid $border;
+        color: $text-dim;
+        padding: 0 1;
+        margin-left: 1;
+    }
+
+    #validation-hint {
+        width: 100%;
+        background: $surface;
+        border: solid $border;
+        color: $text-muted;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+
+    #validation-hint.hint-ready { color: $text-muted; }
+    #validation-hint.hint-warning { color: $warning; }
+    #validation-hint.hint-error { color: $error; }
+    #validation-hint.hint-running { color: $accent; }
+
     #config-fields {
         width: 100%;
         height: auto;
@@ -255,92 +344,94 @@ class ScholarDevClawApp(App[None]):
     }
 
     .config-group {
-        width: auto;
+        width: 28;
+        min-width: 22;
         height: auto;
-        margin-right: 3;
+        background: $surface;
+        border: solid $border;
+        padding: 1 1 0 1;
+        margin-right: 1;
     }
 
     .config-label {
         color: $text-muted;
-        margin-bottom: 0;
-        height: 1;
+        margin-bottom: 1;
         text-style: bold;
     }
 
-    #config-bar Input {
-        background: $surface-dark;
+    #config-bar Input,
+    #config-bar Select {
+        width: 100%;
+        height: 3;
+        background: $panel-soft;
         color: $text;
         border: solid $border;
         padding: 0 1;
-        margin-bottom: 0;
-        height: 1;
-        width: 28;
+        margin-bottom: 1;
     }
 
-    #config-bar Input:focus {
-        border: solid $accent;
-    }
-
-    #config-bar Select {
-        background: $surface-dark;
-        color: $text;
-        border: solid $border;
-        margin-bottom: 0;
-        height: 1;
-        width: 24;
-    }
-
+    #config-bar Input:focus,
     #config-bar Select:focus {
         border: solid $accent;
     }
 
     #config-bar Checkbox {
         color: $text-dim;
+        width: auto;
         margin-right: 2;
-        height: 1;
+        margin-bottom: 1;
     }
 
     #config-actions {
         width: auto;
-        height: auto;
-        margin-left: 2;
+        min-width: 20;
+        background: transparent;
+        border: none;
+        padding: 0;
+        margin-left: 1;
     }
 
     #config-actions Button {
-        height: 1;
-        min-width: 8;
+        height: 3;
+        min-width: 11;
         margin-right: 1;
-        border: none;
     }
-
-    /* ---- Zone 3: Prompt bar ---- */
 
     #prompt-zone {
         width: 100%;
         height: auto;
         background: $surface-dark;
         border-top: solid $border-light;
+        padding: 0 2 1 2;
         dock: bottom;
+    }
+
+    #prompt-shell {
+        width: 100%;
+        height: auto;
+        background: $surface;
+        border: solid $border;
+        padding: 0 1;
+        margin-top: 1;
     }
 
     #prompt-row {
         width: 100%;
-        height: 1;
-        padding: 0 1;
+        height: 3;
         layout: horizontal;
+        content-align: center middle;
     }
 
     #prompt-prefix {
-        width: 4;
-        height: 1;
-        color: $accent;
+        width: 6;
+        color: $accent-soft;
         text-style: bold;
-        content-align: right middle;
+        content-align: center middle;
     }
 
     #prompt-input {
         width: 1fr;
-        height: 1;
+        height: 3;
         background: transparent;
         color: $text;
         border: none;
@@ -349,12 +440,16 @@ class ScholarDevClawApp(App[None]):
 
     #prompt-meta {
         width: auto;
-        height: 1;
-        padding: 0 1;
+        height: 3;
+        content-align: center middle;
     }
 
     #prompt-meta .chip {
+        width: auto;
+        background: $surface-dark;
+        border: solid $border;
         color: $text-muted;
+        padding: 0 1;
         margin-left: 1;
     }
 
@@ -363,42 +458,27 @@ class ScholarDevClawApp(App[None]):
         text-style: bold;
     }
 
-    /* ---- Status bar ---- */
+    #prompt-helper {
+        width: 100%;
+        color: $text-muted;
+        margin-bottom: 1;
+    }
 
     #status-bar {
         width: 100%;
         height: 1;
         background: $panel;
         border-top: solid $border-light;
-        padding: 0 1;
-        layout: horizontal;
+        padding: 0 2;
         dock: bottom;
     }
-
-    #status-bar .s-left {
-        width: 1fr;
-        color: $text-muted;
-    }
-
-    #status-bar .s-center {
-        width: 1fr;
-        text-align: center;
-        color: $text-muted;
-    }
-
-    #status-bar .s-right {
-        width: 1fr;
-        text-align: right;
-        color: $text-muted;
-    }
-
-    /* ---- Chat overlay (agent mode) ---- */
 
     #chat-workspace {
         display: none;
         width: 100%;
         height: 0;
         layout: horizontal;
+        padding: 1 2;
     }
 
     Screen.chat-mode #main-area {
@@ -417,21 +497,24 @@ class ScholarDevClawApp(App[None]):
     #chat-main {
         width: 1fr;
         height: 100%;
-        padding: 0 1;
+        background: $surface;
+        border: solid $border;
+        padding: 1;
+        margin-right: 1;
     }
 
     #chat-sidebar {
-        width: 28;
-        min-width: 24;
-        max-width: 34;
+        width: 30;
+        min-width: 26;
+        max-width: 36;
         height: 100%;
         background: $surface;
-        border-left: tall $border;
-        padding: 1;
+        border: solid $border;
+        padding: 1 1 1 2;
     }
 
     #chat-sidebar .cs-title {
-        color: $accent;
+        color: $accent-soft;
         text-style: bold;
         margin-bottom: 1;
     }
@@ -442,71 +525,15 @@ class ScholarDevClawApp(App[None]):
     }
 
     #chat-sidebar .cs-value {
-        color: $text-dim;
-        margin-bottom: 0;
-    }
-
-    /* ---- Log styling ---- */
-
-    LogView {
-        width: 100%;
-        height: 1fr;
-        background: $panel;
-        scrollbar-size: 1 1;
-        scrollbar-gutter: stable;
-        padding: 0 1;
-    }
-
-    LogEntry { width: 100%; height: auto; padding: 0 1; }
-    LogEntry.info { color: $text; }
-    LogEntry.success { color: $success; }
-    LogEntry.error { color: $error; }
-    LogEntry.warning { color: $warning; }
-    LogEntry.accent { color: $accent; }
-    LogEntry.dim { color: $text-muted; }
-    LogEntry.system { color: $text-muted; text-style: italic; }
-
-    /* ---- Chat log ---- */
-
-    ChatLog {
-        width: 100%;
-        height: 1fr;
-        background: $panel;
-        scrollbar-size: 1 1;
-        padding: 0 1;
-    }
-
-    ChatLog .chat-entry {
-        width: 100%;
-        margin-bottom: 1;
-        padding: 0 1;
-        border-left: thick $border;
+        color: $text;
         background: $surface-dark;
+        border: solid $border;
+        padding: 0 1;
     }
-
-    ChatLog .chat-entry.user { border-left: thick $accent; }
-    ChatLog .chat-entry.agent { border-left: thick $success; }
-    ChatLog .chat-entry.system { border-left: thick $warning; }
-
-    ChatLog Markdown {
-        width: 100%;
-        height: auto;
-    }
-
-    /* ---- Status helpers ---- */
-
-    .s-error { color: $error; }
-    .s-success { color: $success; }
-    .s-warning { color: $warning; }
-    .s-accent { color: $accent; }
-
-    /* ---- Shared widget defaults ---- */
-
-    Label { color: $text-dim; }
 
     Button {
-        border: none;
-        background: $border;
+        border: solid $border;
+        background: $surface-elevated;
         color: $text;
         padding: 0 1;
         min-width: 8;
@@ -520,6 +547,7 @@ class ScholarDevClawApp(App[None]):
         background: $accent;
         color: $text-inv;
         text-style: bold;
+        border: none;
     }
 
     Button.-primary:hover {
@@ -530,117 +558,25 @@ class ScholarDevClawApp(App[None]):
         background: $success;
         color: $text-inv;
         text-style: bold;
+        border: none;
     }
 
     Button.-error {
         background: $error;
         color: $text-inv;
         text-style: bold;
+        border: none;
     }
 
     Button:disabled {
         opacity: 0.35;
     }
 
-    /* ---- Agent status dot ---- */
-
-    AgentStatus {
-        width: auto;
-        height: 1;
-        padding: 0 1;
-    }
-
-    AgentStatus .dot-offline { color: $text-muted; }
-    AgentStatus .dot-online { color: $success; }
-    AgentStatus .dot-error { color: $error; }
-
-    /* ---- PhaseTracker ---- */
-
-    PhaseTracker {
-        width: 100%;
-        height: 2;
-        background: $surface-dark;
-        border: solid $border;
-        padding: 0 1;
-    }
-
-    PhaseTracker .phase-bar {
-        width: 100%;
-        height: 2;
-    }
-
-    PhaseTracker .progress-track {
-        width: 100%;
-        height: 1;
-        background: $border;
-    }
-
-    PhaseTracker .progress-fill {
-        height: 100%;
-        background: $accent;
-        transition: width 0.3s linear;
-    }
-
-    PhaseTracker .phase-label {
-        width: 100%;
-        height: 1;
-        text-align: left;
-        color: $text-muted;
-    }
-
-    /* ---- HistoryPane ---- */
-
-    HistoryPane {
-        width: 100%;
-        height: auto;
-        max-height: 9;
-        background: $panel;
-        scrollbar-size: 1 1;
-        margin-top: 0;
-        border: solid $border;
-    }
-
-    HistoryPane .history-entry {
-        width: 100%;
-        height: 1;
-        padding: 0 1;
-        color: $text-muted;
-        background: transparent;
-        min-width: 1;
-        border: none;
-        text-align: left;
-    }
-
-    HistoryPane .history-entry:hover {
-        background: $accent 15%;
-        color: $text;
-    }
-
-    HistoryPane .history-entry.success { border-left: thick $success; }
-    HistoryPane .history-entry.failed { border-left: thick $error; }
-    HistoryPane .history-entry.running { border-left: thick $warning; }
-    HistoryPane .history-entry.selected {
-        background: $accent 20%;
-        color: $text;
-        text-style: bold;
-    }
-
-    HistoryPane .history-empty {
-        color: $text-muted;
-        padding: 1 1;
-    }
-
-    LogView .log-empty {
-        color: $text-muted;
-        padding: 1 1;
-    }
-
+    LogView .log-empty,
     ChatLog .chat-empty {
         color: $text-muted;
         padding: 1 1;
     }
-
-    /* ---- PromptInput ---- */
 
     PromptInput {
         background: transparent;
@@ -942,11 +878,20 @@ class ScholarDevClawApp(App[None]):
             tracker.set_phase(phase)
         except Exception:
             pass
+        try:
+            label = next((item[1] for item in self.PHASES if item[0] == phase), phase.title())
+            self.query_one("#hero-phase-value", Label).update(label)
+        except Exception:
+            pass
 
     def _set_status(self, message: str, level: str = "info") -> None:
         try:
             status_bar = self.query_one(StatusBar)
             status_bar.set_status(message, level)
+        except Exception:
+            pass
+        try:
+            self.query_one("#hero-status-value", Label).update(message)
         except Exception:
             pass
 
@@ -1069,6 +1014,7 @@ class ScholarDevClawApp(App[None]):
             chip = self.query_one("#provider-chip", Label)
             chat_provider = self.query_one("#chat-provider-value", Label)
             chat_build = self.query_one("#chat-build-value", Label)
+            config_provider = self.query_one("#config-provider-pill", Label)
             if provider and model:
                 key_env = _env_for_provider(provider)
                 has_key = bool(key_env and os.environ.get(key_env, "").strip())
@@ -1076,10 +1022,12 @@ class ScholarDevClawApp(App[None]):
                 chip.update(f"{provider}:{model} ({status})")
                 chat_provider.update(f"{provider} ({status})")
                 chat_build.update(model)
+                config_provider.update(f"model {provider}:{model}")
             else:
                 chip.update("auto")
                 chat_provider.update("auto")
                 chat_build.update("auto")
+                config_provider.update("model auto")
         except Exception:
             pass
 
@@ -1127,11 +1075,34 @@ class ScholarDevClawApp(App[None]):
 
         # -- Zone 1: Main output area --
         with Vertical(id="main-area"):
-            yield Label("Workflow output", classes="surface-title", id="log-title")
-            yield PhaseTracker(id="phase-tracker")
-            yield LogView(id="log-view")
-            yield Label("Run history · ↑/↓ select · enter rerun", id="history-title")
-            yield HistoryPane(id="run-history")
+            with Horizontal(id="hero-panel"):
+                with Vertical(id="hero-copy"):
+                    yield Label("CONTROL SURFACE", id="hero-kicker")
+                    yield Label("Research-to-code workflows with a cleaner operator view.", id="hero-title")
+                    yield Label(
+                        "Run analysis, map papers, generate patches, and validate impact from one keyboard-first workspace.",
+                        id="hero-subtitle",
+                    )
+                with Vertical(id="hero-meta"):
+                    yield Label("Current action", classes="hero-meta-label")
+                    yield Label("Analyze", classes="hero-meta-value", id="hero-action-value")
+                    yield Label("Pipeline phase", classes="hero-meta-label")
+                    yield Label("Ready", classes="hero-meta-value", id="hero-phase-value")
+                    yield Label("Workspace status", classes="hero-meta-label")
+                    yield Label("Ready", classes="hero-meta-value", id="hero-status-value")
+
+            with Vertical(classes="surface-card", id="log-card"):
+                with Horizontal(classes="surface-heading"):
+                    yield Label("Workflow output", classes="surface-title", id="log-title")
+                    yield Label("Live execution stream", classes="surface-caption")
+                yield PhaseTracker(id="phase-tracker")
+                yield LogView(id="log-view")
+
+            with Vertical(classes="surface-card", id="history-card"):
+                with Horizontal(classes="surface-heading"):
+                    yield Label("Run history", classes="surface-title", id="history-title")
+                    yield Label("↑/↓ select · Enter rerun", classes="surface-caption")
+                yield HistoryPane(id="run-history")
 
         # -- Chat overlay (hidden until agent mode) --
         with Horizontal(id="chat-workspace"):
@@ -1153,8 +1124,13 @@ class ScholarDevClawApp(App[None]):
 
         # -- Zone 2: Contextual config bar --
         with Vertical(id="config-bar"):
-            yield Label("Workflow configuration", id="config-title")
-            yield Label("", id="action-context")
+            with Horizontal(id="config-header"):
+                with Vertical(id="config-header-copy"):
+                    yield Label("Workflow configuration", id="config-title")
+                    yield Label("", id="action-context")
+                with Horizontal(id="config-header-chips"):
+                    yield Label("action analyze", id="config-action-pill", classes="config-pill")
+                    yield Label("model auto", id="config-provider-pill", classes="config-pill")
             yield Label("", id="validation-hint")
             with Horizontal(id="config-fields"):
                 # Action selector
@@ -1252,16 +1228,21 @@ class ScholarDevClawApp(App[None]):
 
         # -- Zone 3: Prompt bar --
         with Vertical(id="prompt-zone"):
-            with Horizontal(id="prompt-row"):
-                yield Label("›", id="prompt-prefix")
-                yield PromptInput(
-                    value="",
-                    placeholder="Describe what to run…  (Ctrl+K commands · Ctrl+H help)",
-                    id="prompt-input",
+            with Vertical(id="prompt-shell"):
+                with Horizontal(id="prompt-row"):
+                    yield Label("› run", id="prompt-prefix")
+                    yield PromptInput(
+                        value="",
+                        placeholder="Describe what to run…  (Ctrl+K commands · Ctrl+H help)",
+                        id="prompt-input",
+                    )
+                    with Horizontal(id="prompt-meta"):
+                        yield Label("ready", id="next-action-chip", classes="chip")
+                        yield Label("auto", id="provider-chip", classes="chip")
+                yield Label(
+                    "Natural language works here: analyze ./repo, search flash attention, integrate rmsnorm in ./repo",
+                    id="prompt-helper",
                 )
-                with Horizontal(id="prompt-meta"):
-                    yield Label("ready", id="next-action-chip", classes="chip")
-                    yield Label("auto", id="provider-chip", classes="chip")
 
         # -- Status bar --
         yield StatusBar(id="status-bar")
@@ -1353,6 +1334,15 @@ class ScholarDevClawApp(App[None]):
             self.query_one("#action-context", Label).update(
                 f"[bold]{action}[/] · {meta['summary']}  [dim]({meta['hint']})[/]"
             )
+        except Exception:
+            pass
+        label = action.replace("_", " ").title()
+        try:
+            self.query_one("#hero-action-value", Label).update(label)
+        except Exception:
+            pass
+        try:
+            self.query_one("#config-action-pill", Label).update(f"action {action}")
         except Exception:
             pass
 
