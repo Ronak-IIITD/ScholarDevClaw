@@ -18,7 +18,6 @@ __all__ = [
     "WelcomeScreen",
     "HelpOverlay",
     "CommandPalette",
-    "Sidebar",
     "PhaseTracker",
     "LogView",
     "StatusBar",
@@ -55,7 +54,6 @@ def __getattr__(name):
         return locals()[name]
 
     if name in (
-        "Sidebar",
         "PhaseTracker",
         "LogView",
         "StatusBar",
@@ -67,7 +65,6 @@ def __getattr__(name):
             HistoryPane,  # noqa: F401
             LogView,  # noqa: F401
             PhaseTracker,  # noqa: F401
-            Sidebar,  # noqa: F401
             StatusBar,  # noqa: F401
         )
 

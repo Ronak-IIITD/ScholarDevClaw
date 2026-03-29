@@ -221,6 +221,33 @@ def test_run_integrate_dry_run_skips_generate_and_validate(monkeypatch, tmp_path
     assert result.payload["output_dir"] == "/tmp/out"
 
 
+def test_run_integrate_dry_run_does_not_create_rollback_snapshot(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+
+    rollback_module = ModuleType("scholardevclaw.rollback")
+
+    class FailIfConstructedRollbackManager:
+        def __init__(self):
+            raise AssertionError("Rollback manager should not be instantiated during dry-run")
+
+    rollback_module.RollbackManager = FailIfConstructedRollbackManager
+    monkeypatch.setitem(sys.modules, rollback_module.__name__, rollback_module)
+
+    pipeline = _pipeline_module()
+    result = pipeline.run_integrate(
+        str(tmp_path),
+        "rmsnorm",
+        dry_run=True,
+        create_rollback=True,
+    )
+
+    assert result.ok is True
+    assert result.payload["dry_run"] is True
+    assert result.payload["generation"] is None
+    assert result.payload["validation"] is None
+
+
 def test_run_integrate_returns_preflight_guidance(monkeypatch, tmp_path):
     pipeline = _pipeline_module()
 
@@ -323,6 +350,81 @@ class TestLog:
 
 
 # =========================================================================
+# Tests for LLM selection/assistant helpers
+# =========================================================================
+
+
+def test_resolve_llm_selection_defaults_to_none(monkeypatch):
+    pipeline = _pipeline_module()
+    monkeypatch.delenv("SCHOLARDEVCLAW_API_PROVIDER", raising=False)
+    monkeypatch.delenv("SCHOLARDEVCLAW_API_MODEL", raising=False)
+
+    provider, model = pipeline._resolve_llm_selection()
+
+    assert provider is None
+    assert model is None
+
+
+def test_resolve_llm_selection_ignores_auto_provider(monkeypatch):
+    pipeline = _pipeline_module()
+    monkeypatch.setenv("SCHOLARDEVCLAW_API_PROVIDER", "auto")
+    monkeypatch.setenv("SCHOLARDEVCLAW_API_MODEL", "gpt-4o")
+
+    provider, model = pipeline._resolve_llm_selection()
+
+    assert provider is None
+    assert model is None
+
+
+def test_resolve_llm_selection_explicit_provider_model(monkeypatch):
+    pipeline = _pipeline_module()
+    monkeypatch.setenv("SCHOLARDEVCLAW_API_PROVIDER", " OpenAI ")
+    monkeypatch.setenv("SCHOLARDEVCLAW_API_MODEL", "gpt-4.1")
+
+    provider, model = pipeline._resolve_llm_selection()
+
+    assert provider == "openai"
+    assert model == "gpt-4.1"
+
+
+def test_create_llm_assistant_returns_none_when_unavailable(monkeypatch):
+    module = ModuleType("scholardevclaw.llm.research_assistant")
+
+    class FakeLLMResearchAssistant:
+        @staticmethod
+        def create(provider=None, model=None):
+            return SimpleNamespace(is_available=False)
+
+    module.LLMResearchAssistant = FakeLLMResearchAssistant
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setenv("SCHOLARDEVCLAW_API_PROVIDER", "openai")
+    monkeypatch.setenv("SCHOLARDEVCLAW_API_MODEL", "gpt-test")
+
+    pipeline = _pipeline_module()
+    assistant = pipeline._create_llm_assistant()
+
+    assert assistant is None
+
+
+def test_create_llm_assistant_swallows_factory_exception(monkeypatch):
+    module = ModuleType("scholardevclaw.llm.research_assistant")
+
+    class FakeLLMResearchAssistant:
+        @staticmethod
+        def create(provider=None, model=None):
+            raise RuntimeError("provider init failed")
+
+    module.LLMResearchAssistant = FakeLLMResearchAssistant
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setenv("SCHOLARDEVCLAW_API_PROVIDER", "anthropic")
+
+    pipeline = _pipeline_module()
+    assistant = pipeline._create_llm_assistant()
+
+    assert assistant is None
+
+
+# =========================================================================
 # Tests for run_preflight (additional branches)
 # =========================================================================
 
@@ -391,6 +493,58 @@ def test_run_preflight_require_clean_git_unavailable(monkeypatch, tmp_path):
     result = pipeline.run_preflight(str(tmp_path), require_clean=True)
     assert result.ok is False
     assert "git status check failed" in (result.error or "").lower()
+
+
+def test_run_preflight_git_unavailable_without_require_clean(monkeypatch, tmp_path):
+    pipeline = _pipeline_module()
+    (tmp_path / ".git").mkdir()
+
+    def mock_run(*args, **kwargs):
+        return SimpleNamespace(returncode=1, stdout="", stderr="fatal: no git")
+
+    monkeypatch.setattr(pipeline.subprocess, "run", mock_run)
+
+    result = pipeline.run_preflight(str(tmp_path), require_clean=False)
+
+    assert result.ok is True
+    assert "Git repository detected but git status check failed" in result.payload["warnings"]
+    assert result.payload["recommendations"]
+
+
+def test_run_preflight_exposes_changed_file_entries(monkeypatch, tmp_path):
+    pipeline = _pipeline_module()
+    (tmp_path / ".git").mkdir()
+
+    def mock_run(*args, **kwargs):
+        return SimpleNamespace(returncode=0, stdout=" M model.py\n?? new_file.py\n", stderr="")
+
+    monkeypatch.setattr(pipeline.subprocess, "run", mock_run)
+
+    result = pipeline.run_preflight(str(tmp_path), require_clean=False)
+
+    assert result.ok is True
+    assert result.payload["is_clean"] is False
+    assert result.payload["changed_file_entries"] == [" M model.py", "?? new_file.py"]
+
+
+def test_run_preflight_sends_warning_lines_to_callback(monkeypatch, tmp_path):
+    pipeline = _pipeline_module()
+    (tmp_path / ".git").mkdir()
+
+    def mock_run(*args, **kwargs):
+        return SimpleNamespace(returncode=1, stdout="", stderr="git error")
+
+    monkeypatch.setattr(pipeline.subprocess, "run", mock_run)
+
+    callback_logs: list[str] = []
+    result = pipeline.run_preflight(
+        str(tmp_path),
+        require_clean=False,
+        log_callback=callback_logs.append,
+    )
+
+    assert result.ok is True
+    assert any("Preflight warning:" in line for line in callback_logs)
 
 
 # =========================================================================
@@ -528,6 +682,66 @@ def test_run_search_with_arxiv(monkeypatch):
     assert len(result.payload["arxiv"]) == 1
     assert result.payload["arxiv"][0]["title"] == "RMSNorm Paper"
     assert result.payload["arxiv"][0]["arxiv_id"] == "1910.07467"
+
+
+def test_run_search_with_web_results(monkeypatch):
+    extractor_module = ModuleType("scholardevclaw.research_intelligence.extractor")
+    web_module = ModuleType("scholardevclaw.research_intelligence.web_research")
+
+    class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
+        def search_by_keyword(self, query, max_results=10):
+            return [{"name": "rmsnorm", "category": "normalization"}]
+
+    class FakeSyncWebResearchEngine:
+        def __init__(self, llm_assistant=None):
+            pass
+
+        def search_all(self, query, language, max_results):
+            return {
+                "github_repos": [
+                    SimpleNamespace(
+                        owner="acme",
+                        name="rmsnorm-impl",
+                        stars=123,
+                        url="https://github.com/acme/rmsnorm-impl",
+                        description="RMSNorm reference implementation",
+                    )
+                ],
+                "papers_with_code": [
+                    SimpleNamespace(
+                        title="RMSNorm",
+                        url="https://paperswithcode.com/paper/rmsnorm",
+                        task="language-modeling",
+                        stars=999,
+                    )
+                ],
+            }
+
+    extractor_module.ResearchExtractor = FakeExtractor
+    web_module.SyncWebResearchEngine = FakeSyncWebResearchEngine
+    monkeypatch.setitem(sys.modules, extractor_module.__name__, extractor_module)
+    monkeypatch.setitem(sys.modules, web_module.__name__, web_module)
+
+    pipeline = _pipeline_module()
+    monkeypatch.setattr(pipeline, "_create_llm_assistant", lambda: None)
+
+    result = pipeline.run_search(
+        "rmsnorm",
+        include_web=True,
+        language="python",
+        max_results=5,
+    )
+
+    assert result.ok is True
+    repos = result.payload["web"]["github_repos"]
+    papers = result.payload["web"]["papers_with_code"]
+    assert repos[0]["owner"] == "acme"
+    assert repos[0]["name"] == "rmsnorm-impl"
+    assert papers[0]["title"] == "RMSNorm"
+    assert papers[0]["task"] == "language-modeling"
 
 
 def test_run_search_exception(monkeypatch):
@@ -935,6 +1149,83 @@ def test_run_integrate_no_rollback_when_disabled(monkeypatch, tmp_path):
 
     assert result.ok is True
     assert result.payload.get("rollback_snapshot_id") is None
+
+
+def test_run_integrate_validation_failure_keeps_snapshot_unapplied(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+
+    pipeline = _pipeline_module()
+
+    rollback_module = ModuleType("scholardevclaw.rollback")
+    mark_calls: list[tuple[str, str]] = []
+
+    class FakeRollbackManager:
+        def create_snapshot(self, repo_path, spec_name, description, log_callback=None):
+            return SimpleNamespace(id="snap-123")
+
+        def mark_applied(self, repo_path, snapshot_id):
+            mark_calls.append((repo_path, snapshot_id))
+
+    rollback_module.RollbackManager = FakeRollbackManager
+    monkeypatch.setitem(sys.modules, rollback_module.__name__, rollback_module)
+
+    monkeypatch.setattr(
+        pipeline,
+        "run_generate",
+        lambda *a, **k: pipeline.PipelineResult(
+            ok=True,
+            title="Patch Generation",
+            payload={"branch_name": "integration/rmsnorm"},
+            logs=["generated"],
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_validate",
+        lambda *a, **k: pipeline.PipelineResult(
+            ok=False,
+            title="Validation",
+            payload={"passed": False, "stage": "test", "scorecard": {"summary": "fail"}},
+            logs=["validation failed"],
+            error="validation failed",
+        ),
+    )
+
+    result = pipeline.run_integrate(str(tmp_path), "rmsnorm", create_rollback=True)
+
+    assert result.ok is False
+    assert result.payload.get("rollback_snapshot_id") == "snap-123"
+    assert mark_calls == []
+
+
+def test_run_integrate_rollback_snapshot_failure_triggers_error_hook(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+
+    rollback_module = ModuleType("scholardevclaw.rollback")
+
+    class FakeRollbackManager:
+        def create_snapshot(self, repo_path, spec_name, description, log_callback=None):
+            raise RuntimeError("snapshot creation failed")
+
+    rollback_module.RollbackManager = FakeRollbackManager
+    monkeypatch.setitem(sys.modules, rollback_module.__name__, rollback_module)
+
+    pipeline = _pipeline_module()
+    called_hooks: list[str] = []
+
+    def capture_hook(hook_point, **kwargs):
+        called_hooks.append(hook_point)
+        return kwargs.get("payload")
+
+    monkeypatch.setattr(pipeline, "_fire_hook", capture_hook)
+
+    result = pipeline.run_integrate(str(tmp_path), "rmsnorm", create_rollback=True)
+
+    assert result.ok is False
+    assert "snapshot creation failed" in (result.error or "")
+    assert "on_pipeline_error" in called_hooks
 
 
 def test_run_integrate_hooks_called(monkeypatch, tmp_path):

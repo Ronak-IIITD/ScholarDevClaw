@@ -2,7 +2,66 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-27
+**Last updated:** 2026-03-29
+
+### 2026-03-29 (Massive edge-case test hardening — API/CLI/TUI/pipeline reliability sweep)
+
+**Goal:** Make test coverage significantly more robust for edge cases across the full Python surface area (API, CLI, TUI, and pipeline orchestration), with a focus on failure handling, security boundaries, and regression resistance.
+
+**Summary:** Added broad unit-test coverage for previously under-tested contracts and edge paths: API auth/security middleware and path-confinement checks, dashboard route/websocket behaviors, CLI dispatch/failure paths, TUI helper/contract behavior, and deeper pipeline preflight/search/rollback branches. Also added clipboard safety edge-case tests and fixed a stale TUI export (`Sidebar`) that could break import-surface tests.
+
+**What changed:**
+- **New tests**
+  - `core/tests/unit/test_api_server.py`
+    - API key auth gating for protected routes
+    - exempt route accessibility (`/health`, `/docs`, `/openapi.json`, `/metrics`)
+    - security headers + HSTS toggle behavior
+    - repo path confinement enforcement (`SCHOLARDEVCLAW_ALLOWED_REPO_DIRS`)
+    - 404/400 path validation behavior
+    - request model `extra="forbid"` validation (422)
+  - `core/tests/unit/test_api_dashboard_routes.py`
+    - `/api/specs` and missing spec 404
+    - `/api/pipeline/run` conflict handling when already running (409)
+    - websocket ping/pong contract for `/api/ws/pipeline`
+  - `core/tests/unit/test_cli.py`
+    - no-command exit behavior
+    - command dispatch sanity
+    - validate/integrate failure exit paths
+    - TUI import-error/install-hint flow
+  - `core/tests/unit/test_tui_init.py`
+    - `run_tui` delegation
+    - exported public symbols resolvable via `__all__`
+  - `core/tests/unit/test_tui_app.py`
+    - natural-command parsing
+    - request validation edge warnings/errors
+    - provider env apply/restore roundtrip
+    - ESC double-press stop behavior
+  - `core/tests/unit/test_tui_widgets.py`
+    - log level detection
+    - history retention cap behavior
+    - keyboard activation behavior
+    - phase state update safety
+
+- **Expanded existing tests**
+  - `core/tests/unit/test_pipeline.py`
+    - LLM selection helper edge paths (`_resolve_llm_selection`, `_create_llm_assistant`)
+    - preflight edge branches (git unavailable without `require_clean`, changed-file entries, callback warning emission)
+    - web search payload shaping branch (`include_web=True`)
+    - integration rollback safety branches (dry-run rollback skip, validation-failure snapshot not applied, rollback snapshot failure hook path)
+  - `core/tests/unit/test_tui_clipboard.py`
+    - dropped-file symlink rejection
+    - attachment deletion outside managed dir
+    - clipboard timeout and missing Linux clipboard tools
+
+- **Code fix for testable public contract**
+  - `core/src/scholardevclaw/tui/__init__.py`
+    - Removed stale `Sidebar` export/import path from lazy export surface.
+
+**Verification:**
+- ✅ `python -m ruff check tests/unit/test_api_dashboard_routes.py tests/unit/test_api_server.py tests/unit/test_cli.py tests/unit/test_tui_app.py tests/unit/test_tui_init.py tests/unit/test_tui_widgets.py tests/unit/test_tui_clipboard.py tests/unit/test_pipeline.py src/scholardevclaw/tui/__init__.py`
+- ✅ `python -m py_compile tests/unit/test_api_dashboard_routes.py tests/unit/test_api_server.py tests/unit/test_cli.py tests/unit/test_tui_app.py tests/unit/test_tui_init.py tests/unit/test_tui_widgets.py tests/unit/test_tui_clipboard.py tests/unit/test_pipeline.py src/scholardevclaw/tui/__init__.py`
+- ✅ `python -m pytest tests/unit/test_tui_widgets.py tests/unit/test_tui_app.py tests/unit/test_tui_init.py tests/unit/test_cli.py tests/unit/test_api_server.py tests/unit/test_api_dashboard_routes.py tests/unit/test_tui_clipboard.py tests/unit/test_pipeline.py -q`
+  - Result: `127 passed, 1 skipped`
 
 ### 2026-03-27 (TUI premium polish — calm hierarchy, keyboard-first history, reliable lifecycle language)
 

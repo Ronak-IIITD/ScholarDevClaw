@@ -106,6 +106,26 @@ class TestClipboardManager:
 
         temp_file.unlink()
 
+    def test_save_dropped_file_rejects_symlink(self, store_dir):
+        mgr = ClipboardManager(store_dir)
+        target = Path(tempfile.mktemp(suffix=".png"))
+        target.write_bytes(b"img")
+        link = Path(tempfile.mktemp(suffix=".png"))
+
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported in this environment")
+
+        try:
+            with pytest.raises(ValueError):
+                mgr.save_dropped_file(link)
+        finally:
+            if link.exists() or link.is_symlink():
+                link.unlink()
+            if target.exists():
+                target.unlink()
+
     def test_list_attached_images(self, store_dir):
         mgr = ClipboardManager(store_dir)
         mgr.save_image(b"image1", "test1")
@@ -124,6 +144,17 @@ class TestClipboardManager:
         mgr = ClipboardManager(store_dir)
         assert mgr.delete_attachment(Path("/tmp/nonexistent")) is False
 
+    def test_delete_attachment_rejects_existing_path_outside_store(self, store_dir):
+        mgr = ClipboardManager(store_dir)
+        outside = Path(tempfile.mktemp(suffix=".png"))
+        outside.write_bytes(b"x")
+        try:
+            assert mgr.delete_attachment(outside) is False
+            assert outside.exists()
+        finally:
+            if outside.exists():
+                outside.unlink()
+
     def test_clear_old_attachments(self, store_dir):
         mgr = ClipboardManager(store_dir)
         att = mgr.save_image(b"old", "old")
@@ -136,6 +167,22 @@ class TestClipboardManager:
         deleted = mgr.clear_old_attachments(days=7)
         # Note: ctime might not be modifiable on all systems, so we check either way
         assert deleted >= 0
+
+    @patch("subprocess.run")
+    def test_read_text_clipboard_timeout_returns_none(self, mock_run, store_dir):
+        import subprocess
+
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["xclip"], timeout=5)
+        mgr = ClipboardManager(store_dir)
+        with patch.object(mgr, "get_system", return_value="Linux"):
+            assert mgr.read_text_from_clipboard() is None
+
+    @patch("subprocess.Popen")
+    def test_write_text_clipboard_linux_all_commands_missing(self, mock_popen, store_dir):
+        mock_popen.side_effect = [FileNotFoundError(), FileNotFoundError()]
+        mgr = ClipboardManager(store_dir)
+        with patch.object(mgr, "get_system", return_value="Linux"):
+            assert mgr.write_text_to_clipboard("hello") is False
 
 
 class TestImageInputHandler:
