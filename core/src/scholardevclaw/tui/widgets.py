@@ -37,7 +37,7 @@ class PhaseTracker(Static):
     CSS = """
     PhaseTracker {
         width: 100%;
-        height: 4;
+        height: auto;
         background: $surface-dark;
         border: solid $border;
         padding: 1;
@@ -45,7 +45,7 @@ class PhaseTracker(Static):
 
     PhaseTracker .phase-stack {
         width: 100%;
-        height: 4;
+        height: auto;
     }
 
     PhaseTracker .progress-track {
@@ -204,7 +204,7 @@ class LogView(VerticalScroll):
     }
 
     LogView LogEntry {
-        margin: 0;
+        margin: 0 0 1 0;
     }
     """
 

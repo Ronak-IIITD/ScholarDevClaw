@@ -879,7 +879,7 @@ class ScholarDevClawApp(App[None]):
         except Exception:
             pass
         try:
-            label = next((item[1] for item in self.PHASES if item[0] == phase), phase.title())
+            label = next((item[1] for item in PhaseTracker.PHASES if item[0] == phase), phase.title())
             self.query_one("#hero-phase-value", Label).update(label)
         except Exception:
             pass
