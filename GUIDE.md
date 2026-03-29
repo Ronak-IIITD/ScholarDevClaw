@@ -354,7 +354,7 @@ scholardevclaw suggest ./repo              # Get suggestions
 scholardevclaw specs --list                # List available specs
 scholardevclaw integrate ./repo rmsnorm    # Apply spec
 scholardevclaw planner ./repo              # Plan multi-spec
-scholardevclaw critic ./repo rmsnorm       # Verify patches
+scholardevclaw validate ./repo             # Validate repository/tests
 scholardevclaw tui                         # Interactive UI
 
 # Help

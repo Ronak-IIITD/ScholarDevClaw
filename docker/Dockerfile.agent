@@ -27,8 +27,6 @@ WORKDIR /app
 RUN addgroup -S -g 1001 agent \
     && adduser -S -u 1001 -G agent agent
 
-RUN apk add --no-cache curl
-
 COPY --from=builder --chown=agent:agent /app/node_modules ./node_modules
 COPY --from=builder --chown=agent:agent /app/dist ./dist
 COPY --from=builder --chown=agent:agent /app/package.json ./
@@ -42,8 +40,5 @@ ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=512"
 
 EXPOSE 3000
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
 
 CMD ["node", "dist/index.js"]

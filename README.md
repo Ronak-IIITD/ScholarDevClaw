@@ -207,8 +207,19 @@ scholardevclaw tui
 ### Self-Hosted (Local)
 
 ```bash
-# Docker Compose
-docker-compose up -d
+# Development stack (core-api + agent + convex)
+cp docker/.env.example docker/.env
+bash scripts/runbook.sh dev up
+bash scripts/runbook.sh dev health
+
+# Production stack (nginx + web-ui + core-api + agent + monitoring)
+cp docker/.env.example docker/.env
+# set required vars in docker/.env:
+#   SCHOLARDEVCLAW_API_AUTH_KEY
+#   SCHOLARDEVCLAW_ALLOWED_REPO_DIRS
+bash scripts/runbook.sh prod preflight
+bash scripts/runbook.sh prod up
+bash scripts/runbook.sh prod health
 
 # Systemd service
 sudo systemctl start scholardevclaw
@@ -264,10 +275,14 @@ scholardevclaw suggest ./my-api
 ```bash
 # Environment variables
 cat > .env << 'EOF'
-SCHOLARDEVCLAW_WORKSPACE=~/.scholardevclaw/workspace
-SCHOLARDEVCLAW_LOG_PATH=~/.scholardevclaw/logs
+CORE_API_URL=http://localhost:8000
 GITHUB_TOKEN=your_github_token
 ANTHROPIC_API_KEY=your_anthropic_key
+
+# Production hardening for core API
+SCHOLARDEVCLAW_API_AUTH_KEY=replace-with-strong-random-key
+SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=/absolute/path/to/allowed/repos
+SCHOLARDEVCLAW_ENABLE_HSTS=true
 EOF
 ```
 

@@ -20,6 +20,39 @@ Response:
 }
 ```
 
+### `GET /health/live`
+
+Container liveness probe.
+
+- `200` when process is alive.
+- `503` when liveness fails.
+
+Response:
+
+```json
+{
+  "alive": true,
+  "last_heartbeat": "2026-03-29T12:00:00",
+  "seconds_since_heartbeat": 0.12
+}
+```
+
+### `GET /health/ready`
+
+Container readiness probe.
+
+- `200` when service is ready to accept traffic.
+- `503` when startup/health/shutdown conditions make service not-ready.
+
+Response:
+
+```json
+{
+  "ready": true,
+  "reasons": []
+}
+```
+
 ## Repository Analysis
 
 ### `POST /repo/analyze`

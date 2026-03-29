@@ -33,8 +33,11 @@ services:
       - PYTHONDONTWRITEBYTECODE=1
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_FORMAT=json
+      - SCHOLARDEVCLAW_API_AUTH_KEY=${SCHOLARDEVCLAW_API_AUTH_KEY:?SCHOLARDEVCLAW_API_AUTH_KEY must be set}
+      - SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=${SCHOLARDEVCLAW_ALLOWED_REPO_DIRS:?SCHOLARDEVCLAW_ALLOWED_REPO_DIRS must be set}
+      - SCHOLARDEVCLAW_ENABLE_HSTS=${SCHOLARDEVCLAW_ENABLE_HSTS:-true}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 30s
       timeout: 10s
       retries: 3

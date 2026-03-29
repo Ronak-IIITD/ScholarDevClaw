@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..application.schema_contract import SCHEMA_VERSION
@@ -14,6 +15,8 @@ from ..mapping.engine import MappingEngine
 from ..patch_generation.generator import PatchGenerator
 from ..repo_intelligence.parser import PyTorchRepoParser
 from ..research_intelligence.extractor import ResearchExtractor
+from ..utils.health import health_checker, liveness_probe, readiness_probe
+from ..utils.shutdown import shutdown_manager
 from ..validation.runner import ValidationRunner
 from .docs import setup_docs_routes, setup_exception_handlers, setup_openapi
 from .metrics_middleware import setup_metrics
@@ -384,6 +387,44 @@ def _metrics_to_response(metrics: Any) -> MetricsResponse | None:
 async def health():
     """Basic health check endpoint."""
     return {"status": "ok"}
+
+
+@app.get(
+    "/health/live",
+    tags=["health"],
+    summary="Liveness probe",
+    description="Kubernetes/container liveness probe",
+)
+async def health_live():
+    probe_status = liveness_probe.check()
+    if not probe_status["alive"]:
+        return JSONResponse(status_code=503, content=probe_status)
+    return probe_status
+
+
+@app.get(
+    "/health/ready",
+    tags=["health"],
+    summary="Readiness probe",
+    description="Kubernetes/container readiness probe",
+)
+async def health_ready():
+    probe = readiness_probe.check()
+    ready = bool(probe.get("ready", False))
+    reasons = list(probe.get("reasons", []))
+
+    if shutdown_manager.is_shutting_down():
+        ready = False
+        reasons.append("System is shutting down")
+
+    if not health_checker.run_quick_check():
+        ready = False
+        reasons.append("Health checks failing")
+
+    payload = {"ready": ready, "reasons": reasons}
+    if not ready:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
 
 
 @app.post(

@@ -36,7 +36,7 @@ def test_auth_exempt_paths_still_accessible(monkeypatch):
     server = _load_server(monkeypatch, SCHOLARDEVCLAW_API_AUTH_KEY="secret")
     client = TestClient(server.app)
 
-    for path in ("/health", "/docs", "/openapi.json", "/metrics"):
+    for path in ("/health", "/health/live", "/health/ready", "/docs", "/openapi.json", "/metrics"):
         resp = client.get(path)
         assert resp.status_code != 401
 
@@ -120,3 +120,27 @@ def test_request_models_forbid_extra_fields(monkeypatch):
     )
 
     assert resp.status_code == 422
+
+
+def test_readiness_returns_ready_shape(monkeypatch):
+    server = _load_server(monkeypatch)
+    client = TestClient(server.app)
+
+    resp = client.get("/health/ready")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert "ready" in payload
+    assert "reasons" in payload
+
+
+def test_liveness_returns_alive_shape(monkeypatch):
+    server = _load_server(monkeypatch)
+    client = TestClient(server.app)
+
+    resp = client.get("/health/live")
+
+    assert resp.status_code in (200, 503)
+    payload = resp.json()
+    assert "alive" in payload
+    assert "last_heartbeat" in payload

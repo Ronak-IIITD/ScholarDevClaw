@@ -260,6 +260,12 @@ cat > docker/.env << EOF
 ANTHROPIC_API_KEY=your_production_key
 GITHUB_TOKEN=your_production_token
 OPENCLAW_TOKEN=your_openclaw_token
+CORE_API_URL=http://core-api:8000
+
+# Core API hardening (required)
+SCHOLARDEVCLAW_API_AUTH_KEY=$(openssl rand -base64 32)
+SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=/repos
+SCHOLARDEVCLAW_ENABLE_HSTS=true
 
 # Grafana (use strong passwords!)
 GRAFANA_ADMIN_USER=admin
@@ -286,6 +292,11 @@ docker compose -f docker-compose.prod.yml up -d
 
 # Verify all services are healthy
 docker compose -f docker-compose.prod.yml ps
+
+# Preferred (from repo root): operator runbook
+bash scripts/runbook.sh prod preflight
+bash scripts/runbook.sh prod up
+bash scripts/runbook.sh prod health
 ```
 
 ##### 6. Monitoring Setup

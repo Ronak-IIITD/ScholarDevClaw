@@ -93,6 +93,95 @@
 - ✅ `python -m pytest tests/unit/test_tui_widgets.py tests/unit/test_tui_app.py tests/unit/test_tui_init.py tests/unit/test_cli.py tests/unit/test_api_server.py tests/unit/test_api_dashboard_routes.py tests/unit/test_tui_clipboard.py tests/unit/test_pipeline.py -q`
   - Result: `127 passed, 1 skipped`
 
+### 2026-03-29 (Rescue Mode — P0 deployment + runtime trust fixes)
+
+**Goal:** Stabilize ship-readiness by fixing critical deployment/runtime trust breakers first: health/readiness contract, container healthchecks, and production security env requirements.
+
+**Summary:** Implemented rescue-mode P0 hardening focused on operational reliability rather than feature expansion. API now exposes live/readiness probes in the main server contract, production compose healthchecks are aligned to actual image capabilities, and required security env variables are explicitly wired and documented for production deployments.
+
+**What changed:**
+- **`core/src/scholardevclaw/api/server.py`**
+  - Added `GET /health/live` endpoint with 200/503 liveness semantics.
+  - Added `GET /health/ready` endpoint with readiness payload and 200/503 behavior.
+  - Wired readiness response to shutdown/quick-health checks for deploy-time trust.
+
+- **`docker/docker-compose.prod.yml`**
+  - Replaced broken `curl`-based core healthcheck with Python urllib probe (compatible with current image contents).
+  - Added required production env guards:
+    - `SCHOLARDEVCLAW_API_AUTH_KEY`
+    - `SCHOLARDEVCLAW_ALLOWED_REPO_DIRS`
+  - Added defaulted `SCHOLARDEVCLAW_ENABLE_HSTS`.
+
+- **`docker/Dockerfile.agent`**
+  - Removed invalid HTTP healthcheck (agent has no exposed `/health` server route).
+  - Removed now-unneeded `curl` package install.
+
+- **Environment templates updated**
+  - `.env.example`
+  - `docker/.env.example`
+  - Added production hardening variables and guidance for API auth + repo confinement.
+
+- **Docs updated**
+  - `docs/API.md`
+  - Added `/health/live` and `/health/ready` endpoint documentation.
+
+- **Tests updated**
+  - `core/tests/unit/test_api_server.py`
+  - Added health probe contract assertions (`/health/live`, `/health/ready`) and auth-exempt path coverage.
+
+- **Deployment doc update**
+  - `DEPLOYMENT.md`
+  - Added required core API hardening env vars in production env example.
+
+### 2026-03-29 (Rescue Mode — P1 docs/runtime consistency cleanup)
+
+**Goal:** Remove documentation drift that causes failed copy/paste setups and unclear deployment paths.
+
+**Summary:** Standardized deployment guidance around current compose files and current environment variable contracts, removed stale legacy instructions, and aligned command references with the existing CLI/runtime behavior.
+
+**What changed:**
+- **`docs/DEPLOYMENT.md`**
+  - Replaced stale deployment guide with a canonical, repo-accurate version.
+  - Standardized on:
+    - `docker compose -f docker/docker-compose.yml` (development)
+    - `docker compose -f docker/docker-compose.prod.yml` (production-like)
+  - Updated health checks to current API endpoints (`/health`, `/health/live`, `/health/ready`, `/metrics`).
+  - Removed outdated references to legacy APIs and env vars (`SCHOLARDEVCLAW_CORE_URL`, `/api/v1/integrations`, agent `/api/health`).
+
+- **`README.md`**
+  - Updated self-hosted deployment section from legacy `docker-compose up -d` to explicit canonical compose-file commands.
+  - Updated configuration section to current env model (`CORE_API_URL` + production hardening vars).
+
+- **`DEPLOYMENT.md`**
+  - Added explicit `CORE_API_URL` in production env block for consistency with agent runtime config.
+
+- **`GUIDE.md`**
+  - Updated quick reference command list to remove stale `critic` command mention and use `validate` instead.
+
+### 2026-03-29 (Rescue Mode — P1.5 single-command operator runbook)
+
+**Goal:** Make day-to-day deployment operations deterministic with one command surface instead of ad-hoc compose invocations.
+
+**Summary:** Added an operator runbook script that centralizes dev/prod preflight, up/down, logs, ps, and health checks. Updated docs to use runbook-first commands for faster and safer operations.
+
+**What changed:**
+- **`scripts/runbook.sh`** (new)
+  - Added command interface:
+    - `dev preflight|up|down|ps|logs|health`
+    - `prod preflight|up|down|ps|logs|health`
+  - Added preflight checks:
+    - Docker/compose availability
+    - env file presence (`docker/.env`)
+    - production required vars validation
+    - SSL file presence checks for prod stack
+    - compose config validation
+  - Added health checks for both stacks (core and nginx/core container probes).
+
+- **Docs updated to runbook-first workflows**
+  - `docs/DEPLOYMENT.md`
+  - `README.md`
+  - `DEPLOYMENT.md`
+
 ### 2026-03-27 (TUI premium polish — calm hierarchy, keyboard-first history, reliable lifecycle language)
 
 **Goal:** Make the TUI feel more intentional and premium with stronger visual hierarchy, clearer next-action affordances, more trustworthy run feedback, and faster keyboard-only operation.
