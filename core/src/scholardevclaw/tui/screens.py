@@ -109,14 +109,14 @@ class WelcomeScreen(ModalScreen[None]):
     }
 
     WelcomeScreen > Container {
-        width: 76;
-        max-width: 88;
+        width: 82;
+        max-width: 94;
         height: auto;
         max-height: 85%;
         background: #1e1e2e;
         border: round #45475a;
-        border-top: thick #89b4fa;
-        padding: 2 3;
+        border-top: thick #74c7ec;
+        padding: 2 4;
     }
 
     WelcomeScreen Markdown {
@@ -153,14 +153,14 @@ class HelpOverlay(ModalScreen[None]):
     }
 
     HelpOverlay > Container {
-        width: 68;
-        max-width: 84;
+        width: 74;
+        max-width: 90;
         height: auto;
         max-height: 80%;
         background: #1e1e2e;
         border: round #45475a;
-        border-top: thick #89b4fa;
-        padding: 2 3;
+        border-top: thick #74c7ec;
+        padding: 2 4;
     }
 
     HelpOverlay Markdown {
@@ -206,20 +206,26 @@ class CommandPalette(ModalScreen[str | None]):
     }
 
     CommandPalette > Vertical {
-        width: 62;
-        max-width: 78;
+        width: 66;
+        max-width: 82;
         height: auto;
         max-height: 68%;
         background: #1e1e2e;
         border: round #45475a;
-        border-top: thick #89b4fa;
-        padding: 1 1;
+        border-top: thick #74c7ec;
+        padding: 1 1 2 1;
         margin-top: 5;
     }
 
     CommandPalette .palette-title {
-        color: #a6adc8;
+        color: #cdd6f4;
         text-style: bold;
+        padding: 0 1;
+        margin-bottom: 0;
+    }
+
+    CommandPalette .palette-subtitle {
+        color: #7f849c;
         padding: 0 1;
         margin-bottom: 1;
     }
@@ -229,6 +235,7 @@ class CommandPalette(ModalScreen[str | None]):
         margin-bottom: 1;
         background: #181825;
         border: solid #45475a;
+        height: 3;
     }
 
     CommandPalette .command-list {
@@ -240,9 +247,10 @@ class CommandPalette(ModalScreen[str | None]):
 
     CommandPalette .command-item {
         width: 100%;
-        margin-bottom: 0;
+        height: 3;
+        margin-bottom: 1;
         background: #181825;
-        border: none;
+        border: solid #313244;
         border-left: thick #313244;
         color: #cdd6f4;
         text-align: left;
@@ -273,6 +281,7 @@ class CommandPalette(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Label("Command palette · type to filter · Enter to run", classes="palette-title")
+            yield Label("Jump to workflows and operator actions without leaving the keyboard.", classes="palette-subtitle")
             yield Input(placeholder="Type a command…", id="palette-input")
             with Vertical(classes="command-list", id="command-list"):
                 for name, desc, _ in self.PALETTE_COMMANDS:
