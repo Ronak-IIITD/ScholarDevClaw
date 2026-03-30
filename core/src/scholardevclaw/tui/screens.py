@@ -281,7 +281,10 @@ class CommandPalette(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Label("Command palette · type to filter · Enter to run", classes="palette-title")
-            yield Label("Jump to workflows and operator actions without leaving the keyboard.", classes="palette-subtitle")
+            yield Label(
+                "Jump to workflows and operator actions without leaving the keyboard.",
+                classes="palette-subtitle",
+            )
             yield Input(placeholder="Type a command…", id="palette-input")
             with Vertical(classes="command-list", id="command-list"):
                 for name, desc, _ in self.PALETTE_COMMANDS:

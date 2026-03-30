@@ -182,6 +182,36 @@
   - `README.md`
   - `DEPLOYMENT.md`
 
+### 2026-03-29 (Rescue Mode — shutdown logging noise fix + tests)
+
+**Goal:** Eliminate misleading logging traceback noise during interpreter/test shutdown (`ValueError: I/O operation on closed file`) to improve reliability and signal quality.
+
+**Summary:** Hardened graceful-shutdown logging paths with best-effort logging and suppressed atexit log emission where Python stream teardown can invalidate handlers. Added dedicated shutdown unit tests for idempotency, signal/atexit behavior, handler failure tolerance, timeout path, and logging safety.
+
+**What changed:**
+- **`core/src/scholardevclaw/utils/shutdown.py`**
+  - Added `_log()` best-effort logger wrapper that checks handler stream state and swallows logger exceptions.
+  - Updated `_signal_handler()` to use safe `_log()`.
+  - Updated `_atexit_handler()` to call `shutdown(..., emit_logs=False)` to avoid teardown-time stream writes.
+  - Extended `shutdown()` signature with `emit_logs` flag and routed all logging through `_log()`.
+
+- **`core/tests/unit/test_shutdown.py`** (new)
+  - Added focused coverage for:
+    - normal shutdown state/handler behavior
+    - idempotent shutdown calls
+    - `check_shutdown()` exception behavior
+    - atexit path disabling log emission
+    - closed stream and logger error swallow behavior
+    - handler exception non-fatal path
+    - timeout loop stop behavior
+    - signal handler reason propagation
+
+**Verification:**
+- ✅ `python -m ruff check src/scholardevclaw/utils/shutdown.py tests/unit/test_shutdown.py`
+- ✅ `python -m py_compile src/scholardevclaw/utils/shutdown.py tests/unit/test_shutdown.py`
+- ✅ `python -m pytest tests/unit/test_shutdown.py tests/unit/test_api_server.py tests/unit/test_api_dashboard_routes.py -q`
+  - Result: `22 passed`
+
 ### 2026-03-27 (TUI premium polish — calm hierarchy, keyboard-first history, reliable lifecycle language)
 
 **Goal:** Make the TUI feel more intentional and premium with stronger visual hierarchy, clearer next-action affordances, more trustworthy run feedback, and faster keyboard-only operation.

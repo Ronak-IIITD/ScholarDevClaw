@@ -879,7 +879,9 @@ class ScholarDevClawApp(App[None]):
         except Exception:
             pass
         try:
-            label = next((item[1] for item in PhaseTracker.PHASES if item[0] == phase), phase.title())
+            label = next(
+                (item[1] for item in PhaseTracker.PHASES if item[0] == phase), phase.title()
+            )
             self.query_one("#hero-phase-value", Label).update(label)
         except Exception:
             pass
@@ -1078,7 +1080,9 @@ class ScholarDevClawApp(App[None]):
             with Horizontal(id="hero-panel"):
                 with Vertical(id="hero-copy"):
                     yield Label("CONTROL SURFACE", id="hero-kicker")
-                    yield Label("Research-to-code workflows with a cleaner operator view.", id="hero-title")
+                    yield Label(
+                        "Research-to-code workflows with a cleaner operator view.", id="hero-title"
+                    )
                     yield Label(
                         "Run analysis, map papers, generate patches, and validate impact from one keyboard-first workspace.",
                         id="hero-subtitle",

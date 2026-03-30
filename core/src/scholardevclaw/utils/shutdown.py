@@ -39,18 +39,41 @@ class GracefulShutdown:
 
     def _signal_handler(self, signum: int, frame) -> None:
         signal_name = signal.Signals(signum).name
-        self._logger.info(f"Received signal {signal_name}")
+        self._log("info", f"Received signal {signal_name}")
         self.shutdown(reason=f"Signal {signal_name}")
 
     def _atexit_handler(self) -> None:
         if not self.state.shutting_down:
-            self.shutdown(reason="Program exit")
+            # Python may close stdout/stderr streams during interpreter teardown,
+            # so avoid best-effort log writes from the atexit path.
+            self.shutdown(reason="Program exit", emit_logs=False)
+
+    def _log(self, level: str, message: str) -> None:
+        """Best-effort logging that avoids noisy interpreter-exit failures."""
+        if not self._logger.handlers:
+            return
+
+        has_open_stream = False
+        for handler in self._logger.handlers:
+            stream = getattr(handler, "stream", None)
+            if stream is None or not getattr(stream, "closed", False):
+                has_open_stream = True
+                break
+
+        if not has_open_stream:
+            return
+
+        try:
+            getattr(self._logger, level)(message)
+        except Exception:
+            # Never raise from shutdown logging paths.
+            pass
 
     def register_handler(self, handler: Callable[[], None]) -> None:
         with self._lock:
             self._handlers.append(handler)
 
-    def shutdown(self, reason: str = "Requested") -> bool:
+    def shutdown(self, reason: str = "Requested", *, emit_logs: bool = True) -> bool:
         with self._lock:
             if self.state.shutting_down:
                 return False
@@ -59,25 +82,30 @@ class GracefulShutdown:
             self.state.reason = reason
             self.state.start_time = time.time()
 
-        self._logger.info(f"Shutting down: {reason}")
+        if emit_logs:
+            self._log("info", f"Shutting down: {reason}")
 
         timeout_time = time.time() + self.timeout_seconds
 
         for handler in self._handlers:
             if time.time() > timeout_time:
-                self._logger.error("Shutdown timeout exceeded")
+                if emit_logs:
+                    self._log("error", "Shutdown timeout exceeded")
                 break
 
             try:
                 handler()
                 self.state.handlers_called += 1
             except Exception as e:
-                self._logger.error(f"Shutdown handler failed: {e}")
+                if emit_logs:
+                    self._log("error", f"Shutdown handler failed: {e}")
 
         duration = time.time() - self.state.start_time
-        self._logger.info(
-            f"Shutdown complete: {self.state.handlers_called} handlers called in {duration:.2f}s"
-        )
+        if emit_logs:
+            self._log(
+                "info",
+                f"Shutdown complete: {self.state.handlers_called} handlers called in {duration:.2f}s",
+            )
 
         return True
 
