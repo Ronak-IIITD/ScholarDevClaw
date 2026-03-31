@@ -200,29 +200,19 @@ print(f"Files: {[f.path for f in patch.new_files]}")
 ## Programmatic Usage (TypeScript/Agent)
 
 ```typescript
-import { ScholarDevClawAgent } from "./agent/src/index.js";
+import { PythonHttpBridge } from "./agent/src/bridges/python-http.js";
 
-const agent = new ScholarDevClawAgent({
-  pythonCorePath: "../core/src",
-  maxRetries: 2,
-  benchmarkTimeout: 300,
-});
+const bridge = new PythonHttpBridge("http://localhost:8000");
 
-const result = await agent.runIntegration(
-  "/path/to/repo", // Repository
-  "", // Paper source (optional)
-  "rmsnorm", // Spec name
-  "autonomous", // or 'step_approval'
-);
-
-console.log(result);
-// Returns full integration context with all phase results
+const health = await bridge.healthCheck();
+console.log("Core API healthy:", health);
+// Use bridge.analyzeRepo(), bridge.extractResearch(), etc.
 ```
 
 ## Next Steps
 
 1. **Review the patch** before applying
-2. **Test locally** with `python -m scholardewclaw.cli validate`
+2. **Test locally** with `scholardevclaw validate /path/to/repo`
 3. **Create PR** using the generated branch
 4. **Monitor benchmarks** in your CI
 

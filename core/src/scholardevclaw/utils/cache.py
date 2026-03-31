@@ -15,6 +15,7 @@ class CacheEntry:
     created_at: float
     expires_at: float | None = None
     hits: int = 0
+    last_accessed: float = 0.0
 
 
 class Cache:
@@ -47,6 +48,7 @@ class Cache:
             return None
 
         entry.hits += 1
+        entry.last_accessed = current_time
         return entry.value
 
     def set(self, key: str, value: Any, ttl: float | None = None) -> None:
@@ -71,11 +73,11 @@ class Cache:
         )
 
     def _evict_lru(self) -> None:
-        """Evict least recently used entry."""
+        """Evict least recently used entry (by access time, not hit count)."""
         if not self._cache:
             return
 
-        lru_key = min(self._cache.keys(), key=lambda k: self._cache[k].hits)
+        lru_key = min(self._cache.keys(), key=lambda k: self._cache[k].last_accessed)
         del self._cache[lru_key]
 
     def invalidate(self, key: str) -> None:
