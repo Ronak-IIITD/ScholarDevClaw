@@ -4,6 +4,47 @@
 
 **Last updated:** 2026-03-29
 
+### 2026-03-29 (Rescue Mode — multi-area hardening: release, security, agent, CI)
+
+**Goal:** Ship a comprehensive reliability and readiness pass across release artifacts, security posture, agent robustness, and CI quality gates.
+
+**Summary:** Fixed version consistency, added root LICENSE, corrected install.sh CLI usage, hardened API to fail-closed on auth/confinement, added dashboard path validation and WS auth, improved HTTP bridge with retry/auth, fixed logger safety, expanded CI coverage threshold and mypy scope.
+
+**What changed:**
+
+- **Release readiness**
+  - `LICENSE` (new at repo root) — MIT license now present where README links expect it.
+  - `core/pyproject.toml` — version bumped from `0.1.0` to `2.0.0` to match API/docs branding.
+  - `landing/install.sh` — fixed broken install command (removed invalid `scholardevclaw` arg, corrected GitHub fallback URL, fixed `suggest` CLI usage in post-install hints).
+
+- **Security hardening**
+  - `core/src/scholardevclaw/api/server.py`
+    - Changed auth + path confinement from fail-open warnings to fail-closed `RuntimeError` unless `SCHOLARDEVCLAW_DEV_MODE=true`.
+  - `core/src/scholardevclaw/api/routes/dashboard.py`
+    - Added `_validate_repo_path()` with allowed-directory confinement for pipeline runs.
+    - Added `_validate_output_dir()` to restrict artifact writes to repo-adjacent paths.
+    - Added WebSocket auth via `token` query param (uses same `SCHOLARDEVCLAW_API_AUTH_KEY`).
+    - Added WS connection cap (20 concurrent clients).
+
+- **Agent reliability**
+  - `agent/src/bridges/python-http.ts`
+    - Added retry with exponential backoff + jitter for transient errors (429/5xx/timeout).
+    - Added `Authorization: Bearer` header from `SCHOLARDEVCLAW_API_AUTH_KEY` env var.
+    - Added content-type validation before JSON parsing.
+  - `agent/src/utils/logger.ts`
+    - Added `safeReplacer` to prevent `JSON.stringify` crashes on circular/unserializable context.
+
+- **CI quality gates**
+  - `.github/workflows/ci.yml`
+    - Added `--cov-fail-under=40` to enforce minimum coverage threshold.
+    - Expanded mypy scope to include `src/scholardevclaw/application/pipeline.py`.
+
+**Verification:**
+- ✅ `python -m ruff check src/ tests/`
+- ✅ `python -m ruff format --check src/ tests/`
+- ✅ `python -m pytest tests/ -x -q --cov=scholardevclaw --cov-fail-under=40`
+  - Result: `1317 passed, 1 skipped`
+
 ### 2026-03-29 (TUI design refresh — stronger surface hierarchy and calmer control deck)
 
 **Goal:** Make the Textual TUI feel more intentional and polished by improving visual hierarchy, readability, and operator focus without changing the workflow architecture.

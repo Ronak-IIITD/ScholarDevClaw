@@ -139,12 +139,12 @@ install_package() {
   # Build install command
   install_cmd="$PYTHON_CMD -m pip install ${pip_flags[*]} ."
 
-  log_info "Installing from PyPI..."
-  if ! $install_cmd scholardevclaw; then
-    log_warn "PyPI install failed. Trying from GitHub source..."
+  log_info "Installing from local source..."
+  if ! eval "$install_cmd"; then
+    log_warn "Local install failed. Trying from GitHub source..."
 
     # Fallback: install from GitHub
-    if ! $install_cmd "git+https://github.com/Ronak-IIITD/ScholarDevClaw.git@main#egg=scholardevclaw"; then
+    if ! $PYTHON_CMD -m pip install ${pip_flags[*]} "git+https://github.com/Ronak-IIITD/ScholarDevClaw.git@main"; then
       log_error "Installation failed."
       log_error "Please report this at: https://github.com/Ronak-IIITD/ScholarDevClaw/issues"
       exit 1
@@ -192,7 +192,7 @@ show_next_steps() {
   log_info "Analyze a repository:"
   log_cmd "scholardevclaw analyze ./my-ml-project"
   log_info "Get research suggestions:"
-  log_cmd "scholardevclaw suggest --repo ./my-ml-project"
+  log_cmd "scholardevclaw suggest ./my-ml-project"
   log_info "Run the interactive TUI:"
   log_cmd "scholardevclaw tui"
   log_info "View all commands:"

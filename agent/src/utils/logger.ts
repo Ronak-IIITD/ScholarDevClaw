@@ -48,7 +48,11 @@ class Logger {
     const prefix = `[${entry.timestamp}] ${level.toUpperCase()}`;
     console.log(`${color}${prefix}${this.resetColor()}: ${message}`);
     if (context) {
-      console.log(JSON.stringify(context, null, 2));
+      try {
+        console.log(JSON.stringify(context, this.safeReplacer, 2));
+      } catch {
+        console.log('[Unserializable context]');
+      }
     }
   }
 
@@ -64,6 +68,17 @@ class Logger {
 
   private resetColor(): string {
     return '\x1b[0m';
+  }
+
+  /**
+   * Safe JSON replacer that handles circular references and unserializable values.
+   */
+  private safeReplacer(_key: string, value: unknown): unknown {
+    if (typeof value === 'bigint') return value.toString();
+    if (typeof value === 'function') return '[Function]';
+    if (typeof value === 'symbol') return value.toString();
+    if (value instanceof Error) return { name: value.name, message: value.message };
+    return value;
   }
 
   debug(message: string, context?: Record<string, unknown>): void {

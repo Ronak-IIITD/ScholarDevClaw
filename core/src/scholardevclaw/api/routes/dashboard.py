@@ -12,8 +12,10 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -25,6 +27,54 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
+
+
+# ---------------------------------------------------------------------------
+# Security helpers
+# ---------------------------------------------------------------------------
+
+_API_AUTH_KEY = os.environ.get("SCHOLARDEVCLAW_API_AUTH_KEY", "")
+
+
+def _validate_repo_path(repo_path: str) -> Path:
+    """Validate and confine repo_path to allowed directories."""
+    p = Path(repo_path).expanduser().resolve()
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"Repository not found: {repo_path}")
+    if not p.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path is not a directory: {repo_path}")
+
+    allowed = os.environ.get("SCHOLARDEVCLAW_ALLOWED_REPO_DIRS", "")
+    if allowed:
+        allowed_dirs = [Path(d.strip()).resolve() for d in allowed.split(":") if d.strip()]
+        if not any(_is_subpath(p, ad) for ad in allowed_dirs):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Repository path is outside the allowed directories: {repo_path}",
+            )
+    return p
+
+
+def _is_subpath(child: Path, parent: Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _validate_output_dir(output_dir: str | None, repo_path: Path) -> Path | None:
+    """Validate output_dir is within or adjacent to the repo path."""
+    if output_dir is None:
+        return None
+    p = Path(output_dir).expanduser().resolve()
+    # Allow output dirs that are subpaths of repo or siblings
+    if not _is_subpath(p, repo_path.parent) and not _is_subpath(p, repo_path):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Output directory must be within or adjacent to the repository: {output_dir}",
+        )
+    return p
 
 
 # ---------------------------------------------------------------------------
@@ -162,11 +212,15 @@ async def pipeline_run(request: PipelineRunRequest):
     if _current_run and _current_run.status == "running":
         raise HTTPException(status_code=409, detail="A pipeline run is already in progress")
 
+    # Validate and confine repo_path
+    repo_path = _validate_repo_path(request.repo_path)
+    output_dir = _validate_output_dir(request.output_dir, repo_path)
+
     run_id = str(uuid.uuid4())[:8]
     _current_run = PipelineRunStatus(
         run_id=run_id,
         status="running",
-        repo_path=request.repo_path,
+        repo_path=str(repo_path),
         spec_names=request.spec_names,
         started_at=time.time(),
     )
@@ -174,10 +228,10 @@ async def pipeline_run(request: PipelineRunRequest):
     asyncio.create_task(
         _run_pipeline_async(
             run_id=run_id,
-            repo_path=request.repo_path,
+            repo_path=str(repo_path),
             spec_names=request.spec_names,
             skip_validate=request.skip_validate,
-            output_dir=request.output_dir,
+            output_dir=str(output_dir) if output_dir else None,
         )
     )
 
@@ -436,7 +490,23 @@ async def _run_pipeline_async(
 
 @router.websocket("/ws/pipeline")
 async def ws_pipeline(websocket: WebSocket):
-    """WebSocket endpoint for real-time pipeline progress."""
+    """WebSocket endpoint for real-time pipeline progress.
+
+    Requires Bearer token via query parameter `token` when auth is configured.
+    Limits connections to 20 concurrent clients per server.
+    """
+    # Auth check when API key is configured
+    if _API_AUTH_KEY:
+        token = websocket.query_params.get("token", "")
+        if not token or not hmac.compare_digest(token, _API_AUTH_KEY):
+            await websocket.close(code=4001, reason="Unauthorized")
+            return
+
+    # Connection cap
+    if len(_ws_clients) >= 20:
+        await websocket.close(code=4002, reason="Too many connections")
+        return
+
     await websocket.accept()
     _ws_clients.append(websocket)
     logger.info("WebSocket client connected (%d total)", len(_ws_clients))

@@ -11,9 +11,12 @@ def _load_server(monkeypatch, **env):
         "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS",
         "SCHOLARDEVCLAW_ENABLE_HSTS",
         "SCHOLARDEVCLAW_CORS_ORIGINS",
+        "SCHOLARDEVCLAW_DEV_MODE",
     }
     for key in managed:
         monkeypatch.delenv(key, raising=False)
+    # Default to dev mode so tests don't need to set both auth+confinement
+    monkeypatch.setenv("SCHOLARDEVCLAW_DEV_MODE", "true")
     for key, value in env.items():
         monkeypatch.setenv(key, value)
 
@@ -56,7 +59,7 @@ def test_auth_with_valid_token_reaches_endpoint(monkeypatch, tmp_path):
 
 
 def test_security_headers_applied(monkeypatch):
-    server = _load_server(monkeypatch)
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
     client = TestClient(server.app)
 
     resp = client.get("/health")
@@ -87,17 +90,25 @@ def test_repo_path_confinement_blocks_outside_paths(monkeypatch, tmp_path):
     allowed.mkdir()
     outside.mkdir()
 
-    server = _load_server(monkeypatch, SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=str(allowed))
+    server = _load_server(
+        monkeypatch,
+        SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=str(allowed),
+        SCHOLARDEVCLAW_API_AUTH_KEY="secret",
+    )
     client = TestClient(server.app)
 
-    resp = client.post("/repo/analyze", json={"repoPath": str(outside)})
+    resp = client.post(
+        "/repo/analyze",
+        json={"repoPath": str(outside)},
+        headers={"Authorization": "Bearer secret"},
+    )
 
     assert resp.status_code == 403
     assert "outside the allowed directories" in resp.json()["detail"]
 
 
 def test_repo_path_not_found_and_not_directory(monkeypatch, tmp_path):
-    server = _load_server(monkeypatch)
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
     client = TestClient(server.app)
 
     missing = tmp_path / "does-not-exist"
@@ -111,7 +122,7 @@ def test_repo_path_not_found_and_not_directory(monkeypatch, tmp_path):
 
 
 def test_request_models_forbid_extra_fields(monkeypatch):
-    server = _load_server(monkeypatch)
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
     client = TestClient(server.app)
 
     resp = client.post(
@@ -123,7 +134,7 @@ def test_request_models_forbid_extra_fields(monkeypatch):
 
 
 def test_readiness_returns_ready_shape(monkeypatch):
-    server = _load_server(monkeypatch)
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
     client = TestClient(server.app)
 
     resp = client.get("/health/ready")
@@ -135,7 +146,7 @@ def test_readiness_returns_ready_shape(monkeypatch):
 
 
 def test_liveness_returns_alive_shape(monkeypatch):
-    server = _load_server(monkeypatch)
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
     client = TestClient(server.app)
 
     resp = client.get("/health/live")

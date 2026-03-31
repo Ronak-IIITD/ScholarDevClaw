@@ -65,7 +65,7 @@ jobs:
           cache: pip
           cache-dependency-path: core/pyproject.toml
       - run: pip install -e ".[dev]"
-      - run: mypy src/scholardevclaw/cli.py src/scholardevclaw/api/server.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return
+      - run: mypy src/scholardevclaw/cli.py src/scholardevclaw/api/server.py src/scholardevclaw/application/pipeline.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return
 
   python-test:
     name: "Python Tests (py${{ matrix.python-version }})"
@@ -91,7 +91,8 @@ jobs:
             --tb=short \
             --cov=scholardevclaw \
             --cov-report=xml:coverage.xml \
-            --cov-report=term-missing:skip-covered
+            --cov-report=term-missing:skip-covered \
+            --cov-fail-under=40
       - name: Upload coverage
         if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4

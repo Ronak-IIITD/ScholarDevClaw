@@ -1,7 +1,6 @@
 import hmac
 import logging
 import os
-import warnings
 from pathlib import Path
 from typing import Any, Literal
 
@@ -36,11 +35,11 @@ if _env_allowed:
         d = d.strip()
         if d:
             _ALLOWED_BASE_DIRS.append(Path(d).resolve())
-else:
-    warnings.warn(
-        "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS is not set — path confinement is disabled. "
-        "Any filesystem path can be accessed via the API. Set this variable in production.",
-        stacklevel=1,
+elif os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").lower() != "true":
+    raise RuntimeError(
+        "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS is not set and SCHOLARDEVCLAW_DEV_MODE is not 'true'. "
+        "Set SCHOLARDEVCLAW_ALLOWED_REPO_DIRS to a colon-separated list of allowed repo roots "
+        "(e.g. /repos:/workspace) or set SCHOLARDEVCLAW_DEV_MODE=true for local development."
     )
 
 
@@ -100,11 +99,11 @@ async def security_headers_middleware(request: Request, call_next):
 # API key authentication middleware
 # ---------------------------------------------------------------------------
 _API_AUTH_KEY = os.environ.get("SCHOLARDEVCLAW_API_AUTH_KEY", "")
-if not _API_AUTH_KEY:
-    warnings.warn(
-        "SCHOLARDEVCLAW_API_AUTH_KEY is not set — API endpoints are unauthenticated. "
-        "Set this variable in production.",
-        stacklevel=1,
+if not _API_AUTH_KEY and os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").lower() != "true":
+    raise RuntimeError(
+        "SCHOLARDEVCLAW_API_AUTH_KEY is not set and SCHOLARDEVCLAW_DEV_MODE is not 'true'. "
+        "Set SCHOLARDEVCLAW_API_AUTH_KEY to a strong secret or set SCHOLARDEVCLAW_DEV_MODE=true "
+        "for local development."
     )
 _AUTH_EXEMPT_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/", "/metrics"}
 

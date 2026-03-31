@@ -14,6 +14,9 @@ def _load_server(monkeypatch):
     ):
         monkeypatch.delenv(key, raising=False)
 
+    # Set dev mode so server.py doesn't fail-closed on missing auth/confinement
+    monkeypatch.setenv("SCHOLARDEVCLAW_DEV_MODE", "true")
+
     import scholardevclaw.api.routes.dashboard as dashboard
     import scholardevclaw.api.server as server
 
