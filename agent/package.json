@@ -2,6 +2,21 @@
   "name": "scholardevclaw-agent",
   "version": "0.1.0",
   "description": "ScholarDevClaw - Autonomous ML Research Integration Agent for OpenClaw",
+  "keywords": [
+    "scholardevclaw",
+    "research-to-code",
+    "ml",
+    "ai-agent",
+    "code-generation"
+  ],
+  "homepage": "https://github.com/Ronak-IIITD/ScholarDevClaw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ronak-IIITD/ScholarDevClaw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ronak-IIITD/ScholarDevClaw/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/index.ts",

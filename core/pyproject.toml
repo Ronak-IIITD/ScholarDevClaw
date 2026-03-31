@@ -16,6 +16,9 @@ maintainers = [
     {name = "Ronak Anand"}
 ]
 keywords = [
+    "scholardevclaw",
+    "research-to-code",
+    "paper-to-code",
     "machine-learning",
     "deep-learning",
     "pytorch",

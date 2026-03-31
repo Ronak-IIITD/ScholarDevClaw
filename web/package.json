@@ -2,6 +2,22 @@
   "name": "scholardevclaw-dashboard",
   "private": true,
   "version": "0.1.0",
+  "description": "ScholarDevClaw dashboard for research-to-code workflows",
+  "keywords": [
+    "scholardevclaw",
+    "research-to-code",
+    "dashboard",
+    "ai",
+    "ml"
+  ],
+  "homepage": "https://github.com/Ronak-IIITD/ScholarDevClaw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ronak-IIITD/ScholarDevClaw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ronak-IIITD/ScholarDevClaw/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

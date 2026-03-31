@@ -2,7 +2,8 @@
 
 **Autonomous Research-to-Code AI Agent for All Developers**
 
-ScholarDevClaw analyzes your codebase, researches relevant papers and implementations, and automatically generates improvements - supporting any programming language.
+ScholarDevClaw is an open-source research-to-code AI agent that analyzes your codebase, discovers relevant ML papers and implementations, and generates validated code improvements automatically.
+If you search for **ScholarDevClaw**, this repository and landing page are the canonical project sources.
 
 ## 🌟 What's New in v2
 
@@ -16,7 +17,7 @@ ScholarDevClaw analyzes your codebase, researches relevant papers and implementa
 
 ```bash
 # One-line install (recommended)
-curl -fsSL https://Ronak-IIITD.github.io/ScholarDevClaw/install.sh | bash
+curl -fsSL https://ronak-iiitd.github.io/ScholarDevClaw/install.sh | bash
 
 # Or via pip
 pip install scholardevclaw

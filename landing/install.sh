@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # ScholarDevClaw Installer
-# One-line: curl -fsSL https://Ronak-IIITD.github.io/ScholarDevClaw/install.sh | bash
+# One-line: curl -fsSL https://ronak-iiitd.github.io/ScholarDevClaw/install.sh | bash
 #
 # To use a custom domain, replace the URL above with:
 #   curl -fsSL https://scholardevclaw.ai/install.sh | bash
@@ -64,8 +64,8 @@ Flags:
   --help, -h    Show this message
 
 Examples:
-  curl -fsSL https://Ronak-IIITD.github.io/ScholarDevClaw/install.sh | bash
-  curl -fsSL https://Ronak-IIITD.github.io/ScholarDevClaw/install.sh | bash -s -- --pip
+  curl -fsSL https://ronak-iiitd.github.io/ScholarDevClaw/install.sh | bash
+  curl -fsSL https://ronak-iiitd.github.io/ScholarDevClaw/install.sh | bash -s -- --pip
 EOF
   exit 0
 }

@@ -45,6 +45,42 @@
 - ✅ `python -m pytest tests/ -x -q --cov=scholardevclaw --cov-fail-under=40`
   - Result: `1317 passed, 1 skipped`
 
+### 2026-03-29 (SEO + discoverability hardening for "ScholarDevClaw" search)
+
+**Goal:** Improve branded search discoverability so queries for "ScholarDevClaw" are more likely to surface the project quickly across search engines and social previews.
+
+**Summary:** Added canonical and social metadata, structured data, manifest, URL canonicalization, and package metadata improvements across landing/web/readme surfaces. Also set dashboard app shell to `noindex` so the main landing/repo pages remain the primary index targets.
+
+**What changed:**
+- **Landing SEO metadata** (`landing/index.html`)
+  - Added canonical URL.
+  - Added robots + keywords meta tags.
+  - Added Open Graph completeness (`og:url`, `og:site_name`, `og:image`, `og:image:alt`).
+  - Added Twitter card tags.
+  - Added JSON-LD `SoftwareApplication` structured data.
+  - Added `site.webmanifest` reference.
+
+- **Manifest added**
+  - `landing/site.webmanifest` (new) for brand/install metadata consistency.
+
+- **Crawler/canonical consistency**
+  - `landing/robots.txt` and `landing/sitemap.xml` now use lowercase canonical host URL.
+  - `landing/404.html` "Go home" fixed to project-safe relative link (`./`) for GitHub Pages path deployment.
+
+- **README keyword/canonical improvements**
+  - `README.md` intro strengthened for branded discoverability.
+  - One-line install URL normalized to lowercase canonical host.
+
+- **Dashboard indexing strategy**
+  - `web/index.html` updated with description + `noindex,nofollow` so app-shell routes do not dilute landing/repo ranking.
+
+- **Package metadata discoverability**
+  - `agent/package.json` and `web/package.json` now include `description`, `keywords`, `homepage`, `repository`, and `bugs` metadata.
+  - `core/pyproject.toml` keywords expanded with explicit branded/intent terms (`scholardevclaw`, `research-to-code`, `paper-to-code`).
+
+- **Install script URL consistency**
+  - `landing/install.sh` examples/help text now use lowercase canonical host URL.
+
 ### 2026-03-29 (TUI design refresh — stronger surface hierarchy and calmer control deck)
 
 **Goal:** Make the Textual TUI feel more intentional and polished by improving visual hierarchy, readability, and operator focus without changing the workflow architecture.

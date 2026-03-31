@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://Ronak-IIITD.github.io/ScholarDevClaw/sitemap.xml
+Sitemap: https://ronak-iiitd.github.io/ScholarDevClaw/sitemap.xml
