@@ -4,6 +4,32 @@
 
 **Last updated:** 2026-04-03
 
+### 2026-04-03 (Backend execution unification for API + dashboard)
+
+**Goal:** Reduce product-surface drift by moving API and dashboard execution closer to the shared pipeline/analyzer seams.
+
+**Summary:** Reworked the dashboard pipeline runner to execute shared pipeline functions instead of maintaining its own repo-analysis/mapping/generation/validation logic, and updated `/repo/analyze` to use the canonical tree-sitter analyzer instead of the legacy PyTorch-only parser.
+
+**What changed:**
+
+- **Dashboard backend unification**
+  - `core/src/scholardevclaw/api/routes/dashboard.py`
+    - Replaced direct analyzer/mapping/generator/validator orchestration with calls to `run_analyze`, `run_suggest`, `run_map`, `run_generate`, and `run_validate`.
+    - Preserved the existing HTTP/WebSocket dashboard contract while making step payloads derive from shared pipeline outputs.
+    - Removed duplicate artifact-writing logic in favor of `run_generate(..., output_dir=...)`.
+
+- **API analysis unification**
+  - `core/src/scholardevclaw/api/server.py`
+    - Replaced `PyTorchRepoParser` usage in `/repo/analyze` with `TreeSitterAnalyzer`.
+    - Added lightweight heuristics to derive `architecture.models` and `trainingLoop` from canonical analyzer output.
+    - Returned dependency/test data from the multi-language analyzer instead of the legacy parser path.
+
+- **Coverage**
+  - `core/tests/unit/test_api_server.py`
+    - Added coverage for `/repo/analyze` using the canonical analyzer path.
+  - `core/tests/unit/test_api_dashboard_routes.py`
+    - Added coverage showing the dashboard async runner delegates to shared pipeline functions.
+
 ### 2026-04-03 (Test coverage expansion across CLI, pipeline, and agent runtime)
 
 **Goal:** Broaden repository-wide confidence with higher-value automated coverage on public entrypoints and workflow edge cases.

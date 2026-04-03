@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ..application.schema_contract import SCHEMA_VERSION
 from ..mapping.engine import MappingEngine
 from ..patch_generation.generator import PatchGenerator
-from ..repo_intelligence.parser import PyTorchRepoParser
+from ..repo_intelligence.tree_sitter_analyzer import RepoAnalysis, TreeSitterAnalyzer
 from ..research_intelligence.extractor import ResearchExtractor
 from ..utils.health import health_checker, liveness_probe, readiness_probe
 from ..utils.shutdown import shutdown_manager
@@ -377,6 +377,69 @@ def _metrics_to_response(metrics: Any) -> MetricsResponse | None:
     )
 
 
+def _select_model_elements(analysis: RepoAnalysis) -> list[dict[str, Any]]:
+    class_elements = [element for element in analysis.elements if element.type == "class"]
+    preferred = [
+        element
+        for element in class_elements
+        if any(
+            token in element.name.lower()
+            for token in ("model", "transformer", "encoder", "decoder", "module", "net", "block")
+        )
+    ]
+    selected = preferred or class_elements
+
+    return [
+        {
+            "name": element.name,
+            "file": element.file,
+            "line": element.line,
+            "parent": element.dependencies[0] if element.dependencies else "",
+            "components": {
+                "language": element.language,
+                "decorators": element.decorators,
+                "parameters": element.parameters,
+            },
+        }
+        for element in selected[:25]
+    ]
+
+
+def _select_training_loop(analysis: RepoAnalysis) -> dict[str, Any] | None:
+    optimizer_names = {"adam", "adamw", "sgd", "rmsprop", "adagrad", "lion"}
+    loss_names = {"cross_entropy", "mse", "nllloss", "bceloss", "l1loss"}
+
+    optimizer = "unknown"
+    loss_fn = "unknown"
+
+    for statement in analysis.imports:
+        module_name = statement.module.lower()
+        imported_names = [name.lower() for name in statement.names]
+        if "optim" in module_name:
+            optimizer = next(
+                (name for name in statement.names if name.lower() in optimizer_names),
+                statement.names[0] if statement.names else "optimizer",
+            )
+        if any(name in imported_names for name in loss_names):
+            loss_fn = next(
+                (name for name in statement.names if name.lower() in loss_names),
+                statement.names[0] if statement.names else "loss",
+            )
+
+    for element in analysis.elements:
+        if element.type not in {"function", "async_function", "method", "async_method"}:
+            continue
+        if any(token in element.name.lower() for token in ("train", "fit", "training_step")):
+            return {
+                "file": element.file,
+                "line": element.line,
+                "optimizer": optimizer,
+                "lossFn": loss_fn,
+            }
+
+    return None
+
+
 @app.get(
     "/health",
     tags=["health"],
@@ -437,35 +500,19 @@ async def analyze_repo(request: RepoAnalyzeRequest):
     try:
         repo_path = _resolve_existing_repo_path(request.repoPath)
 
-        parser = PyTorchRepoParser(repo_path)
-        repo_map = parser.parse()
+        analyzer = TreeSitterAnalyzer(repo_path)
+        analysis = analyzer.analyze()
 
         result = {
-            "repoName": repo_map.repo_name,
+            "repoName": repo_path.name,
             "architecture": {
-                "models": [
-                    {
-                        "name": m.name,
-                        "file": m.file,
-                        "line": m.line,
-                        "parent": m.parent,
-                        "components": m.components,
-                    }
-                    for m in repo_map.models
-                ],
-                "trainingLoop": {
-                    "file": repo_map.training_loop.file,
-                    "line": repo_map.training_loop.line,
-                    "optimizer": repo_map.training_loop.optimizer,
-                    "lossFn": repo_map.training_loop.loss_fn,
-                }
-                if repo_map.training_loop
-                else None,
+                "models": _select_model_elements(analysis),
+                "trainingLoop": _select_training_loop(analysis),
             },
-            "dependencies": {},
+            "dependencies": analysis.dependencies,
             "testSuite": {
-                "runner": "pytest",
-                "testFiles": repo_map.test_files,
+                "runner": "pytest" if analysis.test_files else "unknown",
+                "testFiles": analysis.test_files,
             },
         }
 

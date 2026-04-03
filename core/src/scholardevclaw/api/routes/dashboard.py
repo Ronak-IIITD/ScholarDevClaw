@@ -23,6 +23,13 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
+from scholardevclaw.application.pipeline import (
+    run_analyze,
+    run_generate,
+    run_map,
+    run_suggest,
+    run_validate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +258,11 @@ async def _run_pipeline_async(
 
     loop = asyncio.get_event_loop()
 
+    def _require_ok(step: str, result: Any) -> dict[str, Any]:
+        if result.ok:
+            return result.payload
+        raise RuntimeError(f"{step} failed: {result.error or 'Unknown error'}")
+
     def _add_step(
         step: str,
         status: str,
@@ -278,21 +290,22 @@ async def _run_pipeline_async(
         t0 = time.time()
 
         def _do_analyze():
-            from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+            return run_analyze(repo_path)
 
-            analyzer = TreeSitterAnalyzer(Path(repo_path))
-            return analyzer.analyze()
-
-        analysis = await loop.run_in_executor(None, _do_analyze)
+        analyze_result = await loop.run_in_executor(None, _do_analyze)
         dt = time.time() - t0
+        analyze_payload = _require_ok("analyze", analyze_result)
+        language_stats = analyze_payload.get("language_stats", [])
 
         analysis_data = {
-            "languages": analysis.languages,
-            "file_count": sum(s.file_count for s in analysis.language_stats),
-            "elements": len(analysis.elements),
-            "imports": len(analysis.imports),
-            "frameworks": analysis.frameworks,
-            "patterns": dict(analysis.patterns) if hasattr(analysis.patterns, "items") else {},
+            "languages": len(analyze_payload.get("languages", [])),
+            "file_count": sum(
+                int(stat.get("file_count", 0)) for stat in language_stats if isinstance(stat, dict)
+            ),
+            "frameworks": len(analyze_payload.get("frameworks", [])),
+            "entry_points": len(analyze_payload.get("entry_points", [])),
+            "test_files": len(analyze_payload.get("test_files", [])),
+            "patterns": len(analyze_payload.get("patterns", {})),
         }
         _add_step("analyze", "completed", dt, analysis_data)
         await _step_broadcast("analyze", "completed", data=analysis_data, duration=round(dt, 3))
@@ -302,13 +315,12 @@ async def _run_pipeline_async(
         t0 = time.time()
 
         def _do_suggest():
-            from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+            return run_suggest(repo_path)
 
-            analyzer = TreeSitterAnalyzer(Path(repo_path))
-            return analyzer.suggest_research_papers()
-
-        suggestions = await loop.run_in_executor(None, _do_suggest)
+        suggest_result = await loop.run_in_executor(None, _do_suggest)
         dt = time.time() - t0
+        suggest_payload = _require_ok("suggest", suggest_result)
+        suggestions = suggest_payload.get("suggestions", [])
 
         suggest_data = {
             "count": len(suggestions),
@@ -341,42 +353,30 @@ async def _run_pipeline_async(
             _current_run.spec_names = spec_names  # type: ignore[union-attr]
             await _step_broadcast("specs_resolved", "completed", data={"specs": spec_names})
 
-        # ---- 3. Load specs --------------------------------------------
-        from scholardevclaw.research_intelligence.extractor import ResearchExtractor
-
-        extractor = ResearchExtractor()
-        specs_loaded: dict[str, dict] = {}
-        for name in spec_names:
-            spec = extractor.get_spec(name)
-            if spec:
-                specs_loaded[name] = spec
-
-        if not specs_loaded:
-            raise RuntimeError(f"No specs could be loaded: {spec_names}")
-
         # ---- Per-spec: Map -> Generate -> Validate --------------------
-        from scholardevclaw.mapping.engine import MappingEngine
-        from scholardevclaw.patch_generation.generator import PatchGenerator
-        from scholardevclaw.validation.runner import ValidationRunner
-
-        for spec_name, spec in specs_loaded.items():
+        for spec_name in spec_names:
             # Map
             await _step_broadcast(f"map:{spec_name}", "running")
             t0 = time.time()
 
-            def _do_map(s=spec):
-                engine = MappingEngine(analysis.__dict__, s)
-                return engine.map()
+            def _do_map(name=spec_name):
+                return run_map(repo_path, name)
 
-            mapping = await loop.run_in_executor(None, _do_map)
+            map_result = await loop.run_in_executor(None, _do_map)
             dt = time.time() - t0
+            map_payload = _require_ok(f"map:{spec_name}", map_result)
+            targets = map_payload.get("targets", [])
 
             map_data = {
                 "spec": spec_name,
-                "targets": len(mapping.targets),
-                "strategy": mapping.strategy,
-                "confidence": mapping.confidence,
-                "target_files": [{"file": t.file, "line": t.line} for t in mapping.targets[:10]],
+                "targets": map_payload.get("target_count", len(targets)),
+                "strategy": map_payload.get("strategy", "none"),
+                "confidence": map_payload.get("confidence", 0),
+                "target_files": [
+                    {"file": t.get("file", ""), "line": t.get("line", 0)}
+                    for t in targets[:10]
+                    if isinstance(t, dict)
+                ],
             }
             _add_step(f"map:{spec_name}", "completed", dt, map_data)
             await _step_broadcast(
@@ -387,46 +387,26 @@ async def _run_pipeline_async(
             await _step_broadcast(f"generate:{spec_name}", "running")
             t0 = time.time()
 
-            mapping_result = {
-                "targets": [
-                    {
-                        "file": t.file,
-                        "line": t.line,
-                        "current_code": t.current_code,
-                        "replacement_required": t.replacement_required,
-                        "context": t.context,
-                    }
-                    for t in mapping.targets
-                ],
-                "strategy": mapping.strategy,
-                "confidence": mapping.confidence,
-                "research_spec": spec,
-            }
+            def _do_generate(name=spec_name):
+                return run_generate(repo_path, name, output_dir=output_dir)
 
-            def _do_generate(mr=mapping_result):
-                gen = PatchGenerator(Path(repo_path))
-                return gen.generate(mr)
-
-            patch = await loop.run_in_executor(None, _do_generate)
+            generate_result = await loop.run_in_executor(None, _do_generate)
             dt = time.time() - t0
+            generate_payload = _require_ok(f"generate:{spec_name}", generate_result)
+            new_files = generate_payload.get("new_files", [])
+            transformations = generate_payload.get("transformations", [])
 
             gen_data = {
                 "spec": spec_name,
-                "branch": patch.branch_name,
-                "new_files": len(patch.new_files),
-                "transformations": len(patch.transformations),
-                "file_names": [f.path for f in patch.new_files],
+                "branch": generate_payload.get("branch_name", ""),
+                "new_files": len(new_files),
+                "transformations": len(transformations),
+                "file_names": [
+                    f.get("path", "") for f in new_files[:10] if isinstance(f, dict)
+                ],
             }
-
-            # Write artifacts if output_dir
-            if output_dir:
-                out_path = Path(output_dir).expanduser().resolve() / spec_name
-                out_path.mkdir(parents=True, exist_ok=True)
-                for nf in patch.new_files:
-                    dest = out_path / nf.path
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    dest.write_text(nf.content)
-                gen_data["output_dir"] = str(out_path)
+            if generate_payload.get("output_dir"):
+                gen_data["output_dir"] = generate_payload["output_dir"]
 
             _add_step(f"generate:{spec_name}", "completed", dt, gen_data)
             await _step_broadcast(
@@ -439,16 +419,18 @@ async def _run_pipeline_async(
                 t0 = time.time()
 
                 def _do_validate():
-                    runner = ValidationRunner(Path(repo_path))
-                    return runner.run({}, repo_path)
+                    return run_validate(repo_path)
 
-                validation = await loop.run_in_executor(None, _do_validate)
+                validate_result = await loop.run_in_executor(None, _do_validate)
                 dt = time.time() - t0
+                validate_payload = _require_ok(f"validate:{spec_name}", validate_result)
+                scorecard = validate_payload.get("scorecard", {})
 
                 val_data = {
                     "spec": spec_name,
-                    "passed": validation.passed,
-                    "stage": validation.stage,
+                    "passed": validate_payload.get("passed", False),
+                    "stage": validate_payload.get("stage", "unknown"),
+                    "summary": scorecard.get("summary", ""),
                 }
                 _add_step(f"validate:{spec_name}", "completed", dt, val_data)
                 await _step_broadcast(
