@@ -14,6 +14,20 @@ def test_logview_detect_level_classification():
     assert LogView._detect_level("hello") == "info"
 
 
+def test_logview_progress_line_is_reused():
+    log = LogView()
+    mounted: list[object] = []
+    log.mount = lambda widget: mounted.append(widget)
+
+    log.set_progress("Scanning repository...")
+    first = log._progress_line
+    log.set_progress("Scanning repository... [████░░░░░░] 40%")
+
+    assert first is not None
+    assert log._progress_line is first
+    assert len(mounted) == 1
+
+
 def test_historypane_keeps_only_latest_20_entries():
     pane = HistoryPane()
     pane._render_entries = lambda: None

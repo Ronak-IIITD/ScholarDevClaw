@@ -7,7 +7,6 @@ import os
 import subprocess
 import threading
 import time
-from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
 
@@ -182,8 +181,10 @@ class ScholarDevClawApp(App[None]):
         self._status_level = "info"
         self._command_history: list[str] = []
         self._history_index = 0
+        self._history_draft = ""
         self._suggestions: list[str] = []
         self._hint_index = 0
+        self._context_hints: list[str] = []
         self._task_token = 0
         self._active_token = 0
         self._running_action: str | None = None
@@ -378,6 +379,14 @@ class ScholarDevClawApp(App[None]):
     def _clear_output(self) -> None:
         self.query_one("#main-output", LogView).clear_logs()
 
+    def _set_progress(self, action: str, fraction: float, label: str | None = None) -> None:
+        text = label or PROGRESS_LABELS.get(action, "Working...")
+        line = f"{text} {self._progress_bar(fraction)}"
+        self.query_one("#main-output", LogView).set_progress(line, "system")
+
+    def _clear_progress(self) -> None:
+        self.query_one("#main-output", LogView).clear_progress()
+
     def _progress_bar(self, fraction: float) -> str:
         width = 10
         clamped = max(0.0, min(1.0, fraction))
@@ -385,9 +394,7 @@ class ScholarDevClawApp(App[None]):
         return f"[{'█' * filled}{'░' * (width - filled)}] {int(clamped * 100):>3d}%"
 
     def _emit_progress(self, action: str, fraction: float, label: str | None = None) -> None:
-        text = label or PROGRESS_LABELS.get(action, "Working...")
-        self._append_output(text, "accent")
-        self._append_output(self._progress_bar(fraction), "system")
+        self._set_progress(action, fraction, label)
 
     def _rotate_hint(self) -> None:
         if self._suggestions:
@@ -396,29 +403,65 @@ class ScholarDevClawApp(App[None]):
         self._update_command_meta()
 
     def _all_commands(self) -> list[str]:
-        commands = MODE_COMMANDS[self._mode] + GLOBAL_COMMANDS
+        command_dir = self._directory if self._directory not in {"", "."} else "./repo"
+        contextual = [
+            f"analyze {command_dir}",
+            f"suggest {command_dir}",
+            f"validate {command_dir}",
+            f"map {command_dir} rmsnorm",
+            f"generate {command_dir} rmsnorm",
+            f"integrate {command_dir} rmsnorm",
+        ]
+        commands = MODE_COMMANDS[self._mode] + contextual + self._context_hints + GLOBAL_COMMANDS
         return list(dict.fromkeys(commands))
+
+    @staticmethod
+    def _fuzzy_score(prompt: str, candidate: str) -> tuple[int, int, int]:
+        needle = prompt.lower().strip()
+        hay = candidate.lower()
+        if not needle:
+            return (0, 0, 0)
+
+        if hay == needle:
+            return (7, len(needle), -len(candidate))
+        if hay.startswith(needle):
+            return (6, len(needle), -len(candidate))
+
+        tokens = hay.replace(":", " ").split()
+        for token in tokens:
+            if token.startswith(needle):
+                return (5, len(needle), -len(candidate))
+        if f" {needle}" in hay:
+            return (4, len(needle), -len(candidate))
+
+        cursor = 0
+        matches = 0
+        for char in hay:
+            if cursor < len(needle) and char == needle[cursor]:
+                cursor += 1
+                matches += 1
+        if cursor == len(needle):
+            return (3, matches, -len(candidate))
+
+        overlap = sum(1 for char in set(needle) if char in hay)
+        if overlap:
+            return (2, overlap, -len(candidate))
+        return (0, 0, -len(candidate))
 
     def _compute_suggestions(self, prompt: str) -> list[str]:
         prompt = prompt.strip()
         commands = self._all_commands()
         if not prompt:
             return []
-
-        ranked: list[str] = []
-        for candidate in commands:
-            lower_candidate = candidate.lower()
-            lower_prompt = prompt.lower()
-            if lower_candidate.startswith(lower_prompt):
-                ranked.append(candidate)
-        for candidate in commands:
-            lower_candidate = candidate.lower()
-            lower_prompt = prompt.lower()
-            if lower_prompt in lower_candidate and candidate not in ranked:
-                ranked.append(candidate)
-        for candidate in get_close_matches(prompt, commands, n=3, cutoff=0.3):
-            if candidate not in ranked:
-                ranked.append(candidate)
+        scored = [
+            (self._fuzzy_score(prompt, candidate), candidate)
+            for candidate in commands
+        ]
+        ranked = [
+            candidate
+            for score, candidate in sorted(scored, key=lambda item: item[0], reverse=True)
+            if score[0] > 0
+        ]
         return ranked[:3]
 
     def _update_command_meta(self) -> None:
@@ -433,15 +476,54 @@ class ScholarDevClawApp(App[None]):
                     lines.append(f"{prefix} [dim]{suggestion}[/]")
             widget.update("\n".join(lines))
             return
+        if self._context_hints:
+            lines = []
+            for idx, hint in enumerate(self._context_hints[:3]):
+                prefix = "Next ->" if idx == 0 else "       "
+                style = "[bold #7dd3fc]" if idx == 0 else "[dim]"
+                lines.append(f"{prefix} {style}{hint}[/]")
+            widget.update("\n".join(lines))
+            return
         widget.update(f"[dim]{MODE_HINTS[self._mode][self._hint_index]}[/]")
 
     def _set_mode(self, mode: str) -> None:
         self._mode = mode
         self._hint_index = 0
+        self._context_hints = []
         self._sync_status_bar()
         self._set_status(f"Mode set to {mode}", "accent")
         self._append_output(f"Mode: {mode}", "accent")
         self._update_command_meta()
+
+    def _suggest_next_commands(
+        self,
+        action: str,
+        payload: dict[str, Any],
+        request: dict[str, Any],
+    ) -> list[str]:
+        repo = str(request.get("repo_path") or self._directory)
+        spec = str(request.get("spec") or "rmsnorm")
+        if action == "analyze":
+            return [f"suggest {repo}", f"validate {repo}", ":edit"]
+        if action == "suggest":
+            top_spec = (
+                payload.get("suggestions", [{}])[0]
+                .get("spec")
+                or payload.get("suggestions", [{}])[0].get("id")
+                or spec
+            )
+            return [f"map {repo} {str(top_spec).lower()}", f"generate {repo} {spec}", ":search"]
+        if action == "search":
+            return [":edit", f"map {repo} {spec}", "search flash attention"]
+        if action == "map":
+            return [f"generate {repo} {spec}", f"validate {repo}", ":edit"]
+        if action == "generate":
+            return [f"validate {repo}", f"integrate {repo} {spec}", ":analyze"]
+        if action == "validate":
+            return [f"integrate {repo} {spec}", f"analyze {repo}", ":search"]
+        if action == "integrate":
+            return [f"validate {repo}", f"analyze {repo}", ":search"]
+        return []
 
     # ------------------------------------------------------------------
     # Command parsing and execution
@@ -586,9 +668,11 @@ class ScholarDevClawApp(App[None]):
         self._running_action = action
         self._active_request = request
         self._line_progress = 0
+        self._context_hints = []
         self.query_one("#status-bar", StatusBar).start_timer()
         self._set_status(f"Running {action}", "accent")
         self._emit_progress(action, 0.05)
+        self._update_command_meta()
 
         thread = threading.Thread(
             target=self._run_task_in_thread,
@@ -688,8 +772,10 @@ class ScholarDevClawApp(App[None]):
             return
         if action == "set_model":
             self._model = str(request.get("model", "auto") or "auto")
+            self._context_hints = []
             self._sync_status_bar()
             self._set_status(f"Model set to {self._model}", "accent")
+            self._update_command_meta()
             return
         if action == "set_dir":
             directory = str(request.get("directory", "") or "")
@@ -699,8 +785,10 @@ class ScholarDevClawApp(App[None]):
                 self._set_status("Directory rejected", "error")
                 return
             self._directory = directory
+            self._context_hints = []
             self._sync_status_bar()
             self._set_status(f"Directory set to {directory}", "accent")
+            self._update_command_meta()
             return
 
         self._start_task(action, request)
@@ -709,8 +797,12 @@ class ScholarDevClawApp(App[None]):
     def on_history_prev(self) -> None:
         if not self._command_history:
             return
+        prompt = self.query_one("#prompt-input", PromptInput)
+        if self._history_index >= len(self._command_history):
+            self._history_draft = prompt.value
         self._history_index = max(0, self._history_index - 1)
-        self.query_one("#prompt-input", PromptInput).value = self._command_history[self._history_index]
+        prompt.value = self._command_history[self._history_index]
+        prompt.cursor_position = len(prompt.value)
 
     @on(PromptInput.HistoryNext)
     def on_history_next(self) -> None:
@@ -719,9 +811,10 @@ class ScholarDevClawApp(App[None]):
         self._history_index = min(len(self._command_history), self._history_index + 1)
         prompt = self.query_one("#prompt-input", PromptInput)
         if self._history_index >= len(self._command_history):
-            prompt.value = ""
+            prompt.value = self._history_draft
         else:
             prompt.value = self._command_history[self._history_index]
+        prompt.cursor_position = len(prompt.value)
 
     @on(PromptInput.AutoComplete)
     def on_autocomplete(self) -> None:
@@ -746,7 +839,7 @@ class ScholarDevClawApp(App[None]):
         fraction = min(0.9, 0.1 + (self._line_progress * 0.08))
         self._append_output(message.line)
         self.query_one("#status-bar", StatusBar).update_timer()
-        self._append_output(self._progress_bar(fraction), "system")
+        self._set_progress(self._running_action or "analyze", fraction)
 
     @on(TaskCompleted)
     def on_task_completed(self, message: TaskCompleted) -> None:
@@ -759,14 +852,20 @@ class ScholarDevClawApp(App[None]):
 
         result = message.result
         if result.ok:
-            self._append_output(self._progress_bar(1.0), "success")
+            self._set_progress(message.action, 1.0)
+            self._clear_progress()
+            self._append_output(f"{PROGRESS_LABELS.get(message.action, 'Done')} {self._progress_bar(1.0)}", "success")
             for line in self._summarize_result(message.action, result.payload):
                 self._append_output(line)
+            self._context_hints = self._suggest_next_commands(message.action, result.payload, message.request)
             self._set_status(f"{message.action} complete", "success")
         else:
+            self._clear_progress()
             self._append_output(f"Error: {result.error or 'command failed'}", "error")
+            self._context_hints = []
             self._set_status(f"{message.action} failed", "error")
 
+        self._update_command_meta()
         self.query_one("#prompt-input", PromptInput).focus()
 
     # ------------------------------------------------------------------
@@ -779,6 +878,7 @@ class ScholarDevClawApp(App[None]):
             return
         self._task_token += 1
         self._active_token = self._task_token
+        self._clear_progress()
         self._append_output("Cancel requested", "warning")
         self._running_action = None
         self._active_request = None
@@ -787,6 +887,8 @@ class ScholarDevClawApp(App[None]):
 
     def action_clear_screen(self) -> None:
         self._clear_output()
+        self._context_hints = []
+        self._update_command_meta()
         self._set_status("Screen cleared", "accent")
 
     def action_show_help(self) -> None:

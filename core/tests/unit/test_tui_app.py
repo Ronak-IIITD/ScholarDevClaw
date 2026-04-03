@@ -119,3 +119,27 @@ def test_compute_suggestions_prioritizes_best_match():
 
     assert suggestions
     assert suggestions[0] == "analyze ./repo"
+
+
+def test_compute_suggestions_supports_fuzzy_matching():
+    app = _minimal_app_for_unit()
+
+    suggestions = app._compute_suggestions("gnrt")
+
+    assert "generate ./repo rmsnorm" in suggestions
+
+
+def test_suggest_next_commands_are_action_specific():
+    app = _minimal_app_for_unit()
+
+    suggestions = app._suggest_next_commands(
+        "generate",
+        {"branch_name": "feature/rmsnorm"},
+        {"repo_path": "./repo", "spec": "rmsnorm"},
+    )
+
+    assert suggestions == [
+        "validate ./repo",
+        "integrate ./repo rmsnorm",
+        ":analyze",
+    ]

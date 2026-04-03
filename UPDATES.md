@@ -4,6 +4,31 @@
 
 **Last updated:** 2026-04-03
 
+### 2026-04-03 (TUI shell polish — fuzzy completion, live progress, next actions)
+
+**Goal:** Make the new terminal shell faster to operate by improving command discovery, reducing log noise during long tasks, and surfacing the next useful command after each completed action.
+
+**Summary:** Upgraded the shell command loop with stronger fuzzy autocomplete and context-aware command suggestions, changed progress rendering to a single live-updating line instead of repeated progress spam, and added shell-like history draft preservation while browsing previous commands.
+
+**What changed:**
+
+- **Command engine**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Replaced loose autocomplete ranking with fuzzy scoring that favors exact, prefix, token-prefix, and subsequence matches.
+    - Added contextual commands based on the current working directory and post-run next-step recommendations.
+    - Preserved the in-progress command draft when navigating history with `Up/Down`.
+
+- **Streaming output**
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - Added a dedicated progress line that updates in place during task execution.
+    - Removed repeated progress-bar spam from the scrolling output while keeping final completion output explicit.
+
+- **Coverage**
+  - `core/tests/unit/test_tui_app.py`
+    - Added coverage for fuzzy autocomplete and action-specific next-command suggestions.
+  - `core/tests/unit/test_tui_widgets.py`
+    - Added coverage that the progress line is reused instead of being remounted on every update.
+
 ### 2026-04-03 (TUI shell rewrite — command-first, keyboard-only flow)
 
 **Goal:** Replace the old boxed, workflow-panel TUI with a thinner terminal-native shell optimized for command execution speed and lower cognitive load.

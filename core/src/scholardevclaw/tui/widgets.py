@@ -93,6 +93,7 @@ class LogView(VerticalScroll):
         super().__init__(**kwargs)
         self._entry_count = 0
         self._max_entries = 800
+        self._progress_line: Static | None = None
 
     def add_log(self, text: str, level: str = "auto") -> None:
         if level == "auto":
@@ -112,9 +113,27 @@ class LogView(VerticalScroll):
         for line in lines:
             self.add_log(line, level)
 
+    def set_progress(self, text: str, level: str = "system") -> None:
+        if self._progress_line is None:
+            self._progress_line = Static(text, classes=f"log-line {level}")
+            self.mount(self._progress_line)
+            self._entry_count += 1
+        else:
+            self._progress_line.update(text)
+            self._progress_line.set_classes(f"log-line {level}")
+        self.scroll_end(animate=False)
+
+    def clear_progress(self) -> None:
+        if self._progress_line is None:
+            return
+        self._progress_line.remove()
+        self._progress_line = None
+        self._entry_count = max(0, self._entry_count - 1)
+
     def clear_logs(self) -> None:
         self.remove_children()
         self._entry_count = 0
+        self._progress_line = None
 
     @staticmethod
     def _detect_level(text: str) -> str:
