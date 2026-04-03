@@ -4,6 +4,61 @@
 
 **Last updated:** 2026-04-03
 
+### 2026-04-03 (TUI shell polish — fuzzy completion, live progress, next actions)
+
+**Goal:** Make the new terminal shell faster to operate by improving command discovery, reducing log noise during long tasks, and surfacing the next useful command after each completed action.
+
+**Summary:** Upgraded the shell command loop with stronger fuzzy autocomplete and context-aware command suggestions, changed progress rendering to a single live-updating line instead of repeated progress spam, and added shell-like history draft preservation while browsing previous commands.
+
+**What changed:**
+
+- **Command engine**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Replaced loose autocomplete ranking with fuzzy scoring that favors exact, prefix, token-prefix, and subsequence matches.
+    - Added contextual commands based on the current working directory and post-run next-step recommendations.
+    - Preserved the in-progress command draft when navigating history with `Up/Down`.
+
+- **Streaming output**
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - Added a dedicated progress line that updates in place during task execution.
+    - Removed repeated progress-bar spam from the scrolling output while keeping final completion output explicit.
+
+- **Coverage**
+  - `core/tests/unit/test_tui_app.py`
+    - Added coverage for fuzzy autocomplete and action-specific next-command suggestions.
+  - `core/tests/unit/test_tui_widgets.py`
+    - Added coverage that the progress line is reused instead of being remounted on every update.
+
+### 2026-04-03 (TUI shell rewrite — command-first, keyboard-only flow)
+
+**Goal:** Replace the old boxed, workflow-panel TUI with a thinner terminal-native shell optimized for command execution speed and lower cognitive load.
+
+**Summary:** Rebuilt the TUI around a minimal four-part layout: header, inline status bar, streaming output area, and persistent command input. The new shell removes button-style interactions from the active UI, adds command modes, keyboard-driven autocomplete, history navigation, dynamic hints, and non-blocking background execution for pipeline commands.
+
+**What changed:**
+
+- **Shell rewrite**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Replaced the previous dashboard-style app shell with a command-first terminal interface.
+    - Added command parsing for direct commands, `set ...` config commands, and `:mode` shorthand.
+    - Added mode switching for `analyze`, `search`, and `edit`.
+    - Added inline autocomplete, command history navigation, dynamic context hints, and background task execution with streamed log updates.
+    - Bound keyboard controls around the new shell model: `Tab`, `Up/Down`, `Ctrl+C`, `Ctrl+K`, `Enter`, and `Esc`.
+
+- **Widget simplification**
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - Removed button-based widget behavior from the active widget set.
+    - Reworked log/status/history widgets into thin text-first components with no heavy boxed surfaces.
+
+- **Modal simplification**
+  - `core/src/scholardevclaw/tui/screens.py`
+    - Replaced button-driven overlays with lightweight text/input-based modal helpers to keep the package export surface stable without preserving the old interaction model.
+
+- **Coverage**
+  - `core/tests/unit/test_tui_app.py`
+    - Added shell-specific coverage for `:mode` shorthand parsing and autocomplete ranking.
+
+
 ### 2026-04-03 (Backend execution unification for API + dashboard)
 
 **Goal:** Reduce product-surface drift by moving API and dashboard execution closer to the shared pipeline/analyzer seams.

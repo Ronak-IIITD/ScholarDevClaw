@@ -101,3 +101,45 @@ def test_handle_escape_double_press_triggers_stop(monkeypatch):
 
     assert any("warning:Press ESC again" in e for e in events)
     assert "stopped" in events
+
+
+def test_build_request_supports_mode_shorthand():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request(":search")
+
+    assert action == "set_mode"
+    assert req == {"mode": "search"}
+
+
+def test_compute_suggestions_prioritizes_best_match():
+    app = _minimal_app_for_unit()
+
+    suggestions = app._compute_suggestions("ana")
+
+    assert suggestions
+    assert suggestions[0] == "analyze ./repo"
+
+
+def test_compute_suggestions_supports_fuzzy_matching():
+    app = _minimal_app_for_unit()
+
+    suggestions = app._compute_suggestions("gnrt")
+
+    assert "generate ./repo rmsnorm" in suggestions
+
+
+def test_suggest_next_commands_are_action_specific():
+    app = _minimal_app_for_unit()
+
+    suggestions = app._suggest_next_commands(
+        "generate",
+        {"branch_name": "feature/rmsnorm"},
+        {"repo_path": "./repo", "spec": "rmsnorm"},
+    )
+
+    assert suggestions == [
+        "validate ./repo",
+        "integrate ./repo rmsnorm",
+        ":analyze",
+    ]
