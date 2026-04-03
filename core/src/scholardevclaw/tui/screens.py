@@ -13,7 +13,9 @@ WELCOME_TEXT = (
     "ScholarDevClaw\n\n"
     "Keyboard-first research-to-code shell.\n"
     "Type commands like:\n"
+    "  setup\n"
     "  analyze ./repo\n"
+    "  chat explain this repository\n"
     "  set mode search\n"
     "  :edit\n\n"
     "Press Enter or Esc to continue."
@@ -24,10 +26,15 @@ HELP_TEXT = (
     "Keys\n"
     "Tab autocomplete\n"
     "Up/Down history\n"
-    "Ctrl+C cancel task\n"
+    "Ctrl+C cancel task or exit\n"
     "Ctrl+K clear output\n"
     "Enter execute\n"
     "Esc dismiss suggestions\n\n"
+    "Setup\n"
+    "setup\n"
+    "set provider openrouter\n"
+    "set provider ollama\n"
+    "set model anthropic/claude-sonnet-4\n\n"
     "Modes\n"
     ":analyze\n"
     ":search\n"
@@ -77,6 +84,129 @@ class HelpOverlay(ModalScreen[None]):
             yield Static(HELP_TEXT)
 
 
+class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
+    """Keyboard-first provider onboarding for the TUI shell."""
+
+    BINDINGS = [
+        ("ctrl+s", "submit_setup", "Save"),
+        ("escape", "dismiss_skip", "Skip"),
+    ]
+
+    DEFAULT_CSS = """
+    ProviderSetupScreen {
+        align: left top;
+        background: $background 80%;
+    }
+
+    ProviderSetupScreen > Vertical {
+        width: 100%;
+        height: auto;
+        padding: 1 2;
+    }
+
+    ProviderSetupScreen Input {
+        width: 100%;
+        height: 1;
+        border: none;
+        padding: 0;
+        margin: 0 0 1 0;
+    }
+
+    #setup-hint {
+        width: 100%;
+        height: auto;
+        color: $text-muted;
+        margin: 0 0 1 0;
+    }
+
+    #setup-error {
+        width: 100%;
+        height: auto;
+        color: $error;
+    }
+    """
+
+    def __init__(
+        self,
+        *,
+        provider: str = "openrouter",
+        model: str = "",
+        has_saved_key: bool = False,
+    ) -> None:
+        super().__init__()
+        self._provider = provider or "openrouter"
+        self._model = model
+        self._has_saved_key = has_saved_key
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("LLM Setup")
+            yield Static("", id="setup-hint")
+            yield Input(value=self._provider, placeholder="Provider: openrouter or ollama", id="setup-provider")
+            yield Input(value=self._model, placeholder="Model ID", id="setup-model")
+            yield Input(password=True, placeholder="OpenRouter API key", id="setup-key")
+            yield Static("", id="setup-error")
+
+    def on_mount(self) -> None:
+        self._refresh_hint()
+        self.query_one("#setup-provider", Input).focus()
+
+    def action_dismiss_skip(self) -> None:
+        self.dismiss(None)
+
+    def action_submit_setup(self) -> None:
+        provider = self.query_one("#setup-provider", Input).value.strip().lower()
+        model = self.query_one("#setup-model", Input).value.strip()
+        api_key = self.query_one("#setup-key", Input).value.strip()
+        error = self.query_one("#setup-error", Static)
+
+        if provider not in {"openrouter", "ollama"}:
+            error.update("Error: provider must be openrouter or ollama")
+            return
+        if not model:
+            error.update("Error: model is required")
+            return
+        if provider == "openrouter" and not api_key and not self._has_saved_key:
+            error.update("Error: OpenRouter requires an API key")
+            return
+
+        self.dismiss(
+            {
+                "provider": provider,
+                "model": model,
+                "api_key": api_key,
+            }
+        )
+
+    @on(Input.Changed, "#setup-provider")
+    def on_provider_changed(self, event: Input.Changed) -> None:
+        self._provider = event.value.strip().lower()
+        self._refresh_hint()
+
+    @on(Input.Submitted)
+    def on_input_submitted(self) -> None:
+        self.action_submit_setup()
+
+    def _refresh_hint(self) -> None:
+        hint = self.query_one("#setup-hint", Static)
+        if self._provider == "ollama":
+            hint.update(
+                "Provider -> Ollama\n"
+                "Model -> any local Ollama tag, for example `llama3.1`\n"
+                "Key -> not required\n"
+                "Save -> Ctrl+S or Enter"
+            )
+            return
+
+        reuse = "leave key blank to reuse saved key" if self._has_saved_key else "paste your OpenRouter key"
+        hint.update(
+            "Provider -> OpenRouter\n"
+            "Model -> full OpenRouter model id, for example `openai/gpt-4.1-mini` or `anthropic/claude-sonnet-4`\n"
+            f"Key -> {reuse}\n"
+            "Save -> Ctrl+S or Enter"
+        )
+
+
 class CommandPalette(ModalScreen[str | None]):
     """Thin command chooser for keyboard fallback."""
 
@@ -88,14 +218,18 @@ class CommandPalette(ModalScreen[str | None]):
     ]
 
     PALETTE_COMMANDS = [
+        "setup",
         "analyze ./repo",
         "suggest ./repo",
+        "chat hello",
         "search layer normalization",
         "map ./repo rmsnorm",
         "generate ./repo rmsnorm",
         "validate ./repo",
+        "set provider openrouter",
+        "set provider ollama",
+        "set model anthropic/claude-sonnet-4",
         "set mode analyze",
-        "set model auto",
         "set dir ./repo",
         ":analyze",
         ":search",

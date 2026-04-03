@@ -7,6 +7,9 @@ from scholardevclaw.tui.app import ScholarDevClawApp
 
 def _minimal_app_for_unit() -> ScholarDevClawApp:
     app = ScholarDevClawApp()
+    app._provider = "setup"
+    app._model = ""
+    app._directory = "."
     app._validate_repo_path = lambda path: (
         bool(path),
         "Repository path is required" if not path else "",
@@ -24,6 +27,15 @@ def test_parse_natural_command_extracts_action_repo_and_spec():
     assert action == "integrate"
     assert ctx.get("repo_path") == "./repo"
     assert ctx.get("spec") == "rmsnorm"
+
+
+def test_parse_natural_command_uses_chat_for_plain_greeting():
+    app = _minimal_app_for_unit()
+
+    action, ctx = app._parse_natural_command("hi there")
+
+    assert action == "chat"
+    assert ctx["prompt"] == "hi there"
 
 
 def test_validate_request_inputs_errors_and_warnings():
@@ -112,6 +124,27 @@ def test_build_request_supports_mode_shorthand():
     assert req == {"mode": "search"}
 
 
+def test_build_request_supports_setup_and_provider_commands():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("set provider openrouter")
+    assert action == "set_provider"
+    assert req == {"provider": "openrouter"}
+
+    action, req = app._build_request("setup")
+    assert action == "setup"
+    assert req == {}
+
+
+def test_build_request_routes_plain_text_to_chat():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("hello model")
+
+    assert action == "chat"
+    assert req["prompt"] == "hello model"
+
+
 def test_compute_suggestions_prioritizes_best_match():
     app = _minimal_app_for_unit()
 
@@ -143,3 +176,24 @@ def test_suggest_next_commands_are_action_specific():
         "integrate ./repo rmsnorm",
         ":analyze",
     ]
+
+
+def test_resolve_model_provider_prefers_selected_provider():
+    app = _minimal_app_for_unit()
+    app._provider = "openrouter"
+    app._model = "anthropic/claude-sonnet-4"
+
+    provider, model = app._resolve_model_provider()
+
+    assert provider == "openrouter"
+    assert model == "anthropic/claude-sonnet-4"
+
+
+def test_action_cancel_task_exits_when_idle():
+    app = _minimal_app_for_unit()
+    events: list[str] = []
+    app.exit = lambda *args, **kwargs: events.append("exit")
+
+    app.action_cancel_task()
+
+    assert events == ["exit"]

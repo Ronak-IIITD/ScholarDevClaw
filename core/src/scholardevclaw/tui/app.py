@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -25,26 +27,36 @@ from scholardevclaw.application.pipeline import (
     run_suggest,
     run_validate,
 )
+from scholardevclaw.auth.store import AuthStore
+from scholardevclaw.auth.types import AuthProvider
+from scholardevclaw.llm.client import DEFAULT_MODELS, LLMAPIError, LLMClient, LLMConfigError
 
-from .screens import HelpOverlay
+from .screens import HelpOverlay, ProviderSetupScreen
 from .widgets import LogView, PromptInput, StatusBar
 
 logger = logging.getLogger(__name__)
 
 MODES = ("analyze", "search", "edit")
+SUPPORTED_TUI_PROVIDERS = {
+    "openrouter": AuthProvider.OPENROUTER,
+    "ollama": AuthProvider.OLLAMA,
+}
 MODE_HINTS = {
     "analyze": [
         "Hint -> analyze ./repo",
+        "Hint -> ask what this repo does",
         "Hint -> suggest ./repo",
         "Hint -> validate ./repo",
     ],
     "search": [
         "Hint -> search layer normalization",
+        "Hint -> ask for papers on flash attention",
         "Hint -> search flash attention",
-        "Hint -> set model auto",
+        "Hint -> setup",
     ],
     "edit": [
         "Hint -> map ./repo rmsnorm",
+        "Hint -> ask how to implement RMSNorm",
         "Hint -> generate ./repo rmsnorm",
         "Hint -> integrate ./repo rmsnorm",
     ],
@@ -55,7 +67,8 @@ MODE_COMMANDS = {
         "suggest ./repo",
         "validate ./repo",
         "set dir ./repo",
-        "set model auto",
+        "set provider openrouter",
+        "set model anthropic/claude-sonnet-4",
         ":search",
         ":edit",
     ],
@@ -63,7 +76,8 @@ MODE_COMMANDS = {
         "search layer normalization",
         "search flash attention",
         "set mode search",
-        "set model auto",
+        "chat find fast inference ideas",
+        "setup",
         ":analyze",
         ":edit",
     ],
@@ -72,16 +86,22 @@ MODE_COMMANDS = {
         "generate ./repo rmsnorm",
         "integrate ./repo rmsnorm",
         "set dir ./repo",
-        "set model auto",
+        "chat how should I patch this file",
         ":analyze",
         ":search",
     ],
 }
 GLOBAL_COMMANDS = [
+    "setup",
+    "providers",
+    "status",
+    "chat hello",
     "set mode analyze",
     "set mode search",
     "set mode edit",
-    "set model auto",
+    "set provider openrouter",
+    "set provider ollama",
+    "set model anthropic/claude-sonnet-4",
     "set dir ./repo",
     ":analyze",
     ":search",
@@ -107,7 +127,30 @@ PROGRESS_LABELS = {
     "generate": "Generating patch artifacts...",
     "validate": "Validating repository...",
     "integrate": "Running integration workflow...",
+    "chat": "Thinking...",
 }
+CHAT_SYSTEM_PROMPTS = {
+    "analyze": (
+        "You are ScholarDevClaw, a terse coding assistant inside a terminal UI. "
+        "In analyze mode, help the user understand the repository, architecture, and likely next shell commands. "
+        "Keep answers short, concrete, and developer-focused."
+    ),
+    "search": (
+        "You are ScholarDevClaw, a terse research assistant inside a terminal UI. "
+        "In search mode, answer with concise research directions, paper names, and implementation tradeoffs."
+    ),
+    "edit": (
+        "You are ScholarDevClaw, a terse coding assistant inside a terminal UI. "
+        "In edit mode, focus on code changes, implementation advice, and safe next actions."
+    ),
+}
+
+
+@dataclass
+class TUIRuntimeState:
+    provider: str = "setup"
+    model: str = ""
+    directory: str = "."
 
 
 class TaskLog(Message):
@@ -124,6 +167,13 @@ class TaskCompleted(Message):
         self.action = action
         self.result = result
         self.request = request
+
+
+class ChatDelta(Message):
+    def __init__(self, token: int, content: str):
+        super().__init__()
+        self.token = token
+        self.content = content
 
 
 class ScholarDevClawApp(App[None]):
@@ -176,7 +226,8 @@ class ScholarDevClawApp(App[None]):
     def __init__(self) -> None:
         super().__init__()
         self._mode = "analyze"
-        self._model = "auto"
+        self._provider = "setup"
+        self._model = ""
         self._directory = "."
         self._status_level = "info"
         self._command_history: list[str] = []
@@ -193,6 +244,14 @@ class ScholarDevClawApp(App[None]):
         self._escape_pressed_count = 0
         self._escape_warning_shown = False
         self._line_progress = 0
+        self._chat_history: list[dict[str, str]] = []
+        self._chat_preview = ""
+        self._session_input_tokens = 0
+        self._session_output_tokens = 0
+        self._last_total_tokens = 0
+        self._load_runtime_state()
+        if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
+            self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
 
     def compose(self) -> ComposeResult:
         yield Static("ScholarDevClaw", id="header")
@@ -206,11 +265,188 @@ class ScholarDevClawApp(App[None]):
             yield PromptInput(placeholder="> ", id="prompt-input")
 
     def on_mount(self) -> None:
+        if self._directory in {"", "."}:
+            self._directory = os.getcwd()
         self._sync_status_bar()
         self._set_status("Ready", "info")
         self._update_command_meta()
         self.set_interval(6.0, self._rotate_hint)
         self.query_one("#prompt-input", PromptInput).focus()
+        self.set_timer(0, self._maybe_show_setup)
+
+    # ------------------------------------------------------------------
+    # Runtime configuration
+    # ------------------------------------------------------------------
+
+    def _runtime_state_path(self) -> Path:
+        store = AuthStore(enable_audit=False, enable_rate_limit=False)
+        return store.store_dir / "tui.json"
+
+    def _load_runtime_state(self) -> None:
+        state = TUIRuntimeState()
+        config_path = self._runtime_state_path()
+        if config_path.exists():
+            try:
+                data = json.loads(config_path.read_text())
+                state = TUIRuntimeState(
+                    provider=str(data.get("provider", state.provider)),
+                    model=str(data.get("model", state.model)),
+                    directory=str(data.get("directory", state.directory)),
+                )
+            except Exception:
+                pass
+
+        env_provider = os.environ.get("SCHOLARDEVCLAW_API_PROVIDER", "").strip().lower()
+        env_model = os.environ.get("SCHOLARDEVCLAW_API_MODEL", "").strip()
+        if env_provider in SUPPORTED_TUI_PROVIDERS:
+            state.provider = env_provider
+        if env_model:
+            state.model = env_model
+
+        if state.provider == "setup":
+            try:
+                auth_status = AuthStore(enable_audit=False, enable_rate_limit=False).get_status()
+                if auth_status.provider in SUPPORTED_TUI_PROVIDERS:
+                    state.provider = str(auth_status.provider)
+            except Exception:
+                pass
+
+        self._provider = state.provider
+        self._model = state.model
+        self._directory = state.directory or "."
+
+    def _save_runtime_state(self) -> None:
+        config_path = self._runtime_state_path()
+        payload = {
+            "provider": self._provider,
+            "model": self._model,
+            "directory": self._directory,
+        }
+        config_path.write_text(json.dumps(payload, indent=2))
+
+    def _pretty_directory(self) -> str:
+        try:
+            return str(Path(self._directory).expanduser()).replace(str(Path.home()), "~", 1)
+        except Exception:
+            return self._directory
+
+    def _resolve_auth_provider(self) -> AuthProvider | None:
+        return SUPPORTED_TUI_PROVIDERS.get(self._provider)
+
+    def _get_saved_key_for_provider(self, provider: AuthProvider) -> str | None:
+        try:
+            store = AuthStore(enable_audit=False, enable_rate_limit=False)
+            for key in store.list_api_keys():
+                if key.provider == provider and key.is_valid():
+                    return key.key
+        except Exception:
+            return None
+        return None
+
+    def _provider_has_credentials(self, provider: str | None = None) -> bool:
+        provider_name = provider or self._provider
+        auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider_name)
+        if auth_provider is None:
+            return False
+        if auth_provider == AuthProvider.OLLAMA:
+            return True
+        if os.environ.get(auth_provider.env_var_name):
+            return True
+        return self._get_saved_key_for_provider(auth_provider) is not None
+
+    def _llm_ready(self) -> bool:
+        return self._provider in SUPPORTED_TUI_PROVIDERS and bool(self._model) and self._provider_has_credentials()
+
+    def _maybe_show_setup(self) -> None:
+        if self._llm_ready():
+            return
+        self._open_setup()
+
+    def _open_setup(self) -> None:
+        self.push_screen(
+            ProviderSetupScreen(
+                provider=self._provider if self._provider in SUPPORTED_TUI_PROVIDERS else "openrouter",
+                model=self._model or DEFAULT_MODELS[AuthProvider.OPENROUTER],
+                has_saved_key=self._provider_has_credentials("openrouter"),
+            ),
+            self._apply_setup_result,
+        )
+
+    def _apply_setup_result(self, result: dict[str, str] | None) -> None:
+        if result is None:
+            self._append_output("LLM setup skipped", "warning")
+            self._set_status("Offline mode", "warning")
+            return
+
+        ok, message = self._save_provider_setup(
+            result.get("provider", ""),
+            result.get("model", ""),
+            result.get("api_key", ""),
+        )
+        if not ok:
+            self._append_output(f"Error: {message}", "error")
+            self._set_status("Setup failed", "error")
+            return
+
+        self._append_output(f"Provider: {self._provider}", "accent")
+        self._append_output(f"Model: {self._model}")
+        self._set_status("LLM ready", "success")
+        self._sync_status_bar()
+        self._update_command_meta()
+
+    def _save_provider_setup(self, provider: str, model: str, api_key: str = "") -> tuple[bool, str]:
+        provider_name = provider.strip().lower()
+        auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider_name)
+        if auth_provider is None:
+            return False, "Provider must be openrouter or ollama"
+        if not model.strip():
+            return False, "Model is required"
+
+        store = AuthStore(enable_audit=False, enable_rate_limit=False)
+        existing = None
+        for key in store.list_api_keys():
+            if key.provider == auth_provider:
+                existing = key
+                if api_key and key.key == api_key:
+                    break
+
+        try:
+            if auth_provider == AuthProvider.OPENROUTER:
+                if api_key:
+                    if existing and existing.key == api_key:
+                        store.set_default_key(existing.id)
+                    else:
+                        store.add_api_key(
+                            api_key,
+                            "openrouter-tui",
+                            auth_provider,
+                            set_default=True,
+                            metadata={"source": "tui"},
+                        )
+                    os.environ[auth_provider.env_var_name] = api_key
+                elif existing is not None:
+                    store.set_default_key(existing.id)
+                elif not os.environ.get(auth_provider.env_var_name):
+                    return False, "OpenRouter requires an API key"
+            else:
+                if existing is not None:
+                    store.set_default_key(existing.id)
+                else:
+                    store.add_api_key(
+                        "ollama-local",
+                        "ollama-local",
+                        auth_provider,
+                        set_default=True,
+                        metadata={"source": "tui"},
+                    )
+                os.environ.setdefault("OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434")
+        except Exception as exc:
+            return False, str(exc)
+
+        self._provider = provider_name
+        self._model = model.strip()
+        self._save_runtime_state()
+        return True, "OK"
 
     # ------------------------------------------------------------------
     # Validation helpers used by tests and command execution
@@ -252,6 +488,8 @@ class ScholarDevClawApp(App[None]):
         return False, ""
 
     def _resolve_model_provider(self) -> tuple[str | None, str | None]:
+        if self._provider in SUPPORTED_TUI_PROVIDERS:
+            return self._provider, self._model or DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
         if not self._model or self._model == "auto":
             return None, None
         if ":" in self._model:
@@ -263,17 +501,31 @@ class ScholarDevClawApp(App[None]):
         prev = {
             "SCHOLARDEVCLAW_API_PROVIDER": os.environ.get("SCHOLARDEVCLAW_API_PROVIDER"),
             "SCHOLARDEVCLAW_API_MODEL": os.environ.get("SCHOLARDEVCLAW_API_MODEL"),
+            "SCHOLARDEVCLAW_API_KEY": os.environ.get("SCHOLARDEVCLAW_API_KEY"),
         }
         provider, model = self._resolve_model_provider()
+        auth_provider = self._resolve_auth_provider()
+        provider_env_var = auth_provider.env_var_name if auth_provider else None
+        if provider_env_var:
+            prev[provider_env_var] = os.environ.get(provider_env_var)
         if provider is None:
             os.environ.pop("SCHOLARDEVCLAW_API_PROVIDER", None)
             os.environ.pop("SCHOLARDEVCLAW_API_MODEL", None)
+            os.environ.pop("SCHOLARDEVCLAW_API_KEY", None)
         else:
             os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = provider
             if model:
                 os.environ["SCHOLARDEVCLAW_API_MODEL"] = model
             else:
                 os.environ.pop("SCHOLARDEVCLAW_API_MODEL", None)
+            key = None
+            if auth_provider == AuthProvider.OLLAMA:
+                os.environ.setdefault("OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434")
+            elif provider_env_var:
+                key = self._get_saved_key_for_provider(auth_provider) or os.environ.get(provider_env_var)
+            if provider_env_var and key:
+                os.environ[provider_env_var] = key
+                os.environ["SCHOLARDEVCLAW_API_KEY"] = key
         return prev
 
     def _restore_provider_env(self, prev: dict[str, str | None]) -> None:
@@ -287,23 +539,30 @@ class ScholarDevClawApp(App[None]):
         lower = prompt.lower().strip()
         tokens = prompt.strip().split()
         ctx: dict[str, Any] = {}
+        normalized = lower
+        for prefix in ("please ", "can you ", "could you ", "would you ", "lets ", "let's ", "run "):
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix) :].strip()
+                break
 
-        if "integrate" in lower:
-            action = "integrate"
-        elif "generate" in lower or "patch" in lower:
-            action = "generate"
-        elif "validate" in lower or "benchmark" in lower:
-            action = "validate"
-        elif "suggest" in lower or "improvement" in lower:
-            action = "suggest"
-        elif "search" in lower or "find paper" in lower:
-            action = "search"
-        elif "map" in lower:
-            action = "map"
-        elif "analyze" in lower or "scan" in lower:
-            action = "analyze"
-        else:
-            action = self._mode if self._mode in MODES else "analyze"
+        action = "chat"
+        action_heads = {
+            "integrate": "integrate",
+            "generate": "generate",
+            "patch": "generate",
+            "validate": "validate",
+            "benchmark": "validate",
+            "suggest": "suggest",
+            "search": "search",
+            "find paper": "search",
+            "map": "map",
+            "analyze": "analyze",
+            "scan": "analyze",
+        }
+        for head, resolved in action_heads.items():
+            if normalized == head or normalized.startswith(f"{head} "):
+                action = resolved
+                break
 
         for token in tokens:
             if token.startswith("./") or token.startswith("/") or token.startswith("../"):
@@ -322,6 +581,8 @@ class ScholarDevClawApp(App[None]):
                     query = prompt[len(prefix) :].strip()
                     break
             ctx["query"] = query.strip()
+        elif action == "chat":
+            ctx["prompt"] = prompt.strip()
 
         return action, ctx
 
@@ -363,10 +624,16 @@ class ScholarDevClawApp(App[None]):
     # ------------------------------------------------------------------
 
     def _sync_status_bar(self) -> None:
-        self.query_one("#status-bar", StatusBar).set_context(
+        status_bar = self.query_one("#status-bar", StatusBar)
+        status_bar.set_context(
             mode=self._mode,
-            model=self._model,
-            directory=self._directory,
+            provider=self._provider,
+            model=self._model or "unset",
+            directory=self._pretty_directory(),
+        )
+        status_bar.set_usage(
+            session_tokens=self._session_input_tokens + self._session_output_tokens,
+            last_tokens=self._last_total_tokens,
         )
 
     def _set_status(self, message: str, level: str = "info") -> None:
@@ -379,6 +646,19 @@ class ScholarDevClawApp(App[None]):
     def _clear_output(self) -> None:
         self.query_one("#main-output", LogView).clear_logs()
 
+    def _record_token_usage(self, input_tokens: int, output_tokens: int) -> None:
+        self._session_input_tokens += max(0, input_tokens)
+        self._session_output_tokens += max(0, output_tokens)
+        self._last_total_tokens = max(0, input_tokens + output_tokens)
+        self._sync_status_bar()
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        stripped = text.strip()
+        if not stripped:
+            return 0
+        return max(1, len(stripped) // 4)
+
     def _set_progress(self, action: str, fraction: float, label: str | None = None) -> None:
         text = label or PROGRESS_LABELS.get(action, "Working...")
         line = f"{text} {self._progress_bar(fraction)}"
@@ -386,6 +666,9 @@ class ScholarDevClawApp(App[None]):
 
     def _clear_progress(self) -> None:
         self.query_one("#main-output", LogView).clear_progress()
+
+    def _set_live_text(self, text: str, level: str = "info") -> None:
+        self.query_one("#main-output", LogView).set_progress(text, level)
 
     def _progress_bar(self, fraction: float) -> str:
         width = 10
@@ -411,6 +694,10 @@ class ScholarDevClawApp(App[None]):
             f"map {command_dir} rmsnorm",
             f"generate {command_dir} rmsnorm",
             f"integrate {command_dir} rmsnorm",
+            "setup",
+            "providers",
+            "status",
+            "chat hello",
         ]
         commands = MODE_COMMANDS[self._mode] + contextual + self._context_hints + GLOBAL_COMMANDS
         return list(dict.fromkeys(commands))
@@ -523,6 +810,12 @@ class ScholarDevClawApp(App[None]):
             return [f"integrate {repo} {spec}", f"analyze {repo}", ":search"]
         if action == "integrate":
             return [f"validate {repo}", f"analyze {repo}", ":search"]
+        if action == "chat":
+            if self._mode == "search":
+                return ["search flash attention", f"analyze {repo}", ":edit"]
+            if self._mode == "edit":
+                return [f"map {repo} rmsnorm", f"generate {repo} rmsnorm", ":analyze"]
+            return [f"analyze {repo}", f"suggest {repo}", ":search"]
         return []
 
     # ------------------------------------------------------------------
@@ -542,8 +835,12 @@ class ScholarDevClawApp(App[None]):
                 return "set_mode", {"mode": payload.split(" ", 1)[1].strip()}
             if payload.startswith("model "):
                 return "set_model", {"model": payload.split(" ", 1)[1].strip()}
+            if payload.startswith("provider "):
+                return "set_provider", {"provider": payload.split(" ", 1)[1].strip()}
             if payload.startswith("dir "):
                 return "set_dir", {"directory": payload.split(" ", 1)[1].strip()}
+            if payload == "setup":
+                return "setup", {}
             return None, {}
 
         parts = raw.split()
@@ -554,13 +851,20 @@ class ScholarDevClawApp(App[None]):
             value = " ".join(parts[2:]).strip()
             if key == "mode":
                 return "set_mode", {"mode": value}
+            if key == "provider":
+                return "set_provider", {"provider": value}
             if key == "model":
                 return "set_model", {"model": value}
+            if key == "key":
+                return "set_key", {"api_key": value}
             if key == "dir":
                 return "set_dir", {"directory": value}
 
-        if head in {"help", "clear", "quit"}:
+        if head in {"help", "clear", "quit", "setup", "providers", "status"}:
             return head, {}
+
+        if head == "chat":
+            return "chat", {"action": "chat", "prompt": raw[len(parts[0]) :].strip()}
 
         if head == "search":
             return "search", {
@@ -580,6 +884,8 @@ class ScholarDevClawApp(App[None]):
             return head, {"action": head, "repo_path": repo_path, "spec": spec}
 
         action, ctx = self._parse_natural_command(raw)
+        if action == "chat":
+            return "chat", {"action": "chat", "prompt": ctx.get("prompt", raw)}
         ctx.setdefault("action", action)
         if action == "search":
             ctx.setdefault("include_arxiv", True)
@@ -641,7 +947,37 @@ class ScholarDevClawApp(App[None]):
                 f"Validation passed: {'Yes' if validation.get('passed') else 'No'}",
                 f"Rollback snapshot: {payload.get('rollback_snapshot_id', 'n/a')}",
             ]
+        if action == "chat":
+            return []
         return []
+
+    def _build_chat_system_prompt(self) -> str:
+        base = CHAT_SYSTEM_PROMPTS[self._mode]
+        return (
+            f"{base} "
+            f"Current working directory: {self._pretty_directory()}. "
+            "If the user asks to run a repo workflow, mention the exact shell command they can run here. "
+            "Do not pretend you already executed commands unless the transcript shows it."
+        )
+
+    def _get_llm_client(self) -> LLMClient:
+        auth_provider = self._resolve_auth_provider()
+        if auth_provider is None:
+            raise LLMConfigError("Run `setup` to choose OpenRouter or Ollama first.")
+
+        model = self._model or DEFAULT_MODELS[auth_provider]
+        if auth_provider == AuthProvider.OLLAMA:
+            os.environ.setdefault("OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434")
+            return LLMClient.from_provider(auth_provider, api_key="", model=model)
+
+        key = self._get_saved_key_for_provider(auth_provider) or os.environ.get(
+            auth_provider.env_var_name,
+            "",
+        )
+        if not key:
+            raise LLMConfigError("No OpenRouter key found. Run `setup` and paste your key.")
+        os.environ[auth_provider.env_var_name] = key
+        return LLMClient.from_provider(auth_provider, api_key=key, model=model)
 
     def _record_command(self, command: str) -> None:
         if command and (not self._command_history or self._command_history[-1] != command):
@@ -677,6 +1013,34 @@ class ScholarDevClawApp(App[None]):
         thread = threading.Thread(
             target=self._run_task_in_thread,
             args=(self._active_token, action, request),
+            daemon=True,
+        )
+        thread.start()
+
+    def _start_chat(self, prompt: str) -> None:
+        if self._running_action is not None:
+            self._set_status("Task already running", "warning")
+            return
+        if not self._llm_ready():
+            self._append_output("Error: configure OpenRouter or Ollama first", "error")
+            self._open_setup()
+            self._set_status("LLM setup required", "warning")
+            return
+
+        self._task_token += 1
+        self._active_token = self._task_token
+        self._running_action = "chat"
+        self._active_request = {"action": "chat", "prompt": prompt}
+        self._chat_preview = ""
+        self._context_hints = []
+        self.query_one("#status-bar", StatusBar).start_timer()
+        self._set_status(f"Chatting with {self._provider}", "accent")
+        self._set_live_text("Thinking...", "system")
+        self._update_command_meta()
+
+        thread = threading.Thread(
+            target=self._run_chat_in_thread,
+            args=(self._active_token, prompt),
             daemon=True,
         )
         thread.start()
@@ -727,6 +1091,54 @@ class ScholarDevClawApp(App[None]):
 
         self.call_from_thread(self.post_message, TaskCompleted(token, action, result, request))
 
+    def _run_chat_in_thread(self, token: int, prompt: str) -> None:
+        response_text = ""
+        try:
+            client = self._get_llm_client()
+            messages = self._chat_history[-8:] + [{"role": "user", "content": prompt}]
+            for chunk in client.chat_stream(
+                prompt,
+                messages=messages,
+                system=self._build_chat_system_prompt(),
+                model=self._model,
+                max_tokens=2048,
+                temperature=0.2,
+            ):
+                if token != self._active_token:
+                    client.close()
+                    return
+                if chunk.delta:
+                    response_text += chunk.delta
+                    self.call_from_thread(self.post_message, ChatDelta(token, response_text))
+            client.close()
+            input_tokens = self._estimate_tokens(prompt)
+            output_tokens = self._estimate_tokens(response_text)
+            result = type(
+                "Result",
+                (),
+                {
+                    "ok": True,
+                    "payload": {
+                        "content": response_text.strip(),
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                    },
+                    "error": "",
+                    "logs": [],
+                },
+            )()
+        except (LLMAPIError, LLMConfigError, Exception) as exc:
+            result = type(
+                "Result",
+                (),
+                {"ok": False, "payload": {}, "error": str(exc), "logs": [str(exc)]},
+            )()
+
+        self.call_from_thread(
+            self.post_message,
+            TaskCompleted(token, "chat", result, {"action": "chat", "prompt": prompt}),
+        )
+
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
@@ -760,6 +1172,22 @@ class ScholarDevClawApp(App[None]):
         if action == "clear":
             self.action_clear_screen()
             return
+        if action == "setup":
+            self._open_setup()
+            return
+        if action == "providers":
+            self._append_output("Providers: openrouter, ollama")
+            self._append_output("Use `setup` to configure credentials and model IDs.")
+            return
+        if action == "status":
+            self._append_output(f"Mode: {self._mode}")
+            self._append_output(f"Provider: {self._provider}")
+            self._append_output(f"Model: {self._model or 'unset'}")
+            self._append_output(f"Directory: {self._pretty_directory()}")
+            self._append_output(
+                f"Session tokens: {self._session_input_tokens + self._session_output_tokens}"
+            )
+            return
         if action == "quit":
             self.exit()
             return
@@ -770,12 +1198,43 @@ class ScholarDevClawApp(App[None]):
                 return
             self._set_mode(str(mode))
             return
+        if action == "set_provider":
+            provider = str(request.get("provider", "") or "").strip().lower()
+            if provider not in SUPPORTED_TUI_PROVIDERS:
+                self._append_output("Error: provider must be openrouter or ollama", "error")
+                return
+            self._provider = provider
+            if not self._model:
+                self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[provider]]
+            self._save_runtime_state()
+            self._context_hints = []
+            self._sync_status_bar()
+            self._set_status(f"Provider set to {provider}", "accent")
+            if not self._provider_has_credentials(provider):
+                self._open_setup()
+            self._update_command_meta()
+            return
         if action == "set_model":
-            self._model = str(request.get("model", "auto") or "auto")
+            self._model = str(request.get("model", "") or "")
+            self._save_runtime_state()
             self._context_hints = []
             self._sync_status_bar()
             self._set_status(f"Model set to {self._model}", "accent")
             self._update_command_meta()
+            return
+        if action == "set_key":
+            provider = self._provider if self._provider in SUPPORTED_TUI_PROVIDERS else "openrouter"
+            ok, message = self._save_provider_setup(
+                provider,
+                self._model or DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[provider]],
+                str(request.get("api_key", "") or ""),
+            )
+            if not ok:
+                self._append_output(f"Error: {message}", "error")
+                self._set_status("Key rejected", "error")
+                return
+            self._sync_status_bar()
+            self._set_status("Key saved", "success")
             return
         if action == "set_dir":
             directory = str(request.get("directory", "") or "")
@@ -785,10 +1244,14 @@ class ScholarDevClawApp(App[None]):
                 self._set_status("Directory rejected", "error")
                 return
             self._directory = directory
+            self._save_runtime_state()
             self._context_hints = []
             self._sync_status_bar()
             self._set_status(f"Directory set to {directory}", "accent")
             self._update_command_meta()
+            return
+        if action == "chat":
+            self._start_chat(str(request.get("prompt", "") or command))
             return
 
         self._start_task(action, request)
@@ -831,6 +1294,14 @@ class ScholarDevClawApp(App[None]):
         self._suggestions = []
         self._update_command_meta()
 
+    @on(ChatDelta)
+    def on_chat_delta(self, message: ChatDelta) -> None:
+        if message.token != self._active_token or self._running_action != "chat":
+            return
+        self._chat_preview = message.content
+        self.query_one("#status-bar", StatusBar).update_timer()
+        self._set_live_text(f"Assistant: {message.content}", "info")
+
     @on(TaskLog)
     def on_task_log(self, message: TaskLog) -> None:
         if message.token != self._active_token:
@@ -851,7 +1322,28 @@ class ScholarDevClawApp(App[None]):
         self._active_request = None
 
         result = message.result
-        if result.ok:
+        if result.ok and message.action == "chat":
+            self._clear_progress()
+            content = str(result.payload.get("content", "") or "").strip()
+            if content:
+                lines = content.splitlines()
+                self._append_output(f"Assistant: {lines[0]}")
+                for line in lines[1:]:
+                    self._append_output(line)
+                self._chat_history.extend(
+                    [
+                        {"role": "user", "content": message.request.get("prompt", "")},
+                        {"role": "assistant", "content": content},
+                    ]
+                )
+                self._chat_history = self._chat_history[-12:]
+            self._record_token_usage(
+                int(result.payload.get("input_tokens", 0)),
+                int(result.payload.get("output_tokens", 0)),
+            )
+            self._context_hints = self._suggest_next_commands("chat", result.payload, message.request)
+            self._set_status("chat complete", "success")
+        elif result.ok:
             self._set_progress(message.action, 1.0)
             self._clear_progress()
             self._append_output(f"{PROGRESS_LABELS.get(message.action, 'Done')} {self._progress_bar(1.0)}", "success")
@@ -874,7 +1366,7 @@ class ScholarDevClawApp(App[None]):
 
     def action_cancel_task(self) -> None:
         if self._running_action is None:
-            self._set_status("No task running", "warning")
+            self.exit()
             return
         self._task_token += 1
         self._active_token = self._task_token

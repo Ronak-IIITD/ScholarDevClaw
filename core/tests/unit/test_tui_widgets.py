@@ -68,10 +68,13 @@ def test_phasetracker_set_phase_updates_state_without_crashing():
 def test_statusbar_refresh_does_not_shadow_textual_render():
     status = StatusBar()
 
-    status.set_context(mode="search", model="auto", directory="./repo")
+    status.set_context(mode="search", provider="openrouter", model="anthropic/claude-sonnet-4", directory="./repo")
+    status.set_usage(session_tokens=1536, last_tokens=320)
     status.set_status("Running", "accent")
     status.set_step(1, 3)
     rendered = status.render()
 
     assert callable(getattr(status, "_render", None))
     assert "MODE: search" in str(rendered)
+    assert "PROVIDER: openrouter" in str(rendered)
+    assert "TOKENS: 1.5k" in str(rendered)

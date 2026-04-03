@@ -4,6 +4,37 @@
 
 **Last updated:** 2026-04-03
 
+### 2026-04-03 (TUI LLM onboarding + chat routing)
+
+**Goal:** Turn the TUI into a real provider-backed coding console instead of a dummy command parser, while fixing shell behavior around `Ctrl+C`.
+
+**Summary:** Added keyboard-first onboarding for OpenRouter and Ollama, persisted provider/model selection for the TUI, surfaced provider/model/token state in the inline status bar, routed plain-language prompts to an actual streamed LLM chat path, and changed `Ctrl+C` to exit the TUI when idle while still cancelling active work.
+
+**What changed:**
+
+- **LLM-backed shell**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Added runtime provider/model state loading and persistence.
+    - Added `setup`, `set provider ...`, `set model ...`, `set key ...`, `providers`, `status`, and `chat ...` commands.
+    - Routed non-command prompts to LLM chat instead of incorrectly guessing repo actions from arbitrary text.
+    - Added streamed chat output, per-session token tracking, and provider-specific environment bridging so pipeline and chat flows can reuse configured credentials.
+    - Changed `Ctrl+C` to exit the TUI when no task is running and cancel the active task when one is in flight.
+
+- **Onboarding UI**
+  - `core/src/scholardevclaw/tui/screens.py`
+    - Added a keyboard-only provider setup screen for OpenRouter and Ollama.
+    - Updated help and command palette content to reflect the new LLM setup flow.
+
+- **Status surface**
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - Expanded the inline status bar to show provider and token usage in addition to mode, model, and directory.
+
+- **Coverage**
+  - `core/tests/unit/test_tui_app.py`
+    - Added coverage for chat fallback routing, provider commands, selected-provider resolution, and idle `Ctrl+C` exit behavior.
+  - `core/tests/unit/test_tui_widgets.py`
+    - Added coverage for provider and token display in the status bar.
+
 ### 2026-04-03 (TUI crash fix — StatusBar render collision)
 
 **Goal:** Fix the runtime crash when launching `scholardevclaw tui`.

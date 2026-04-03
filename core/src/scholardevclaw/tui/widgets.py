@@ -170,21 +170,40 @@ class StatusBar(Static):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__("", **kwargs)
         self._mode = "analyze"
+        self._provider = "setup"
         self._model = "auto"
         self._directory = "."
+        self._session_tokens = 0
+        self._last_tokens = 0
         self._message = "Ready"
         self._step_text = ""
         self._start_time = 0.0
         self._level = "info"
         self._refresh_display()
 
-    def set_context(self, *, mode: str | None = None, model: str | None = None, directory: str | None = None) -> None:
+    def set_context(
+        self,
+        *,
+        mode: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        directory: str | None = None,
+    ) -> None:
         if mode is not None:
             self._mode = mode
+        if provider is not None:
+            self._provider = provider
         if model is not None:
             self._model = model
         if directory is not None:
             self._directory = directory
+        self._refresh_display()
+
+    def set_usage(self, *, session_tokens: int | None = None, last_tokens: int | None = None) -> None:
+        if session_tokens is not None:
+            self._session_tokens = session_tokens
+        if last_tokens is not None:
+            self._last_tokens = last_tokens
         self._refresh_display()
 
     def set_status(self, message: str, level: str = "info") -> None:
@@ -216,7 +235,9 @@ class StatusBar(Static):
     def _refresh_display(self) -> None:
         parts = [
             f"MODE: {self._mode}",
+            f"PROVIDER: {self._provider}",
             f"MODEL: {self._model}",
+            f"TOKENS: {self._format_tokens(self._session_tokens)}",
             f"DIR: {self._directory}",
         ]
         tail: list[str] = []
@@ -224,10 +245,18 @@ class StatusBar(Static):
             tail.append(self._message)
         if self._step_text:
             tail.append(self._step_text)
+        if self._last_tokens:
+            tail.append(f"last {self._format_tokens(self._last_tokens)}")
         if self._start_time:
             tail.append(f"{time.perf_counter() - self._start_time:.1f}s")
         suffix = f"   {' | '.join(tail)}" if tail else ""
         self.update("   ".join(parts) + suffix)
+
+    @staticmethod
+    def _format_tokens(value: int) -> str:
+        if value < 1000:
+            return str(value)
+        return f"{value / 1000:.1f}k"
 
 
 class HistoryPane(VerticalScroll):
