@@ -1311,7 +1311,21 @@ def cmd_demo(args):
             _step(f"Validating [{spec_name}] with real benchmarks...")
             t0 = _time.perf_counter()
             runner = ValidationRunner(repo_path)
-            validation = runner.run({}, str(repo_path))
+            validation = runner.run(
+                {
+                    "new_files": [{"path": f.path, "content": f.content} for f in patch.new_files],
+                    "transformations": [
+                        {
+                            "file": t.file,
+                            "original": t.original,
+                            "modified": t.modified,
+                            "changes": t.changes,
+                        }
+                        for t in patch.transformations
+                    ],
+                },
+                str(repo_path),
+            )
             dt = _time.perf_counter() - t0
 
             print(f"  Stage  : {validation.stage}")

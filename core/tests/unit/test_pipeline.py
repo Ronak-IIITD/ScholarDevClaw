@@ -1018,6 +1018,37 @@ def test_run_validate_failure_stage(monkeypatch, tmp_path):
     assert scorecard["stage"] == "test"
 
 
+def test_run_validate_passes_patch_payload(monkeypatch, tmp_path):
+    module = ModuleType("scholardevclaw.validation.runner")
+    seen: dict[str, object] = {}
+
+    class FakeRunner:
+        def __init__(self, repo_path):
+            pass
+
+        def run(self, patch, repo_path):
+            seen["patch"] = patch
+            return SimpleNamespace(
+                passed=True,
+                stage="benchmark",
+                comparison=None,
+                baseline_metrics=None,
+                new_metrics=None,
+                logs="ok",
+                error=None,
+            )
+
+    module.ValidationRunner = FakeRunner
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    pipeline = _pipeline_module()
+    patch_payload = {"new_files": [{"path": "rmsnorm.py", "content": "class RMSNorm:\n    pass\n"}]}
+    result = pipeline.run_validate(str(tmp_path), patch_payload)
+
+    assert result.ok is True
+    assert seen["patch"] == patch_payload
+
+
 def test_run_validate_exception(monkeypatch, tmp_path):
     module = ModuleType("scholardevclaw.validation.runner")
 

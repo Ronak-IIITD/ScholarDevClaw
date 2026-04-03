@@ -418,8 +418,8 @@ async def _run_pipeline_async(
                 await _step_broadcast(f"validate:{spec_name}", "running")
                 t0 = time.time()
 
-                def _do_validate():
-                    return run_validate(repo_path)
+                def _do_validate(payload=generate_payload):
+                    return run_validate(repo_path, payload)
 
                 validate_result = await loop.run_in_executor(None, _do_validate)
                 dt = time.time() - t0

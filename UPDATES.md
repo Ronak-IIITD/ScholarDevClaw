@@ -30,6 +30,35 @@
   - `core/tests/unit/test_api_dashboard_routes.py`
     - Added coverage showing the dashboard async runner delegates to shared pipeline functions.
 
+### 2026-04-03 (Patch-aware validation wiring)
+
+**Goal:** Make validation consume generated patch artifacts through the shared pipeline instead of validating the repository in isolation.
+
+**Summary:** Threaded generated patch payloads into validation call sites and added artifact-level syntax checks so validation now inspects the code it is supposed to validate before benchmark execution begins.
+
+**What changed:**
+
+- **Validation runner**
+  - `core/src/scholardevclaw/validation/runner.py`
+    - Added patch artifact validation for generated Python files and transformed Python snippets.
+    - Validation now stops early on invalid generated artifacts instead of silently ignoring them.
+    - Benchmark logs now retain artifact-validation context.
+
+- **Shared pipeline + callers**
+  - `core/src/scholardevclaw/application/pipeline.py`
+    - `run_validate(...)` now accepts an optional patch payload and forwards it to `ValidationRunner`.
+    - Integration and multi-integrate flows now validate the generated patch payload instead of `{}`.
+  - `core/src/scholardevclaw/api/routes/dashboard.py`
+    - Dashboard validation step now passes the generated payload into `run_validate(...)`.
+  - `core/src/scholardevclaw/cli.py`
+    - Direct validation in the demo/multi-spec flow now passes the actual patch artifact set.
+
+- **Coverage**
+  - `core/tests/unit/test_validation_runner.py`
+    - Added artifact-failure coverage and updated run-path tests for the new artifact-validation stage.
+  - `core/tests/unit/test_pipeline.py`
+    - Added coverage that `run_validate(...)` forwards the patch payload into the validation runner.
+
 ### 2026-04-03 (Test coverage expansion across CLI, pipeline, and agent runtime)
 
 **Goal:** Broaden repository-wide confidence with higher-value automated coverage on public entrypoints and workflow edge cases.

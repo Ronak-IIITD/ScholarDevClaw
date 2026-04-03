@@ -9,6 +9,7 @@ No hardcoded fake numbers — every metric comes from a real measurement.
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -234,14 +235,77 @@ class ValidationRunner:
         self.repo_path = Path(repo_path)
 
     def run(self, patch: dict, repo_path: str) -> ValidationResult:
+        artifact_result = self._validate_patch_artifacts(patch)
+        if not artifact_result.passed:
+            return artifact_result
+
         test_result = self._run_tests()
 
         if not test_result.passed and test_result.error:
             return test_result
 
         benchmark_result = self._run_benchmark()
+        if artifact_result.logs:
+            benchmark_result.logs = "\n".join(
+                part for part in (artifact_result.logs, benchmark_result.logs) if part
+            )
 
         return benchmark_result
+
+    def _validate_patch_artifacts(self, patch: dict) -> ValidationResult:
+        new_files = patch.get("new_files", []) if isinstance(patch, dict) else []
+        transformations = patch.get("transformations", []) if isinstance(patch, dict) else []
+
+        if not new_files and not transformations:
+            return ValidationResult(
+                passed=True,
+                stage="artifacts",
+                logs="No patch artifacts provided - skipping artifact validation",
+            )
+
+        checked = 0
+        issues: list[str] = []
+
+        def _validate_python_snippet(label: str, content: str) -> None:
+            nonlocal checked
+            if not content:
+                return
+            checked += 1
+            try:
+                ast.parse(content)
+            except SyntaxError as exc:
+                issues.append(f"{label}: line {exc.lineno}: {exc.msg}")
+
+        for new_file in new_files:
+            if not isinstance(new_file, dict):
+                continue
+            path = str(new_file.get("path", ""))
+            if path.endswith(".py"):
+                _validate_python_snippet(f"new file {path}", str(new_file.get("content", "")))
+
+        for transformation in transformations:
+            if not isinstance(transformation, dict):
+                continue
+            path = str(transformation.get("file", ""))
+            if path.endswith(".py"):
+                _validate_python_snippet(
+                    f"transformation {path}",
+                    str(transformation.get("modified", "")),
+                )
+
+        if issues:
+            return ValidationResult(
+                passed=False,
+                stage="artifacts",
+                logs="\n".join(issues),
+                error="Patch artifact validation failed",
+            )
+
+        return ValidationResult(
+            passed=True,
+            stage="artifacts",
+            logs=f"Validated {checked} Python patch artifact(s)",
+        )
 
     # ------------------------------------------------------------------
     # Test runner (already real — runs pytest in a subprocess)
