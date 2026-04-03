@@ -4,6 +4,36 @@
 
 **Last updated:** 2026-04-03
 
+### 2026-04-03 (TUI shell rewrite — command-first, keyboard-only flow)
+
+**Goal:** Replace the old boxed, workflow-panel TUI with a thinner terminal-native shell optimized for command execution speed and lower cognitive load.
+
+**Summary:** Rebuilt the TUI around a minimal four-part layout: header, inline status bar, streaming output area, and persistent command input. The new shell removes button-style interactions from the active UI, adds command modes, keyboard-driven autocomplete, history navigation, dynamic hints, and non-blocking background execution for pipeline commands.
+
+**What changed:**
+
+- **Shell rewrite**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Replaced the previous dashboard-style app shell with a command-first terminal interface.
+    - Added command parsing for direct commands, `set ...` config commands, and `:mode` shorthand.
+    - Added mode switching for `analyze`, `search`, and `edit`.
+    - Added inline autocomplete, command history navigation, dynamic context hints, and background task execution with streamed log updates.
+    - Bound keyboard controls around the new shell model: `Tab`, `Up/Down`, `Ctrl+C`, `Ctrl+K`, `Enter`, and `Esc`.
+
+- **Widget simplification**
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - Removed button-based widget behavior from the active widget set.
+    - Reworked log/status/history widgets into thin text-first components with no heavy boxed surfaces.
+
+- **Modal simplification**
+  - `core/src/scholardevclaw/tui/screens.py`
+    - Replaced button-driven overlays with lightweight text/input-based modal helpers to keep the package export surface stable without preserving the old interaction model.
+
+- **Coverage**
+  - `core/tests/unit/test_tui_app.py`
+    - Added shell-specific coverage for `:mode` shorthand parsing and autocomplete ranking.
+
+
 ### 2026-04-03 (Backend execution unification for API + dashboard)
 
 **Goal:** Reduce product-surface drift by moving API and dashboard execution closer to the shared pipeline/analyzer seams.

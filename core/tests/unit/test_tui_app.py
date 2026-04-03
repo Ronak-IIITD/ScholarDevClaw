@@ -101,3 +101,21 @@ def test_handle_escape_double_press_triggers_stop(monkeypatch):
 
     assert any("warning:Press ESC again" in e for e in events)
     assert "stopped" in events
+
+
+def test_build_request_supports_mode_shorthand():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request(":search")
+
+    assert action == "set_mode"
+    assert req == {"mode": "search"}
+
+
+def test_compute_suggestions_prioritizes_best_match():
+    app = _minimal_app_for_unit()
+
+    suggestions = app._compute_suggestions("ana")
+
+    assert suggestions
+    assert suggestions[0] == "analyze ./repo"
