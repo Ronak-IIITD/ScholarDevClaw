@@ -4,6 +4,61 @@
 
 **Last updated:** 2026-04-03
 
+### 2026-04-03 (Backend execution unification for API + dashboard)
+
+**Goal:** Reduce product-surface drift by moving API and dashboard execution closer to the shared pipeline/analyzer seams.
+
+**Summary:** Reworked the dashboard pipeline runner to execute shared pipeline functions instead of maintaining its own repo-analysis/mapping/generation/validation logic, and updated `/repo/analyze` to use the canonical tree-sitter analyzer instead of the legacy PyTorch-only parser.
+
+**What changed:**
+
+- **Dashboard backend unification**
+  - `core/src/scholardevclaw/api/routes/dashboard.py`
+    - Replaced direct analyzer/mapping/generator/validator orchestration with calls to `run_analyze`, `run_suggest`, `run_map`, `run_generate`, and `run_validate`.
+    - Preserved the existing HTTP/WebSocket dashboard contract while making step payloads derive from shared pipeline outputs.
+    - Removed duplicate artifact-writing logic in favor of `run_generate(..., output_dir=...)`.
+
+- **API analysis unification**
+  - `core/src/scholardevclaw/api/server.py`
+    - Replaced `PyTorchRepoParser` usage in `/repo/analyze` with `TreeSitterAnalyzer`.
+    - Added lightweight heuristics to derive `architecture.models` and `trainingLoop` from canonical analyzer output.
+    - Returned dependency/test data from the multi-language analyzer instead of the legacy parser path.
+
+- **Coverage**
+  - `core/tests/unit/test_api_server.py`
+    - Added coverage for `/repo/analyze` using the canonical analyzer path.
+  - `core/tests/unit/test_api_dashboard_routes.py`
+    - Added coverage showing the dashboard async runner delegates to shared pipeline functions.
+
+### 2026-04-03 (Patch-aware validation wiring)
+
+**Goal:** Make validation consume generated patch artifacts through the shared pipeline instead of validating the repository in isolation.
+
+**Summary:** Threaded generated patch payloads into validation call sites and added artifact-level syntax checks so validation now inspects the code it is supposed to validate before benchmark execution begins.
+
+**What changed:**
+
+- **Validation runner**
+  - `core/src/scholardevclaw/validation/runner.py`
+    - Added patch artifact validation for generated Python files and transformed Python snippets.
+    - Validation now stops early on invalid generated artifacts instead of silently ignoring them.
+    - Benchmark logs now retain artifact-validation context.
+
+- **Shared pipeline + callers**
+  - `core/src/scholardevclaw/application/pipeline.py`
+    - `run_validate(...)` now accepts an optional patch payload and forwards it to `ValidationRunner`.
+    - Integration and multi-integrate flows now validate the generated patch payload instead of `{}`.
+  - `core/src/scholardevclaw/api/routes/dashboard.py`
+    - Dashboard validation step now passes the generated payload into `run_validate(...)`.
+  - `core/src/scholardevclaw/cli.py`
+    - Direct validation in the demo/multi-spec flow now passes the actual patch artifact set.
+
+- **Coverage**
+  - `core/tests/unit/test_validation_runner.py`
+    - Added artifact-failure coverage and updated run-path tests for the new artifact-validation stage.
+  - `core/tests/unit/test_pipeline.py`
+    - Added coverage that `run_validate(...)` forwards the patch payload into the validation runner.
+
 ### 2026-04-03 (Test coverage expansion across CLI, pipeline, and agent runtime)
 
 **Goal:** Broaden repository-wide confidence with higher-value automated coverage on public entrypoints and workflow edge cases.

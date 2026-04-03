@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 
 from fastapi.testclient import TestClient
@@ -63,3 +64,145 @@ def test_websocket_ping_pong_contract(monkeypatch):
         ws.send_text('{"type":"ping"}')
         message = ws.receive_text()
         assert '"type": "pong"' in message
+
+
+def test_pipeline_async_uses_shared_pipeline_functions(monkeypatch):
+    _, dashboard = _load_server(monkeypatch)
+
+    analyze_calls: list[str] = []
+    suggest_calls: list[str] = []
+    map_calls: list[tuple[str, str]] = []
+    generate_calls: list[tuple[str, str, str | None]] = []
+    validate_calls: list[str] = []
+
+    monkeypatch.setattr(
+        dashboard,
+        "run_analyze",
+        lambda repo_path: analyze_calls.append(repo_path)
+        or type(
+            "Result",
+            (),
+            {
+                "ok": True,
+                "payload": {
+                    "languages": ["python"],
+                    "language_stats": [{"file_count": 1}],
+                    "frameworks": ["pytorch"],
+                    "entry_points": ["main.py"],
+                    "test_files": ["tests/test_demo.py"],
+                    "patterns": {"rmsnorm": ["model.py"]},
+                },
+                "error": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "run_suggest",
+        lambda repo_path: suggest_calls.append(repo_path)
+        or type(
+            "Result",
+            (),
+            {
+                "ok": True,
+                "payload": {
+                    "suggestions": [
+                        {"pattern": "layernorm", "paper": {"name": "rmsnorm", "title": "RMSNorm"}}
+                    ]
+                },
+                "error": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "run_map",
+        lambda repo_path, spec_name: map_calls.append((repo_path, spec_name))
+        or type(
+            "Result",
+            (),
+            {
+                "ok": True,
+                "payload": {
+                    "target_count": 1,
+                    "strategy": "exact",
+                    "confidence": 92,
+                    "targets": [{"file": "model.py", "line": 3}],
+                },
+                "error": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "run_generate",
+        lambda repo_path, spec_name, output_dir=None: generate_calls.append(
+            (repo_path, spec_name, output_dir)
+        )
+        or type(
+            "Result",
+            (),
+            {
+                "ok": True,
+                "payload": {
+                    "branch_name": "integration/rmsnorm",
+                    "new_files": [{"path": "rmsnorm.py"}],
+                    "transformations": [{"file": "model.py"}],
+                    "output_dir": output_dir,
+                },
+                "error": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "run_validate",
+        lambda repo_path: validate_calls.append(repo_path)
+        or type(
+            "Result",
+            (),
+            {
+                "ok": True,
+                "payload": {
+                    "passed": True,
+                    "stage": "benchmark",
+                    "scorecard": {"summary": "pass"},
+                },
+                "error": None,
+            },
+        )(),
+    )
+
+    dashboard._current_run = dashboard.PipelineRunStatus(
+        run_id="run1234",
+        status="running",
+        repo_path="/tmp/repo",
+        spec_names=[],
+        started_at=0.0,
+    )
+    dashboard._ws_clients.clear()
+
+    asyncio.run(
+        dashboard._run_pipeline_async(
+            run_id="run1234",
+            repo_path="/tmp/repo",
+            spec_names=[],
+            skip_validate=False,
+            output_dir="/tmp/out",
+        )
+    )
+
+    assert analyze_calls == ["/tmp/repo"]
+    assert suggest_calls == ["/tmp/repo"]
+    assert map_calls == [("/tmp/repo", "rmsnorm")]
+    assert generate_calls == [("/tmp/repo", "rmsnorm", "/tmp/out")]
+    assert validate_calls == ["/tmp/repo"]
+    assert dashboard._current_run is not None
+    assert dashboard._current_run.status == "completed"
+    assert [step.step for step in dashboard._current_run.steps] == [
+        "analyze",
+        "suggest",
+        "map:rmsnorm",
+        "generate:rmsnorm",
+        "validate:rmsnorm",
+    ]

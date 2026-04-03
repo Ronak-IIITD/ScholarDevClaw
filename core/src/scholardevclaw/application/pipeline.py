@@ -708,7 +708,12 @@ def run_generate(
         )
 
 
-def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> PipelineResult:
+def run_validate(
+    repo_path: str,
+    patch: dict[str, Any] | None = None,
+    *,
+    log_callback: LogCallback | None = None,
+) -> PipelineResult:
     from scholardevclaw.validation.runner import ValidationRunner
 
     def _metric_dict(metric: Any) -> dict[str, float] | None:
@@ -797,7 +802,7 @@ def run_validate(repo_path: str, *, log_callback: LogCallback | None = None) -> 
         )
 
         runner = ValidationRunner(path)
-        result = runner.run({}, str(path))
+        result = runner.run(patch or {}, str(path))
         baseline_metrics = _metric_dict(getattr(result, "baseline_metrics", None))
         new_metrics = _metric_dict(getattr(result, "new_metrics", None))
         scorecard = _build_scorecard(
@@ -1004,7 +1009,11 @@ def run_integrate(
                 error=generate_result.error,
             )
 
-        validate_result = run_validate(str(path), log_callback=log_callback)
+        validate_result = run_validate(
+            str(path),
+            generate_result.payload,
+            log_callback=log_callback,
+        )
         logs.extend(validate_result.logs)
 
         payload = with_meta(
@@ -1199,7 +1208,11 @@ def run_multi_integrate(
                     log_callback,
                 )
 
-        validate_result = run_validate(str(path), log_callback=log_callback)
+        validate_result = run_validate(
+            str(path),
+            generate_result.payload,
+            log_callback=log_callback,
+        )
         logs.extend(validate_result.logs)
 
         payload = with_meta(

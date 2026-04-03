@@ -155,3 +155,26 @@ def test_liveness_returns_alive_shape(monkeypatch):
     payload = resp.json()
     assert "alive" in payload
     assert "last_heartbeat" in payload
+
+
+def test_repo_analyze_uses_multilang_analyzer(monkeypatch, tmp_path):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    repo = tmp_path / "demo_repo"
+    repo.mkdir()
+    (repo / "model.py").write_text(
+        "class DemoModel:\n"
+        "    pass\n\n"
+        "def train_model():\n"
+        "    return 1\n"
+    )
+
+    resp = client.post("/repo/analyze", json={"repoPath": str(repo)})
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["repoName"] == "demo_repo"
+    assert payload["architecture"]["models"]
+    assert payload["architecture"]["models"][0]["name"] == "DemoModel"
+    assert payload["architecture"]["trainingLoop"]["file"] == "model.py"
