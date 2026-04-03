@@ -9,6 +9,47 @@ import pytest
 import scholardevclaw.cli as cli
 
 
+@pytest.mark.parametrize(
+    ("command", "argv", "handler_name"),
+    [
+        ("analyze", ["scholardevclaw", "analyze", "/tmp/repo"], "cmd_analyze"),
+        ("search", ["scholardevclaw", "search", "rmsnorm"], "cmd_search"),
+        ("suggest", ["scholardevclaw", "suggest", "/tmp/repo"], "cmd_suggest"),
+        ("integrate", ["scholardevclaw", "integrate", "/tmp/repo"], "cmd_integrate"),
+        ("map", ["scholardevclaw", "map", "/tmp/repo", "rmsnorm"], "cmd_map"),
+        ("generate", ["scholardevclaw", "generate", "/tmp/repo", "rmsnorm"], "cmd_generate"),
+        ("validate", ["scholardevclaw", "validate", "/tmp/repo"], "cmd_validate"),
+        ("specs", ["scholardevclaw", "specs"], "cmd_specs"),
+        ("planner", ["scholardevclaw", "planner", "/tmp/repo"], "cmd_planner"),
+        ("critic", ["scholardevclaw", "critic", "/tmp/repo"], "cmd_critic"),
+        ("context", ["scholardevclaw", "context", "list"], "cmd_context"),
+        ("experiment", ["scholardevclaw", "experiment", "/tmp/repo", "rmsnorm"], "cmd_experiment"),
+        ("plugin", ["scholardevclaw", "plugin", "list"], "cmd_plugin"),
+        ("rollback", ["scholardevclaw", "rollback", "list"], "cmd_rollback"),
+        ("github-app", ["scholardevclaw", "github-app", "status"], "cmd_github_app"),
+        ("security", ["scholardevclaw", "security", "/tmp/repo"], "cmd_security"),
+        ("agent", ["scholardevclaw", "agent"], "cmd_agent"),
+        ("auth", ["scholardevclaw", "auth", "status"], "cmd_auth"),
+        ("demo", ["scholardevclaw", "demo"], "cmd_demo"),
+        ("multi-repo", ["scholardevclaw", "multi-repo", "list"], "cmd_multi_repo"),
+        ("tui", ["scholardevclaw", "tui"], "cmd_tui"),
+    ],
+)
+def test_main_dispatches_all_supported_commands(monkeypatch, command, argv, handler_name):
+    called = {}
+
+    def fake_cmd(args):
+        called["command"] = args.command
+        called["args"] = args
+
+    monkeypatch.setattr(cli, handler_name, fake_cmd)
+    monkeypatch.setattr(cli.sys, "argv", argv)
+
+    cli.main()
+
+    assert called["command"] == command
+
+
 def test_main_no_command_exits_with_help(monkeypatch, capsys):
     monkeypatch.setattr(cli.sys, "argv", ["scholardevclaw"])
 
@@ -32,6 +73,28 @@ def test_main_dispatches_to_selected_handler(monkeypatch):
     cli.main()
 
     assert called["repo_path"] == "/tmp/repo"
+
+
+def test_main_integrate_without_spec_sets_spec_to_none(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["spec"] = args.spec
+        called["dry_run"] = args.dry_run
+        called["require_clean"] = args.require_clean
+
+    monkeypatch.setattr(cli, "cmd_integrate", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["scholardevclaw", "integrate", "/tmp/repo", "--dry-run", "--require-clean"],
+    )
+
+    cli.main()
+
+    assert called["spec"] is None
+    assert called["dry_run"] is True
+    assert called["require_clean"] is True
 
 
 def test_cmd_validate_exits_when_failed_and_payload_empty(monkeypatch, capsys):

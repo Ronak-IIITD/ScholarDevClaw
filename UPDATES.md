@@ -2,7 +2,42 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-03-29
+**Last updated:** 2026-04-03
+
+### 2026-04-03 (Test coverage expansion across CLI, pipeline, and agent runtime)
+
+**Goal:** Broaden repository-wide confidence with higher-value automated coverage on public entrypoints and workflow edge cases.
+
+**Summary:** Added broader command-dispatch tests for the CLI surface, strengthened pipeline assertions around validation metadata and rollback/multi-integrate behavior, expanded agent tests for workflow timeout/abort handling plus HTTP bridge retry/header behavior, and fixed an agent workflow status bug uncovered by the new abort coverage.
+
+**What changed:**
+
+- **CLI coverage**
+  - `core/tests/unit/test_cli.py`
+    - Added parameterized dispatch coverage for the full supported command table.
+    - Added argument-shape coverage for `integrate` when no explicit spec is provided.
+
+- **Pipeline coverage**
+  - `core/tests/unit/test_pipeline.py`
+    - Added validation exception assertions for schema metadata preservation.
+    - Added integration success-path coverage that verifies rollback snapshots are marked applied.
+    - Added multi-integrate partial-failure coverage to ensure failed specs are skipped while later validation still runs.
+
+- **Agent coverage**
+  - `agent/src/workflow/engine.ts`
+    - Fixed `execute()` so abort/stall failures are not overwritten back to `completed` during final status resolution.
+  - `agent/src/workflow/engine.test.ts`
+    - Added timeout failure coverage for slow nodes.
+    - Added workflow abort coverage while the engine is idle.
+  - `agent/src/bridges/python-http.test.ts`
+    - Added request contract coverage for auth headers and JSON body shape.
+    - Added retry coverage for abort/timeout-style fetch failures.
+
+**Verification:**
+- ✅ `python3 -m pytest core/tests/unit/test_cli.py core/tests/unit/test_pipeline.py -q`
+  - Result: `105 passed, 1 skipped`
+- ✅ `cd agent && bun run test --run ./src/workflow/engine.test.ts ./src/bridges/python-http.test.ts`
+  - Result: `18 passed`
 
 ### 2026-03-29 (Rescue Mode — multi-area hardening: release, security, agent, CI)
 

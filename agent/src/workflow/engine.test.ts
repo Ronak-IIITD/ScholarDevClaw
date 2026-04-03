@@ -1,9 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DAGEngine } from './engine.js';
 import { FunctionNode, ParallelNode, ConditionalNode } from './node.js';
 import type { WorkflowState } from './types.js';
 
 describe('DAGEngine', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it('should execute nodes in topological order', async () => {
     const engine = new DAGEngine({ workflowId: 'test-1' });
     
@@ -172,5 +177,44 @@ describe('DAGEngine', () => {
     
     expect(state.status).toBe('completed');
     expect(attempts).toBe(3);
+  });
+
+  it('should fail nodes that exceed their timeout', async () => {
+    const engine = new DAGEngine({ workflowId: 'test-8' });
+
+    const node = new FunctionNode(
+      { id: 'slow-node', name: 'Slow', timeout: 10 },
+      async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return 'late-result';
+      }
+    );
+
+    engine.addNode(node);
+
+    const state = await engine.execute({});
+
+    expect(state.status).toBe('failed');
+    expect(state.nodeResults.get('slow-node')?.status).toBe('failed');
+    expect(state.nodeResults.get('slow-node')?.error).toBe('Node timeout');
+  });
+
+  it('should fail the workflow when aborted while idle', async () => {
+    const engine = new DAGEngine({ workflowId: 'test-9' });
+
+    const blockedNode = new FunctionNode(
+      { id: 'blocked', name: 'Blocked', dependencies: ['missing-node'] },
+      async () => 'never-runs'
+    );
+
+    engine.addNode(blockedNode);
+
+    const statePromise = engine.execute({});
+    engine.abort();
+    const state = await statePromise;
+
+    expect(state.status).toBe('failed');
+    expect(state.error).toBe('Workflow aborted');
+    expect(state.nodeResults.size).toBe(0);
   });
 });

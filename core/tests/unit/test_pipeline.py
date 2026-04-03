@@ -1035,6 +1035,24 @@ def test_run_validate_exception(monkeypatch, tmp_path):
     assert "Validation broken" in result.error
 
 
+def test_run_validate_exception_returns_schema_metadata(monkeypatch, tmp_path):
+    module = ModuleType("scholardevclaw.validation.runner")
+
+    class FakeRunner:
+        def __init__(self, repo_path):
+            raise RuntimeError("Validation broken")
+
+    module.ValidationRunner = FakeRunner
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    pipeline = _pipeline_module()
+    result = pipeline.run_validate(str(tmp_path))
+
+    assert result.ok is False
+    assert result.payload["_meta"]["payload_type"] == "validation"
+    assert result.payload["_meta"]["schema_version"]
+
+
 # =========================================================================
 # Tests for run_integrate (additional branches)
 # =========================================================================
@@ -1149,6 +1167,36 @@ def test_run_integrate_no_rollback_when_disabled(monkeypatch, tmp_path):
 
     assert result.ok is True
     assert result.payload.get("rollback_snapshot_id") is None
+
+
+def test_run_integrate_marks_snapshot_applied_after_success(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+    _install_fake_patch_generator(monkeypatch)
+    _install_fake_validation_runner(monkeypatch)
+
+    rollback_module = ModuleType("scholardevclaw.rollback")
+    create_calls: list[tuple[str, str]] = []
+    mark_calls: list[tuple[str, str]] = []
+
+    class FakeRollbackManager:
+        def create_snapshot(self, repo_path, spec_name, description, log_callback=None):
+            create_calls.append((repo_path, spec_name))
+            return SimpleNamespace(id="snap-success")
+
+        def mark_applied(self, repo_path, snapshot_id):
+            mark_calls.append((repo_path, snapshot_id))
+
+    rollback_module.RollbackManager = FakeRollbackManager
+    monkeypatch.setitem(sys.modules, rollback_module.__name__, rollback_module)
+
+    pipeline = _pipeline_module()
+    result = pipeline.run_integrate(str(tmp_path), "rmsnorm", create_rollback=True)
+
+    assert result.ok is True
+    assert result.payload["rollback_snapshot_id"] == "snap-success"
+    assert create_calls == [(str(tmp_path.resolve()), "rmsnorm")]
+    assert mark_calls == [(str(tmp_path.resolve()), "snap-success")]
 
 
 def test_run_integrate_validation_failure_keeps_snapshot_unapplied(monkeypatch, tmp_path):
@@ -1354,6 +1402,49 @@ def test_run_multi_integrate_partial_success(monkeypatch, tmp_path):
 
     assert result.ok is True
     assert result.payload["specs_applied"] == 1
+
+
+def test_run_multi_integrate_skips_failed_specs_but_continues(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    pipeline = _pipeline_module()
+
+    monkeypatch.setattr(
+        pipeline,
+        "_build_mapping_result",
+        lambda repo_path, spec_name, **kwargs: (
+            {"targets": [{"file": f"{spec_name}.py"}], "strategy": "replace", "confidence": 90},
+            {"algorithm": {"name": spec_name.upper()}},
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_generate",
+        lambda repo_path, spec_name, **kwargs: pipeline.PipelineResult(
+            ok=spec_name != "bad-spec",
+            title="Patch Generation",
+            payload={"branch_name": f"integration/{spec_name}"} if spec_name != "bad-spec" else {},
+            logs=[f"generated {spec_name}"] if spec_name != "bad-spec" else [f"failed {spec_name}"],
+            error=None if spec_name != "bad-spec" else "Generation failed",
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_validate",
+        lambda *a, **k: pipeline.PipelineResult(
+            ok=True,
+            title="Validation",
+            payload={"passed": True, "stage": "benchmark"},
+            logs=["validated"],
+            error=None,
+        ),
+    )
+
+    result = pipeline.run_multi_integrate(str(tmp_path), ["rmsnorm", "bad-spec"])
+
+    assert result.ok is True
+    assert result.payload["specs_applied"] == 1
+    assert [item["spec"] for item in result.payload["spec_results"]] == ["rmsnorm"]
+    assert any("Generation failed for bad-spec" in line for line in result.logs)
 
 
 def test_run_multi_integrate_hooks(monkeypatch, tmp_path):

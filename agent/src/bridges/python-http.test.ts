@@ -12,13 +12,17 @@ vi.mock('../utils/logger.js', () => ({
 
 describe('PythonHttpBridge', () => {
   let bridge: PythonHttpBridge;
+  let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
     // 0 retries for deterministic fast tests
     bridge = new PythonHttpBridge('http://localhost:8000', 5000, 0, 100);
+    originalFetch = globalThis.fetch;
   });
 
   afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -37,7 +41,7 @@ describe('PythonHttpBridge', () => {
       headers: { get: () => 'application/json' },
       json: () => Promise.resolve({ status: 'ok' }),
     });
-    vi.stubGlobal('fetch', mockFetch);
+    globalThis.fetch = mockFetch as typeof fetch;
 
     const result = await bridge.healthCheck();
 
@@ -55,12 +59,43 @@ describe('PythonHttpBridge', () => {
       headers: { get: () => 'application/json' },
       text: () => Promise.resolve('Not Found'),
     });
-    vi.stubGlobal('fetch', mockFetch);
+    globalThis.fetch = mockFetch as typeof fetch;
 
     const result = await bridge.healthCheck();
 
     expect(result).toBe(false);
     expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends auth headers and JSON body for repository analysis', async () => {
+    const original = process.env.SCHOLARDEVCLAW_API_AUTH_KEY;
+    process.env.SCHOLARDEVCLAW_API_AUTH_KEY = 'bridge-secret';
+    const authBridge = new PythonHttpBridge('http://localhost:8000', 5000, 0, 100);
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'ok', repo: 'analyzed' }),
+    });
+    globalThis.fetch = mockFetch as typeof fetch;
+
+    const result = await authBridge.analyzeRepo('/tmp/repo');
+
+    expect(result.success).toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:8000/repo/analyze',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer bridge-secret',
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ repoPath: '/tmp/repo' }),
+      }),
+    );
+
+    process.env.SCHOLARDEVCLAW_API_AUTH_KEY = original;
   });
 
   it('rejects non-JSON content type', async () => {
@@ -70,7 +105,7 @@ describe('PythonHttpBridge', () => {
       headers: { get: () => 'text/html' },
       text: () => Promise.resolve('<html></html>'),
     });
-    vi.stubGlobal('fetch', mockFetch);
+    globalThis.fetch = mockFetch as typeof fetch;
 
     const result = await bridge.healthCheck();
 
@@ -80,7 +115,6 @@ describe('PythonHttpBridge', () => {
 
 describe('PythonHttpBridge with retries', () => {
   it('retries on 503 and succeeds', async () => {
-    vi.useFakeTimers();
     const bridge = new PythonHttpBridge('http://localhost:8000', 5000, 2, 10);
     let callCount = 0;
     const mockFetch = vi.fn().mockImplementation(() => {
@@ -100,19 +134,15 @@ describe('PythonHttpBridge with retries', () => {
         json: () => Promise.resolve({ status: 'ok' }),
       });
     });
-    vi.stubGlobal('fetch', mockFetch);
+    globalThis.fetch = mockFetch as typeof fetch;
 
-    const promise = bridge.healthCheck();
-    await vi.advanceTimersByTimeAsync(100);
-    const result = await promise;
+    const result = await bridge.healthCheck();
 
     expect(result).toBe(true);
     expect(callCount).toBe(3);
-    vi.useRealTimers();
   });
 
   it('fails after max retries on persistent 503', async () => {
-    vi.useFakeTimers();
     const bridge = new PythonHttpBridge('http://localhost:8000', 5000, 2, 10);
     const mockFetch = vi.fn().mockResolvedValue({
       ok: false,
@@ -120,13 +150,36 @@ describe('PythonHttpBridge with retries', () => {
       headers: { get: () => 'application/json' },
       text: () => Promise.resolve('Service Unavailable'),
     });
-    vi.stubGlobal('fetch', mockFetch);
+    globalThis.fetch = mockFetch as typeof fetch;
 
-    const promise = bridge.healthCheck();
-    await vi.advanceTimersByTimeAsync(100);
-    const result = await promise;
+    const result = await bridge.healthCheck();
 
     expect(result).toBe(false);
-    vi.useRealTimers();
+  });
+
+  it('retries on abort errors and succeeds on a later attempt', async () => {
+    const bridge = new PythonHttpBridge('http://localhost:8000', 5000, 2, 10);
+    let callCount = 0;
+    const timeoutError = new Error('timed out');
+    timeoutError.name = 'AbortError';
+
+    const mockFetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount < 3) {
+        return Promise.reject(timeoutError);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: () => Promise.resolve({ status: 'ok' }),
+      });
+    });
+    globalThis.fetch = mockFetch as typeof fetch;
+
+    const result = await bridge.healthCheck();
+
+    expect(result).toBe(true);
+    expect(callCount).toBe(3);
   });
 });

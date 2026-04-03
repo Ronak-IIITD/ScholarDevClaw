@@ -208,7 +208,9 @@ export class DAGEngine {
       }
 
       const hasFailed = Array.from(this.nodes.values()).some(n => n.status === 'failed');
-      this.state.status = hasFailed ? 'failed' : 'completed';
+      if (this.state.status !== 'failed') {
+        this.state.status = hasFailed ? 'failed' : 'completed';
+      }
     } catch (error) {
       this.state.status = 'failed';
       this.state.error = error instanceof Error ? error.message : String(error);
