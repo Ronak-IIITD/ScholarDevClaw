@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from scholardevclaw.tui.widgets import HistoryPane, LogView, PhaseTracker
+from scholardevclaw.tui.widgets import HistoryPane, LogView, PhaseTracker, StatusBar
 
 
 def test_logview_detect_level_classification():
@@ -63,3 +63,15 @@ def test_phasetracker_set_phase_updates_state_without_crashing():
     tracker.set_phase("complete")
 
     assert tracker.current_phase == "complete"
+
+
+def test_statusbar_refresh_does_not_shadow_textual_render():
+    status = StatusBar()
+
+    status.set_context(mode="search", model="auto", directory="./repo")
+    status.set_status("Running", "accent")
+    status.set_step(1, 3)
+    rendered = status.render()
+
+    assert callable(getattr(status, "_render", None))
+    assert "MODE: search" in str(rendered)

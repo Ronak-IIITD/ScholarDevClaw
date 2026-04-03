@@ -4,6 +4,23 @@
 
 **Last updated:** 2026-04-03
 
+### 2026-04-03 (TUI crash fix — StatusBar render collision)
+
+**Goal:** Fix the runtime crash when launching `scholardevclaw tui`.
+
+**Summary:** Renamed the `StatusBar` internal refresh helper so it no longer shadows Textual's internal `_render()` method. The previous name caused the widget to return `None` during paint, which crashed the TUI on startup.
+
+**What changed:**
+
+- **Runtime fix**
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - Renamed the status bar's private redraw helper from `_render()` to `_refresh_display()`.
+    - Updated all status/timer/context call sites to use the renamed helper.
+
+- **Coverage**
+  - `core/tests/unit/test_tui_widgets.py`
+    - Added a regression test to ensure the status bar keeps Textual's render path intact.
+
 ### 2026-04-03 (TUI shell polish — fuzzy completion, live progress, next actions)
 
 **Goal:** Make the new terminal shell faster to operate by improving command discovery, reducing log noise during long tasks, and surfacing the next useful command after each completed action.

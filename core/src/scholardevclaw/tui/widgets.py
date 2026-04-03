@@ -176,7 +176,7 @@ class StatusBar(Static):
         self._step_text = ""
         self._start_time = 0.0
         self._level = "info"
-        self._render()
+        self._refresh_display()
 
     def set_context(self, *, mode: str | None = None, model: str | None = None, directory: str | None = None) -> None:
         if mode is not None:
@@ -185,7 +185,7 @@ class StatusBar(Static):
             self._model = model
         if directory is not None:
             self._directory = directory
-        self._render()
+        self._refresh_display()
 
     def set_status(self, message: str, level: str = "info") -> None:
         self._message = message
@@ -193,27 +193,27 @@ class StatusBar(Static):
         self.remove_class("-error", "-success", "-warning", "-accent")
         if level != "info":
             self.add_class(f"-{level}")
-        self._render()
+        self._refresh_display()
 
     def set_center(self, message: str) -> None:
         self._message = message
-        self._render()
+        self._refresh_display()
 
     def set_step(self, current: int, total: int) -> None:
         self._step_text = f"{current}/{total}" if total > 0 else ""
-        self._render()
+        self._refresh_display()
 
     def start_timer(self) -> None:
         self._start_time = time.perf_counter()
-        self._render()
+        self._refresh_display()
 
     def stop_timer(self) -> None:
-        self._render()
+        self._refresh_display()
 
     def update_timer(self) -> None:
-        self._render()
+        self._refresh_display()
 
-    def _render(self) -> None:
+    def _refresh_display(self) -> None:
         parts = [
             f"MODE: {self._mode}",
             f"MODEL: {self._model}",
