@@ -83,11 +83,8 @@ def test_statusbar_refresh_does_not_shadow_textual_render():
     assert "TOKENS: 1.5k" in str(rendered)
 
 
-def test_promptinput_on_key_preserves_base_input_handling_path():
-    source = inspect.getsource(PromptInput.on_key)
-
-    assert "super().on_key(event)" in source
-    assert 'if event.key == "up"' in source
-    assert 'elif event.key == "down"' in source
-    assert 'elif event.key == "tab"' in source
-    assert 'elif event.key == "escape"' in source
+def test_promptinput_delegates_key_handling_to_app_level():
+    """PromptInput no longer overrides _on_key; app handles special keys."""
+    # PromptInput should not have its own on_key override
+    assert not hasattr(PromptInput, "on_key")
+    # App-level on_key intercepts up/down/tab/escape before Input consumes them.
