@@ -100,11 +100,11 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
 
     ProviderSetupScreen > Vertical {
         width: 60;
-        height: auto;
-        max-height: 20;
+        height: 14;
         padding: 1 2;
         border: round $accent;
         background: $surface;
+        overflow-y: auto;
     }
 
     ProviderSetupScreen Input {
