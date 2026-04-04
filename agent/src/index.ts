@@ -263,6 +263,13 @@ async function run(): Promise<void> {
     return;
   }
 
+  if (command === 'tui' || command === '--tui') {
+    // Delegate to OpenTUI-based terminal interface
+    const { main: runOpenTui } = await import('./tui/opentui-app.js');
+    await runOpenTui();
+    return;
+  }
+
   const useHttp = process.env.CORE_BRIDGE_MODE !== 'subprocess';
   const orchestrator = new ScholarDevClawOrchestrator(useHttp);
   await orchestrator.initialize();
