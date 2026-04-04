@@ -103,10 +103,10 @@ def _anthropic_body(
 
 
 def _openai_headers(api_key: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
 
 
 def _openai_body(
@@ -131,10 +131,10 @@ def _openai_body(
 
 
 def _cohere_headers(api_key: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
 
 
 def _cohere_body(
