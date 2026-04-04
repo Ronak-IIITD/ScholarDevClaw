@@ -4,6 +4,37 @@
 
 **Last updated:** 2026-04-04
 
+### 2026-04-04 (TUI reliability deep-fix: OpenRouter auth + command routing)
+
+**Goal:** Eliminate persistent OpenRouter 401 errors after setup and make natural analyze commands reliably run against the current repository instead of mis-parsing conversational filler words.
+
+**Summary:** Hardened TUI credential resolution so OpenRouter always uses a non-empty active key, removed fragile no-key OpenRouter paths that could leave stale empty credentials in state, and tightened command parsing so phrases like `analyze this current repo` target the active directory instead of treating `this` as a filesystem path.
+
+**What changed:**
+
+- **OpenRouter key resolution hardening**
+  - `core/src/scholardevclaw/tui/app.py`
+    - `_get_saved_key_for_provider(...)` now prefers `AuthConfig.get_active_key(provider)` and rejects blank/whitespace keys.
+    - Added fallback scan that still ignores empty keys to avoid selecting stale placeholder entries.
+    - `_provider_has_credentials(...)` now requires a non-empty key value (env or store) for OpenRouter.
+    - `_get_llm_client(...)` now strips key and fails fast if missing; chat no longer proceeds with unauthenticated OpenRouter requests.
+
+- **Setup persistence behavior cleanup**
+  - `core/src/scholardevclaw/tui/app.py`
+    - `_save_provider_setup(...)` now validates OpenRouter keys consistently (`validate=True`) and no longer relies on empty-key placeholder behavior.
+    - Blank key submissions now reuse only genuinely non-empty saved/env keys; otherwise setup fails clearly.
+  - `core/src/scholardevclaw/tui/screens.py`
+    - Setup modal now enforces OpenRouter key requirement when no saved key exists.
+    - Error/hint copy updated to reflect explicit key requirement.
+
+- **Natural command routing fix**
+  - `core/src/scholardevclaw/tui/app.py`
+    - `_build_request(...)` now maps conversational analyze forms (e.g., `analyze this current repo`) to the active directory rather than incorrectly using filler words as path arguments.
+
+- **Coverage**
+  - `core/tests/unit/test_tui_app.py`
+    - Added tests for ignoring empty stored keys, credential checks with empty-key stores, OpenRouter setup requiring real keys, and conversational analyze command routing to current directory.
+
 ### 2026-04-04 (TUI insert-field reliability + setup Enter flow)
 
 **Goal:** Fix broken insertion behavior in the TUI input experience and prevent premature setup submission while entering provider/model/key values.

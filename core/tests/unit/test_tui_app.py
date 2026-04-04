@@ -230,3 +230,86 @@ def test_save_provider_setup_openrouter_accepts_valid_key(monkeypatch, tmp_path)
     assert message == "OK"
     assert app._provider == "openrouter"
     assert os.environ.get("OPENROUTER_API_KEY") == key
+
+
+def test_saved_key_selection_ignores_empty_values(monkeypatch, tmp_path):
+    app = _minimal_app_for_unit()
+    app._save_runtime_state = lambda: None
+    monkeypatch.setenv("SCHOLARDEVCLAW_AUTH_DIR", str(tmp_path))
+
+    # Simulate historical bad state (empty key entry first)
+    app._save_provider_setup("openrouter", "anthropic/claude-sonnet-4", "sk-or-aaaaaaaa")
+    app._save_provider_setup("openrouter", "anthropic/claude-sonnet-4", "sk-or-bbbbbbbb")
+
+    from scholardevclaw.auth.store import AuthStore
+    from scholardevclaw.auth.types import AuthProvider
+
+    store = AuthStore(enable_audit=False, enable_rate_limit=False)
+    config = store.get_config()
+    # Force an empty key to be default to emulate previously broken state
+    for key_obj in config.api_keys:
+        if key_obj.provider == AuthProvider.OPENROUTER:
+            key_obj.key = ""
+            config.default_key_id = key_obj.id
+            break
+    store._save_config(config)
+
+    resolved = app._get_saved_key_for_provider(AuthProvider.OPENROUTER)
+
+    # Should not return empty/whitespace key
+    assert resolved in {None, "sk-or-aaaaaaaa", "sk-or-bbbbbbbb"}
+    if resolved is not None:
+        assert resolved.strip()
+
+
+def test_provider_has_credentials_false_when_only_empty_openrouter_key(monkeypatch, tmp_path):
+    app = _minimal_app_for_unit()
+    app._provider = "openrouter"
+    app._model = "qwen/qwen3.6-plus:free"
+    app._save_runtime_state = lambda: None
+    monkeypatch.setenv("SCHOLARDEVCLAW_AUTH_DIR", str(tmp_path))
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from scholardevclaw.auth.store import AuthStore
+    from scholardevclaw.auth.types import AuthProvider
+
+    store = AuthStore(enable_audit=False, enable_rate_limit=False)
+    store.add_api_key(
+        "sk-or-cccccccc",
+        "temp",
+        AuthProvider.OPENROUTER,
+        set_default=True,
+        validate=True,
+        metadata={"source": "test"},
+    )
+    config = store.get_config()
+    for key_obj in config.api_keys:
+        if key_obj.provider == AuthProvider.OPENROUTER:
+            key_obj.key = ""
+            config.default_key_id = key_obj.id
+            break
+    store._save_config(config)
+
+    assert app._provider_has_credentials("openrouter") is False
+
+
+def test_save_provider_setup_openrouter_requires_key_even_free_model(monkeypatch, tmp_path):
+    app = _minimal_app_for_unit()
+    app._save_runtime_state = lambda: None
+    monkeypatch.setenv("SCHOLARDEVCLAW_AUTH_DIR", str(tmp_path))
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    ok, message = app._save_provider_setup("openrouter", "qwen/qwen3.6-plus:free", "")
+
+    assert ok is False
+    assert "requires an API key" in message
+
+
+def test_build_request_analyze_current_repo_uses_active_directory():
+    app = _minimal_app_for_unit()
+    app._directory = "/tmp/repo"
+
+    action, req = app._build_request("analyze this current repo")
+
+    assert action == "analyze"
+    assert req["repo_path"] == "/tmp/repo"

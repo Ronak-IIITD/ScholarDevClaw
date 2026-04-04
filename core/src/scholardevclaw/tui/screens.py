@@ -177,15 +177,8 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         if not model:
             error.update("Error: model is required")
             return
-        # Free OpenRouter models (ending in :free) don't need an API key
-        is_free_model = model.endswith(":free")
-        if (
-            provider == "openrouter"
-            and not api_key
-            and not self._has_saved_key
-            and not is_free_model
-        ):
-            error.update("Error: OpenRouter requires an API key (or use a :free model)")
+        if provider == "openrouter" and not api_key and not self._has_saved_key:
+            error.update("Error: OpenRouter requires an API key")
             return
 
         self.dismiss(
