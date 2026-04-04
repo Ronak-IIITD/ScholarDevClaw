@@ -94,22 +94,29 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
 
     DEFAULT_CSS = """
     ProviderSetupScreen {
-        align: left top;
+        align: center middle;
         background: $background 80%;
     }
 
     ProviderSetupScreen > Vertical {
-        width: 100%;
+        width: 60;
         height: auto;
+        max-height: 20;
         padding: 1 2;
+        border: round $accent;
+        background: $surface;
     }
 
     ProviderSetupScreen Input {
         width: 100%;
-        height: 1;
-        border: none;
-        padding: 0;
+        height: 3;
+        border: solid $border;
+        padding: 0 1;
         margin: 0 0 1 0;
+    }
+
+    ProviderSetupScreen Input:focus {
+        border: solid $accent;
     }
 
     #setup-hint {
@@ -170,8 +177,15 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         if not model:
             error.update("Error: model is required")
             return
-        if provider == "openrouter" and not api_key and not self._has_saved_key:
-            error.update("Error: OpenRouter requires an API key")
+        # Free OpenRouter models (ending in :free) don't need an API key
+        is_free_model = model.endswith(":free")
+        if (
+            provider == "openrouter"
+            and not api_key
+            and not self._has_saved_key
+            and not is_free_model
+        ):
+            error.update("Error: OpenRouter requires an API key (or use a :free model)")
             return
 
         self.dismiss(

@@ -351,6 +351,9 @@ class ScholarDevClawApp(App[None]):
             return False
         if auth_provider == AuthProvider.OLLAMA:
             return True
+        # Free OpenRouter models don't need a key
+        if self._model and self._model.endswith(":free"):
+            return True
         if os.environ.get(auth_provider.env_var_name):
             return True
         return self._get_saved_key_for_provider(auth_provider) is not None
@@ -421,6 +424,7 @@ class ScholarDevClawApp(App[None]):
 
         try:
             if auth_provider == AuthProvider.OPENROUTER:
+                is_free_model = model.strip().endswith(":free")
                 if api_key:
                     if existing and existing.key == api_key:
                         store.set_default_key(existing.id)
@@ -430,12 +434,22 @@ class ScholarDevClawApp(App[None]):
                             "openrouter-tui",
                             auth_provider,
                             set_default=True,
-                            validate=True,
+                            validate=not is_free_model,
                             metadata={"source": "tui"},
                         )
                     os.environ[auth_provider.env_var_name] = api_key
                 elif existing is not None:
                     store.set_default_key(existing.id)
+                elif is_free_model:
+                    # Free models don't need a key — store a placeholder
+                    store.add_api_key(
+                        "",
+                        "openrouter-free",
+                        auth_provider,
+                        set_default=True,
+                        validate=False,
+                        metadata={"source": "tui", "free": True},
+                    )
                 elif not os.environ.get(auth_provider.env_var_name):
                     return False, "OpenRouter requires an API key"
             else:
@@ -999,10 +1013,13 @@ class ScholarDevClawApp(App[None]):
             auth_provider.env_var_name,
             "",
         )
-        if not key:
+        # Free OpenRouter models (ending in :free) don't require an API key
+        is_free_model = model.endswith(":free")
+        if not key and not is_free_model:
             raise LLMConfigError("No OpenRouter key found. Run `setup` and paste your key.")
-        os.environ[auth_provider.env_var_name] = key
-        return LLMClient.from_provider(auth_provider, api_key=key, model=model)
+        if key:
+            os.environ[auth_provider.env_var_name] = key
+        return LLMClient.from_provider(auth_provider, api_key=key or "", model=model)
 
     def _record_command(self, command: str) -> None:
         if command and (not self._command_history or self._command_history[-1] != command):
