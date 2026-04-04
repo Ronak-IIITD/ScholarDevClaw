@@ -272,7 +272,7 @@ class ScholarDevClawApp(App[None]):
         self._update_command_meta()
         self.set_interval(6.0, self._rotate_hint)
         self.query_one("#prompt-input", PromptInput).focus()
-        self.set_timer(0, self._maybe_show_setup)
+        self.set_timer(0.01, self._maybe_show_setup)
 
     # ------------------------------------------------------------------
     # Runtime configuration
@@ -355,7 +355,11 @@ class ScholarDevClawApp(App[None]):
         return self._get_saved_key_for_provider(auth_provider) is not None
 
     def _llm_ready(self) -> bool:
-        return self._provider in SUPPORTED_TUI_PROVIDERS and bool(self._model) and self._provider_has_credentials()
+        return (
+            self._provider in SUPPORTED_TUI_PROVIDERS
+            and bool(self._model)
+            and self._provider_has_credentials()
+        )
 
     def _maybe_show_setup(self) -> None:
         if self._llm_ready():
@@ -365,7 +369,9 @@ class ScholarDevClawApp(App[None]):
     def _open_setup(self) -> None:
         self.push_screen(
             ProviderSetupScreen(
-                provider=self._provider if self._provider in SUPPORTED_TUI_PROVIDERS else "openrouter",
+                provider=self._provider
+                if self._provider in SUPPORTED_TUI_PROVIDERS
+                else "openrouter",
                 model=self._model or DEFAULT_MODELS[AuthProvider.OPENROUTER],
                 has_saved_key=self._provider_has_credentials("openrouter"),
             ),
@@ -394,7 +400,9 @@ class ScholarDevClawApp(App[None]):
         self._sync_status_bar()
         self._update_command_meta()
 
-    def _save_provider_setup(self, provider: str, model: str, api_key: str = "") -> tuple[bool, str]:
+    def _save_provider_setup(
+        self, provider: str, model: str, api_key: str = ""
+    ) -> tuple[bool, str]:
         provider_name = provider.strip().lower()
         auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider_name)
         if auth_provider is None:
@@ -421,6 +429,7 @@ class ScholarDevClawApp(App[None]):
                             "openrouter-tui",
                             auth_provider,
                             set_default=True,
+                            validate=True,
                             metadata={"source": "tui"},
                         )
                     os.environ[auth_provider.env_var_name] = api_key
@@ -439,7 +448,9 @@ class ScholarDevClawApp(App[None]):
                         set_default=True,
                         metadata={"source": "tui"},
                     )
-                os.environ.setdefault("OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434")
+                os.environ.setdefault(
+                    "OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434"
+                )
         except Exception as exc:
             return False, str(exc)
 
@@ -489,7 +500,9 @@ class ScholarDevClawApp(App[None]):
 
     def _resolve_model_provider(self) -> tuple[str | None, str | None]:
         if self._provider in SUPPORTED_TUI_PROVIDERS:
-            return self._provider, self._model or DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
+            return self._provider, self._model or DEFAULT_MODELS[
+                SUPPORTED_TUI_PROVIDERS[self._provider]
+            ]
         if not self._model or self._model == "auto":
             return None, None
         if ":" in self._model:
@@ -520,9 +533,14 @@ class ScholarDevClawApp(App[None]):
                 os.environ.pop("SCHOLARDEVCLAW_API_MODEL", None)
             key = None
             if auth_provider == AuthProvider.OLLAMA:
-                os.environ.setdefault("OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434")
+                os.environ.setdefault(
+                    "OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434"
+                )
             elif provider_env_var:
-                key = self._get_saved_key_for_provider(auth_provider) or os.environ.get(provider_env_var)
+                assert auth_provider is not None
+                key = self._get_saved_key_for_provider(auth_provider) or os.environ.get(
+                    provider_env_var
+                )
             if provider_env_var and key:
                 os.environ[provider_env_var] = key
                 os.environ["SCHOLARDEVCLAW_API_KEY"] = key
@@ -540,7 +558,15 @@ class ScholarDevClawApp(App[None]):
         tokens = prompt.strip().split()
         ctx: dict[str, Any] = {}
         normalized = lower
-        for prefix in ("please ", "can you ", "could you ", "would you ", "lets ", "let's ", "run "):
+        for prefix in (
+            "please ",
+            "can you ",
+            "could you ",
+            "would you ",
+            "lets ",
+            "let's ",
+            "run ",
+        ):
             if normalized.startswith(prefix):
                 normalized = normalized[len(prefix) :].strip()
                 break
@@ -740,10 +766,7 @@ class ScholarDevClawApp(App[None]):
         commands = self._all_commands()
         if not prompt:
             return []
-        scored = [
-            (self._fuzzy_score(prompt, candidate), candidate)
-            for candidate in commands
-        ]
+        scored = [(self._fuzzy_score(prompt, candidate), candidate) for candidate in commands]
         ranked = [
             candidate
             for score, candidate in sorted(scored, key=lambda item: item[0], reverse=True)
@@ -794,8 +817,7 @@ class ScholarDevClawApp(App[None]):
             return [f"suggest {repo}", f"validate {repo}", ":edit"]
         if action == "suggest":
             top_spec = (
-                payload.get("suggestions", [{}])[0]
-                .get("spec")
+                payload.get("suggestions", [{}])[0].get("spec")
                 or payload.get("suggestions", [{}])[0].get("id")
                 or spec
             )
@@ -967,7 +989,9 @@ class ScholarDevClawApp(App[None]):
 
         model = self._model or DEFAULT_MODELS[auth_provider]
         if auth_provider == AuthProvider.OLLAMA:
-            os.environ.setdefault("OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434")
+            os.environ.setdefault(
+                "OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434"
+            )
             return LLMClient.from_provider(auth_provider, api_key="", model=model)
 
         key = self._get_saved_key_for_provider(auth_provider) or os.environ.get(
@@ -1048,6 +1072,7 @@ class ScholarDevClawApp(App[None]):
     def _run_task_in_thread(self, token: int, action: str, request: dict[str, Any]) -> None:
         previous_env = self._apply_provider_env()
         try:
+
             def _log_callback(line: str) -> None:
                 self.call_from_thread(self.post_message, TaskLog(token, line))
 
@@ -1341,15 +1366,22 @@ class ScholarDevClawApp(App[None]):
                 int(result.payload.get("input_tokens", 0)),
                 int(result.payload.get("output_tokens", 0)),
             )
-            self._context_hints = self._suggest_next_commands("chat", result.payload, message.request)
+            self._context_hints = self._suggest_next_commands(
+                "chat", result.payload, message.request
+            )
             self._set_status("chat complete", "success")
         elif result.ok:
             self._set_progress(message.action, 1.0)
             self._clear_progress()
-            self._append_output(f"{PROGRESS_LABELS.get(message.action, 'Done')} {self._progress_bar(1.0)}", "success")
+            self._append_output(
+                f"{PROGRESS_LABELS.get(message.action, 'Done')} {self._progress_bar(1.0)}",
+                "success",
+            )
             for line in self._summarize_result(message.action, result.payload):
                 self._append_output(line)
-            self._context_hints = self._suggest_next_commands(message.action, result.payload, message.request)
+            self._context_hints = self._suggest_next_commands(
+                message.action, result.payload, message.request
+            )
             self._set_status(f"{message.action} complete", "success")
         else:
             self._clear_progress()

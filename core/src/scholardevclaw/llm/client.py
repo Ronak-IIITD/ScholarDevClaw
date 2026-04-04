@@ -550,7 +550,12 @@ class LLMClient:
         if isinstance(provider, str):
             provider = AuthProvider(provider)
 
-        if api_key is None:
+        if provider == AuthProvider.OLLAMA:
+            if api_key is None:
+                api_key = ""
+            if base_url is None:
+                base_url = os.environ.get("OLLAMA_HOST", "").strip() or provider.default_base_url
+        elif api_key is None:
             api_key = os.environ.get(provider.env_var_name, "")
 
         return cls(
@@ -577,15 +582,16 @@ class LLMClient:
         from scholardevclaw.auth.store import AuthStore
 
         store = AuthStore()
-        key = store.get_api_key(provider)
-        if key is None:
+        config = store.get_config()
+        key_obj = config.get_active_key(provider)
+        if key_obj is None:
             raise LLMConfigError(
                 "No API key found in auth store. Run 'scholardevclaw auth setup' to add one."
             )
 
         return cls(
-            provider=key.provider,
-            api_key=key.key,
+            provider=key_obj.provider,
+            api_key=key_obj.key,
             base_url=base_url,
             model=model,
             timeout=timeout,

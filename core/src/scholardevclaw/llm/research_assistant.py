@@ -577,9 +577,15 @@ def _auto_detect_client(*, model: str | None = None) -> LLMClient | None:
     try:
         import httpx
 
-        resp = httpx.get("http://localhost:11434/api/tags", timeout=2.0)
+        ollama_host = os.environ.get("OLLAMA_HOST", "").strip() or "http://localhost:11434"
+        resp = httpx.get(f"{ollama_host.rstrip('/')}/api/tags", timeout=2.0)
         if resp.status_code == 200:
-            return LLMClient.from_provider("ollama", api_key="", model=model)
+            return LLMClient.from_provider(
+                "ollama",
+                api_key="",
+                base_url=ollama_host,
+                model=model,
+            )
     except Exception:
         pass
 

@@ -2,7 +2,45 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-03
+**Last updated:** 2026-04-04
+
+### 2026-04-04 (TUI startup reliability + Ollama/OpenRouter wiring fixes)
+
+**Goal:** Resolve TUI startup instability and provider connectivity issues affecting Ollama and OpenRouter setup flow.
+
+**Summary:** Replaced the zero-delay TUI setup timer with a safe deferred delay, fixed Ollama client initialization to use `OLLAMA_HOST` as base URL (never as API key), aligned Ollama auto-detect host probing with `OLLAMA_HOST`, and enabled strict OpenRouter key-format validation during TUI setup. Added focused unit tests for each fix.
+
+**What changed:**
+
+- **TUI startup safety**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Replaced `set_timer(0, ...)` with a tiny positive delay to avoid Textual zero-interval timer crash path.
+
+- **Provider wiring fixes**
+  - `core/src/scholardevclaw/llm/client.py`
+    - Updated `LLMClient.from_provider()` for Ollama:
+      - `api_key` defaults to empty string (never sourced from env).
+      - `base_url` defaults from `OLLAMA_HOST` when present, otherwise provider default.
+    - Preserved non-Ollama env-key behavior.
+
+- **Ollama auto-detect host consistency**
+  - `core/src/scholardevclaw/llm/research_assistant.py`
+    - `_auto_detect_client()` now probes `${OLLAMA_HOST}/api/tags` (fallback localhost) and passes the resolved host into `LLMClient.from_provider(..., base_url=...)`.
+
+- **OpenRouter setup validation**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Enabled `validate=True` when persisting new OpenRouter keys via `AuthStore.add_api_key(...)` so malformed keys are rejected immediately.
+
+- **Coverage**
+  - `core/tests/unit/test_llm_client.py` (new)
+    - Added Ollama host/api-key defaults coverage.
+    - Added non-Ollama env-key behavior coverage.
+    - Added trailing-slash URL join coverage for Ollama chat endpoint construction.
+  - `core/tests/unit/test_llm_research_assistant.py` (new)
+    - Added coverage for `OLLAMA_HOST`-aware Ollama probe and client construction.
+  - `core/tests/unit/test_tui_app.py`
+    - Added regression test ensuring TUI mount no longer uses `set_timer(0, ...)`.
+    - Added OpenRouter malformed-key rejection and valid-key acceptance coverage.
 
 ### 2026-04-03 (TUI LLM onboarding + chat routing)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import inspect
 
 from scholardevclaw.tui.app import ScholarDevClawApp
 
@@ -197,3 +198,35 @@ def test_action_cancel_task_exits_when_idle():
     app.action_cancel_task()
 
     assert events == ["exit"]
+
+
+def test_on_mount_does_not_use_zero_delay_timer():
+    source = inspect.getsource(ScholarDevClawApp.on_mount)
+
+    assert "set_timer(0," not in source
+    assert "set_timer(" in source
+
+
+def test_save_provider_setup_openrouter_rejects_malformed_key(monkeypatch, tmp_path):
+    app = _minimal_app_for_unit()
+    app._save_runtime_state = lambda: None
+    monkeypatch.setenv("SCHOLARDEVCLAW_AUTH_DIR", str(tmp_path))
+
+    ok, message = app._save_provider_setup("openrouter", "anthropic/claude-sonnet-4", "bad-key")
+
+    assert ok is False
+    assert "Invalid key format for openrouter" in message
+
+
+def test_save_provider_setup_openrouter_accepts_valid_key(monkeypatch, tmp_path):
+    app = _minimal_app_for_unit()
+    app._save_runtime_state = lambda: None
+    monkeypatch.setenv("SCHOLARDEVCLAW_AUTH_DIR", str(tmp_path))
+
+    key = "sk-or-1234567890"
+    ok, message = app._save_provider_setup("openrouter", "anthropic/claude-sonnet-4", key)
+
+    assert ok is True
+    assert message == "OK"
+    assert app._provider == "openrouter"
+    assert os.environ.get("OPENROUTER_API_KEY") == key
