@@ -136,7 +136,7 @@ class PythonServer {
 // Main TUI App
 // ---------------------------------------------------------------------------
 
-async function main() {
+export async function main() {
   const state: AppState = {
     mode: "analyze",
     provider: process.env.SCHOLARDEVCLAW_API_PROVIDER || DEFAULT_PROVIDER,
