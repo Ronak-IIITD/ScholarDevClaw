@@ -398,9 +398,25 @@ class PromptInput(Input):
     class SuggestionDismiss(Message):
         pass
 
-    # Key interception is handled at the app level via on_key()
-    # so that special keys (up/down/tab/escape) are intercepted
-    # before Input's internal handler consumes them.
+    async def _on_key(self, event: events.Key) -> None:
+        if event.key == "up":
+            self.post_message(self.HistoryPrev())
+            event.stop()
+            return
+        elif event.key == "down":
+            self.post_message(self.HistoryNext())
+            event.stop()
+            return
+        elif event.key == "tab":
+            self.post_message(self.AutoComplete())
+            event.stop()
+            return
+        elif event.key == "escape":
+            self.post_message(self.SuggestionDismiss())
+            event.stop()
+            return
+        # All other keys fall through to Input's default handler.
+        await super()._on_key(event)
 
 
 class ChatLog(VerticalScroll):

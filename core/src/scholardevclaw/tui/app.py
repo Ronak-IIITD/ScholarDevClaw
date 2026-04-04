@@ -275,33 +275,6 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#prompt-input", PromptInput).focus()
         self.set_timer(0.01, self._maybe_show_setup)
 
-    def on_key(self, event: Key) -> None:
-        """Intercept special keys before PromptInput consumes them."""
-        # Only intercept when prompt is focused
-        try:
-            prompt = self.query_one("#prompt-input", PromptInput)
-        except Exception:
-            return
-        if not prompt.has_focus:
-            return
-
-        if event.key == "up":
-            event.prevent_default()
-            event.stop()
-            self.on_history_prev()
-        elif event.key == "down":
-            event.prevent_default()
-            event.stop()
-            self.on_history_next()
-        elif event.key == "tab":
-            event.prevent_default()
-            event.stop()
-            self.on_autocomplete()
-        elif event.key == "escape":
-            event.prevent_default()
-            event.stop()
-            self.on_suggestion_dismiss()
-
     # ------------------------------------------------------------------
     # Runtime configuration
     # ------------------------------------------------------------------
