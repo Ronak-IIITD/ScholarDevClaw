@@ -142,7 +142,11 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         with Vertical():
             yield Static("LLM Setup")
             yield Static("", id="setup-hint")
-            yield Input(value=self._provider, placeholder="Provider: openrouter or ollama", id="setup-provider")
+            yield Input(
+                value=self._provider,
+                placeholder="Provider: openrouter or ollama",
+                id="setup-provider",
+            )
             yield Input(value=self._model, placeholder="Model ID", id="setup-model")
             yield Input(password=True, placeholder="OpenRouter API key", id="setup-key")
             yield Static("", id="setup-error")
@@ -183,8 +187,20 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         self._provider = event.value.strip().lower()
         self._refresh_hint()
 
-    @on(Input.Submitted)
-    def on_input_submitted(self) -> None:
+    @on(Input.Submitted, "#setup-provider")
+    def on_provider_submitted(self) -> None:
+        self.query_one("#setup-model", Input).focus()
+
+    @on(Input.Submitted, "#setup-model")
+    def on_model_submitted(self) -> None:
+        provider = self.query_one("#setup-provider", Input).value.strip().lower()
+        if provider == "ollama":
+            self.action_submit_setup()
+            return
+        self.query_one("#setup-key", Input).focus()
+
+    @on(Input.Submitted, "#setup-key")
+    def on_key_submitted(self) -> None:
         self.action_submit_setup()
 
     def _refresh_hint(self) -> None:
@@ -198,7 +214,11 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
             )
             return
 
-        reuse = "leave key blank to reuse saved key" if self._has_saved_key else "paste your OpenRouter key"
+        reuse = (
+            "leave key blank to reuse saved key"
+            if self._has_saved_key
+            else "paste your OpenRouter key"
+        )
         hint.update(
             "Provider -> OpenRouter\n"
             "Model -> full OpenRouter model id, for example `openai/gpt-4.1-mini` or `anthropic/claude-sonnet-4`\n"

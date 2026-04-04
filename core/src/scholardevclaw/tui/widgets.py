@@ -199,7 +199,9 @@ class StatusBar(Static):
             self._directory = directory
         self._refresh_display()
 
-    def set_usage(self, *, session_tokens: int | None = None, last_tokens: int | None = None) -> None:
+    def set_usage(
+        self, *, session_tokens: int | None = None, last_tokens: int | None = None
+    ) -> None:
         if session_tokens is not None:
             self._session_tokens = session_tokens
         if last_tokens is not None:
@@ -409,6 +411,9 @@ class PromptInput(Input):
         elif event.key == "escape":
             self.post_message(self.SuggestionDismiss())
             event.stop()
+        else:
+            # Preserve Input's default key handling (typing, paste, cursor movement).
+            super().on_key(event)
 
 
 class ChatLog(VerticalScroll):

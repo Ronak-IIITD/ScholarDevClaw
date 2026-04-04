@@ -4,6 +4,31 @@
 
 **Last updated:** 2026-04-04
 
+### 2026-04-04 (TUI insert-field reliability + setup Enter flow)
+
+**Goal:** Fix broken insertion behavior in the TUI input experience and prevent premature setup submission while entering provider/model/key values.
+
+**Summary:** Restored default Textual input handling for regular key entry/paste in `PromptInput` by delegating non-intercepted keys to the base `Input` handler, and changed setup Enter behavior to field-scoped submission flow (provider -> model -> key/submit) instead of global submit-on-any-field.
+
+**What changed:**
+
+- **Input insertion reliability**
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - `PromptInput.on_key(...)` now calls `super().on_key(event)` for non-special keys so typing/paste/cursor behavior remains native.
+
+- **Setup field Enter behavior**
+  - `core/src/scholardevclaw/tui/screens.py`
+    - Replaced broad `@on(Input.Submitted)` with field-specific handlers:
+      - Enter on provider focuses model
+      - Enter on model focuses key (or submits directly for Ollama)
+      - Enter on key submits setup
+
+- **Coverage**
+  - `core/tests/unit/test_tui_screens.py` (new)
+    - Added regression coverage that submitted handlers are field-scoped.
+  - `core/tests/unit/test_tui_widgets.py`
+    - Added regression coverage that `PromptInput.on_key` preserves base input handling path.
+
 ### 2026-04-04 (TUI startup reliability + Ollama/OpenRouter wiring fixes)
 
 **Goal:** Resolve TUI startup instability and provider connectivity issues affecting Ollama and OpenRouter setup flow.

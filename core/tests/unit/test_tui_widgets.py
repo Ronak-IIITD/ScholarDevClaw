@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import inspect
 from types import SimpleNamespace
 
-from scholardevclaw.tui.widgets import HistoryPane, LogView, PhaseTracker, StatusBar
+from scholardevclaw.tui.widgets import HistoryPane, LogView, PhaseTracker, PromptInput, StatusBar
 
 
 def test_logview_detect_level_classification():
@@ -68,7 +69,9 @@ def test_phasetracker_set_phase_updates_state_without_crashing():
 def test_statusbar_refresh_does_not_shadow_textual_render():
     status = StatusBar()
 
-    status.set_context(mode="search", provider="openrouter", model="anthropic/claude-sonnet-4", directory="./repo")
+    status.set_context(
+        mode="search", provider="openrouter", model="anthropic/claude-sonnet-4", directory="./repo"
+    )
     status.set_usage(session_tokens=1536, last_tokens=320)
     status.set_status("Running", "accent")
     status.set_step(1, 3)
@@ -78,3 +81,13 @@ def test_statusbar_refresh_does_not_shadow_textual_render():
     assert "MODE: search" in str(rendered)
     assert "PROVIDER: openrouter" in str(rendered)
     assert "TOKENS: 1.5k" in str(rendered)
+
+
+def test_promptinput_on_key_preserves_base_input_handling_path():
+    source = inspect.getsource(PromptInput.on_key)
+
+    assert "super().on_key(event)" in source
+    assert 'if event.key == "up"' in source
+    assert 'elif event.key == "down"' in source
+    assert 'elif event.key == "tab"' in source
+    assert 'elif event.key == "escape"' in source
