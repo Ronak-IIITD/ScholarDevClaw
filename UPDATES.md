@@ -4,6 +4,33 @@
 
 **Last updated:** 2026-04-04
 
+### 2026-04-04 (TUI polish + reliability: suppress background noise, better chat grounding)
+
+**Goal:** Improve operator experience by removing noisy background terminal output from TUI runs and reducing underwhelming/generic chat responses that were not grounded to the current repository context.
+
+**Summary:** Wrapped background task/chat execution in stdout/stderr redirection so subprocess and pipeline print noise no longer leaks into user-visible terminal output, tightened chat system prompt grounding with a live repository snapshot and uncertainty constraints, and reduced startup logging verbosity to keep the interface clean.
+
+**What changed:**
+
+- **Background output suppression**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Added `contextlib.redirect_stdout` / `redirect_stderr` around threaded workflow/chat execution paths to prevent background print noise from bleeding into the TUI host terminal.
+    - Retained TUI-native status/progress/log output so operators still see actionable signal without raw backend chatter.
+
+- **Chat quality guardrails**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Strengthened `_build_chat_system_prompt()` with explicit anti-hallucination constraints.
+    - Added `_build_repo_snapshot()` to include a lightweight directory + marker-file snapshot in the prompt, improving context grounding.
+    - Added concise greeting behavior guidance for short inputs (less verbose small-talk output).
+
+- **UI noise reduction**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Reduced TUI bootstrap logging level from `INFO` to `WARNING` to avoid unnecessary runtime clutter.
+
+- **Verification**
+  - ✅ `pytest -q core/tests/unit/test_tui_app.py core/tests/unit/test_tui_widgets.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_init.py core/tests/unit/test_tui_clipboard.py`
+  - Result: `56 passed`
+
 ### 2026-04-04 (TUI reliability deep-fix: OpenRouter auth + command routing)
 
 **Goal:** Eliminate persistent OpenRouter 401 errors after setup and make natural analyze commands reliably run against the current repository instead of mis-parsing conversational filler words.

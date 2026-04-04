@@ -8,6 +8,8 @@ import os
 import subprocess
 import threading
 import time
+import contextlib
+import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1001,12 +1003,41 @@ class ScholarDevClawApp(App[None]):
 
     def _build_chat_system_prompt(self) -> str:
         base = CHAT_SYSTEM_PROMPTS[self._mode]
+        repo_snapshot = self._build_repo_snapshot()
         return (
             f"{base} "
             f"Current working directory: {self._pretty_directory()}. "
             "If the user asks to run a repo workflow, mention the exact shell command they can run here. "
-            "Do not pretend you already executed commands unless the transcript shows it."
+            "Only claim frameworks, libraries, or architecture details when they are explicitly present in the repo snapshot below or user-provided context. "
+            "If the user sends a short greeting, reply in 1 concise line plus one direct follow-up question. "
+            "If uncertain, say so briefly and suggest the next concrete command. "
+            "Do not pretend you already executed commands unless the transcript shows it. "
+            f"Repo snapshot: {repo_snapshot}"
         )
+
+    def _build_repo_snapshot(self) -> str:
+        try:
+            root = Path(self._directory).expanduser().resolve()
+            if not root.exists() or not root.is_dir():
+                return f"root={self._pretty_directory()} (missing)"
+
+            entries = sorted(root.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+            top_entries = [f"{p.name}/" if p.is_dir() else p.name for p in entries[:14]]
+            markers = [
+                "pyproject.toml",
+                "package.json",
+                "requirements.txt",
+                "Cargo.toml",
+                "go.mod",
+                "docker-compose.yml",
+                "Dockerfile",
+            ]
+            present_markers = [name for name in markers if (root / name).exists()]
+            top = ", ".join(top_entries) if top_entries else "(empty)"
+            marker_text = ", ".join(present_markers) if present_markers else "none"
+            return f"root={root}; top={top}; markers={marker_text}"
+        except Exception:
+            return f"root={self._pretty_directory()}; snapshot unavailable"
 
     def _get_llm_client(self) -> LLMClient:
         auth_provider = self._resolve_auth_provider()
@@ -1099,39 +1130,44 @@ class ScholarDevClawApp(App[None]):
     def _run_task_in_thread(self, token: int, action: str, request: dict[str, Any]) -> None:
         previous_env = self._apply_provider_env()
         try:
+            sink_out = io.StringIO()
+            sink_err = io.StringIO()
 
             def _log_callback(line: str) -> None:
                 self.call_from_thread(self.post_message, TaskLog(token, line))
 
-            if action == "analyze":
-                result = run_analyze(request["repo_path"], log_callback=_log_callback)
-            elif action == "suggest":
-                result = run_suggest(request["repo_path"], log_callback=_log_callback)
-            elif action == "search":
-                result = run_search(
-                    request["query"],
-                    include_arxiv=bool(request.get("include_arxiv")),
-                    include_web=bool(request.get("include_web")),
-                    log_callback=_log_callback,
-                )
-            elif action == "map":
-                result = run_map(request["repo_path"], request["spec"], log_callback=_log_callback)
-            elif action == "generate":
-                result = run_generate(
-                    request["repo_path"],
-                    request["spec"],
-                    log_callback=_log_callback,
-                )
-            elif action == "validate":
-                result = run_validate(request["repo_path"], log_callback=_log_callback)
-            elif action == "integrate":
-                result = run_integrate(
-                    request["repo_path"],
-                    request["spec"],
-                    log_callback=_log_callback,
-                )
-            else:
-                raise RuntimeError(f"Unsupported action: {action}")
+            with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
+                if action == "analyze":
+                    result = run_analyze(request["repo_path"], log_callback=_log_callback)
+                elif action == "suggest":
+                    result = run_suggest(request["repo_path"], log_callback=_log_callback)
+                elif action == "search":
+                    result = run_search(
+                        request["query"],
+                        include_arxiv=bool(request.get("include_arxiv")),
+                        include_web=bool(request.get("include_web")),
+                        log_callback=_log_callback,
+                    )
+                elif action == "map":
+                    result = run_map(
+                        request["repo_path"], request["spec"], log_callback=_log_callback
+                    )
+                elif action == "generate":
+                    result = run_generate(
+                        request["repo_path"],
+                        request["spec"],
+                        log_callback=_log_callback,
+                    )
+                elif action == "validate":
+                    result = run_validate(request["repo_path"], log_callback=_log_callback)
+                elif action == "integrate":
+                    result = run_integrate(
+                        request["repo_path"],
+                        request["spec"],
+                        log_callback=_log_callback,
+                    )
+                else:
+                    raise RuntimeError(f"Unsupported action: {action}")
         except Exception as exc:
             result = type(
                 "Result",
@@ -1146,23 +1182,26 @@ class ScholarDevClawApp(App[None]):
     def _run_chat_in_thread(self, token: int, prompt: str) -> None:
         response_text = ""
         try:
-            client = self._get_llm_client()
-            messages = self._chat_history[-8:] + [{"role": "user", "content": prompt}]
-            for chunk in client.chat_stream(
-                prompt,
-                messages=messages,
-                system=self._build_chat_system_prompt(),
-                model=self._model,
-                max_tokens=2048,
-                temperature=0.2,
-            ):
-                if token != self._active_token:
-                    client.close()
-                    return
-                if chunk.delta:
-                    response_text += chunk.delta
-                    self.call_from_thread(self.post_message, ChatDelta(token, response_text))
-            client.close()
+            sink_out = io.StringIO()
+            sink_err = io.StringIO()
+            with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
+                client = self._get_llm_client()
+                messages = self._chat_history[-8:] + [{"role": "user", "content": prompt}]
+                for chunk in client.chat_stream(
+                    prompt,
+                    messages=messages,
+                    system=self._build_chat_system_prompt(),
+                    model=self._model,
+                    max_tokens=2048,
+                    temperature=0.2,
+                ):
+                    if token != self._active_token:
+                        client.close()
+                        return
+                    if chunk.delta:
+                        response_text += chunk.delta
+                        self.call_from_thread(self.post_message, ChatDelta(token, response_text))
+                client.close()
             input_tokens = self._estimate_tokens(prompt)
             output_tokens = self._estimate_tokens(response_text)
             result = type(
@@ -1360,7 +1399,9 @@ class ScholarDevClawApp(App[None]):
             return
         self._line_progress += 1
         fraction = min(0.9, 0.1 + (self._line_progress * 0.08))
-        self._append_output(message.line)
+        line = (message.line or "").strip()
+        if line and any(term in line.lower() for term in ("error", "failed", "warning")):
+            self._append_output(line)
         self.query_one("#status-bar", StatusBar).update_timer()
         self._set_progress(self._running_action or "analyze", fraction)
 
@@ -1474,7 +1515,7 @@ class ScholarDevClawApp(App[None]):
 
 
 def run_tui() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
     app = ScholarDevClawApp()
     app.run()
 
