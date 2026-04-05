@@ -83,6 +83,21 @@ def test_statusbar_refresh_does_not_shadow_textual_render():
     assert "TOKENS: 1.5k" in str(rendered)
 
 
+def test_statusbar_shows_fallback_model_and_truncated_directory():
+    status = StatusBar()
+
+    status.set_context(
+        mode="analyze",
+        provider="openrouter",
+        model="",
+        directory="/very/long/path/that/should/be/truncated/in/status/bar/for/readability",
+    )
+    rendered = str(status.render())
+
+    assert "MODEL: unset" in rendered
+    assert "DIR: …" in rendered
+
+
 def test_promptinput_delegates_key_handling_to_app_level():
     """PromptInput no longer overrides _on_key; app handles special keys."""
     # PromptInput should not have its own on_key override

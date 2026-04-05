@@ -1001,15 +1001,35 @@ class ScholarDevClawApp(App[None]):
             return []
         return []
 
-    def _build_chat_system_prompt(self) -> str:
+    @staticmethod
+    def _is_greeting_prompt(prompt: str) -> bool:
+        text = prompt.strip().lower()
+        return text in {
+            "hi",
+            "hello",
+            "hey",
+            "yo",
+            "hii",
+            "hiya",
+            "good morning",
+            "good afternoon",
+            "good evening",
+        }
+
+    def _build_chat_system_prompt(self, prompt: str = "") -> str:
         base = CHAT_SYSTEM_PROMPTS[self._mode]
         repo_snapshot = self._build_repo_snapshot()
+        greeting_rule = (
+            "If the user sends only a short greeting, reply naturally in one short friendly sentence and avoid repo/tooling details. "
+            if self._is_greeting_prompt(prompt)
+            else ""
+        )
         return (
             f"{base} "
             f"Current working directory: {self._pretty_directory()}. "
             "If the user asks to run a repo workflow, mention the exact shell command they can run here. "
             "Only claim frameworks, libraries, or architecture details when they are explicitly present in the repo snapshot below or user-provided context. "
-            "If the user sends a short greeting, reply in 1 concise line plus one direct follow-up question. "
+            f"{greeting_rule}"
             "If uncertain, say so briefly and suggest the next concrete command. "
             "Do not pretend you already executed commands unless the transcript shows it. "
             f"Repo snapshot: {repo_snapshot}"
@@ -1184,13 +1204,42 @@ class ScholarDevClawApp(App[None]):
         try:
             sink_out = io.StringIO()
             sink_err = io.StringIO()
+            user_prompt = prompt.strip()
+            if self._is_greeting_prompt(user_prompt):
+                if user_prompt.startswith("good "):
+                    response_text = f"{user_prompt.title()} 👋"
+                elif user_prompt in {"yo", "hey", "hiya"}:
+                    response_text = "Hey 👋"
+                else:
+                    response_text = "Hi 👋"
+
+                result = type(
+                    "Result",
+                    (),
+                    {
+                        "ok": True,
+                        "payload": {
+                            "content": response_text,
+                            "input_tokens": 0,
+                            "output_tokens": 0,
+                        },
+                        "error": "",
+                        "logs": [],
+                    },
+                )()
+                self.call_from_thread(
+                    self.post_message,
+                    TaskCompleted(token, "chat", result, {"action": "chat", "prompt": prompt}),
+                )
+                return
+
             with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
                 client = self._get_llm_client()
                 messages = self._chat_history[-8:] + [{"role": "user", "content": prompt}]
                 for chunk in client.chat_stream(
                     prompt,
                     messages=messages,
-                    system=self._build_chat_system_prompt(),
+                    system=self._build_chat_system_prompt(prompt),
                     model=self._model,
                     max_tokens=2048,
                     temperature=0.2,

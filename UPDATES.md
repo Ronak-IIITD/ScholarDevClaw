@@ -31,6 +31,35 @@
   - ✅ `pytest -q core/tests/unit/test_tui_app.py core/tests/unit/test_tui_widgets.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_init.py core/tests/unit/test_tui_clipboard.py`
   - Result: `56 passed`
 
+### 2026-04-04 (TUI interaction polish: natural greeting replies + visible directory field)
+
+**Goal:** Improve conversational feel for simple inputs (e.g., `hi`) and ensure the status bar directory field remains readable/visible on constrained terminal widths.
+
+**Summary:** Added explicit lightweight greeting handling so short salutations no longer trigger awkward repo-analysis style responses, passed prompt-aware guidance into chat system prompting, and updated status-bar rendering with safe fallbacks/truncation so `DIR:` is always visible.
+
+**What changed:**
+
+- **Greeting behavior**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Added `_is_greeting_prompt(...)` and a fast-path in `_run_chat_in_thread(...)` for short greetings (`hi`, `hello`, `hey`, etc.).
+    - Short greetings now return concise natural responses instead of verbose analysis-oriented prompts.
+    - `_build_chat_system_prompt(...)` now accepts the current prompt and conditionally applies greeting-specific behavior guidance.
+
+- **Status bar readability**
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - `StatusBar` now uses `MODEL: unset` fallback when model text is empty.
+    - Long directory paths are safely truncated with leading ellipsis to keep the `DIR:` field visible in narrow terminals.
+
+- **Coverage**
+  - `core/tests/unit/test_tui_app.py`
+    - Added greeting detection + prompt-conditional chat-system prompt tests.
+  - `core/tests/unit/test_tui_widgets.py`
+    - Added status bar fallback/truncation coverage.
+
+- **Verification**
+  - ✅ `pytest -q core/tests/unit/test_tui_app.py core/tests/unit/test_tui_widgets.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_init.py core/tests/unit/test_tui_clipboard.py`
+  - Result: `60 passed`
+
 ### 2026-04-04 (TUI reliability deep-fix: OpenRouter auth + command routing)
 
 **Goal:** Eliminate persistent OpenRouter 401 errors after setup and make natural analyze commands reliably run against the current repository instead of mis-parsing conversational filler words.

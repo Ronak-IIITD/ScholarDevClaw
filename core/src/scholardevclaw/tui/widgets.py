@@ -235,12 +235,17 @@ class StatusBar(Static):
         self._refresh_display()
 
     def _refresh_display(self) -> None:
+        model_value = self._model or "unset"
+        directory_value = self._directory or "."
+        if len(directory_value) > 52:
+            directory_value = f"…{directory_value[-51:]}"
+
         parts = [
             f"MODE: {self._mode}",
             f"PROVIDER: {self._provider}",
-            f"MODEL: {self._model}",
+            f"MODEL: {model_value}",
             f"TOKENS: {self._format_tokens(self._session_tokens)}",
-            f"DIR: {self._directory}",
+            f"DIR: {directory_value}",
         ]
         tail: list[str] = []
         if self._message:

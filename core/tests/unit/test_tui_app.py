@@ -313,3 +313,30 @@ def test_build_request_analyze_current_repo_uses_active_directory():
 
     assert action == "analyze"
     assert req["repo_path"] == "/tmp/repo"
+
+
+def test_is_greeting_prompt_detects_short_greetings():
+    app = _minimal_app_for_unit()
+
+    assert app._is_greeting_prompt("hi") is True
+    assert app._is_greeting_prompt("Hello") is True
+    assert app._is_greeting_prompt("yo") is True
+    assert app._is_greeting_prompt("analyze repo") is False
+
+
+def test_build_chat_system_prompt_includes_greeting_rule_for_short_greeting():
+    app = _minimal_app_for_unit()
+    app._directory = "/tmp"
+
+    prompt = app._build_chat_system_prompt("hi")
+
+    assert "reply naturally in one short friendly sentence" in prompt
+
+
+def test_build_chat_system_prompt_excludes_greeting_rule_for_non_greeting():
+    app = _minimal_app_for_unit()
+    app._directory = "/tmp"
+
+    prompt = app._build_chat_system_prompt("analyze this repository")
+
+    assert "reply naturally in one short friendly sentence" not in prompt
