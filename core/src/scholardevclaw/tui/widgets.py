@@ -157,7 +157,8 @@ class StatusBar(Static):
     DEFAULT_CSS = """
     StatusBar {
         width: 100%;
-        height: 1;
+        height: auto;
+        min-height: 1;
         color: $text-muted;
     }
 
@@ -237,8 +238,8 @@ class StatusBar(Static):
     def _refresh_display(self) -> None:
         model_value = self._model or "unset"
         directory_value = self._directory or "."
-        if len(directory_value) > 52:
-            directory_value = f"…{directory_value[-51:]}"
+        if len(directory_value) > 40:
+            directory_value = f"…{directory_value[-39:]}"
 
         parts = [
             f"MODE: {self._mode}",

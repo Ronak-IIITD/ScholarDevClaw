@@ -60,6 +60,39 @@
   - ✅ `pytest -q core/tests/unit/test_tui_app.py core/tests/unit/test_tui_widgets.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_init.py core/tests/unit/test_tui_clipboard.py`
   - Result: `60 passed`
 
+### 2026-04-04 (TUI behavior correction: removed hardcoded greeting response + robust natural command parsing)
+
+**Goal:** Remove brittle hardcoded chat behavior and improve natural-language command routing so conversational inputs stay conversational while repo commands map reliably to pipeline actions.
+
+**Summary:** Removed the hardcoded `hi` shortcut path and returned all chat responses to provider-backed LLM flow, then updated prompt policy so casual messages are handled naturally without forced repo context. Also hardened command parsing (`please can you ...`, `analyse`, `generate this repo <spec>`) and improved status-bar wrapping so `DIR:` remains visible on smaller terminals.
+
+**What changed:**
+
+- **Removed hardcoded greeting path**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Deleted special-case greeting response in `_run_chat_in_thread(...)`.
+    - Chat now always goes through configured LLM provider path for user messages.
+
+- **Better conversational behavior (provider-backed)**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Updated system prompt guidance to keep casual chat natural and brief.
+    - Added explicit rule to avoid injecting repo context into small-talk unless user asks.
+
+- **Natural command routing fixes**
+  - `core/src/scholardevclaw/tui/app.py`
+    - `_parse_natural_command(...)` now strips stacked polite prefixes (`please can you ...`).
+    - Added `analyse` alias support.
+    - Improved `map/generate/integrate` parsing for phrases like `generate this repo rmsnorm` via `_extract_spec_from_tokens(...)`.
+
+- **Status bar visibility improvement**
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - `StatusBar` height changed to `auto` with `min-height: 1` for wrapping.
+    - Directory truncation tuned to keep `DIR:` label visible under tighter widths.
+
+- **Verification**
+  - ✅ `pytest -q core/tests/unit/test_tui_app.py core/tests/unit/test_tui_widgets.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_init.py core/tests/unit/test_tui_clipboard.py`
+  - Result: `62 passed`
+
 ### 2026-04-04 (TUI reliability deep-fix: OpenRouter auth + command routing)
 
 **Goal:** Eliminate persistent OpenRouter 401 errors after setup and make natural analyze commands reliably run against the current repository instead of mis-parsing conversational filler words.

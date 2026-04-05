@@ -315,28 +315,45 @@ def test_build_request_analyze_current_repo_uses_active_directory():
     assert req["repo_path"] == "/tmp/repo"
 
 
-def test_is_greeting_prompt_detects_short_greetings():
+def test_build_request_generate_this_repo_uses_active_directory_and_spec():
     app = _minimal_app_for_unit()
+    app._directory = "/tmp/repo"
 
-    assert app._is_greeting_prompt("hi") is True
-    assert app._is_greeting_prompt("Hello") is True
-    assert app._is_greeting_prompt("yo") is True
-    assert app._is_greeting_prompt("analyze repo") is False
+    action, req = app._build_request("generate this repo rmsnorm")
 
-
-def test_build_chat_system_prompt_includes_greeting_rule_for_short_greeting():
-    app = _minimal_app_for_unit()
-    app._directory = "/tmp"
-
-    prompt = app._build_chat_system_prompt("hi")
-
-    assert "reply naturally in one short friendly sentence" in prompt
+    assert action == "generate"
+    assert req["repo_path"] == "/tmp/repo"
+    assert req["spec"] == "rmsnorm"
 
 
-def test_build_chat_system_prompt_excludes_greeting_rule_for_non_greeting():
+def test_build_chat_system_prompt_contains_natural_greeting_guidance():
     app = _minimal_app_for_unit()
     app._directory = "/tmp"
 
-    prompt = app._build_chat_system_prompt("analyze this repository")
+    prompt = app._build_chat_system_prompt()
 
-    assert "reply naturally in one short friendly sentence" not in prompt
+    assert "For short greetings, reply naturally" in prompt
+
+
+def test_parse_natural_command_repeated_prefixes_still_resolve_action():
+    app = _minimal_app_for_unit()
+
+    action, ctx = app._parse_natural_command("please can you analyze this repo")
+
+    assert action == "analyze"
+
+
+def test_parse_natural_command_supports_analyse_alias():
+    app = _minimal_app_for_unit()
+
+    action, _ctx = app._parse_natural_command("analyse ./repo")
+
+    assert action == "analyze"
+
+
+def test_extract_spec_from_tokens_skips_filler_words():
+    app = _minimal_app_for_unit()
+
+    spec = app._extract_spec_from_tokens(["this", "repo", "rmsnorm"])
+
+    assert spec == "rmsnorm"

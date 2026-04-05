@@ -134,16 +134,19 @@ PROGRESS_LABELS = {
 CHAT_SYSTEM_PROMPTS = {
     "analyze": (
         "You are ScholarDevClaw, a terse coding assistant inside a terminal UI. "
-        "In analyze mode, help the user understand the repository, architecture, and likely next shell commands. "
+        "In analyze mode, prioritize repository architecture/debug/execution questions. "
+        "For casual conversation, still respond naturally and briefly. "
         "Keep answers short, concrete, and developer-focused."
     ),
     "search": (
         "You are ScholarDevClaw, a terse research assistant inside a terminal UI. "
-        "In search mode, answer with concise research directions, paper names, and implementation tradeoffs."
+        "In search mode, answer with concise research directions, paper names, and implementation tradeoffs. "
+        "For casual conversation, respond naturally and briefly."
     ),
     "edit": (
         "You are ScholarDevClaw, a terse coding assistant inside a terminal UI. "
-        "In edit mode, focus on code changes, implementation advice, and safe next actions."
+        "In edit mode, focus on code changes, implementation advice, and safe next actions. "
+        "For casual conversation, respond naturally and briefly."
     ),
 }
 
@@ -575,7 +578,7 @@ class ScholarDevClawApp(App[None]):
         tokens = prompt.strip().split()
         ctx: dict[str, Any] = {}
         normalized = lower
-        for prefix in (
+        prefixes = (
             "please ",
             "can you ",
             "could you ",
@@ -583,10 +586,15 @@ class ScholarDevClawApp(App[None]):
             "lets ",
             "let's ",
             "run ",
-        ):
-            if normalized.startswith(prefix):
-                normalized = normalized[len(prefix) :].strip()
-                break
+        )
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if normalized.startswith(prefix):
+                    normalized = normalized[len(prefix) :].strip()
+                    changed = True
+                    break
 
         action = "chat"
         action_heads = {
@@ -600,6 +608,7 @@ class ScholarDevClawApp(App[None]):
             "find paper": "search",
             "map": "map",
             "analyze": "analyze",
+            "analyse": "analyze",
             "scan": "analyze",
         }
         for head, resolved in action_heads.items():
@@ -920,6 +929,7 @@ class ScholarDevClawApp(App[None]):
                 if candidate not in {
                     "this",
                     "current",
+                    "the",
                     "repo",
                     "repository",
                     "project",
@@ -929,8 +939,26 @@ class ScholarDevClawApp(App[None]):
             return head, {"action": head, "repo_path": repo_path}
 
         if head in {"map", "generate", "integrate"}:
-            repo_path = parts[1] if len(parts) > 1 else self._directory
-            spec = parts[2].lower() if len(parts) > 2 else ""
+            repo_path = self._directory
+            spec = ""
+            if len(parts) > 1:
+                candidate = parts[1].strip().lower()
+                if candidate in {
+                    "this",
+                    "current",
+                    "the",
+                    "repo",
+                    "repository",
+                    "project",
+                    "here",
+                }:
+                    repo_path = self._directory
+                elif candidate in SPEC_COMMANDS:
+                    spec = candidate
+                else:
+                    repo_path = parts[1]
+            if not spec:
+                spec = self._extract_spec_from_tokens(parts[1:])
             return head, {"action": head, "repo_path": repo_path, "spec": spec}
 
         action, ctx = self._parse_natural_command(raw)
@@ -1001,39 +1029,42 @@ class ScholarDevClawApp(App[None]):
             return []
         return []
 
-    @staticmethod
-    def _is_greeting_prompt(prompt: str) -> bool:
-        text = prompt.strip().lower()
-        return text in {
-            "hi",
-            "hello",
-            "hey",
-            "yo",
-            "hii",
-            "hiya",
-            "good morning",
-            "good afternoon",
-            "good evening",
-        }
-
-    def _build_chat_system_prompt(self, prompt: str = "") -> str:
+    def _build_chat_system_prompt(self) -> str:
         base = CHAT_SYSTEM_PROMPTS[self._mode]
         repo_snapshot = self._build_repo_snapshot()
-        greeting_rule = (
-            "If the user sends only a short greeting, reply naturally in one short friendly sentence and avoid repo/tooling details. "
-            if self._is_greeting_prompt(prompt)
-            else ""
-        )
         return (
             f"{base} "
             f"Current working directory: {self._pretty_directory()}. "
             "If the user asks to run a repo workflow, mention the exact shell command they can run here. "
+            "For short greetings, reply naturally in one short sentence and avoid repo/tooling details unless asked. "
+            "For conversational messages (for example: how are you, thanks), respond naturally and briefly without forcing repository context. "
+            "Do not mention repository details or cwd unless the user asks about repo/workflow/code tasks. "
             "Only claim frameworks, libraries, or architecture details when they are explicitly present in the repo snapshot below or user-provided context. "
-            f"{greeting_rule}"
             "If uncertain, say so briefly and suggest the next concrete command. "
             "Do not pretend you already executed commands unless the transcript shows it. "
             f"Repo snapshot: {repo_snapshot}"
         )
+
+    @staticmethod
+    def _extract_spec_from_tokens(tokens: list[str]) -> str:
+        skip = {
+            "this",
+            "current",
+            "the",
+            "repo",
+            "repository",
+            "project",
+            "here",
+            "in",
+            "on",
+            "for",
+        }
+        for token in tokens:
+            value = token.strip().lower()
+            if not value or value in skip:
+                continue
+            return value
+        return ""
 
     def _build_repo_snapshot(self) -> str:
         try:
@@ -1204,42 +1235,13 @@ class ScholarDevClawApp(App[None]):
         try:
             sink_out = io.StringIO()
             sink_err = io.StringIO()
-            user_prompt = prompt.strip()
-            if self._is_greeting_prompt(user_prompt):
-                if user_prompt.startswith("good "):
-                    response_text = f"{user_prompt.title()} 👋"
-                elif user_prompt in {"yo", "hey", "hiya"}:
-                    response_text = "Hey 👋"
-                else:
-                    response_text = "Hi 👋"
-
-                result = type(
-                    "Result",
-                    (),
-                    {
-                        "ok": True,
-                        "payload": {
-                            "content": response_text,
-                            "input_tokens": 0,
-                            "output_tokens": 0,
-                        },
-                        "error": "",
-                        "logs": [],
-                    },
-                )()
-                self.call_from_thread(
-                    self.post_message,
-                    TaskCompleted(token, "chat", result, {"action": "chat", "prompt": prompt}),
-                )
-                return
-
             with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
                 client = self._get_llm_client()
                 messages = self._chat_history[-8:] + [{"role": "user", "content": prompt}]
                 for chunk in client.chat_stream(
                     prompt,
                     messages=messages,
-                    system=self._build_chat_system_prompt(prompt),
+                    system=self._build_chat_system_prompt(),
                     model=self._model,
                     max_tokens=2048,
                     temperature=0.2,
