@@ -98,6 +98,20 @@ def test_statusbar_shows_fallback_model_and_truncated_directory():
     assert "DIR: …" in rendered
 
 
+def test_statusbar_supports_multiline_render_for_long_context():
+    status = StatusBar()
+
+    status.set_context(
+        mode="analyze",
+        provider="openrouter",
+        model="very-long-model-name-that-exceeds-common-terminal-width",
+        directory="/this/is/a/very/long/path/that/would/otherwise/push/dir/offscreen",
+    )
+
+    rendered = str(status.render())
+    assert "DIR:" in rendered
+
+
 def test_promptinput_delegates_key_handling_to_app_level():
     """PromptInput no longer overrides _on_key; app handles special keys."""
     # PromptInput should not have its own on_key override
