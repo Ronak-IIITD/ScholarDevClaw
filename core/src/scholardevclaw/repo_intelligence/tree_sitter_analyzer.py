@@ -1681,29 +1681,46 @@ class TreeSitterAnalyzer:
     def _detect_frameworks(
         self, elements: list[CodeElement], imports: list[ImportStatement]
     ) -> list[str]:
-        """Detect frameworks used in the codebase"""
-        frameworks = []
+        """Detect frameworks used in the codebase.
 
-        framework_patterns = {
-            "django": ["django", "from django"],
-            "flask": ["flask", "from flask"],
-            "fastapi": ["fastapi", "from fastapi"],
-            "express": ["express"],
-            "react": ["react"],
-            "vue": ["vue"],
-            "angular": ["@angular"],
-            "nextjs": ["next"],
-            "torch": ["torch", "torch.nn"],
-            "tensorflow": ["tensorflow", "tf."],
-            "transformers": ["transformers"],
-            "numpy": ["numpy", "np."],
-            "pandas": ["pandas", "pd."],
+        Use import-module evidence only (not symbol names) to avoid false positives
+        such as:
+        - `nextjs` from functions like `get_next_*`
+        - `torch` from class names like `PyTorchRepoParser`
+        """
+
+        # Keep signature stable for callers; elements are intentionally ignored.
+        _ = elements
+
+        modules = {
+            (imp.module or "").strip().lower() for imp in imports if (imp.module or "").strip()
         }
 
-        all_text = " ".join([imp.module for imp in imports] + [e.name for e in elements]).lower()
+        def has_module(prefix: str) -> bool:
+            return any(mod == prefix or mod.startswith(f"{prefix}.") for mod in modules)
 
-        for framework, patterns in framework_patterns.items():
-            if any(p in all_text for p in patterns):
+        def has_module_or_path(prefix: str) -> bool:
+            return any(mod == prefix or mod.startswith(f"{prefix}/") for mod in modules)
+
+        framework_checks = {
+            "django": lambda: has_module("django"),
+            "flask": lambda: has_module("flask"),
+            "fastapi": lambda: has_module("fastapi"),
+            "express": lambda: has_module_or_path("express"),
+            "react": lambda: has_module_or_path("react"),
+            "vue": lambda: has_module_or_path("vue"),
+            "angular": lambda: any(mod.startswith("@angular/") for mod in modules),
+            "nextjs": lambda: has_module_or_path("next"),
+            "torch": lambda: has_module("torch"),
+            "tensorflow": lambda: has_module("tensorflow"),
+            "transformers": lambda: has_module("transformers"),
+            "numpy": lambda: has_module("numpy"),
+            "pandas": lambda: has_module("pandas"),
+        }
+
+        frameworks: list[str] = []
+        for framework, check in framework_checks.items():
+            if check():
                 frameworks.append(framework)
 
         return frameworks

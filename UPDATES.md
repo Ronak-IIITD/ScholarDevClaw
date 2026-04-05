@@ -93,6 +93,31 @@
   - ✅ `pytest -q core/tests/unit/test_tui_app.py core/tests/unit/test_tui_widgets.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_init.py core/tests/unit/test_tui_clipboard.py`
   - Result: `62 passed`
 
+### 2026-04-04 (Analyzer truthfulness fix: remove framework false positives)
+
+**Goal:** Fix misleading analysis results where `analyze` reported irrelevant frameworks (for example `nextjs`, `torch`) due to weak substring heuristics.
+
+**Summary:** Replaced broad substring framework detection with import-module grounded matching in the tree-sitter analyzer. This prevents false positives from symbol names like `get_next_*` or `PyTorch*` while preserving real detections from actual imports.
+
+**What changed:**
+
+- **Framework detection hardened**
+  - `core/src/scholardevclaw/repo_intelligence/tree_sitter_analyzer.py`
+    - `_detect_frameworks(...)` now uses import module evidence only.
+    - Removed symbol-name text concatenation matching that caused false positives.
+    - Added strict module-prefix/path checks per framework (e.g., `next`/`next/*`, `torch`, `numpy`, `fastapi`).
+
+- **Coverage added**
+  - `core/tests/unit/test_tree_sitter_framework_detection.py` (new)
+    - Ensures symbol-name-only cases do **not** detect frameworks.
+    - Ensures real import modules do detect frameworks.
+    - Ensures JS path imports (e.g., `next/navigation`) detect Next.js.
+
+- **Verification**
+  - ✅ `pytest -q core/tests/unit/test_tree_sitter_framework_detection.py core/tests/unit/test_tui_app.py core/tests/unit/test_tui_widgets.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_init.py core/tests/unit/test_tui_clipboard.py`
+  - Result: `66 passed`
+  - ✅ Runtime smoke: `run_analyze(core)` now reports grounded frameworks (e.g., `['fastapi', 'numpy']`) and no spurious `nextjs`/`torch`.
+
 ### 2026-04-04 (TUI reliability deep-fix: OpenRouter auth + command routing)
 
 **Goal:** Eliminate persistent OpenRouter 401 errors after setup and make natural analyze commands reliably run against the current repository instead of mis-parsing conversational filler words.
