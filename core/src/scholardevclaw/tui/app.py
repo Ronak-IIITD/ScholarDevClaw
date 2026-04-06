@@ -193,32 +193,32 @@ class ScholarDevClawApp(App[None]):
     CSS = """
     Screen {
         layout: vertical;
-        background: #0b0f12;
-        color: #d7dee7;
+        background: $background;
+        color: $text;
         padding: 0 1;
     }
 
     #header {
         height: 1;
-        color: #7dd3fc;
+        color: $accent;
         text-style: bold;
     }
 
     .separator {
         height: 1;
-        color: #475569;
+        color: $border;
     }
 
     #command-meta {
         height: auto;
-        color: #94a3b8;
+        color: $text-muted;
     }
 
     #prompt-input {
         height: 1;
         border: none;
         background: transparent;
-        color: #e2e8f0;
+        color: $text;
         padding: 0;
     }
 
@@ -227,6 +227,18 @@ class ScholarDevClawApp(App[None]):
         background: transparent;
     }
     """
+
+    STYLES = {
+        "background": "#0b0f12",
+        "text": "#d7dee7",
+        "accent": "#38bdf8",
+        "border": "#334155",
+        "surface": "#151a21",
+        "text-muted": "#64748b",
+        "success": "#22c55e",
+        "warning": "#f59e0b",
+        "error": "#ef4444",
+    }
 
     def __init__(self) -> None:
         super().__init__()

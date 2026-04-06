@@ -87,18 +87,41 @@ class LogView(VerticalScroll):
         text-style: bold;
     }
     LogView .log-line.system { color: $text-muted; }
+    LogView .log-line.debug { color: $text-muted; }
     """
 
-    def __init__(self, **kwargs: Any) -> None:
+    LEVEL_ICONS = {
+        "info": "ℹ",
+        "success": "✓",
+        "warning": "⚠",
+        "error": "✗",
+        "accent": "▶",
+        "system": "▸",
+        "debug": "·",
+    }
+
+    def __init__(self, show_timestamps: bool = False, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._entry_count = 0
         self._max_entries = 800
         self._progress_line: Static | None = None
+        self._show_timestamps = show_timestamps
 
     def add_log(self, text: str, level: str = "auto") -> None:
         if level == "auto":
             level = self._detect_level(text)
-        line = Static(text, classes=f"log-line {level}")
+
+        # Add icon prefix based on level
+        icon = self.LEVEL_ICONS.get(level, "▸")
+
+        # Add timestamp if enabled
+        timestamp = ""
+        if self._show_timestamps:
+            from datetime import datetime
+
+            timestamp = f"[{datetime.now().strftime('%H:%M:%S')}] "
+
+        line = Static(f"{timestamp}{icon} {text}", classes=f"log-line {level}")
         self.mount(line)
         self._entry_count += 1
         if self._entry_count > self._max_entries:
@@ -238,27 +261,47 @@ class StatusBar(Static):
     def _refresh_display(self) -> None:
         model_value = self._model or "unset"
         directory_value = self._directory or "."
-        if len(directory_value) > 40:
-            directory_value = f"…{directory_value[-39:]}"
+        if len(directory_value) > 30:
+            directory_value = f"…{directory_value[-29:]}"
 
-        parts = [
-            f"MODE: {self._mode}",
-            f"PROVIDER: {self._provider}",
-            f"MODEL: {model_value}",
-            f"TOKENS: {self._format_tokens(self._session_tokens)}",
-            f"DIR: {directory_value}",
-        ]
-        tail: list[str] = []
-        if self._message:
-            tail.append(self._message)
+        # Build visually appealing status line
+        mode_indicator = f"[{self._mode.upper()}]"
+
+        # Provider with color coding
+        provider_indicator = f"[{self._provider}]"
+
+        # Model truncated
+        if len(model_value) > 15:
+            model_value = model_value[:12] + "…"
+
+        tokens_indicator = f"⟨{self._format_tokens(self._session_tokens)}⟩"
+
+        dir_indicator = f"⌁ {directory_value}"
+
+        # Status message with icon based on level
+        status_icon = {
+            "info": "●",
+            "success": "✓",
+            "warning": "⚠",
+            "error": "✗",
+            "accent": "▶",
+        }.get(self._level, "●")
+
+        tail: list[str] = [f"{status_icon} {self._message}"]
         if self._step_text:
-            tail.append(self._step_text)
+            tail.append(f"[{self._step_text}]")
         if self._last_tokens:
-            tail.append(f"last {self._format_tokens(self._last_tokens)}")
+            tail.append(f"+{self._format_tokens(self._last_tokens)}")
         if self._start_time:
             tail.append(f"{time.perf_counter() - self._start_time:.1f}s")
-        suffix = f"   {' | '.join(tail)}" if tail else ""
-        self.update("   ".join(parts) + suffix)
+
+        # Combine all parts
+        prefix = "  ".join(
+            [mode_indicator, provider_indicator, model_value, tokens_indicator, dir_indicator]
+        )
+        suffix = "  ".join(tail)
+
+        self.update(f"{prefix}  {suffix}")
 
     @staticmethod
     def _format_tokens(value: int) -> str:

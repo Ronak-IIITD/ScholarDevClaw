@@ -23,6 +23,16 @@ __all__ = [
     "StatusBar",
     "HistoryPane",
     "AgentStatus",
+    # Theme and styling
+    "theme",
+    "COLORS",
+    "ANIMATION",
+    # Animated widgets
+    "Spinner",
+    "Pulse",
+    "ProgressBar",
+    "TypingIndicator",
+    "Marquee",
 ]
 
 
@@ -69,6 +79,27 @@ def __getattr__(name):
         )
 
         return locals()[name]
+
+    if name in ("Spinner", "Pulse", "ProgressBar", "TypingIndicator", "Marquee"):
+        from .widgets_animated import (
+            Marquee,  # noqa: F401
+            ProgressBar,  # noqa: F401
+            Pulse,  # noqa: F401
+            Spinner,  # noqa: F401
+            TypingIndicator,  # noqa: F401
+        )
+
+        return locals()[name]
+
+    if name in ("theme", "COLORS", "ANIMATION"):
+        from . import theme
+
+        if name == "theme":
+            return theme
+        if name == "COLORS":
+            return theme.COLORS
+        if name == "ANIMATION":
+            return theme.ANIMATION
 
     if name == "ScholarDevClawApp":
         from .app import ScholarDevClawApp  # noqa: F401
