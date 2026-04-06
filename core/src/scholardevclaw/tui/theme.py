@@ -1,7 +1,7 @@
 """
 Theme constants and color scheme for ScholarDevClaw TUI.
 
-Provides a cohesive dark theme with accent colors for different message types.
+Custom color scheme provided by user.
 """
 
 from __future__ import annotations
@@ -9,34 +9,35 @@ from __future__ import annotations
 from typing import Any
 
 # -----------------------------------------------------------------------------
-# Core Color Palette (Dark Theme)
+# Core Color Palette (User-Provided)
 # -----------------------------------------------------------------------------
 
 COLORS = {
-    # Backgrounds
-    "background": "#0b0f12",
-    "surface": "#151a21",
-    "surface-elevated": "#1c222b",
+    # Backgrounds (darkest to lightest)
+    "background": "#06141B",  # Darkest - main background
+    "surface": "#11212D",  # Dark - panels/cards
+    "surface-elevated": "#253754",  # Medium dark - elevated elements
     # Text
-    "text": "#d7dee7",
-    "text-muted": "#64748b",
-    "text-bright": "#f1f5f9",
+    "text": "#CCD0CF",  # Lightest - primary text
+    "text-muted": "#9BA8AB",  # Light muted - secondary text
+    "text-bright": "#CCD0CF",  # Primary text (same as text)
     # Accents
-    "accent": "#38bdf8",  # Sky blue - primary actions
-    "accent-dim": "#0ea5e9",  # Darker accent
-    # Semantic
-    "success": "#22c55e",  # Green
-    "warning": "#f59e0b",  # Amber
-    "error": "#ef4444",  # Red
-    "info": "#38bdf8",  # Blue
+    "accent": "#253754",  # Medium dark - primary actions
+    "accent-dim": "#4A5C6A",  # Medium - darker accent
+    "accent-bright": "#4A5C6A",  # Brighter accent for highlights
+    # Semantic (using palette)
+    "success": "#4A5C6A",  # Medium - success indicators
+    "warning": "#9BA8AB",  # Light muted - warnings
+    "error": "#253754",  # Medium dark - errors
+    "info": "#4A5C6A",  # Medium - info
     # Borders/Separators
-    "border": "#334155",
-    "border-focus": "#38bdf8",
-    # Provider-specific
-    "provider-ollama": "#10b981",  # Emerald
-    "provider-openrouter": "#8b5cf6",  # Violet
-    "provider-anthropic": "#f59e0b",  # Amber
-    "provider-openai": "#10b981",  # Emerald
+    "border": "#4A5C6A",  # Medium
+    "border-focus": "#9BA8AB",  # Light muted
+    # Provider-specific (using palette)
+    "provider-ollama": "#4A5C6A",  # Medium
+    "provider-openrouter": "#253754",  # Medium dark
+    "provider-anthropic": "#9BA8AB",  # Light muted
+    "provider-openai": "#4A5C6A",  # Medium
 }
 
 # -----------------------------------------------------------------------------

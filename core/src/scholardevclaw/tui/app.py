@@ -229,15 +229,15 @@ class ScholarDevClawApp(App[None]):
     """
 
     STYLES = {
-        "background": "#0b0f12",
-        "text": "#d7dee7",
-        "accent": "#38bdf8",
-        "border": "#334155",
-        "surface": "#151a21",
-        "text-muted": "#64748b",
-        "success": "#22c55e",
-        "warning": "#f59e0b",
-        "error": "#ef4444",
+        "background": "#06141B",
+        "text": "#CCD0CF",
+        "accent": "#4A5C6A",
+        "border": "#4A5C6A",
+        "surface": "#11212D",
+        "text-muted": "#9BA8AB",
+        "success": "#4A5C6A",
+        "warning": "#9BA8AB",
+        "error": "#253754",
     }
 
     def __init__(self) -> None:
