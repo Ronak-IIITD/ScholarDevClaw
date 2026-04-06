@@ -8,6 +8,12 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
+from scholardevclaw.auth.types import AuthProvider
+from scholardevclaw.llm.client import DEFAULT_MODELS
+
+
+DEFAULT_OPENROUTER_MODEL = DEFAULT_MODELS[AuthProvider.OPENROUTER]
+
 
 WELCOME_TEXT = (
     "ScholarDevClaw\n\n"
@@ -34,7 +40,7 @@ HELP_TEXT = (
     "setup\n"
     "set provider openrouter\n"
     "set provider ollama\n"
-    "set model anthropic/claude-sonnet-4\n\n"
+    f"set model {DEFAULT_OPENROUTER_MODEL}\n\n"
     "Modes\n"
     ":analyze\n"
     ":search\n"
@@ -228,7 +234,7 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         )
         hint.update(
             "Provider -> OpenRouter\n"
-            "Model -> full OpenRouter model id, for example `openai/gpt-4.1-mini` or `anthropic/claude-sonnet-4`\n"
+            f"Model -> full OpenRouter model id, for example `{DEFAULT_OPENROUTER_MODEL}`\n"
             f"Key -> {reuse}\n"
             "Save -> Ctrl+S or Enter"
         )
@@ -255,7 +261,7 @@ class CommandPalette(ModalScreen[str | None]):
         "validate ./repo",
         "set provider openrouter",
         "set provider ollama",
-        "set model anthropic/claude-sonnet-4",
+        f"set model {DEFAULT_OPENROUTER_MODEL}",
         "set mode analyze",
         "set dir ./repo",
         ":analyze",

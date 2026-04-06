@@ -458,7 +458,9 @@ class LLMClient:
         t0 = time.monotonic()
 
         def _make_request() -> httpx.Response:
-            return self._http.post(url, headers=headers, json=body)
+            response = self._http.post(url, headers=headers, json=body)
+            response.raise_for_status()
+            return response
 
         try:
             resp = self._retry_policy.execute(_make_request)
@@ -473,13 +475,6 @@ class LLMClient:
             ) from exc
 
         latency = (time.monotonic() - t0) * 1000
-
-        if resp.status_code != 200:
-            raise LLMAPIError(
-                provider=self.provider.value,
-                status_code=resp.status_code,
-                detail=resp.text[:500],
-            )
 
         data = resp.json()
         content, in_tok, out_tok, finish = self._parse_response(data)

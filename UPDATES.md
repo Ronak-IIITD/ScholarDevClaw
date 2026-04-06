@@ -2,7 +2,62 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-04
+**Last updated:** 2026-04-06
+
+### 2026-04-06 (TUI flow stabilization: parser fix + actionable rate-limit UX + model guidance consistency)
+
+**Goal:** Resolve “flow feels broken” reports by fixing command parsing bugs that blocked map/generate/integrate, improving 429 handling in chat, and aligning all setup/help guidance with the current reliable OpenRouter default model.
+
+**Summary:** Fixed a core parser regression where commands like `generate ./repo rmsnorm` incorrectly treated the repo path as the spec, causing immediate “Unknown spec” failures. Added actionable user-facing handling for common LLM API failures (429/401/402), improved run-time log visibility for stage progress, and removed stale hardcoded model hints so TUI guidance now matches active defaults.
+
+**What changed:**
+
+- **Command parsing hotfix (highest impact)**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Fixed `map` / `generate` / `integrate` token parsing so explicit repo+spec forms now parse correctly.
+    - Examples now work as expected:
+      - `map ./repo rmsnorm`
+      - `generate ./repo rmsnorm`
+      - `integrate ./repo rmsnorm`
+
+- **Chat failure UX (429/401/402) improved**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Added targeted messages for:
+      - `429` rate limit (with immediate recovery commands)
+      - `401` auth issues
+      - `402` credits/billing issues
+
+- **Retry behavior correction for non-stream chat path**
+  - `core/src/scholardevclaw/llm/client.py`
+    - `chat()` now raises on non-2xx in the retry-wrapped request function, so transient HTTP errors can actually trigger retry policy.
+
+- **Guidance consistency (no stale model hints)**
+  - `core/src/scholardevclaw/tui/app.py`
+  - `core/src/scholardevclaw/tui/screens.py`
+    - Replaced hardcoded OpenRouter model examples with centralized default model constant usage.
+
+- **Progress observability improvements**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Non-error workflow stage logs are now surfaced (bounded) so users can see what’s happening during long runs.
+
+- **Status readability and semantic contrast**
+  - `core/src/scholardevclaw/tui/widgets.py`
+  - `core/src/scholardevclaw/tui/theme.py`
+    - Restored explicit `MODE/PROVIDER/MODEL/TOKENS/DIR` status labeling for clarity.
+    - Increased semantic contrast for success/warning/error text while keeping user-selected palette.
+
+- **Coverage added/updated**
+  - `core/tests/unit/test_tui_app.py`
+    - Added explicit repo+spec parsing tests for generate/map forms.
+  - `core/tests/unit/test_tui_screens.py`
+    - Added guard to ensure help text tracks current OpenRouter default model.
+
+- **Verification**
+  - ✅ `python -m pytest core/tests/unit/test_tui_app.py -q` (28 passed)
+  - ✅ `python -m pytest core/tests/unit/test_tui_screens.py -q` (2 passed)
+  - ✅ `python -m pytest core/tests/unit/test_tui_widgets.py -q` (9 passed)
+  - ✅ parser smoke check for `map/generate/integrate ./repo <spec>`
+  - ✅ `python -m py_compile` on changed TUI/LLM modules
 
 ### 2026-04-04 (TUI polish + reliability: suppress background noise, better chat grounding)
 

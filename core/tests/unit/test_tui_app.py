@@ -326,6 +326,26 @@ def test_build_request_generate_this_repo_uses_active_directory_and_spec():
     assert req["spec"] == "rmsnorm"
 
 
+def test_build_request_generate_with_explicit_repo_and_spec_parses_correctly():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("generate ./repo rmsnorm")
+
+    assert action == "generate"
+    assert req["repo_path"] == "./repo"
+    assert req["spec"] == "rmsnorm"
+
+
+def test_build_request_map_with_explicit_repo_and_spec_parses_correctly():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("map ./repo flashattention")
+
+    assert action == "map"
+    assert req["repo_path"] == "./repo"
+    assert req["spec"] == "flashattention"
+
+
 def test_build_chat_system_prompt_contains_natural_greeting_guidance():
     app = _minimal_app_for_unit()
     app._directory = "/tmp"

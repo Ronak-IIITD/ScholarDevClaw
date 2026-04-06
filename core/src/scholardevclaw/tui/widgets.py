@@ -261,22 +261,16 @@ class StatusBar(Static):
     def _refresh_display(self) -> None:
         model_value = self._model or "unset"
         directory_value = self._directory or "."
-        if len(directory_value) > 30:
-            directory_value = f"…{directory_value[-29:]}"
+        if len(directory_value) > 40:
+            directory_value = f"…{directory_value[-39:]}"
 
-        # Build visually appealing status line
-        mode_indicator = f"[{self._mode.upper()}]"
-
-        # Provider with color coding
-        provider_indicator = f"[{self._provider}]"
-
-        # Model truncated
-        if len(model_value) > 15:
-            model_value = model_value[:12] + "…"
-
-        tokens_indicator = f"⟨{self._format_tokens(self._session_tokens)}⟩"
-
-        dir_indicator = f"⌁ {directory_value}"
+        parts = [
+            f"MODE: {self._mode}",
+            f"PROVIDER: {self._provider}",
+            f"MODEL: {model_value}",
+            f"TOKENS: {self._format_tokens(self._session_tokens)}",
+            f"DIR: {directory_value}",
+        ]
 
         # Status message with icon based on level
         status_icon = {
@@ -295,13 +289,8 @@ class StatusBar(Static):
         if self._start_time:
             tail.append(f"{time.perf_counter() - self._start_time:.1f}s")
 
-        # Combine all parts
-        prefix = "  ".join(
-            [mode_indicator, provider_indicator, model_value, tokens_indicator, dir_indicator]
-        )
-        suffix = "  ".join(tail)
-
-        self.update(f"{prefix}  {suffix}")
+        suffix = f"   {' | '.join(tail)}" if tail else ""
+        self.update("   ".join(parts) + suffix)
 
     @staticmethod
     def _format_tokens(value: int) -> str:

@@ -26,10 +26,10 @@ COLORS = {
     "accent-dim": "#4A5C6A",  # Medium - darker accent
     "accent-bright": "#4A5C6A",  # Brighter accent for highlights
     # Semantic (using palette)
-    "success": "#4A5C6A",  # Medium - success indicators
-    "warning": "#9BA8AB",  # Light muted - warnings
-    "error": "#253754",  # Medium dark - errors
-    "info": "#4A5C6A",  # Medium - info
+    "success": "#9BA8AB",  # Light muted - readable success on dark bg
+    "warning": "#CCD0CF",  # High contrast warning text
+    "error": "#CCD0CF",  # High contrast error text
+    "info": "#9BA8AB",  # Light muted info
     # Borders/Separators
     "border": "#4A5C6A",  # Medium
     "border-focus": "#9BA8AB",  # Light muted

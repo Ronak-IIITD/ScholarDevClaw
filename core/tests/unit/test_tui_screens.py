@@ -12,3 +12,9 @@ def test_provider_setup_submitted_handlers_are_field_scoped():
     assert '@on(Input.Submitted, "#setup-model")' in source
     assert '@on(Input.Submitted, "#setup-key")' in source
     assert "@on(Input.Submitted)\n    def on_input_submitted" not in source
+
+
+def test_help_text_uses_current_openrouter_default_model():
+    from scholardevclaw.tui.screens import DEFAULT_OPENROUTER_MODEL, HELP_TEXT
+
+    assert DEFAULT_OPENROUTER_MODEL in HELP_TEXT

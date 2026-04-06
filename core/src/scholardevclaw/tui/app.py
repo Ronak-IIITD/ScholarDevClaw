@@ -43,6 +43,7 @@ SUPPORTED_TUI_PROVIDERS = {
     "openrouter": AuthProvider.OPENROUTER,
     "ollama": AuthProvider.OLLAMA,
 }
+DEFAULT_OPENROUTER_MODEL = DEFAULT_MODELS[AuthProvider.OPENROUTER]
 MODE_HINTS = {
     "analyze": [
         "Hint -> analyze ./repo",
@@ -70,7 +71,7 @@ MODE_COMMANDS = {
         "validate ./repo",
         "set dir ./repo",
         "set provider openrouter",
-        "set model anthropic/claude-sonnet-4",
+        f"set model {DEFAULT_OPENROUTER_MODEL}",
         ":search",
         ":edit",
     ],
@@ -103,7 +104,7 @@ GLOBAL_COMMANDS = [
     "set mode edit",
     "set provider openrouter",
     "set provider ollama",
-    "set model anthropic/claude-sonnet-4",
+    f"set model {DEFAULT_OPENROUTER_MODEL}",
     "set dir ./repo",
     ":analyze",
     ":search",
@@ -235,9 +236,9 @@ class ScholarDevClawApp(App[None]):
         "border": "#4A5C6A",
         "surface": "#11212D",
         "text-muted": "#9BA8AB",
-        "success": "#4A5C6A",
-        "warning": "#9BA8AB",
-        "error": "#253754",
+        "success": "#9BA8AB",
+        "warning": "#CCD0CF",
+        "error": "#CCD0CF",
     }
 
     def __init__(self) -> None:
@@ -953,8 +954,10 @@ class ScholarDevClawApp(App[None]):
         if head in {"map", "generate", "integrate"}:
             repo_path = self._directory
             spec = ""
-            if len(parts) > 1:
-                candidate = parts[1].strip().lower()
+            remaining_tokens = parts[1:]
+            if remaining_tokens:
+                first_token = remaining_tokens[0].strip()
+                candidate = first_token.lower()
                 if candidate in {
                     "this",
                     "current",
@@ -965,12 +968,15 @@ class ScholarDevClawApp(App[None]):
                     "here",
                 }:
                     repo_path = self._directory
+                    remaining_tokens = remaining_tokens[1:]
                 elif candidate in SPEC_COMMANDS:
                     spec = candidate
+                    remaining_tokens = remaining_tokens[1:]
                 else:
-                    repo_path = parts[1]
+                    repo_path = first_token
+                    remaining_tokens = remaining_tokens[1:]
             if not spec:
-                spec = self._extract_spec_from_tokens(parts[1:])
+                spec = self._extract_spec_from_tokens(remaining_tokens)
             return head, {"action": head, "repo_path": repo_path, "spec": spec}
 
         action, ctx = self._parse_natural_command(raw)
@@ -1247,6 +1253,7 @@ class ScholarDevClawApp(App[None]):
         try:
             sink_out = io.StringIO()
             sink_err = io.StringIO()
+            client: LLMClient | None = None
             with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
                 client = self._get_llm_client()
                 messages = self._chat_history[-8:] + [{"role": "user", "content": prompt}]
@@ -1259,12 +1266,14 @@ class ScholarDevClawApp(App[None]):
                     temperature=0.2,
                 ):
                     if token != self._active_token:
-                        client.close()
+                        if client is not None:
+                            client.close()
                         return
                     if chunk.delta:
                         response_text += chunk.delta
                         self.call_from_thread(self.post_message, ChatDelta(token, response_text))
-                client.close()
+                if client is not None:
+                    client.close()
             input_tokens = self._estimate_tokens(prompt)
             output_tokens = self._estimate_tokens(response_text)
             result = type(
@@ -1282,10 +1291,23 @@ class ScholarDevClawApp(App[None]):
                 },
             )()
         except (LLMAPIError, LLMConfigError, Exception) as exc:
+            error_message = str(exc)
+            if isinstance(exc, LLMAPIError) and exc.status_code == 429:
+                error_message = (
+                    "Rate limit reached (429). Try one of: "
+                    f"set model {DEFAULT_OPENROUTER_MODEL}, set provider ollama, or retry in 30-60s. "
+                    f"Details: {exc.detail}"
+                )
+            elif isinstance(exc, LLMAPIError) and exc.status_code == 401:
+                error_message = (
+                    "Authentication failed (401). Run `setup` and paste a valid OpenRouter API key."
+                )
+            elif isinstance(exc, LLMAPIError) and exc.status_code == 402:
+                error_message = "Provider balance/credits issue (402). Check your OpenRouter credits or switch to Ollama."
             result = type(
                 "Result",
                 (),
-                {"ok": False, "payload": {}, "error": str(exc), "logs": [str(exc)]},
+                {"ok": False, "payload": {}, "error": error_message, "logs": [error_message]},
             )()
 
         self.call_from_thread(
@@ -1463,8 +1485,30 @@ class ScholarDevClawApp(App[None]):
         self._line_progress += 1
         fraction = min(0.9, 0.1 + (self._line_progress * 0.08))
         line = (message.line or "").strip()
-        if line and any(term in line.lower() for term in ("error", "failed", "warning")):
-            self._append_output(line)
+        if line:
+            lower = line.lower()
+            # Show meaningful workflow logs (not only errors) so users can follow progress.
+            if any(term in lower for term in ("error", "failed", "warning")):
+                self._append_output(line)
+            elif (
+                any(
+                    marker in lower
+                    for marker in (
+                        "starting",
+                        "running",
+                        "analyz",
+                        "search",
+                        "map",
+                        "generat",
+                        "validat",
+                        "integrat",
+                        "done",
+                        "completed",
+                    )
+                )
+                and self._line_progress <= 20
+            ):
+                self._append_output(line, "system")
         self.query_one("#status-bar", StatusBar).update_timer()
         self._set_progress(self._running_action or "analyze", fraction)
 
