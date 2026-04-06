@@ -1581,6 +1581,7 @@ def cmd_security(args):
 
 def cmd_multi_repo(args):
     """Multi-repo analysis, comparison, and knowledge transfer"""
+    import json
     from pathlib import Path as _Path
 
     action = args.multi_repo_action
@@ -1609,7 +1610,7 @@ def cmd_multi_repo(args):
             if mgr.remove_repo(rp):
                 print(f"Removed: {rp}")
             else:
-                print(f"Not found: {rp}", file=sys.stderr)
+                print(f"Not found: {rp}")
 
     elif action == "list":
         from scholardevclaw.multi_repo.manager import MultiRepoManager
@@ -1718,6 +1719,61 @@ def cmd_multi_repo(args):
                 print(f"  [{status:9s}] {p.name}{extra}")
                 if p.error:
                     print(f"             Error: {p.error}")
+
+
+def cmd_doctor(args):
+    """Run self-diagnosis and health checks"""
+    import json
+
+    from scholardevclaw.utils.health import HealthChecker
+
+    check = getattr(args, "check", "all")
+    verbose = getattr(args, "verbose", False)
+    checker = HealthChecker()
+
+    if check == "quick":
+        result = checker.run_quick_check()
+        if result:
+            print("Quick health check passed")
+        else:
+            print("Quick health check failed")
+            sys.exit(1)
+        return
+
+    # Run specific check or all
+    if check != "all" and check != "environment":
+        result = checker.run_check(check)
+        status = "OK" if result.healthy else "FAIL"
+        print(f"[{status}] {result.name}: {result.message}")
+        if verbose and result.details:
+            print(f"  Details: {json.dumps(result.details)}")
+        if not result.healthy:
+            sys.exit(1)
+    else:
+        # Run all checks
+        health = checker.run_all_checks()
+        print("=" * 50)
+        print("  ScholarDevClaw Health Check")
+        print("=" * 50)
+        print(f"  Version     : {health.version}")
+        print(f"  Python      : {health.python_version}")
+        print(f"  Platform    : {health.platform}")
+        print(f"  Uptime      : {health.uptime_seconds:.1f}s")
+        print()
+        all_healthy = True
+        for result in health.checks:
+            status = "OK" if result.healthy else "FAIL"
+            print(f"[{status}] {result.name}: {result.message}")
+            if verbose and result.details:
+                print(f"    Details: {json.dumps(result.details)}")
+            if not result.healthy:
+                all_healthy = False
+        print()
+        if all_healthy:
+            print("All checks passed")
+        else:
+            print("Some checks failed")
+            sys.exit(1)
 
 
 def cmd_tui(args):
@@ -1977,6 +2033,17 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_security.add_argument("--verbose", "-v", action="store_true", help="Show detailed findings")
     p_security.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # doctor
+    p_doctor = subparsers.add_parser("doctor", help="Run self-diagnosis and health checks")
+    p_doctor.add_argument(
+        "check",
+        nargs="?",
+        default="all",
+        choices=["all", "quick", "ollama", "openrouter", "auth_store", "environment"],
+        help="Specific check to run (default: all)",
+    )
+    p_doctor.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")
+
     # agent
     p_agent = subparsers.add_parser("agent", help="Start interactive AI agent")
     p_agent.add_argument(
@@ -2076,6 +2143,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "auth": cmd_auth,
         "demo": cmd_demo,
         "multi-repo": cmd_multi_repo,
+        "doctor": cmd_doctor,
     }
 
     commands[args.command](args)

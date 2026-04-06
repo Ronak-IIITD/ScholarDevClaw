@@ -26,6 +26,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from collections.abc import Iterator
@@ -34,8 +35,10 @@ from typing import Any
 
 import httpx
 
-# Re-use the auth provider enum for provider identification
 from scholardevclaw.auth.types import AuthProvider
+from scholardevclaw.utils.retry import RetryPolicy, _extract_retry_after
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Response dataclass
@@ -396,6 +399,23 @@ class LLMClient:
 
         self._http = httpx.Client(timeout=httpx.Timeout(timeout))
 
+        # Retry policy for transient failures (429, 5xx, network errors)
+        self._retry_policy = RetryPolicy(
+            max_attempts=3,
+            base_delay=1.0,
+            max_delay=30.0,
+            exponential_base=2.0,
+            jitter=True,
+            retry_after=_extract_retry_after,
+            on_retry=lambda exc, attempt, delay: logger.warning(
+                "[%s] Retry attempt %d after %.1fs: %s",
+                self.provider.value,
+                attempt,
+                delay,
+                str(exc)[:100],
+            ),
+        )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -436,7 +456,22 @@ class LLMClient:
             url = f"{self.base_url}/openai/deployments/{used_model}/chat/completions?api-version=2024-02-01"
 
         t0 = time.monotonic()
-        resp = self._http.post(url, headers=headers, json=body)
+
+        def _make_request() -> httpx.Response:
+            return self._http.post(url, headers=headers, json=body)
+
+        try:
+            resp = self._retry_policy.execute(_make_request)
+        except Exception as exc:
+            status_code = 0
+            if isinstance(exc, httpx.HTTPStatusError):
+                status_code = exc.response.status_code
+            raise LLMAPIError(
+                provider=self.provider.value,
+                status_code=status_code,
+                detail=str(exc)[:500],
+            ) from exc
+
         latency = (time.monotonic() - t0) * 1000
 
         if resp.status_code != 200:
@@ -527,6 +562,13 @@ class LLMClient:
 
     def __exit__(self, *args: Any) -> None:
         self.close()
+
+    def __del__(self) -> None:
+        """Ensure HTTP client is closed on garbage collection."""
+        try:
+            self.close()
+        except Exception:
+            pass  # Ignore errors during cleanup
 
     # ------------------------------------------------------------------
     # Factory

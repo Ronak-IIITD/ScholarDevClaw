@@ -661,9 +661,15 @@ def _fetch_arxiv_abstract(arxiv_id: str) -> str | None:
     clean_id = arxiv_id.strip().split("/")[-1]  # handle full URLs too
     try:
         import httpx
+        from scholardevclaw.utils.retry import retry
 
         url = f"http://export.arxiv.org/api/query?id_list={clean_id}"
-        resp = httpx.get(url, timeout=15.0, follow_redirects=True)
+
+        @retry(max_attempts=2, base_delay=1.0, max_delay=10.0)
+        def _fetch_abstract() -> httpx.Response:
+            return httpx.get(url, timeout=15.0, follow_redirects=True)
+
+        resp = _fetch_abstract()
         if resp.status_code != 200:
             return None
 
@@ -709,12 +715,19 @@ def _fetch_arxiv_papers(
     }
 
     try:
-        resp = httpx.get(
-            "http://export.arxiv.org/api/query",
-            params=params,
-            timeout=20.0,
-            follow_redirects=True,
-        )
+        import httpx
+        from scholardevclaw.utils.retry import retry
+
+        @retry(max_attempts=2, base_delay=1.0, max_delay=10.0)
+        def _search_arxiv() -> httpx.Response:
+            return httpx.get(
+                "http://export.arxiv.org/api/query",
+                params=params,
+                timeout=20.0,
+                follow_redirects=True,
+            )
+
+        resp = _search_arxiv()
         if resp.status_code != 200:
             return []
     except Exception as exc:

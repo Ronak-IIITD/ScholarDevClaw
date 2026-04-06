@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import secrets
@@ -21,6 +22,8 @@ from .types import (
     KeyScope,
     UserProfile,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AuthStore:
@@ -134,6 +137,11 @@ class AuthStore:
             self._config = AuthConfig()
             return self._config
 
+        # Quarantine corrupt config instead of silent reset
+        quarantine_dir = self.store_dir / "quarantine"
+        raw: str | None = None
+        data: dict[str, Any] | None = None
+
         try:
             raw = self.auth_file.read_text().strip()
 
@@ -148,8 +156,28 @@ class AuthStore:
                 data = json.loads(raw)
 
             self._config = AuthConfig.from_dict(data)
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+            # Quarantine the corrupt file
+            if raw is not None:
+                try:
+                    quarantine_dir.mkdir(parents=True, exist_ok=True)
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    quarantine_path = quarantine_dir / f"auth_corrupt_{ts}.json"
+                    quarantine_path.write_text(raw)
+                    logger.warning(
+                        "Quarantined corrupt auth config to %s: %s",
+                        quarantine_path,
+                        exc,
+                    )
+                except OSError as qe:
+                    logger.error("Failed to quarantine corrupt config: %s", qe)
+
             self._config = AuthConfig()
+            if self._audit:
+                self._audit.log(
+                    event_type=AuditEventType.CONFIG_CHANGED,
+                    details={"action": "corrupt_config_reset", "error": str(exc)[:200]},
+                )
 
         return self._config
 

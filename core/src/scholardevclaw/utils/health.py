@@ -46,6 +46,9 @@ class HealthChecker:
         self.register_check("disk", self._check_disk)
         self.register_check("environment", self._check_environment)
         self.register_check("filesystem", self._check_filesystem)
+        self.register_check("ollama", self._check_ollama)
+        self.register_check("openrouter", self._check_openrouter)
+        self.register_check("auth_store", self._check_auth_store)
 
     def register_check(self, name: str, check_func: Callable[[], HealthStatus]) -> None:
         self._checks[name] = check_func
@@ -212,6 +215,101 @@ class HealthChecker:
             healthy=healthy,
             message=message,
             details={"issues": issues},
+        )
+
+    def _check_ollama(self) -> HealthStatus:
+        """Check if Ollama is running and accessible."""
+        import httpx
+
+        ollama_host = os.environ.get("OLLAMA_HOST", "").strip() or "http://localhost:11434"
+        try:
+            resp = httpx.get(f"{ollama_host.rstrip('/')}/api/tags", timeout=5.0)
+            if resp.status_code == 200:
+                return HealthStatus(
+                    name="ollama",
+                    healthy=True,
+                    message=f"Ollama accessible at {ollama_host}",
+                )
+            return HealthStatus(
+                name="ollama",
+                healthy=False,
+                message=f"Ollama returned status {resp.status_code}",
+            )
+        except Exception as e:
+            return HealthStatus(
+                name="ollama",
+                healthy=False,
+                message=f"Ollama not reachable: {e}",
+            )
+
+    def _check_openrouter(self) -> HealthStatus:
+        """Check if OpenRouter API is accessible."""
+        import httpx
+
+        api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+        if not api_key:
+            return HealthStatus(
+                name="openrouter",
+                healthy=False,
+                message="OPENROUTER_API_KEY not set",
+            )
+
+        try:
+            resp = httpx.get(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                return HealthStatus(
+                    name="openrouter",
+                    healthy=True,
+                    message="OpenRouter API accessible",
+                )
+            return HealthStatus(
+                name="openrouter",
+                healthy=False,
+                message=f"OpenRouter returned status {resp.status_code}",
+            )
+        except Exception as e:
+            return HealthStatus(
+                name="openrouter",
+                healthy=False,
+                message=f"OpenRouter not reachable: {e}",
+            )
+
+    def _check_auth_store(self) -> HealthStatus:
+        """Check if auth store is accessible and not corrupt."""
+        from pathlib import Path
+
+        home = Path.home()
+        auth_file = home / ".scholardevclaw" / "auth.json"
+
+        if not auth_file.exists():
+            return HealthStatus(
+                name="auth_store",
+                healthy=True,
+                message="Auth store not yet initialized",
+            )
+
+        # Check for quarantine directory
+        quarantine_dir = home / ".scholardevclaw" / "quarantine"
+        quarantine_count = 0
+        if quarantine_dir.exists():
+            quarantine_count = len(list(quarantine_dir.glob("auth_corrupt_*.json")))
+
+        if quarantine_count > 0:
+            return HealthStatus(
+                name="auth_store",
+                healthy=False,
+                message=f"Found {quarantine_count} quarantined corrupt configs",
+                details={"quarantine_count": quarantine_count},
+            )
+
+        return HealthStatus(
+            name="auth_store",
+            healthy=True,
+            message="Auth store healthy",
         )
 
 
