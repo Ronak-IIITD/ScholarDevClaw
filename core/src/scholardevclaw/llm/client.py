@@ -340,7 +340,7 @@ DEFAULT_MODELS: dict[AuthProvider, str] = {
     AuthProvider.MISTRAL: "mistral-large-latest",
     AuthProvider.DEEPSEEK: "deepseek-chat",
     AuthProvider.COHERE: "command-r-plus",
-    AuthProvider.OPENROUTER: "anthropic/claude-sonnet-4-20250514",
+    AuthProvider.OPENROUTER: "openai/gpt-4.1-mini",
     AuthProvider.TOGETHER: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
     AuthProvider.FIREWORKS: "accounts/fireworks/models/llama-v3p1-70b-instruct",
     AuthProvider.GITHUB_COPILOT: "gpt-4o",
