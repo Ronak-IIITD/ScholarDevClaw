@@ -10,9 +10,11 @@ import threading
 import time
 import contextlib
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -158,6 +160,7 @@ class TUIRuntimeState:
     provider: str = "setup"
     model: str = ""
     directory: str = "."
+    models_by_provider: dict[str, str] = field(default_factory=dict)
 
 
 class TaskLog(Message):
@@ -274,6 +277,7 @@ class ScholarDevClawApp(App[None]):
         self._last_total_tokens = 0
         self._cancel_events: dict[int, threading.Event] = {}
         self._task_threads: dict[int, threading.Thread] = {}
+        self._models_by_provider: dict[str, str] = {}
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
             self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
@@ -292,6 +296,7 @@ class ScholarDevClawApp(App[None]):
     def on_mount(self) -> None:
         if self._directory in {"", "."}:
             self._directory = os.getcwd()
+        self._startup_preflight()
         self._sync_status_bar()
         self._set_status("Ready", "info")
         self._update_command_meta()
@@ -313,10 +318,18 @@ class ScholarDevClawApp(App[None]):
         if config_path.exists():
             try:
                 data = json.loads(config_path.read_text())
+                models_by_provider = data.get("models_by_provider")
+                if not isinstance(models_by_provider, dict):
+                    models_by_provider = {}
                 state = TUIRuntimeState(
                     provider=str(data.get("provider", state.provider)),
                     model=str(data.get("model", state.model)),
                     directory=str(data.get("directory", state.directory)),
+                    models_by_provider={
+                        str(k): str(v)
+                        for k, v in models_by_provider.items()
+                        if isinstance(k, str) and isinstance(v, str)
+                    },
                 )
             except Exception:
                 pass
@@ -339,6 +352,23 @@ class ScholarDevClawApp(App[None]):
         self._provider = state.provider
         self._model = state.model
         self._directory = state.directory or "."
+        self._models_by_provider = dict(state.models_by_provider)
+
+    def _model_for_provider(self, provider: str) -> str:
+        if provider in self._models_by_provider and self._models_by_provider[provider].strip():
+            return self._models_by_provider[provider].strip()
+        auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider)
+        if auth_provider is not None:
+            return DEFAULT_MODELS[auth_provider]
+        return self._model or ""
+
+    def _remember_model_for_provider(self, provider: str, model: str) -> None:
+        provider_name = (provider or "").strip().lower()
+        model_name = (model or "").strip()
+        if not provider_name or not model_name:
+            return
+        if provider_name in SUPPORTED_TUI_PROVIDERS:
+            self._models_by_provider[provider_name] = model_name
 
     def _save_runtime_state(self) -> None:
         config_path = self._runtime_state_path()
@@ -346,6 +376,7 @@ class ScholarDevClawApp(App[None]):
             "provider": self._provider,
             "model": self._model,
             "directory": self._directory,
+            "models_by_provider": self._models_by_provider,
         }
         config_path.write_text(json.dumps(payload, indent=2))
 
@@ -395,6 +426,56 @@ class ScholarDevClawApp(App[None]):
             and bool(self._model)
             and self._provider_has_credentials()
         )
+
+    def _ollama_reachable(self, timeout: float = 1.0) -> bool:
+        host = (os.environ.get("OLLAMA_HOST") or "").strip() or (
+            AuthProvider.OLLAMA.default_base_url or "http://localhost:11434"
+        )
+        try:
+            resp = httpx.get(f"{host.rstrip('/')}/api/tags", timeout=timeout)
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    def _startup_preflight(self) -> None:
+        changed = False
+
+        # Ensure directory exists.
+        try:
+            current_dir = str(Path(self._directory).expanduser())
+            if not Path(current_dir).exists() or not Path(current_dir).is_dir():
+                self._directory = os.getcwd()
+                changed = True
+                self._append_output(
+                    f"Startup: previous directory missing; using {self._pretty_directory()}",
+                    "warning",
+                )
+        except Exception:
+            self._directory = os.getcwd()
+            changed = True
+
+        # Normalize provider/model.
+        if self._provider not in SUPPORTED_TUI_PROVIDERS and self._provider != "setup":
+            self._provider = "setup"
+            changed = True
+
+        if self._provider in SUPPORTED_TUI_PROVIDERS:
+            target_model = self._model or self._model_for_provider(self._provider)
+            if target_model != self._model:
+                self._model = target_model
+                changed = True
+            self._remember_model_for_provider(self._provider, self._model)
+
+            if self._provider == "ollama" and not self._ollama_reachable(timeout=1.0):
+                self._append_output(
+                    "Startup: Ollama selected but not reachable at OLLAMA_HOST. "
+                    "Run `ollama serve` or `set provider openrouter`.",
+                    "warning",
+                )
+                self._set_status("Ollama unavailable", "warning")
+
+        if changed:
+            self._save_runtime_state()
 
     def _maybe_show_setup(self) -> None:
         if self._llm_ready():
@@ -496,6 +577,7 @@ class ScholarDevClawApp(App[None]):
 
         self._provider = provider_name
         self._model = model.strip()
+        self._remember_model_for_provider(provider_name, self._model)
         self._save_runtime_state()
         return True, "OK"
 
@@ -1077,6 +1159,10 @@ class ScholarDevClawApp(App[None]):
             return "Authentication failed (401). Run `setup` and paste a valid API key."
         if isinstance(exc, LLMAPIError) and exc.status_code == 402:
             return "Provider credits issue (402). Check billing or run `set provider ollama`."
+        if isinstance(exc, LLMAPIError) and exc.status_code in {400, 404}:
+            detail = (exc.detail or "").lower()
+            if "model" in detail or "not found" in detail or "does not exist" in detail:
+                return "Model unavailable for this provider. Run `set model <provider-model>` or switch provider."
         if isinstance(exc, LLMConfigError):
             return str(exc)
         return "LLM request failed. Retry, run `setup`, or switch provider."
@@ -1317,6 +1403,7 @@ class ScholarDevClawApp(App[None]):
                     if chunk.delta:
                         response_text += chunk.delta
                         self.call_from_thread(self.post_message, ChatDelta(token, response_text))
+
             input_tokens = self._estimate_tokens(prompt)
             output_tokens = self._estimate_tokens(response_text)
             result = type(
@@ -1344,7 +1431,115 @@ class ScholarDevClawApp(App[None]):
                     "logs": [],
                 },
             )()
-        except (LLMAPIError, LLMConfigError, Exception) as exc:
+        except LLMAPIError as exc:
+            detail = (exc.detail or "").lower()
+            looks_like_bad_model = exc.status_code in {400, 404} and (
+                "model" in detail or "not found" in detail or "does not exist" in detail
+            )
+
+            if looks_like_bad_model and self._provider in SUPPORTED_TUI_PROVIDERS:
+                fallback_model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
+                if fallback_model and fallback_model != self._model:
+                    try:
+                        if client is not None:
+                            client.close()
+                            client = None
+
+                        self._model = fallback_model
+                        self._remember_model_for_provider(self._provider, fallback_model)
+                        self._save_runtime_state()
+                        self.call_from_thread(
+                            self.post_message,
+                            TaskLog(
+                                token,
+                                f"Model unavailable; switched to fallback '{fallback_model}' and retrying.",
+                            ),
+                        )
+
+                        with (
+                            contextlib.redirect_stdout(io.StringIO()),
+                            contextlib.redirect_stderr(io.StringIO()),
+                        ):
+                            client = self._get_llm_client()
+                            messages = self._chat_history[-8:] + [
+                                {"role": "user", "content": prompt}
+                            ]
+                            response_text = ""
+                            for chunk in client.chat_stream(
+                                prompt,
+                                messages=messages,
+                                system=self._build_chat_system_prompt(),
+                                model=self._model,
+                                max_tokens=2048,
+                                temperature=0.2,
+                            ):
+                                if token != self._active_token or self._is_task_cancelled(token):
+                                    raise TaskCancelledError("Task cancelled")
+                                if chunk.delta:
+                                    response_text += chunk.delta
+                                    self.call_from_thread(
+                                        self.post_message, ChatDelta(token, response_text)
+                                    )
+
+                        input_tokens = self._estimate_tokens(prompt)
+                        output_tokens = self._estimate_tokens(response_text)
+                        result = type(
+                            "Result",
+                            (),
+                            {
+                                "ok": True,
+                                "payload": {
+                                    "content": response_text.strip(),
+                                    "input_tokens": input_tokens,
+                                    "output_tokens": output_tokens,
+                                },
+                                "error": "",
+                                "logs": [],
+                            },
+                        )()
+                    except TaskCancelledError:
+                        result = type(
+                            "Result",
+                            (),
+                            {
+                                "ok": False,
+                                "payload": {"cancelled": True},
+                                "error": "Task cancelled",
+                                "logs": [],
+                            },
+                        )()
+                    except Exception as fallback_exc:
+                        error_message = self._format_chat_error(fallback_exc)
+                        result = type(
+                            "Result",
+                            (),
+                            {
+                                "ok": False,
+                                "payload": {},
+                                "error": error_message,
+                                "logs": [error_message],
+                            },
+                        )()
+                else:
+                    error_message = self._format_chat_error(exc)
+                    result = type(
+                        "Result",
+                        (),
+                        {
+                            "ok": False,
+                            "payload": {},
+                            "error": error_message,
+                            "logs": [error_message],
+                        },
+                    )()
+            else:
+                error_message = self._format_chat_error(exc)
+                result = type(
+                    "Result",
+                    (),
+                    {"ok": False, "payload": {}, "error": error_message, "logs": [error_message]},
+                )()
+        except (LLMConfigError, Exception) as exc:
             error_message = self._format_chat_error(exc)
             result = type(
                 "Result",
@@ -1430,8 +1625,8 @@ class ScholarDevClawApp(App[None]):
                 self._append_output("Error: provider must be openrouter or ollama", "error")
                 return
             self._provider = provider
-            if not self._model:
-                self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[provider]]
+            self._model = self._model_for_provider(provider)
+            self._remember_model_for_provider(provider, self._model)
             self._save_runtime_state()
             self._context_hints = []
             self._sync_status_bar()
@@ -1442,6 +1637,7 @@ class ScholarDevClawApp(App[None]):
             return
         if action == "set_model":
             self._model = str(request.get("model", "") or "")
+            self._remember_model_for_provider(self._provider, self._model)
             self._save_runtime_state()
             self._context_hints = []
             self._sync_status_bar()

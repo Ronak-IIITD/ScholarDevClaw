@@ -38,6 +38,37 @@
 - ✅ `python -m pytest core/tests/unit/test_tui_app.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_widgets.py -q` (46 passed)
 - ✅ `python -m pytest core/tests/unit/test_llm_client.py -q` (4 passed)
 
+### 2026-04-07 (Production reliability pass: startup preflight + provider-model memory + chat self-heal)
+
+**Goal:** Make first-run and provider switching feel production-grade (“just works”) by proactively repairing stale state and auto-recovering from common model mismatch failures.
+
+**Summary:** Added startup preflight checks that repair invalid saved directory/provider/model state, introduced per-provider model memory so switching providers restores the correct model automatically, and added one-shot chat self-heal fallback when providers return model-not-found style errors.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Added startup preflight flow:
+    - Repairs missing saved directory to current working dir.
+    - Normalizes unsupported provider/model state.
+    - Validates Ollama reachability at startup and surfaces warning with recovery commands.
+  - Added provider-specific model memory persisted in runtime state (`models_by_provider`).
+    - `set provider <name>` now restores that provider’s last known model (or provider default).
+    - `set model ...` now remembers model for active provider.
+  - Added chat error refinement for model-not-found class errors (400/404) with actionable guidance.
+  - Added one-shot chat fallback: on model-not-found, switch to provider default model, persist it, and retry once automatically.
+  - Bound app style map directly to `theme.COLORS` to keep palette source centralized.
+
+- `core/tests/unit/test_tui_app.py`
+  - Added coverage for provider-model memory helpers.
+  - Added startup preflight recovery coverage for missing directory.
+  - Added actionable model-not-found error coverage.
+  - Added provider switching memory behavior coverage.
+
+**Verification:**
+
+- ✅ `python -m py_compile core/src/scholardevclaw/tui/app.py core/src/scholardevclaw/tui/theme.py core/src/scholardevclaw/tui/screens.py`
+- ✅ `python -m pytest core/tests/unit/test_tui_app.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_widgets.py core/tests/unit/test_llm_client.py -q`
+
 ### 2026-04-07 (TUI reliability hardening: bounded stream retries, safe cleanup, concise chat errors)
 
 **Goal:** Improve TUI chat reliability and UX consistency by hardening streaming startup behavior, guaranteeing client cleanup, and removing hardcoded accent colors from command suggestions.

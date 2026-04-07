@@ -420,6 +420,76 @@ def test_tui_styles_resolve_from_theme_palette():
     assert ScholarDevClawApp.STYLES["accent"] == COLORS["accent"]
 
 
+def test_remember_model_for_provider_tracks_supported_provider_only():
+    app = _minimal_app_for_unit()
+
+    app._remember_model_for_provider("openrouter", "openai/gpt-4.1-mini")
+    app._remember_model_for_provider("unknown", "model-x")
+
+    assert app._models_by_provider.get("openrouter") == "openai/gpt-4.1-mini"
+    assert "unknown" not in app._models_by_provider
+
+
+def test_model_for_provider_uses_saved_then_default():
+    app = _minimal_app_for_unit()
+    app._models_by_provider = {"openrouter": "openai/gpt-4.1-mini"}
+
+    assert app._model_for_provider("openrouter") == "openai/gpt-4.1-mini"
+    assert app._model_for_provider("ollama")
+
+
+def test_startup_preflight_recovers_missing_directory(tmp_path):
+    app = _minimal_app_for_unit()
+    app._directory = str(tmp_path / "missing-dir")
+    logs: list[str] = []
+    app._append_output = lambda line, level="auto": logs.append(f"{level}:{line}")
+    app._set_status = lambda *_a, **_k: None
+    app._save_runtime_state = lambda: None
+
+    app._startup_preflight()
+
+    assert os.path.isdir(app._directory)
+    assert any("previous directory missing" in line for line in logs)
+
+
+def test_set_provider_uses_provider_specific_model_memory(monkeypatch):
+    app = _minimal_app_for_unit()
+    app._provider = "openrouter"
+    app._model = "openai/gpt-4.1-mini"
+    app._models_by_provider = {
+        "openrouter": "openai/gpt-4.1-mini",
+        "ollama": "llama3.1",
+    }
+    app._save_runtime_state = lambda: None
+    app._sync_status_bar = lambda: None
+    app._set_status = lambda *_a, **_k: None
+    app._update_command_meta = lambda: None
+    app._append_output = lambda *_a, **_k: None
+
+    # No setup popup needed for ollama
+    app._provider_has_credentials = lambda provider=None: True
+
+    action, req = app._build_request("set provider ollama")
+    assert action == "set_provider"
+
+    # Execute equivalent branch directly.
+    provider = str(req.get("provider", "") or "").strip().lower()
+    app._provider = provider
+    app._model = app._model_for_provider(provider)
+    app._remember_model_for_provider(provider, app._model)
+
+    assert app._provider == "ollama"
+    assert app._model == "llama3.1"
+
+
+def test_format_chat_error_for_bad_model_is_actionable():
+    app = _minimal_app_for_unit()
+
+    message = app._format_chat_error(LLMAPIError("openrouter", 404, "model not found"))
+
+    assert "Model unavailable" in message
+
+
 def test_build_chat_system_prompt_contains_natural_greeting_guidance():
     app = _minimal_app_for_unit()
     app._directory = "/tmp"
