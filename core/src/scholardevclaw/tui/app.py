@@ -820,7 +820,7 @@ class ScholarDevClawApp(App[None]):
             for idx, suggestion in enumerate(self._suggestions[:3]):
                 prefix = "Suggestion ->" if idx == 0 else "             "
                 if idx == 0:
-                    lines.append(f"{prefix} [bold #7dd3fc]{suggestion}[/]")
+                    lines.append(f"{prefix} [bold $accent]{suggestion}[/]")
                 else:
                     lines.append(f"{prefix} [dim]{suggestion}[/]")
             widget.update("\n".join(lines))
@@ -829,7 +829,7 @@ class ScholarDevClawApp(App[None]):
             lines = []
             for idx, hint in enumerate(self._context_hints[:3]):
                 prefix = "Next ->" if idx == 0 else "       "
-                style = "[bold #7dd3fc]" if idx == 0 else "[dim]"
+                style = "[bold $accent]" if idx == 0 else "[dim]"
                 lines.append(f"{prefix} {style}{hint}[/]")
             widget.update("\n".join(lines))
             return
@@ -1063,6 +1063,17 @@ class ScholarDevClawApp(App[None]):
             f"Repo snapshot: {repo_snapshot}"
         )
 
+    def _format_chat_error(self, exc: Exception) -> str:
+        if isinstance(exc, LLMAPIError) and exc.status_code == 429:
+            return "Rate limit reached (429). Retry in 30-60s or run `set provider ollama`."
+        if isinstance(exc, LLMAPIError) and exc.status_code == 401:
+            return "Authentication failed (401). Run `setup` and paste a valid API key."
+        if isinstance(exc, LLMAPIError) and exc.status_code == 402:
+            return "Provider credits issue (402). Check billing or run `set provider ollama`."
+        if isinstance(exc, LLMConfigError):
+            return str(exc)
+        return "LLM request failed. Retry, run `setup`, or switch provider."
+
     @staticmethod
     def _extract_spec_from_tokens(tokens: list[str]) -> str:
         skip = {
@@ -1250,10 +1261,10 @@ class ScholarDevClawApp(App[None]):
 
     def _run_chat_in_thread(self, token: int, prompt: str) -> None:
         response_text = ""
+        client: LLMClient | None = None
         try:
             sink_out = io.StringIO()
             sink_err = io.StringIO()
-            client: LLMClient | None = None
             with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
                 client = self._get_llm_client()
                 messages = self._chat_history[-8:] + [{"role": "user", "content": prompt}]
@@ -1266,14 +1277,10 @@ class ScholarDevClawApp(App[None]):
                     temperature=0.2,
                 ):
                     if token != self._active_token:
-                        if client is not None:
-                            client.close()
                         return
                     if chunk.delta:
                         response_text += chunk.delta
                         self.call_from_thread(self.post_message, ChatDelta(token, response_text))
-                if client is not None:
-                    client.close()
             input_tokens = self._estimate_tokens(prompt)
             output_tokens = self._estimate_tokens(response_text)
             result = type(
@@ -1291,24 +1298,18 @@ class ScholarDevClawApp(App[None]):
                 },
             )()
         except (LLMAPIError, LLMConfigError, Exception) as exc:
-            error_message = str(exc)
-            if isinstance(exc, LLMAPIError) and exc.status_code == 429:
-                error_message = (
-                    "Rate limit reached (429). Try one of: "
-                    f"set model {DEFAULT_OPENROUTER_MODEL}, set provider ollama, or retry in 30-60s. "
-                    f"Details: {exc.detail}"
-                )
-            elif isinstance(exc, LLMAPIError) and exc.status_code == 401:
-                error_message = (
-                    "Authentication failed (401). Run `setup` and paste a valid OpenRouter API key."
-                )
-            elif isinstance(exc, LLMAPIError) and exc.status_code == 402:
-                error_message = "Provider balance/credits issue (402). Check your OpenRouter credits or switch to Ollama."
+            error_message = self._format_chat_error(exc)
             result = type(
                 "Result",
                 (),
                 {"ok": False, "payload": {}, "error": error_message, "logs": [error_message]},
             )()
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
         self.call_from_thread(
             self.post_message,

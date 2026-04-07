@@ -2,7 +2,39 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-06
+**Last updated:** 2026-04-07
+
+### 2026-04-07 (TUI reliability hardening: bounded stream retries, safe cleanup, concise chat errors)
+
+**Goal:** Improve TUI chat reliability and UX consistency by hardening streaming startup behavior, guaranteeing client cleanup, and removing hardcoded accent colors from command suggestions.
+
+**Summary:** Added bounded retry for LLM streaming startup using the shared retry policy and HTTP `raise_for_status`, ensured TUI chat thread always closes the LLM client in a `finally` block, switched command-meta highlight styling to palette-based `$accent`, and tightened user-facing chat error text to short actionable messages.
+
+**What changed:**
+
+- `core/src/scholardevclaw/llm/client.py`
+  - Added retry-wrapped stream startup in `LLMClient.chat_stream()` using `RetryPolicy.execute`.
+  - Startup now uses `response.raise_for_status()` so transient 429/5xx are retried.
+  - Added explicit response cleanup on startup failure and after stream consumption.
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Added `_format_chat_error()` for concise, actionable LLM errors (429/401/402 + fallback).
+  - Updated `_run_chat_in_thread()` to always close `LLMClient` in `finally`.
+  - Replaced hardcoded `#7dd3fc` command-meta styling with `[bold $accent]`.
+
+- `core/tests/unit/test_tui_app.py`
+  - Added explicit integrate parser coverage for `integrate ./repo rmsnorm`.
+  - Added 429 chat error formatting coverage to assert concise “Rate limit” + recovery hint.
+  - Added source-based guard to ensure `_update_command_meta()` does not use `#7dd3fc`.
+
+- `core/tests/unit/test_llm_client.py`
+  - Updated fake response to support `raise_for_status()` in existing chat URL test.
+  - Added stream startup retry test: first 429 then success yields streamed output.
+
+**Verification:**
+
+- ✅ `python -m pytest core/tests/unit/test_tui_app.py core/tests/unit/test_llm_client.py -q` (35 passed)
+- ⚠️ LSP diagnostics request for changed files timed out in this environment
 
 ### 2026-04-06 (TUI flow stabilization: parser fix + actionable rate-limit UX + model guidance consistency)
 

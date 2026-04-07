@@ -524,15 +524,30 @@ class LLMClient:
         if self.provider == AuthProvider.AZURE_OPENAI:
             url = f"{self.base_url}/openai/deployments/{used_model}/chat/completions?api-version=2024-02-01"
 
-        with self._http.stream("POST", url, headers=headers, json=body) as resp:
-            if resp.status_code != 200:
-                resp.read()
-                raise LLMAPIError(
-                    provider=self.provider.value,
-                    status_code=resp.status_code,
-                    detail=resp.text[:500] if hasattr(resp, "text") else "Stream error",
-                )
+        def _start_stream() -> httpx.Response:
+            request = self._http.build_request("POST", url, headers=headers, json=body)
+            response = self._http.send(request, stream=True)
+            try:
+                response.raise_for_status()
+            except Exception:
+                response.read()
+                response.close()
+                raise
+            return response
 
+        try:
+            resp = self._retry_policy.execute(_start_stream)
+        except Exception as exc:
+            status_code = 0
+            if isinstance(exc, httpx.HTTPStatusError):
+                status_code = exc.response.status_code
+            raise LLMAPIError(
+                provider=self.provider.value,
+                status_code=status_code,
+                detail=str(exc)[:500],
+            ) from exc
+
+        try:
             for line in resp.iter_lines():
                 if not line or not line.startswith("data: "):
                     continue
@@ -547,6 +562,8 @@ class LLMClient:
                 chunk = self._parse_stream_event(event)
                 if chunk:
                     yield chunk
+        finally:
+            resp.close()
 
     def close(self) -> None:
         """Close the underlying HTTP client."""

@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
+
+import httpx
+
 from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.llm.client import LLMClient
+from scholardevclaw.utils.retry import RetryPolicy
 
 
 def test_from_provider_ollama_uses_ollama_host_and_empty_api_key(monkeypatch):
@@ -36,6 +41,10 @@ def test_ollama_chat_url_joining_handles_trailing_slash_base_url():
         text = ""
 
         @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        @staticmethod
         def json() -> dict:
             return {
                 "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
@@ -54,3 +63,43 @@ def test_ollama_chat_url_joining_handles_trailing_slash_base_url():
 
     assert response.content == "ok"
     assert calls["url"] == "http://127.0.0.1:11434/v1/chat/completions"
+
+
+def test_chat_stream_retries_transient_startup_429_and_then_succeeds():
+    client = LLMClient.from_provider("ollama", base_url="http://127.0.0.1:11434/")
+    client._retry_policy = RetryPolicy(max_attempts=2, base_delay=0.0, max_delay=0.0, jitter=False)
+
+    class _FakeHTTP:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        @staticmethod
+        def build_request(method: str, url: str, **_: object) -> httpx.Request:
+            return httpx.Request(method, url)
+
+        def send(self, request: httpx.Request, *, stream: bool = False) -> httpx.Response:
+            assert stream is True
+            self.calls += 1
+            if self.calls == 1:
+                return httpx.Response(429, request=request, text="rate limited")
+            payload = json.dumps(
+                {
+                    "choices": [
+                        {
+                            "delta": {"content": "ok"},
+                            "finish_reason": None,
+                        }
+                    ],
+                    "model": "llama3.1",
+                }
+            )
+            content = f"data: {payload}\n\ndata: [DONE]\n\n".encode()
+            return httpx.Response(200, request=request, content=content)
+
+    fake_http = _FakeHTTP()
+    client._http = fake_http  # type: ignore[assignment]
+
+    chunks = list(client.chat_stream("hello"))
+
+    assert "".join(chunk.delta for chunk in chunks) == "ok"
+    assert fake_http.calls == 2

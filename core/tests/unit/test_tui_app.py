@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import inspect
 
+from scholardevclaw.llm.client import LLMAPIError
 from scholardevclaw.tui.app import ScholarDevClawApp
 
 
@@ -344,6 +345,33 @@ def test_build_request_map_with_explicit_repo_and_spec_parses_correctly():
     assert action == "map"
     assert req["repo_path"] == "./repo"
     assert req["spec"] == "flashattention"
+
+
+def test_build_request_integrate_with_explicit_repo_and_spec_parses_correctly():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("integrate ./repo rmsnorm")
+
+    assert action == "integrate"
+    assert req["repo_path"] == "./repo"
+    assert req["spec"] == "rmsnorm"
+
+
+def test_format_chat_error_429_is_concise_and_actionable():
+    app = _minimal_app_for_unit()
+
+    message = app._format_chat_error(LLMAPIError("openrouter", 429, "large blob"))
+
+    assert "Rate limit" in message
+    assert "set provider ollama" in message
+    assert "large blob" not in message
+
+
+def test_update_command_meta_uses_palette_accent_not_hardcoded_hex():
+    source = inspect.getsource(ScholarDevClawApp._update_command_meta)
+
+    assert "#7dd3fc" not in source
+    assert "$accent" in source
 
 
 def test_build_chat_system_prompt_contains_natural_greeting_guidance():
