@@ -4,6 +4,40 @@
 
 **Last updated:** 2026-04-07
 
+### 2026-04-07 (TUI cancellation + strict palette consistency pass)
+
+**Goal:** Make task cancellation actually stop active work and ensure the TUI color system consistently uses the user-provided palette everywhere.
+
+**Summary:** Added cooperative cancellation wiring for both workflow tasks and chat streaming threads (cancel events per task token), so `Ctrl+C` now requests real task stop instead of only clearing UI state. Also removed remaining hardcoded color drift by binding app styles to shared `theme.COLORS` and eliminating out-of-palette fallback hex values from theme presets.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Added `TaskCancelledError` and cooperative cancel checks in threaded task/chat runners.
+  - Added per-task `threading.Event` cancel map and thread bookkeeping (`_cancel_events`, `_task_threads`).
+  - `action_cancel_task()` now signals cancellation event for active token before UI reset.
+  - Thread workers now emit cancelled payloads and clean up thread/cancel registries.
+  - `on_stop()` now signals cancellation for any still-running tasks.
+  - Bound `ScholarDevClawApp.STYLES` directly to `theme.COLORS` values for palette consistency.
+
+- `core/src/scholardevclaw/tui/theme.py`
+  - Removed remaining out-of-palette hardcoded fallback hex values in preset themes.
+  - `minimal` and `high_contrast` presets now remain derived from the shared palette map.
+
+- `core/tests/unit/test_tui_app.py`
+  - Added cancellation event behavior coverage for active task cancellation.
+  - Added `_is_task_cancelled()` state coverage.
+  - Added assertions that `ScholarDevClawApp.STYLES` resolve from `theme.COLORS`.
+
+- `core/tests/unit/test_tui_screens.py`
+  - Added guard to ensure no hardcoded hex colors appear in help text.
+
+**Verification:**
+
+- ✅ `python -m py_compile core/src/scholardevclaw/tui/app.py core/src/scholardevclaw/tui/theme.py core/src/scholardevclaw/tui/screens.py`
+- ✅ `python -m pytest core/tests/unit/test_tui_app.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_widgets.py -q` (46 passed)
+- ✅ `python -m pytest core/tests/unit/test_llm_client.py -q` (4 passed)
+
 ### 2026-04-07 (TUI reliability hardening: bounded stream retries, safe cleanup, concise chat errors)
 
 **Goal:** Improve TUI chat reliability and UX consistency by hardening streaming startup behavior, guaranteeing client cleanup, and removing hardcoded accent colors from command suggestions.

@@ -34,6 +34,7 @@ from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.llm.client import DEFAULT_MODELS, LLMAPIError, LLMClient, LLMConfigError
 
 from .screens import HelpOverlay, ProviderSetupScreen
+from .theme import COLORS as TUI_COLORS
 from .widgets import LogView, PromptInput, StatusBar
 
 logger = logging.getLogger(__name__)
@@ -182,6 +183,10 @@ class ChatDelta(Message):
         self.content = content
 
 
+class TaskCancelledError(RuntimeError):
+    """Raised when a running TUI task is cancelled cooperatively."""
+
+
 class ScholarDevClawApp(App[None]):
     """Keyboard-first shell UI."""
 
@@ -230,15 +235,15 @@ class ScholarDevClawApp(App[None]):
     """
 
     STYLES = {
-        "background": "#06141B",
-        "text": "#CCD0CF",
-        "accent": "#4A5C6A",
-        "border": "#4A5C6A",
-        "surface": "#11212D",
-        "text-muted": "#9BA8AB",
-        "success": "#9BA8AB",
-        "warning": "#CCD0CF",
-        "error": "#CCD0CF",
+        "background": TUI_COLORS["background"],
+        "text": TUI_COLORS["text"],
+        "accent": TUI_COLORS["accent"],
+        "border": TUI_COLORS["border"],
+        "surface": TUI_COLORS["surface"],
+        "text-muted": TUI_COLORS["text-muted"],
+        "success": TUI_COLORS["success"],
+        "warning": TUI_COLORS["warning"],
+        "error": TUI_COLORS["error"],
     }
 
     def __init__(self) -> None:
@@ -267,6 +272,8 @@ class ScholarDevClawApp(App[None]):
         self._session_input_tokens = 0
         self._session_output_tokens = 0
         self._last_total_tokens = 0
+        self._cancel_events: dict[int, threading.Event] = {}
+        self._task_threads: dict[int, threading.Thread] = {}
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
             self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
@@ -1146,6 +1153,10 @@ class ScholarDevClawApp(App[None]):
             self._command_history.append(command)
         self._history_index = len(self._command_history)
 
+    def _is_task_cancelled(self, token: int) -> bool:
+        event = self._cancel_events.get(token)
+        return bool(event and event.is_set())
+
     def _start_task(self, action: str, request: dict[str, Any]) -> None:
         if self._running_action is not None:
             self._set_status("Task already running", "warning")
@@ -1167,6 +1178,7 @@ class ScholarDevClawApp(App[None]):
         self._active_request = request
         self._line_progress = 0
         self._context_hints = []
+        self._cancel_events[self._active_token] = threading.Event()
         self.query_one("#status-bar", StatusBar).start_timer()
         self._set_status(f"Running {action}", "accent")
         self._emit_progress(action, 0.05)
@@ -1177,6 +1189,7 @@ class ScholarDevClawApp(App[None]):
             args=(self._active_token, action, request),
             daemon=True,
         )
+        self._task_threads[self._active_token] = thread
         thread.start()
 
     def _start_chat(self, prompt: str) -> None:
@@ -1195,6 +1208,7 @@ class ScholarDevClawApp(App[None]):
         self._active_request = {"action": "chat", "prompt": prompt}
         self._chat_preview = ""
         self._context_hints = []
+        self._cancel_events[self._active_token] = threading.Event()
         self.query_one("#status-bar", StatusBar).start_timer()
         self._set_status(f"Chatting with {self._provider}", "accent")
         self._set_live_text("Thinking...", "system")
@@ -1205,15 +1219,21 @@ class ScholarDevClawApp(App[None]):
             args=(self._active_token, prompt),
             daemon=True,
         )
+        self._task_threads[self._active_token] = thread
         thread.start()
 
     def _run_task_in_thread(self, token: int, action: str, request: dict[str, Any]) -> None:
         previous_env = self._apply_provider_env()
         try:
+            if self._is_task_cancelled(token):
+                raise TaskCancelledError("Task cancelled")
+
             sink_out = io.StringIO()
             sink_err = io.StringIO()
 
             def _log_callback(line: str) -> None:
+                if self._is_task_cancelled(token):
+                    raise TaskCancelledError("Task cancelled")
                 self.call_from_thread(self.post_message, TaskLog(token, line))
 
             with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
@@ -1248,6 +1268,17 @@ class ScholarDevClawApp(App[None]):
                     )
                 else:
                     raise RuntimeError(f"Unsupported action: {action}")
+        except TaskCancelledError:
+            result = type(
+                "Result",
+                (),
+                {
+                    "ok": False,
+                    "payload": {"cancelled": True},
+                    "error": "Task cancelled",
+                    "logs": [],
+                },
+            )()
         except Exception as exc:
             result = type(
                 "Result",
@@ -1256,6 +1287,8 @@ class ScholarDevClawApp(App[None]):
             )()
         finally:
             self._restore_provider_env(previous_env)
+            self._task_threads.pop(token, None)
+            self._cancel_events.pop(token, None)
 
         self.call_from_thread(self.post_message, TaskCompleted(token, action, result, request))
 
@@ -1263,6 +1296,9 @@ class ScholarDevClawApp(App[None]):
         response_text = ""
         client: LLMClient | None = None
         try:
+            if self._is_task_cancelled(token):
+                raise TaskCancelledError("Task cancelled")
+
             sink_out = io.StringIO()
             sink_err = io.StringIO()
             with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
@@ -1276,8 +1312,8 @@ class ScholarDevClawApp(App[None]):
                     max_tokens=2048,
                     temperature=0.2,
                 ):
-                    if token != self._active_token:
-                        return
+                    if token != self._active_token or self._is_task_cancelled(token):
+                        raise TaskCancelledError("Task cancelled")
                     if chunk.delta:
                         response_text += chunk.delta
                         self.call_from_thread(self.post_message, ChatDelta(token, response_text))
@@ -1297,6 +1333,17 @@ class ScholarDevClawApp(App[None]):
                     "logs": [],
                 },
             )()
+        except TaskCancelledError:
+            result = type(
+                "Result",
+                (),
+                {
+                    "ok": False,
+                    "payload": {"cancelled": True},
+                    "error": "Task cancelled",
+                    "logs": [],
+                },
+            )()
         except (LLMAPIError, LLMConfigError, Exception) as exc:
             error_message = self._format_chat_error(exc)
             result = type(
@@ -1310,6 +1357,8 @@ class ScholarDevClawApp(App[None]):
                     client.close()
                 except Exception:
                     pass
+            self._task_threads.pop(token, None)
+            self._cancel_events.pop(token, None)
 
         self.call_from_thread(
             self.post_message,
@@ -1561,9 +1610,15 @@ class ScholarDevClawApp(App[None]):
             self._set_status(f"{message.action} complete", "success")
         else:
             self._clear_progress()
-            self._append_output(f"Error: {result.error or 'command failed'}", "error")
+            if bool(getattr(result, "payload", {}).get("cancelled")) or str(
+                result.error or ""
+            ).lower().startswith("task cancelled"):
+                self._append_output("Task cancelled", "warning")
+                self._set_status("Task cancelled", "warning")
+            else:
+                self._append_output(f"Error: {result.error or 'command failed'}", "error")
+                self._set_status(f"{message.action} failed", "error")
             self._context_hints = []
-            self._set_status(f"{message.action} failed", "error")
 
         self._update_command_meta()
         self.query_one("#prompt-input", PromptInput).focus()
@@ -1576,10 +1631,14 @@ class ScholarDevClawApp(App[None]):
         if self._running_action is None:
             self.exit()
             return
+        old_token = self._active_token
+        cancel_event = self._cancel_events.get(old_token)
+        if cancel_event is not None:
+            cancel_event.set()
         self._task_token += 1
         self._active_token = self._task_token
         self._clear_progress()
-        self._append_output("Cancel requested", "warning")
+        self._append_output("Cancel requested (stopping current task)...", "warning")
         self._running_action = None
         self._active_request = None
         self.query_one("#status-bar", StatusBar).stop_timer()
@@ -1618,6 +1677,9 @@ class ScholarDevClawApp(App[None]):
         self.on_stop()
 
     def on_stop(self) -> None:
+        # Cancel any still-running tasks before dropping state.
+        for event in self._cancel_events.values():
+            event.set()
         self._running_action = None
         self._active_request = None
 

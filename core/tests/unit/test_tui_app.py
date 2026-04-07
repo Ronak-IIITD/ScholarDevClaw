@@ -201,6 +201,42 @@ def test_action_cancel_task_exits_when_idle():
     assert events == ["exit"]
 
 
+def test_action_cancel_task_sets_cancel_event_when_running():
+    app = _minimal_app_for_unit()
+    app._running_action = "analyze"
+    app._active_token = 7
+
+    import threading
+
+    event = threading.Event()
+    app._cancel_events = {7: event}
+
+    class _DummyStatus:
+        def stop_timer(self):
+            return None
+
+    app.query_one = lambda *_a, **_k: _DummyStatus()  # type: ignore[assignment]
+    app._clear_progress = lambda: None
+    app._append_output = lambda *_a, **_k: None
+    app._set_status = lambda *_a, **_k: None
+
+    app.action_cancel_task()
+
+    assert event.is_set() is True
+
+
+def test_is_task_cancelled_reflects_event_state():
+    app = _minimal_app_for_unit()
+    import threading
+
+    event = threading.Event()
+    app._cancel_events = {5: event}
+    assert app._is_task_cancelled(5) is False
+
+    event.set()
+    assert app._is_task_cancelled(5) is True
+
+
 def test_on_mount_does_not_use_zero_delay_timer():
     source = inspect.getsource(ScholarDevClawApp.on_mount)
 
@@ -372,6 +408,16 @@ def test_update_command_meta_uses_palette_accent_not_hardcoded_hex():
 
     assert "#7dd3fc" not in source
     assert "$accent" in source
+
+
+def test_tui_styles_resolve_from_theme_palette():
+    from scholardevclaw.tui.theme import COLORS
+
+    assert ScholarDevClawApp.STYLES["background"] == COLORS["background"]
+    assert ScholarDevClawApp.STYLES["surface"] == COLORS["surface"]
+    assert ScholarDevClawApp.STYLES["text"] == COLORS["text"]
+    assert ScholarDevClawApp.STYLES["text-muted"] == COLORS["text-muted"]
+    assert ScholarDevClawApp.STYLES["accent"] == COLORS["accent"]
 
 
 def test_build_chat_system_prompt_contains_natural_greeting_guidance():

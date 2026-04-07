@@ -140,7 +140,7 @@ def get_theme(theme_name: str = "default") -> dict[str, Any]:
             "colors": {
                 **COLORS,
                 "surface": COLORS["background"],
-                "text-muted": "#475569",
+                "text-muted": COLORS["text-muted"],
             },
             "fonts": FONTS,
             "font_sizes": FONT_SIZES,
@@ -151,9 +151,9 @@ def get_theme(theme_name: str = "default") -> dict[str, Any]:
         "high_contrast": {
             "colors": {
                 **COLORS,
-                "background": "#000000",
-                "text": "#ffffff",
-                "accent": "#00d4ff",
+                "background": COLORS["background"],
+                "text": COLORS["text"],
+                "accent": COLORS["accent"],
             },
             "fonts": FONTS,
             "font_sizes": {k: v + 2 for k, v in FONT_SIZES.items()},

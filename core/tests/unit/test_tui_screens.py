@@ -18,3 +18,9 @@ def test_help_text_uses_current_openrouter_default_model():
     from scholardevclaw.tui.screens import DEFAULT_OPENROUTER_MODEL, HELP_TEXT
 
     assert DEFAULT_OPENROUTER_MODEL in HELP_TEXT
+
+
+def test_no_hardcoded_hex_palette_in_help_text():
+    from scholardevclaw.tui.screens import HELP_TEXT
+
+    assert "#" not in HELP_TEXT
