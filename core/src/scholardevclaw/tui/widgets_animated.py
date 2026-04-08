@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any
 
-from textual import work
-from textual.app import ComposeResult
-from textual.message import Message
 from textual.widgets import Static
 
 
@@ -91,7 +87,7 @@ class Pulse(Static):
         opacity = 0.3 + 0.7 * (0.5 + 0.5 * (self._phase % 3.14159) / 1.5708)
         opacity = min(1.0, max(0.3, opacity))
 
-        self.update(f"●")
+        self.update("●")
         # Note: Textual doesn't support opacity directly in basic Static
         # The animation still provides subtle timing variation
 

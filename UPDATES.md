@@ -2,7 +2,59 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-07
+**Last updated:** 2026-04-08
+
+### 2026-04-08 (CI stabilization: lint/type/test/build breakage sweep)
+
+**Goal:** Clear the current CI red state by fixing accumulated lint, typing, optional-dependency test import, and TypeScript build errors across `core/` and `agent/`.
+
+**Summary:** Resolved all reported Ruff and mypy failures, hardened optional Textual test behavior so base CI doesn't fail when `textual` isn't installed, repaired dashboard pipeline test mocks for patch-aware validation calls, and fixed OpenTUI/shutdown TypeScript type errors that were breaking `bun run build` and Docker-agent build steps.
+
+**What changed:**
+
+- **Python lint/type fixes**
+  - `core/src/scholardevclaw/application/pipeline.py`
+    - Typed validation `checks` list as `list[dict[str, Any]]` to satisfy mypy mixed-value dict entries.
+    - Replaced loop-external `generate_result.payload` dependency in multi-integrate validation with a safely tracked `latest_patch_payload`.
+  - `core/src/scholardevclaw/research_intelligence/extractor.py`
+    - Normalized retry import placement by moving `retry` import to module scope.
+  - `core/src/scholardevclaw/tui/widgets.py`
+    - Removed unused `ComposeResult` import.
+  - `core/src/scholardevclaw/tui/widgets_animated.py`
+    - Removed unused `asyncio`, `work`, `ComposeResult`, and `Message` imports.
+    - Replaced unnecessary f-string literal (`f"●"`) with plain string.
+  - `core/src/scholardevclaw/tui/app.py`, `core/src/scholardevclaw/tui/screens.py`, `core/src/scholardevclaw/api/routes/dashboard.py`
+    - Import block normalization for Ruff I001 compliance.
+
+- **Optional Textual dependency test hardening**
+  - `core/tests/unit/test_tui_app.py`
+  - `core/tests/unit/test_tui_widgets.py`
+  - `core/tests/unit/test_tui_screens.py`
+    - Added `pytest.importorskip("textual")` guards to avoid import-time failures in non-TUI CI environments.
+  - `core/tests/unit/test_tui_init.py`
+    - Added conditional skip for symbol-resolution test when `textual` is unavailable.
+    - Adjusted dynamic module patching to avoid static attribute typing complaints.
+
+- **Dashboard test contract alignment**
+  - `core/tests/unit/test_api_dashboard_routes.py`
+    - Updated `run_validate` mock signature to accept optional patch payload argument.
+    - Reworked `_current_run` assignment/access in test to use attribute-safe access patterns.
+
+- **Agent TypeScript build fixes**
+  - `agent/src/tui/opentui-app.ts`
+    - Removed unsupported `bold` option from `Text(...)` options.
+    - Updated status/hint text updates to assign `StyledText` via `stringToStyledText(...)`.
+    - Hardened `ScrollBox` log clearing against union child types by removing children via `id`.
+  - `agent/src/utils/shutdown.test.ts`
+    - Updated handlers to return `void` (block-bodied callbacks) to satisfy shutdown handler type contract.
+
+**Verification:**
+
+- ✅ `cd core && python -m ruff check src/ tests/`
+- ✅ `cd core && python -m mypy src/scholardevclaw/cli.py src/scholardevclaw/api/server.py src/scholardevclaw/application/pipeline.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+- ✅ `cd core && python -m pytest tests/ -x -q` (`1396 passed, 1 skipped`)
+- ✅ `cd agent && bun run build`
+- ⚠️ Docker image build could not be executed in this environment (`docker: command not found`)
 
 ### 2026-04-07 (TUI cancellation + strict palette consistency pass)
 

@@ -23,6 +23,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
+
 from scholardevclaw.application.pipeline import (
     run_analyze,
     run_generate,
@@ -401,9 +402,7 @@ async def _run_pipeline_async(
                 "branch": generate_payload.get("branch_name", ""),
                 "new_files": len(new_files),
                 "transformations": len(transformations),
-                "file_names": [
-                    f.get("path", "") for f in new_files[:10] if isinstance(f, dict)
-                ],
+                "file_names": [f.get("path", "") for f in new_files[:10] if isinstance(f, dict)],
             }
             if generate_payload.get("output_dir"):
                 gen_data["output_dir"] = generate_payload["output_dir"]

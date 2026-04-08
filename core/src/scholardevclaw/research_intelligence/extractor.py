@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from scholardevclaw.utils.retry import retry
+
 if TYPE_CHECKING:
     from scholardevclaw.llm.research_assistant import LLMResearchAssistant
 
@@ -661,7 +663,6 @@ def _fetch_arxiv_abstract(arxiv_id: str) -> str | None:
     clean_id = arxiv_id.strip().split("/")[-1]  # handle full URLs too
     try:
         import httpx
-        from scholardevclaw.utils.retry import retry
 
         url = f"http://export.arxiv.org/api/query?id_list={clean_id}"
 
@@ -716,7 +717,6 @@ def _fetch_arxiv_papers(
 
     try:
         import httpx
-        from scholardevclaw.utils.retry import retry
 
         @retry(max_attempts=2, base_delay=1.0, max_delay=10.0)
         def _search_arxiv() -> httpx.Response:

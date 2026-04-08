@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Any
 
 from textual import events
-from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.message import Message
 from textual.widgets import Input, Static

@@ -25,8 +25,12 @@ describe('GracefulShutdown', () => {
 
   it('registers and calls handlers in priority order', async () => {
     const calls: string[] = [];
-    shutdown.registerHandler('low', () => calls.push('low'), 0);
-    shutdown.registerHandler('high', () => calls.push('high'), 10);
+    shutdown.registerHandler('low', () => {
+      calls.push('low');
+    }, 0);
+    shutdown.registerHandler('high', () => {
+      calls.push('high');
+    }, 10);
 
     await shutdown.shutdown('test');
 

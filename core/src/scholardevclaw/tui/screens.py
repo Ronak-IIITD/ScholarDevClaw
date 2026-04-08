@@ -11,7 +11,6 @@ from textual.widgets import Input, Static
 from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.llm.client import DEFAULT_MODELS
 
-
 DEFAULT_OPENROUTER_MODEL = DEFAULT_MODELS[AuthProvider.OPENROUTER]
 
 

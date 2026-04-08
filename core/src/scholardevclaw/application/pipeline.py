@@ -741,7 +741,7 @@ def run_validate(
             speedup = comparison.get("speedup")
             loss_change = comparison.get("loss_change")
 
-        checks = [
+        checks: list[dict[str, Any]] = [
             {
                 "name": "validation_passed",
                 "status": "pass" if passed else "fail",
@@ -1168,6 +1168,7 @@ def run_multi_integrate(
         )
 
         results: list[dict[str, Any]] = []
+        latest_patch_payload: dict[str, Any] = {}
         llm_assistant = _create_llm_assistant()
 
         for i, spec_name in enumerate(spec_names, 1):
@@ -1194,6 +1195,8 @@ def run_multi_integrate(
             logs.extend(generate_result.logs)
 
             if generate_result.ok:
+                if isinstance(generate_result.payload, dict):
+                    latest_patch_payload = generate_result.payload
                 results.append(
                     {
                         "spec": spec_name,
@@ -1210,7 +1213,7 @@ def run_multi_integrate(
 
         validate_result = run_validate(
             str(path),
-            generate_result.payload,
+            latest_patch_payload,
             log_callback=log_callback,
         )
         logs.extend(validate_result.logs)

@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import logging
 import os
 import subprocess
 import threading
 import time
-import contextlib
-import io
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import httpx
-
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Vertical

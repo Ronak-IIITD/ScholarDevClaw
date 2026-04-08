@@ -157,7 +157,7 @@ def test_pipeline_async_uses_shared_pipeline_functions(monkeypatch):
     monkeypatch.setattr(
         dashboard,
         "run_validate",
-        lambda repo_path: validate_calls.append(repo_path)
+        lambda repo_path, _patch=None: validate_calls.append(repo_path)
         or type(
             "Result",
             (),
@@ -173,12 +173,16 @@ def test_pipeline_async_uses_shared_pipeline_functions(monkeypatch):
         )(),
     )
 
-    dashboard._current_run = dashboard.PipelineRunStatus(
-        run_id="run1234",
-        status="running",
-        repo_path="/tmp/repo",
-        spec_names=[],
-        started_at=0.0,
+    setattr(
+        dashboard,
+        "_current_run",
+        dashboard.PipelineRunStatus(
+            run_id="run1234",
+            status="running",
+            repo_path="/tmp/repo",
+            spec_names=[],
+            started_at=0.0,
+        ),
     )
     dashboard._ws_clients.clear()
 
@@ -197,9 +201,10 @@ def test_pipeline_async_uses_shared_pipeline_functions(monkeypatch):
     assert map_calls == [("/tmp/repo", "rmsnorm")]
     assert generate_calls == [("/tmp/repo", "rmsnorm", "/tmp/out")]
     assert validate_calls == ["/tmp/repo"]
-    assert dashboard._current_run is not None
-    assert dashboard._current_run.status == "completed"
-    assert [step.step for step in dashboard._current_run.steps] == [
+    current_run = getattr(dashboard, "_current_run")
+    assert current_run is not None
+    assert current_run.status == "completed"
+    assert [step.step for step in current_run.steps] == [
         "analyze",
         "suggest",
         "map:rmsnorm",

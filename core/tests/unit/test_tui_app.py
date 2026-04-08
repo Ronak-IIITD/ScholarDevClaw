@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-import os
 import inspect
+import os
+
+import pytest
+
+pytest.importorskip("textual")
 
 from scholardevclaw.llm.client import LLMAPIError
 from scholardevclaw.tui.app import ScholarDevClawApp

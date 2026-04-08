@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
+
+pytest.importorskip("textual")
+
 from scholardevclaw.tui.screens import ProviderSetupScreen
 
 

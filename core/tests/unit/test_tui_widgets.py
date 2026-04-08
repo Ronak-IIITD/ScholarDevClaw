@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
+
+import pytest
+
+pytest.importorskip("textual")
 
 from scholardevclaw.tui.widgets import HistoryPane, LogView, PhaseTracker, PromptInput, StatusBar
 
@@ -16,9 +19,14 @@ def test_logview_detect_level_classification():
 
 
 def test_logview_progress_line_is_reused():
+    pytest.importorskip("textual")
     log = LogView()
     mounted: list[object] = []
-    log.mount = lambda widget: mounted.append(widget)
+
+    def _mount(*widgets, **_kwargs):
+        mounted.extend(widgets)
+
+    object.__setattr__(log, "mount", _mount)
 
     log.set_progress("Scanning repository...")
     first = log._progress_line
@@ -41,25 +49,36 @@ def test_historypane_keeps_only_latest_20_entries():
 
 
 def test_historypane_keyboard_activate_posts_selected_run():
+    pytest.importorskip("textual")
     pane = HistoryPane()
     pane._render_entries = lambda: None
     pane.add_entry(41, "analyze", "Done", duration=1.0)
 
     posted: list[int] = []
-    pane.post_message = lambda msg: posted.append(msg.run_id)
+
+    def _post_message(message):
+        posted.append(int(getattr(message, "run_id", 0)))
+        return True
+
+    object.__setattr__(pane, "post_message", _post_message)
     pane._selected_index = 0
 
-    pane.on_key(SimpleNamespace(key="enter", stop=lambda: None))
+    pane.on_key(SimpleNamespace(key="enter", stop=lambda: None))  # type: ignore[arg-type]
 
     assert posted == [41]
 
 
 def test_phasetracker_set_phase_updates_state_without_crashing():
+    pytest.importorskip("textual")
     tracker = PhaseTracker()
-    tracker.query_one = lambda *_a, **_k: SimpleNamespace(
-        update=lambda *_x, **_y: None,
-        styles=SimpleNamespace(background=None, width=None),
-    )
+
+    def _query_one(*_a, **_k):
+        return SimpleNamespace(
+            update=lambda *_x, **_y: None,
+            styles=SimpleNamespace(background=None, width=None),
+        )
+
+    object.__setattr__(tracker, "query_one", _query_one)
 
     tracker.set_phase("complete")
 

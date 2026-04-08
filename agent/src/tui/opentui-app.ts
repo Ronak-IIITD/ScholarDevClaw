@@ -14,6 +14,7 @@ import {
   Input,
   InputRenderableEvents,
   ScrollBox,
+  stringToStyledText,
   createCliRenderer,
   type KeyEvent,
 } from "@opentui/core";
@@ -164,7 +165,6 @@ export async function main() {
   const headerText = Text({
     content: ` ScholarDevClaw`,
     fg: C.accent,
-    bold: true,
   });
 
   const statusText = Text({
@@ -203,7 +203,7 @@ export async function main() {
       borderStyle: "rounded",
       padding: 1,
     },
-    Text({ content: "Workflow output", fg: C.muted, bold: true }),
+    Text({ content: "Workflow output", fg: C.muted }),
     Text({ content: "─".repeat(76), fg: C.border }),
   );
 
@@ -269,16 +269,20 @@ export async function main() {
 
   function clearLogs() {
     // Remove all children except the header + separator
-    const children = [...logScroll.children];
+    const children = [...(logScroll.children ?? [])];
     for (const child of children) {
-      child.remove();
+      if (child && typeof child === "object" && "id" in child && typeof child.id === "string") {
+        logScroll.remove(child.id);
+      }
     }
     state.logLines = [];
   }
 
   function updateStatus() {
-    statusText.content = `MODE: ${state.mode}   PROVIDER: ${state.provider}   MODEL: ${state.model}   DIR: ${state.directory}`;
-    hintText.content = `Hint → ${state.mode} ${state.directory}`;
+    statusText.content = stringToStyledText(
+      `MODE: ${state.mode}   PROVIDER: ${state.provider}   MODEL: ${state.model}   DIR: ${state.directory}`,
+    );
+    hintText.content = stringToStyledText(`Hint → ${state.mode} ${state.directory}`);
     promptInput.placeholder = `> ${state.mode} ${state.directory} ...`;
   }
 
