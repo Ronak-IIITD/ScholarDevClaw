@@ -4,6 +4,14 @@ import 'dotenv/config';
 if (!process.env.OPENCLAW_TOKEN) {
   console.warn('[SECURITY] OPENCLAW_TOKEN is not set — using empty fallback. Set this variable in production.');
 }
+if ((process.env.CORE_BRIDGE_MODE || 'http') !== 'subprocess' && !process.env.SCHOLARDEVCLAW_API_AUTH_KEY) {
+  console.warn(
+    '[SECURITY] SCHOLARDEVCLAW_API_AUTH_KEY is not set for HTTP bridge mode. Core API calls may fail with 401.',
+  );
+}
+if (!process.env.SCHOLARDEVCLAW_CORS_ORIGINS) {
+  console.warn('[SECURITY] SCHOLARDEVCLAW_CORS_ORIGINS is not set. Configure explicit production origins.');
+}
 
 export const config = {
   openclaw: {

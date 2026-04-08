@@ -19,7 +19,7 @@ This guide covers all deployment scenarios for ScholarDevClaw, from simple landi
 ### For Users (Just Want to Try It)
 ```bash
 # One-line install
-curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash
+curl -fsSL https://ronak-iiitd.github.io/ScholarDevClaw/install.sh | bash
 
 # Or via pip
 pip install scholardevclaw
@@ -146,17 +146,40 @@ nano docker/.env
 
 Required environment variables:
 ```bash
-# API Keys (optional but recommended)
-ANTHROPIC_API_KEY=your_key_here
-GITHUB_TOKEN=your_token_here
+# Core/API security (required)
+SCHOLARDEVCLAW_API_AUTH_KEY=generate_a_strong_random_secret
+SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=/repos
+SCHOLARDEVCLAW_CORS_ORIGINS=https://scholardevclaw.ai,https://www.scholardevclaw.ai
+SCHOLARDEVCLAW_ENABLE_HSTS=true
+
+# Agent/core bridge (required in production)
+CORE_BRIDGE_MODE=http
+OPENCLAW_TOKEN=your_openclaw_token
+OPENCLAW_API_URL=https://your-openclaw-api-url
+CONVEX_URL=https://your-convex-deployment.convex.cloud
 
 # Grafana (required for monitoring)
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=secure_password_here
 
+# Provider keys (set what you actually use)
+ANTHROPIC_API_KEY=your_key_here
+GITHUB_TOKEN=your_token_here
+# OPENAI_API_KEY=...
+# OPENROUTER_API_KEY=...
+# GROQ_API_KEY=...
+
 # Logging
 LOG_LEVEL=INFO
 ```
+
+Where to get values:
+- `SCHOLARDEVCLAW_API_AUTH_KEY`: generate with `openssl rand -base64 32`.
+- `SCHOLARDEVCLAW_ALLOWED_REPO_DIRS`: absolute paths on the Docker host that core-api may access.
+- `SCHOLARDEVCLAW_CORS_ORIGINS`: your deployed frontend origin(s), comma-separated.
+- `OPENCLAW_TOKEN` / `OPENCLAW_API_URL`: from your OpenClaw deployment.
+- `CONVEX_URL`: from Convex project deployment settings.
+- LLM provider keys (`ANTHROPIC_API_KEY`, etc.): from the selected provider console.
 
 ##### 3. Build and Deploy
 ```bash
@@ -265,7 +288,12 @@ CORE_API_URL=http://core-api:8000
 # Core API hardening (required)
 SCHOLARDEVCLAW_API_AUTH_KEY=$(openssl rand -base64 32)
 SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=/repos
+SCHOLARDEVCLAW_CORS_ORIGINS=https://scholardevclaw.ai,https://www.scholardevclaw.ai
 SCHOLARDEVCLAW_ENABLE_HSTS=true
+
+# Agent bridge runtime
+CORE_BRIDGE_MODE=http
+OPENCLAW_API_URL=https://your-openclaw-api-url
 
 # Grafana (use strong passwords!)
 GRAFANA_ADMIN_USER=admin

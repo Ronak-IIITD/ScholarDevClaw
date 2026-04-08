@@ -182,19 +182,39 @@ class HealthChecker:
             )
 
     def _check_environment(self) -> HealthStatus:
-        missing: list[str] = []
+        missing_required: list[str] = []
+        missing_optional: list[str] = []
         present: list[str] = []
 
-        env_vars = ["GITHUB_TOKEN", "ANTHROPIC_API_KEY", "CONVEX_URL"]
+        dev_mode = os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").strip().lower() == "true"
+        required_vars = [] if dev_mode else ["SCHOLARDEVCLAW_API_AUTH_KEY", "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS"]
+        optional_vars = [
+            "SCHOLARDEVCLAW_CORS_ORIGINS",
+            "OPENCLAW_TOKEN",
+            "OPENCLAW_API_URL",
+            "CONVEX_URL",
+            "GITHUB_TOKEN",
+            "ANTHROPIC_API_KEY",
+        ]
 
-        for var in env_vars:
+        for var in required_vars:
             if os.environ.get(var):
                 present.append(var)
             else:
-                missing.append(var)
+                missing_required.append(var)
 
-        healthy = True
-        message = f"{len(present)} configured, {len(missing)} optional"
+        for var in optional_vars:
+            if os.environ.get(var):
+                present.append(var)
+            else:
+                missing_optional.append(var)
+
+        healthy = len(missing_required) == 0
+        mode = "dev" if dev_mode else "prod"
+        message = (
+            f"mode={mode}; {len(present)} configured, "
+            f"{len(missing_required)} required missing, {len(missing_optional)} optional missing"
+        )
 
         return HealthStatus(
             name="environment",
@@ -202,7 +222,9 @@ class HealthChecker:
             message=message,
             details={
                 "present": present,
-                "missing": missing,
+                "missing_required": missing_required,
+                "missing_optional": missing_optional,
+                "dev_mode": dev_mode,
             },
         )
 

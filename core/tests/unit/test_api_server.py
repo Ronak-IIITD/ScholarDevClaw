@@ -33,6 +33,7 @@ def test_auth_required_for_non_exempt_paths(monkeypatch, tmp_path):
 
     assert resp.status_code == 401
     assert resp.json() == {"detail": "Unauthorized"}
+    assert "x-request-id" in resp.headers
 
 
 def test_auth_exempt_paths_still_accessible(monkeypatch):
@@ -70,6 +71,27 @@ def test_security_headers_applied(monkeypatch):
     assert resp.headers["referrer-policy"] == "strict-origin-when-cross-origin"
     assert resp.headers["cache-control"] == "no-store"
     assert "default-src 'none'" in resp.headers["content-security-policy"]
+
+
+def test_request_id_generated_when_missing(monkeypatch):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    resp = client.get("/health")
+
+    assert resp.status_code == 200
+    assert "x-request-id" in resp.headers
+    assert resp.headers["x-request-id"]
+
+
+def test_request_id_echoes_incoming_header(monkeypatch):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    resp = client.get("/health", headers={"X-Request-ID": "req-123"})
+
+    assert resp.status_code == 200
+    assert resp.headers["x-request-id"] == "req-123"
 
 
 def test_hsts_header_only_when_enabled(monkeypatch):
