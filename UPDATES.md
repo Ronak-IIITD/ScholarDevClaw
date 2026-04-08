@@ -4,6 +4,48 @@
 
 **Last updated:** 2026-04-08
 
+### 2026-04-08 (Week-1 execution: quality gates + docs lint + benchmark skeleton)
+
+**Goal:** Execute the first-week launch readiness tasks by hardening integration quality controls, tightening docs consistency, and introducing a benchmark scaffold for measurable progress.
+
+**Summary:** Added enforceable integration quality gates in the shared pipeline, introduced CI-backed docs linting with canonical install URL and command coverage checks, fixed deployment doc URL drift, and shipped an initial e2e benchmark scenario manifest + validation test.
+
+**What changed:**
+
+- `core/src/scholardevclaw/application/pipeline.py`
+  - Added versioned quality gate thresholds and evaluation helper.
+  - Enforced mapping-stage gate checks before generation/validation.
+  - Added final gate evaluation after validation and attached gate report to integration payload.
+  - Integration success now requires both validation pass and no failing quality gate checks.
+
+- `core/tests/unit/test_pipeline.py`
+  - Added coverage for dry-run quality gate report inclusion.
+  - Added explicit test for mapping quality-gate failure blocking integration.
+
+- `scripts/docs_lint.py`
+  - Added docs linter for canonical install URL consistency and required CLI command example coverage in root docs.
+
+- `.github/workflows/ci.yml`
+  - Added `docs-lint` job and included it in the CI quality gate dependency chain.
+
+- `DEPLOYMENT.md`
+  - Corrected install URL domain to canonical `ronak-iiitd.github.io`.
+
+- `docs/quality-gates.md`
+  - Added quality gate policy documentation and enforcement location reference.
+
+- Benchmark scaffold:
+  - `core/tests/e2e/benchmarks/README.md`
+  - `core/tests/e2e/benchmarks/scenarios.json`
+  - `core/tests/e2e/test_benchmark_scenarios.py`
+  - Added initial benchmark scenario manifest and structural validation test.
+
+**Verification:**
+
+- ✅ `cd core && python -m pytest tests/unit/test_pipeline.py -q`
+- ✅ `python scripts/docs_lint.py`
+- ✅ `cd core && python -m pytest tests/e2e/test_benchmark_scenarios.py -q`
+
 ### 2026-04-08 (CI stabilization: lint/type/test/build breakage sweep)
 
 **Goal:** Clear the current CI red state by fixing accumulated lint, typing, optional-dependency test import, and TypeScript build errors across `core/` and `agent/`.

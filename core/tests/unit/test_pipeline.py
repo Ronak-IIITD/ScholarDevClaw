@@ -219,6 +219,7 @@ def test_run_integrate_dry_run_skips_generate_and_validate(monkeypatch, tmp_path
     assert result.payload["generation"] is None
     assert result.payload["validation"] is None
     assert result.payload["output_dir"] == "/tmp/out"
+    assert result.payload["quality_gates"]["summary"] == "pass"
 
 
 def test_run_integrate_dry_run_does_not_create_rollback_snapshot(monkeypatch, tmp_path):
@@ -258,6 +259,25 @@ def test_run_integrate_returns_preflight_guidance(monkeypatch, tmp_path):
     assert isinstance(result.payload.get("guidance"), list)
     assert result.payload["guidance"]
     assert result.payload["_meta"]["payload_type"] == "integration"
+
+
+def test_run_integrate_blocks_on_mapping_quality_gate(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+
+    pipeline = _pipeline_module()
+
+    def _low_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+        return {"targets": [], "confidence": 12.0}, {"name": "RMSNorm"}
+
+    monkeypatch.setattr(pipeline, "_build_mapping_result", _low_confidence_mapping)
+
+    result = pipeline.run_integrate(str(tmp_path), "rmsnorm", dry_run=False)
+
+    assert result.ok is False
+    assert result.payload["step"] == "quality_gate"
+    assert result.payload["quality_gates"]["summary"] == "fail"
+    assert "mapping_target_count" in result.payload["quality_gates"]["failed_checks"]
 
 
 # =========================================================================
