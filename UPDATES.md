@@ -37,7 +37,7 @@
 
 - `DEPLOYMENT.md`
   - Updated environment examples to include missing production variables.
-  - Added “Where to get values” guidance for operators (OpenClaw, Convex, provider keys, generated secrets).
+  - Added "Where to get values" guidance for operators (OpenClaw, Convex, provider keys, generated secrets).
 
 **Verification:**
 

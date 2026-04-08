@@ -86,7 +86,7 @@ def _evaluate_quality_gates(
             checks.append(
                 {
                     "name": "mapping_confidence",
-                    "status": "pass" if float(confidence) >= min_confidence else "warn",
+                    "status": "warn",
                     "value": float(confidence),
                     "required_min": min_confidence,
                 }
@@ -1066,8 +1066,7 @@ def run_integrate(
                 ),
                 logs=logs,
                 error=(
-                    "Mapping quality gates failed: "
-                    f"{', '.join(map_quality_gates['failed_checks'])}"
+                    f"Mapping quality gates failed: {', '.join(map_quality_gates['failed_checks'])}"
                 ),
             )
 
