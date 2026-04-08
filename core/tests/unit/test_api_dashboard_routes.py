@@ -78,99 +78,110 @@ def test_pipeline_async_uses_shared_pipeline_functions(monkeypatch):
     monkeypatch.setattr(
         dashboard,
         "run_analyze",
-        lambda repo_path: analyze_calls.append(repo_path)
-        or type(
-            "Result",
-            (),
-            {
-                "ok": True,
-                "payload": {
-                    "languages": ["python"],
-                    "language_stats": [{"file_count": 1}],
-                    "frameworks": ["pytorch"],
-                    "entry_points": ["main.py"],
-                    "test_files": ["tests/test_demo.py"],
-                    "patterns": {"rmsnorm": ["model.py"]},
+        lambda repo_path: (
+            analyze_calls.append(repo_path)
+            or type(
+                "Result",
+                (),
+                {
+                    "ok": True,
+                    "payload": {
+                        "languages": ["python"],
+                        "language_stats": [{"file_count": 1}],
+                        "frameworks": ["pytorch"],
+                        "entry_points": ["main.py"],
+                        "test_files": ["tests/test_demo.py"],
+                        "patterns": {"rmsnorm": ["model.py"]},
+                    },
+                    "error": None,
                 },
-                "error": None,
-            },
-        )(),
+            )()
+        ),
     )
     monkeypatch.setattr(
         dashboard,
         "run_suggest",
-        lambda repo_path: suggest_calls.append(repo_path)
-        or type(
-            "Result",
-            (),
-            {
-                "ok": True,
-                "payload": {
-                    "suggestions": [
-                        {"pattern": "layernorm", "paper": {"name": "rmsnorm", "title": "RMSNorm"}}
-                    ]
+        lambda repo_path: (
+            suggest_calls.append(repo_path)
+            or type(
+                "Result",
+                (),
+                {
+                    "ok": True,
+                    "payload": {
+                        "suggestions": [
+                            {
+                                "pattern": "layernorm",
+                                "paper": {"name": "rmsnorm", "title": "RMSNorm"},
+                            }
+                        ]
+                    },
+                    "error": None,
                 },
-                "error": None,
-            },
-        )(),
+            )()
+        ),
     )
     monkeypatch.setattr(
         dashboard,
         "run_map",
-        lambda repo_path, spec_name: map_calls.append((repo_path, spec_name))
-        or type(
-            "Result",
-            (),
-            {
-                "ok": True,
-                "payload": {
-                    "target_count": 1,
-                    "strategy": "exact",
-                    "confidence": 92,
-                    "targets": [{"file": "model.py", "line": 3}],
+        lambda repo_path, spec_name: (
+            map_calls.append((repo_path, spec_name))
+            or type(
+                "Result",
+                (),
+                {
+                    "ok": True,
+                    "payload": {
+                        "target_count": 1,
+                        "strategy": "exact",
+                        "confidence": 92,
+                        "targets": [{"file": "model.py", "line": 3}],
+                    },
+                    "error": None,
                 },
-                "error": None,
-            },
-        )(),
+            )()
+        ),
     )
     monkeypatch.setattr(
         dashboard,
         "run_generate",
-        lambda repo_path, spec_name, output_dir=None: generate_calls.append(
-            (repo_path, spec_name, output_dir)
-        )
-        or type(
-            "Result",
-            (),
-            {
-                "ok": True,
-                "payload": {
-                    "branch_name": "integration/rmsnorm",
-                    "new_files": [{"path": "rmsnorm.py"}],
-                    "transformations": [{"file": "model.py"}],
-                    "output_dir": output_dir,
+        lambda repo_path, spec_name, output_dir=None: (
+            generate_calls.append((repo_path, spec_name, output_dir))
+            or type(
+                "Result",
+                (),
+                {
+                    "ok": True,
+                    "payload": {
+                        "branch_name": "integration/rmsnorm",
+                        "new_files": [{"path": "rmsnorm.py"}],
+                        "transformations": [{"file": "model.py"}],
+                        "output_dir": output_dir,
+                    },
+                    "error": None,
                 },
-                "error": None,
-            },
-        )(),
+            )()
+        ),
     )
     monkeypatch.setattr(
         dashboard,
         "run_validate",
-        lambda repo_path, _patch=None: validate_calls.append(repo_path)
-        or type(
-            "Result",
-            (),
-            {
-                "ok": True,
-                "payload": {
-                    "passed": True,
-                    "stage": "benchmark",
-                    "scorecard": {"summary": "pass"},
+        lambda repo_path, _patch=None: (
+            validate_calls.append(repo_path)
+            or type(
+                "Result",
+                (),
+                {
+                    "ok": True,
+                    "payload": {
+                        "passed": True,
+                        "stage": "benchmark",
+                        "scorecard": {"summary": "pass"},
+                    },
+                    "error": None,
                 },
-                "error": None,
-            },
-        )(),
+            )()
+        ),
     )
 
     setattr(

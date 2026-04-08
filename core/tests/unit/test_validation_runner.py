@@ -311,7 +311,11 @@ class TestValidationRunnerRun:
         failed_test = ValidationResult(passed=False, stage="tests", error="assertion error")
 
         with (
-            patch.object(runner, "_validate_patch_artifacts", return_value=ValidationResult(passed=True, stage="artifacts")),
+            patch.object(
+                runner,
+                "_validate_patch_artifacts",
+                return_value=ValidationResult(passed=True, stage="artifacts"),
+            ),
             patch.object(runner, "_run_tests", return_value=failed_test),
         ):
             result = runner.run({}, str(tmp_path))
@@ -325,7 +329,11 @@ class TestValidationRunnerRun:
         benchmark = ValidationResult(passed=True, stage="benchmark", comparison={"speedup": 1.1})
 
         with (
-            patch.object(runner, "_validate_patch_artifacts", return_value=ValidationResult(passed=True, stage="artifacts", logs="artifact ok")),
+            patch.object(
+                runner,
+                "_validate_patch_artifacts",
+                return_value=ValidationResult(passed=True, stage="artifacts", logs="artifact ok"),
+            ),
             patch.object(runner, "_run_tests", return_value=passed_test),
             patch.object(runner, "_run_benchmark", return_value=benchmark),
         ):
@@ -342,7 +350,11 @@ class TestValidationRunnerRun:
         benchmark = ValidationResult(passed=True, stage="benchmark")
 
         with (
-            patch.object(runner, "_validate_patch_artifacts", return_value=ValidationResult(passed=True, stage="artifacts")),
+            patch.object(
+                runner,
+                "_validate_patch_artifacts",
+                return_value=ValidationResult(passed=True, stage="artifacts"),
+            ),
             patch.object(runner, "_run_tests", return_value=passed_test),
             patch.object(runner, "_run_benchmark", return_value=benchmark),
         ):
@@ -357,7 +369,11 @@ class TestValidationRunnerRun:
         benchmark = ValidationResult(passed=True, stage="benchmark")
 
         with (
-            patch.object(runner, "_validate_patch_artifacts", return_value=ValidationResult(passed=True, stage="artifacts")),
+            patch.object(
+                runner,
+                "_validate_patch_artifacts",
+                return_value=ValidationResult(passed=True, stage="artifacts"),
+            ),
             patch.object(runner, "_run_tests", return_value=no_error_fail),
             patch.object(runner, "_run_benchmark", return_value=benchmark),
         ):

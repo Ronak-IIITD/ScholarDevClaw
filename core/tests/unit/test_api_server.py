@@ -164,10 +164,7 @@ def test_repo_analyze_uses_multilang_analyzer(monkeypatch, tmp_path):
     repo = tmp_path / "demo_repo"
     repo.mkdir()
     (repo / "model.py").write_text(
-        "class DemoModel:\n"
-        "    pass\n\n"
-        "def train_model():\n"
-        "    return 1\n"
+        "class DemoModel:\n    pass\n\ndef train_model():\n    return 1\n"
     )
 
     resp = client.post("/repo/analyze", json={"repoPath": str(repo)})

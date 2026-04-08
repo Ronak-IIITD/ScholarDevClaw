@@ -56,6 +56,30 @@
 - ✅ `cd agent && bun run build`
 - ⚠️ Docker image build could not be executed in this environment (`docker: command not found`)
 
+### 2026-04-08 (CI unblock: optional psutil import + ruff format compliance)
+
+**Goal:** Unblock failing CI jobs caused by formatting drift and hard dependency on `psutil` in environments where it is not installed.
+
+**Summary:** Formatted the three CI-reported test files with Ruff and hardened the health utility to gracefully degrade when `psutil` is unavailable, preventing import-time crashes in API tests.
+
+**What changed:**
+
+- `core/src/scholardevclaw/utils/health.py`
+  - Made `psutil` import optional (guarded import with fallback to `None`).
+  - Added graceful skip behavior in memory/disk checks when `psutil` is missing.
+  - Health checks now report `healthy=True` with `skipped` details instead of crashing module import.
+
+- Formatted test files for Ruff compliance:
+  - `core/tests/unit/test_api_dashboard_routes.py`
+  - `core/tests/unit/test_api_server.py`
+  - `core/tests/unit/test_validation_runner.py`
+
+**Verification:**
+
+- ✅ `ruff format --check core/tests/unit/test_api_dashboard_routes.py core/tests/unit/test_api_server.py core/tests/unit/test_validation_runner.py`
+- ✅ `python -m pytest core/tests/unit/test_api_dashboard_routes.py core/tests/unit/test_api_server.py core/tests/unit/test_validation_runner.py -q` (`49 passed`)
+- ✅ `python -m pytest core/tests -x -q` (`1396 passed, 1 skipped`)
+
 ### 2026-04-07 (TUI cancellation + strict palette consistency pass)
 
 **Goal:** Make task cancellation actually stop active work and ensure the TUI color system consistently uses the user-provided palette everywhere.

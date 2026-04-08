@@ -10,7 +10,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import psutil
+try:
+    import psutil
+except ImportError:  # pragma: no cover - exercised in minimal CI envs
+    psutil = None
 
 
 @dataclass
@@ -111,6 +114,13 @@ class HealthChecker:
         )
 
     def _check_memory(self) -> HealthStatus:
+        if psutil is None:
+            return HealthStatus(
+                name="memory",
+                healthy=True,
+                message="psutil not installed; memory check skipped",
+                details={"skipped": True, "reason": "psutil_missing"},
+            )
         memory = psutil.virtual_memory()
         available_gb = memory.available / (1024**3)
         total_gb = memory.total / (1024**3)
@@ -134,6 +144,13 @@ class HealthChecker:
         )
 
     def _check_disk(self, path: str = "/") -> HealthStatus:
+        if psutil is None:
+            return HealthStatus(
+                name="disk",
+                healthy=True,
+                message="psutil not installed; disk check skipped",
+                details={"skipped": True, "reason": "psutil_missing", "path": path},
+            )
         try:
             usage = psutil.disk_usage(path)
             free_gb = usage.free / (1024**3)
