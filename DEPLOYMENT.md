@@ -19,7 +19,7 @@ This guide covers all deployment scenarios for ScholarDevClaw, from simple landi
 ### For Users (Just Want to Try It)
 ```bash
 # One-line install
-curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash
+curl -fsSL https://ronak-iiitd.github.io/ScholarDevClaw/install.sh | bash
 
 # Or via pip
 pip install scholardevclaw

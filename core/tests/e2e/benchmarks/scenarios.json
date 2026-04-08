@@ -1,0 +1,30 @@
+{
+  "version": "0.1",
+  "scenarios": [
+    {
+      "id": "nano-rmsnorm",
+      "spec": "rmsnorm",
+      "repo": "nanogpt",
+      "assertions": [
+        "mapping_target_count>=1",
+        "integration_payload_has_quality_gates"
+      ]
+    },
+    {
+      "id": "nano-geglu",
+      "spec": "geglu",
+      "repo": "nanogpt",
+      "assertions": [
+        "mapping_target_count>=1"
+      ]
+    },
+    {
+      "id": "nano-flashattention",
+      "spec": "flashattention",
+      "repo": "nanogpt",
+      "assertions": [
+        "integration_runs_or_returns_actionable_error"
+      ]
+    }
+  ]
+}
