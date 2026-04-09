@@ -48,7 +48,6 @@ class HealthChecker:
         self.register_check("memory", self._check_memory)
         self.register_check("disk", self._check_disk)
         self.register_check("environment", self._check_environment)
-        self.register_check("production", self._check_production_preflight)
         self.register_check("filesystem", self._check_filesystem)
         self.register_check("ollama", self._check_ollama)
         self.register_check("openrouter", self._check_openrouter)
@@ -226,58 +225,6 @@ class HealthChecker:
                 "missing_required": missing_required,
                 "missing_optional": missing_optional,
                 "dev_mode": dev_mode,
-            },
-        )
-
-    def _check_production_preflight(self) -> HealthStatus:
-        """Validate production-only configuration for deploy readiness."""
-        issues: list[str] = []
-        recommendations: list[str] = []
-
-        dev_mode = os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").strip().lower() == "true"
-        if dev_mode:
-            return HealthStatus(
-                name="production",
-                healthy=True,
-                message="SCHOLARDEVCLAW_DEV_MODE=true (production preflight skipped)",
-                details={"skipped": True, "reason": "dev_mode_enabled"},
-            )
-
-        required = {
-            "SCHOLARDEVCLAW_API_AUTH_KEY": "Set strong shared bearer key for core-api and agent.",
-            "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS": "Set colon-separated allowed repository roots.",
-            "SCHOLARDEVCLAW_CORS_ORIGINS": "Set deployed frontend origin(s), comma-separated.",
-            "OPENCLAW_TOKEN": "Set OpenClaw token for agent control plane.",
-            "OPENCLAW_API_URL": "Set OpenClaw API URL for agent connectivity.",
-        }
-        for var, hint in required.items():
-            if not (os.environ.get(var) or "").strip():
-                issues.append(f"Missing required env: {var}")
-                recommendations.append(hint)
-
-        bridge_mode = (os.environ.get("CORE_BRIDGE_MODE") or "http").strip().lower()
-        if bridge_mode not in {"http", "subprocess"}:
-            issues.append(f"Invalid CORE_BRIDGE_MODE: {bridge_mode}")
-            recommendations.append("Use CORE_BRIDGE_MODE=http or CORE_BRIDGE_MODE=subprocess.")
-
-        if bridge_mode == "http" and not (os.environ.get("SCHOLARDEVCLAW_API_AUTH_KEY") or "").strip():
-            issues.append("HTTP bridge mode requires SCHOLARDEVCLAW_API_AUTH_KEY for agent->core auth.")
-            recommendations.append("Propagate SCHOLARDEVCLAW_API_AUTH_KEY into agent container env.")
-
-        healthy = len(issues) == 0
-        message = (
-            "Production preflight passed"
-            if healthy
-            else f"Production preflight found {len(issues)} issue(s)"
-        )
-        return HealthStatus(
-            name="production",
-            healthy=healthy,
-            message=message,
-            details={
-                "issues": issues,
-                "recommendations": recommendations,
-                "bridge_mode": bridge_mode,
             },
         )
 

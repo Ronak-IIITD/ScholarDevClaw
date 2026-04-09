@@ -2,9 +2,9 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-08
+**Last updated:** 2026-04-09
 
-### 2026-04-08 (Week-3 kickoff: production doctor preflight check)
+### 2026-04-09 (Week-3 kickoff: production doctor preflight check)
 
 **Goal:** Start week-3 rollout by adding an explicit production readiness health check that catches missing deployment configuration before launch.
 
@@ -36,11 +36,11 @@
 - ✅ `cd core && python -m pytest tests/unit/test_cli.py -q`
 - ✅ `python scripts/docs_lint.py`
 
-### 2026-04-08 (Deployment docs consolidation: full week-1/week-2 production instruction set)
+### 2026-04-09 (Deployment docs consolidation: full week-1/week-2 production instruction set)
 
 **Goal:** Consolidate all recently introduced hardening requirements into a single deployment document section so operators can deploy without chasing multiple files.
 
-**Summary:** Added a dedicated “Production Readiness Instructions (Week 1 + Week 2)” section in `DEPLOYMENT.md` covering required env vars, agent↔core auth propagation, provider connection setup, quality gates, SLO/alerting checks, CI docs-lint expectations, and pre-release verification commands.
+**Summary:** Added a dedicated "Production Readiness Instructions (Week 1 + Week 2)" section in `DEPLOYMENT.md` covering required env vars, agent↔core auth propagation, provider connection setup, quality gates, SLO/alerting checks, CI docs-lint expectations, and pre-release verification commands.
 
 **What changed:**
 
@@ -95,7 +95,7 @@
 
 - `DEPLOYMENT.md`
   - Updated environment examples to include missing production variables.
-  - Added “Where to get values” guidance for operators (OpenClaw, Convex, provider keys, generated secrets).
+  - Added "Where to get values" guidance for operators (OpenClaw, Convex, provider keys, generated secrets).
 
 **Verification:**
 
