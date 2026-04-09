@@ -187,7 +187,9 @@ class HealthChecker:
         present: list[str] = []
 
         dev_mode = os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").strip().lower() == "true"
-        required_vars = [] if dev_mode else ["SCHOLARDEVCLAW_API_AUTH_KEY", "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS"]
+        required_vars = (
+            [] if dev_mode else ["SCHOLARDEVCLAW_API_AUTH_KEY", "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS"]
+        )
         optional_vars = [
             "SCHOLARDEVCLAW_CORS_ORIGINS",
             "OPENCLAW_TOKEN",
