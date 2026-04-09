@@ -459,9 +459,7 @@ class StreamingAgentEngine:
                 )
                 yield StreamEvent(
                     type=StreamEventType.OUTPUT,
-                    message=f"   High: {result.high_severity_count}, Medium: {
-                        result.medium_severity_count
-                    }, Low: {result.low_severity_count}",
+                    message=f"   High: {result.high_severity_count}, Medium: {result.medium_severity_count}, Low: {result.low_severity_count}",
                 )
 
         except Exception as e:
