@@ -9,6 +9,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from scholardevclaw.security.path_policy import enforce_allowed_repo_path
+
 
 class AgentMode(str, Enum):
     INTERACTIVE = "interactive"
@@ -109,6 +111,10 @@ class StreamingAgentEngine:
 
         path = Path(repo_path).expanduser().resolve()
         if not path.exists():
+            return False
+        try:
+            enforce_allowed_repo_path(path)
+        except PermissionError:
             return False
 
         self.current_session.repo_path = str(path)
@@ -270,7 +276,12 @@ class StreamingAgentEngine:
             )
             return
 
-        repo_path = self.current_session.repo_path
+        repo_path = Path(self.current_session.repo_path).expanduser().resolve()
+        try:
+            enforce_allowed_repo_path(repo_path)
+        except PermissionError as exc:
+            yield StreamEvent(type=StreamEventType.ERROR, message=str(exc))
+            return
 
         yield StreamEvent(
             type=StreamEventType.PROGRESS,
@@ -279,7 +290,7 @@ class StreamingAgentEngine:
         yield StreamEvent(type=StreamEventType.PROGRESS, message="📝 Generating patch...")
 
         try:
-            result = await asyncio.to_thread(run_integrate, repo_path, spec)
+            result = await asyncio.to_thread(run_integrate, str(repo_path), spec)
 
             if self.current_session:
                 self.current_session.add_message(
@@ -364,7 +375,9 @@ class StreamingAgentEngine:
         )
 
         try:
-            analyzer = TreeSitterAnalyzer(Path(self.current_session.repo_path))
+            repo_path = Path(self.current_session.repo_path).expanduser().resolve()
+            enforce_allowed_repo_path(repo_path)
+            analyzer = TreeSitterAnalyzer(repo_path)
             suggestions = analyzer.suggest_research_papers()
 
             yield StreamEvent(
@@ -405,7 +418,9 @@ class StreamingAgentEngine:
         )
 
         try:
-            result = await asyncio.to_thread(run_validate, self.current_session.repo_path)
+            repo_path = Path(self.current_session.repo_path).expanduser().resolve()
+            enforce_allowed_repo_path(repo_path)
+            result = await asyncio.to_thread(run_validate, str(repo_path))
 
             if result.ok:
                 yield StreamEvent(
@@ -425,7 +440,7 @@ class StreamingAgentEngine:
             )
 
     async def _stream_security(self, repo_path: str | None) -> AsyncGenerator[StreamEvent, None]:
-        from scholardevclaw.security import SecurityScanner
+        from scholardevclaw.security.scanner import SecurityScanner
 
         target_path = repo_path or (
             self.current_session.repo_path if self.current_session else None
@@ -438,6 +453,13 @@ class StreamingAgentEngine:
             )
             return
 
+        try:
+            enforced_path = Path(target_path).expanduser().resolve()
+            enforce_allowed_repo_path(enforced_path)
+        except PermissionError as exc:
+            yield StreamEvent(type=StreamEventType.ERROR, message=str(exc))
+            return
+
         yield StreamEvent(
             type=StreamEventType.PROGRESS,
             message="🔒 Running security scan...",
@@ -445,7 +467,7 @@ class StreamingAgentEngine:
 
         try:
             scanner = SecurityScanner()
-            result = scanner.scan(target_path)
+            result = scanner.scan(str(enforced_path))
 
             if result.passed:
                 yield StreamEvent(
@@ -664,6 +686,10 @@ What would you like to do?""",
         path = Path(repo_path).expanduser().resolve()
         if not path.exists():
             return AgentResponse(ok=False, message=f"Repository not found: {repo_path}")
+        try:
+            enforce_allowed_repo_path(path)
+        except PermissionError as exc:
+            return AgentResponse(ok=False, message=str(exc))
 
         if stream_callback:
             stream_callback(f"📊 Analyzing repository: {path}\n")
@@ -730,7 +756,13 @@ What would you like to do?""",
         if not repo_path:
             return AgentResponse(ok=False, message="No repository set")
 
-        analyzer = TreeSitterAnalyzer(Path(repo_path))
+        path = Path(repo_path).expanduser().resolve()
+        try:
+            enforce_allowed_repo_path(path)
+        except PermissionError as exc:
+            return AgentResponse(ok=False, message=str(exc))
+
+        analyzer = TreeSitterAnalyzer(path)
         suggestions = analyzer.suggest_research_papers()
 
         return AgentResponse(
@@ -745,7 +777,13 @@ What would you like to do?""",
         if not repo_path:
             return AgentResponse(ok=False, message="No repository set")
 
-        result = await asyncio.to_thread(run_validate, repo_path)
+        path = Path(repo_path).expanduser().resolve()
+        try:
+            enforce_allowed_repo_path(path)
+        except PermissionError as exc:
+            return AgentResponse(ok=False, message=str(exc))
+
+        result = await asyncio.to_thread(run_validate, str(path))
         return AgentResponse(ok=result.ok, message="Validation passed" if result.ok else "Failed")
 
     async def _cmd_rollback(
@@ -756,18 +794,30 @@ What would you like to do?""",
         if not repo_path:
             return AgentResponse(ok=False, message="No repository set")
 
+        path = Path(repo_path).expanduser().resolve()
+        try:
+            enforce_allowed_repo_path(path)
+        except PermissionError as exc:
+            return AgentResponse(ok=False, message=str(exc))
+
         manager = RollbackManager()
-        result = manager.rollback(repo_path, snapshot_id)
+        result = manager.rollback(str(path), snapshot_id)
         return AgentResponse(ok=result.ok, message="Rollback done" if result.ok else "Failed")
 
     async def _cmd_security(self, repo_path: str | None, stream_callback) -> AgentResponse:
-        from scholardevclaw.security import SecurityScanner
+        from scholardevclaw.security.scanner import SecurityScanner
 
         if not repo_path:
             return AgentResponse(ok=False, message="No repository set")
 
+        path = Path(repo_path).expanduser().resolve()
+        try:
+            enforce_allowed_repo_path(path)
+        except PermissionError as exc:
+            return AgentResponse(ok=False, message=str(exc))
+
         scanner = SecurityScanner()
-        result = scanner.scan(repo_path)
+        result = scanner.scan(str(path))
         return AgentResponse(ok=result.passed, message="Scan done", output=result.to_dict())
 
     def _cmd_context(self) -> AgentResponse:

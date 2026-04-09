@@ -115,12 +115,13 @@ export function createPatchNode(
     async (context: Record<string, unknown>, state: WorkflowState) => {
       logger.info('Executing Phase 4: Patch Generation');
       const mapping = state.context.mapping;
+      const repoPath = context.repoPath as string;
       
       if (!mapping) {
         throw new Error('Missing mapping');
       }
       
-      const result = await bridge.generatePatch(mapping as MappingResult);
+      const result = await bridge.generatePatch(mapping as MappingResult, repoPath);
       
       if (!result.success || !result.data) {
         throw new Error(`Phase 4 failed: ${result.error || 'No data'}`);

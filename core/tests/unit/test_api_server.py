@@ -143,6 +143,37 @@ def test_repo_path_not_found_and_not_directory(monkeypatch, tmp_path):
     assert file_resp.status_code == 400
 
 
+def test_patch_generate_requires_repo_path(monkeypatch):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    resp = client.post("/patch/generate", json={"mapping": {}})
+
+    assert resp.status_code == 422
+
+
+def test_patch_generate_repo_path_confinement(monkeypatch, tmp_path):
+    allowed = tmp_path / "allowed"
+    outside = tmp_path / "outside"
+    allowed.mkdir()
+    outside.mkdir()
+
+    server = _load_server(
+        monkeypatch,
+        SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=str(allowed),
+        SCHOLARDEVCLAW_API_AUTH_KEY="secret",
+    )
+    client = TestClient(server.app)
+
+    resp = client.post(
+        "/patch/generate",
+        json={"mapping": {}, "repoPath": str(outside)},
+        headers={"Authorization": "Bearer secret"},
+    )
+
+    assert resp.status_code == 403
+
+
 def test_request_models_forbid_extra_fields(monkeypatch):
     server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
     client = TestClient(server.app)

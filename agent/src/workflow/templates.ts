@@ -152,7 +152,10 @@ function createPatchNode(bridge: PythonSubprocessBridge | PythonHttpBridge): Wor
   return new FunctionNode(
     { id: 'patch', name: 'Patch Generation', dependencies: ['mapping'], timeout: 600000 },
     async (context, state) => {
-      const result = await bridge.generatePatch(state.context.mapping as MappingResult);
+      const result = await bridge.generatePatch(
+        state.context.mapping as MappingResult,
+        context.repoPath as string,
+      );
       if (!result.success) throw new Error(result.error);
       state.context.patch = result.data;
       return result.data;
@@ -282,7 +285,10 @@ function createMultiExecuteNode(bridge: PythonSubprocessBridge | PythonHttpBridg
           state.context.analysis as RepoAnalysisResult,
           { spec_name: spec.name } as unknown as ResearchSpecResult
         );
-        const patch = await bridge.generatePatch(mapping.data as MappingResult);
+        const patch = await bridge.generatePatch(
+          mapping.data as MappingResult,
+          context.repoPath as string,
+        );
         const validation = await bridge.validate(patch.data as PatchResult, context.repoPath as string);
         results.push({ spec, mapping: mapping.data, patch: patch.data, validation: validation.data });
       }

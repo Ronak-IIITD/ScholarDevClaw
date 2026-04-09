@@ -25,6 +25,21 @@ def _minimal_app_for_unit() -> ScholarDevClawApp:
     return app
 
 
+def test_validate_repo_path_rejects_outside_allowed_roots(monkeypatch, tmp_path):
+    app = ScholarDevClawApp()
+    allowed = tmp_path / "allowed"
+    outside = tmp_path / "outside"
+    allowed.mkdir()
+    outside.mkdir()
+
+    monkeypatch.setenv("SCHOLARDEVCLAW_ALLOWED_REPO_DIRS", str(allowed))
+
+    ok, message = app._validate_repo_path(str(outside))
+
+    assert ok is False
+    assert "outside allowed roots" in message.lower()
+
+
 def test_parse_natural_command_extracts_action_repo_and_spec():
     app = _minimal_app_for_unit()
 

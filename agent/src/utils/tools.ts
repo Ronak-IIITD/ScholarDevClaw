@@ -78,10 +78,10 @@ export class AgentTools {
     }
   }
 
-  async runGenerate(mapping: MappingResult): Promise<ToolResult> {
+  async runGenerate(mapping: MappingResult, repoPath: string): Promise<ToolResult> {
     const start = Date.now();
     try {
-      const result = await this.bridge.generatePatch(mapping);
+      const result = await this.bridge.generatePatch(mapping, repoPath);
       return {
         success: result.success,
         data: result.data,

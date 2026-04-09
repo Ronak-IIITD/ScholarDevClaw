@@ -9,13 +9,84 @@ from __future__ import annotations
 
 import logging
 import re
+import socket
 from dataclasses import dataclass, field
+from ipaddress import ip_address
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from scholardevclaw.llm.research_assistant import LLMResearchAssistant
 
 logger = logging.getLogger(__name__)
+
+_CODE_EXTRACT_ALLOWED_HOSTS = {
+    "github.com",
+    "gist.github.com",
+    "raw.githubusercontent.com",
+}
+
+
+def _is_private_or_reserved_ip(ip: Any) -> bool:
+    return any(
+        bool(getattr(ip, attr, False))
+        for attr in (
+            "is_private",
+            "is_loopback",
+            "is_link_local",
+            "is_reserved",
+            "is_multicast",
+            "is_unspecified",
+        )
+    )
+
+
+def _validate_public_host(host: str) -> bool:
+    try:
+        answers = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+
+    for answer in answers:
+        addr = answer[4][0]
+        try:
+            ip = ip_address(addr)
+        except ValueError:
+            return False
+        if _is_private_or_reserved_ip(ip):
+            return False
+    return True
+
+
+def _build_raw_github_url(url: str) -> str | None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return None
+    host = parsed.hostname or ""
+    if host not in _CODE_EXTRACT_ALLOWED_HOSTS:
+        return None
+    if not _validate_public_host(host):
+        return None
+
+    if host == "raw.githubusercontent.com":
+        return url
+
+    parts = [p for p in parsed.path.split("/") if p]
+    # /owner/repo/blob/ref/path...
+    if host == "github.com" and len(parts) >= 5 and parts[2] == "blob":
+        owner, repo, _, ref, *rest = parts
+        path_part = "/".join(rest)
+        return f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path_part}"
+    return None
+
+
+def _is_allowed_gist_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return False
+    host = parsed.hostname or ""
+    return host == "gist.github.com" and _validate_public_host(host)
+
 
 try:
     import httpx
@@ -23,6 +94,7 @@ try:
     HAS_HTTPX = True
 except ImportError:
     HAS_HTTPX = False
+    httpx = None  # type: ignore[assignment]
 
 try:
     from bs4 import BeautifulSoup
@@ -30,6 +102,7 @@ try:
     HAS_BS4 = True
 except ImportError:
     HAS_BS4 = False
+    BeautifulSoup = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -89,7 +162,7 @@ class WebResearchEngine:
         llm_assistant: LLMResearchAssistant | None = None,
     ) -> None:
         self.client: Any = None
-        if HAS_HTTPX:
+        if HAS_HTTPX and httpx is not None:
             self.client = httpx.AsyncClient(timeout=30.0)  # type: ignore[possibly-undefined]  # noqa: F821
         self.github_token: str | None = None
         self._llm = llm_assistant
@@ -370,23 +443,24 @@ class WebResearchEngine:
         if not self.client:
             return None
 
-        if "github.com" in url and "/blob/" in url:
-            # Convert blob URL to raw content URL
-            raw_url = url.replace("github.com", "raw.githubusercontent.com")
-            raw_url = raw_url.replace("/blob/", "/")
-
+        raw_url = _build_raw_github_url(url)
+        if raw_url:
             try:
-                response = await self.client.get(raw_url)
+                response = await self.client.get(raw_url, follow_redirects=False)
                 if response.status_code == 200:
                     return response.text
             except Exception as exc:
                 logger.debug("Failed to fetch code from %s: %s", url, exc)
 
-        elif "gist.github.com" in url:
+        elif _is_allowed_gist_url(url):
             # Handle gist URLs
             try:
-                response = await self.client.get(url, headers={"Accept": "application/json"})
-                if response.status_code == 200 and HAS_BS4:
+                response = await self.client.get(
+                    url,
+                    headers={"Accept": "application/json"},
+                    follow_redirects=False,
+                )
+                if response.status_code == 200 and HAS_BS4 and BeautifulSoup is not None:
                     soup = BeautifulSoup(response.text, "html.parser")  # type: ignore[possibly-undefined]  # noqa: F821
                     code_blocks = soup.find_all("td", class_="blob-code")
                     if code_blocks:
@@ -402,15 +476,14 @@ class WebResearchEngine:
 
         For real results, prefer the async version.
         """
-        if not HAS_HTTPX:
+        if not HAS_HTTPX or httpx is None:
             return None
 
-        if "github.com" in url and "/blob/" in url:
-            raw_url = url.replace("github.com", "raw.githubusercontent.com")
-            raw_url = raw_url.replace("/blob/", "/")
+        raw_url = _build_raw_github_url(url)
+        if raw_url:
             try:
                 with httpx.Client(timeout=15.0) as sync_client:  # type: ignore[possibly-undefined]  # noqa: F821
-                    response = sync_client.get(raw_url)
+                    response = sync_client.get(raw_url, follow_redirects=False)
                     if response.status_code == 200:
                         return response.text
             except Exception as exc:

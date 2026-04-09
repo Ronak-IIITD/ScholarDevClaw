@@ -137,9 +137,9 @@ export class PythonHttpBridge {
     });
   }
 
-  async generatePatch(mapping: MappingResult): Promise<PhaseResult> {
+  async generatePatch(mapping: MappingResult, repoPath: string): Promise<PhaseResult> {
     logger.info('Generating patch via HTTP');
-    return this.request<PatchResult>('/patch/generate', 'POST', { mapping });
+    return this.request<PatchResult>('/patch/generate', 'POST', { mapping, repoPath });
   }
 
   async validate(patch: PatchResult, repoPath: string): Promise<PhaseResult> {

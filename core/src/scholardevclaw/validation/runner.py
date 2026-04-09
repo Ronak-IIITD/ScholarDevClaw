@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import subprocess
 import sys
 import textwrap
@@ -239,18 +240,63 @@ class ValidationRunner:
         if not artifact_result.passed:
             return artifact_result
 
+        policy_result = self._enforce_execution_policy()
+        if policy_result is not None:
+            if artifact_result.logs:
+                policy_result.logs = "\n".join(
+                    part for part in (artifact_result.logs, policy_result.logs) if part
+                )
+            return policy_result
+
+        policy_warning = self._execution_policy_warning()
+
         test_result = self._run_tests()
 
         if not test_result.passed and test_result.error:
             return test_result
 
         benchmark_result = self._run_benchmark()
+        if policy_warning:
+            benchmark_result.logs = "\n".join(
+                part for part in (policy_warning, benchmark_result.logs) if part
+            )
         if artifact_result.logs:
             benchmark_result.logs = "\n".join(
                 part for part in (artifact_result.logs, benchmark_result.logs) if part
             )
 
         return benchmark_result
+
+    def _enforce_execution_policy(self) -> ValidationResult | None:
+        mode = (
+            (os.environ.get("SCHOLARDEVCLAW_VALIDATION_EXECUTION_MODE") or "warn").strip().lower()
+        )
+        sandbox = (os.environ.get("SCHOLARDEVCLAW_VALIDATION_SANDBOX") or "").strip().lower()
+
+        if mode == "strict" and sandbox != "docker":
+            return ValidationResult(
+                passed=False,
+                stage="policy",
+                logs=(
+                    "Strict execution mode is enabled, but no supported sandbox is configured. "
+                    "Set SCHOLARDEVCLAW_VALIDATION_SANDBOX=docker to proceed."
+                ),
+                error="Unsandboxed validation execution blocked by strict policy",
+            )
+        return None
+
+    def _execution_policy_warning(self) -> str | None:
+        mode = (
+            (os.environ.get("SCHOLARDEVCLAW_VALIDATION_EXECUTION_MODE") or "warn").strip().lower()
+        )
+        sandbox = (os.environ.get("SCHOLARDEVCLAW_VALIDATION_SANDBOX") or "").strip().lower()
+        if mode == "warn" and sandbox != "docker":
+            return (
+                "WARNING: Validation currently executes subprocesses on the host environment "
+                "(unsandboxed). Configure SCHOLARDEVCLAW_VALIDATION_SANDBOX=docker "
+                "or enable strict mode to block unsandboxed execution."
+            )
+        return None
 
     def _validate_patch_artifacts(self, patch: dict) -> ValidationResult:
         new_files = patch.get("new_files", []) if isinstance(patch, dict) else []

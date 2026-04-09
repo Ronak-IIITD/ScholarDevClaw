@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from scholardevclaw.security.path_policy import enforce_allowed_repo_path
+
 from .schema_contract import SCHEMA_VERSION, with_meta
 
 _logger = logging.getLogger(__name__)
@@ -182,17 +184,7 @@ def _ensure_repo(repo_path: str) -> Path:
         raise FileNotFoundError(f"Repository not found: {repo_path}")
     if not path.is_dir():
         raise NotADirectoryError(f"Repository is not a directory: {repo_path}")
-    allowed_roots = [
-        Path(p.strip()).expanduser().resolve()
-        for p in os.environ.get("SCHOLARDEVCLAW_ALLOWED_REPO_DIRS", "").split(":")
-        if p.strip()
-    ]
-    if allowed_roots and not any(path == root or root in path.parents for root in allowed_roots):
-        allowed_text = ", ".join(str(p) for p in allowed_roots)
-        raise PermissionError(
-            f"Repository path is outside allowed roots: {path}. Allowed roots: {allowed_text}"
-        )
-    return path
+    return enforce_allowed_repo_path(path)
 
 
 def run_preflight(

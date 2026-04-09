@@ -33,6 +33,7 @@ from scholardevclaw.application.pipeline import (
 from scholardevclaw.auth.store import AuthStore
 from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.llm.client import DEFAULT_MODELS, LLMAPIError, LLMClient, LLMConfigError
+from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 
 from .screens import HelpOverlay, ProviderSetupScreen
 from .theme import COLORS as TUI_COLORS
@@ -587,11 +588,15 @@ class ScholarDevClawApp(App[None]):
     def _validate_repo_path(self, path: str) -> tuple[bool, str]:
         if not path or not path.strip():
             return False, "Repository path is required"
-        resolved = Path(path).expanduser()
+        resolved = Path(path).expanduser().resolve()
         if not resolved.exists():
             return False, "Repository not found"
         if not resolved.is_dir():
             return False, "Repository path must be a directory"
+        try:
+            enforce_allowed_repo_path(resolved)
+        except PermissionError as exc:
+            return False, str(exc)
         return True, ""
 
     def _validate_spec(self, spec: str) -> tuple[bool, str]:

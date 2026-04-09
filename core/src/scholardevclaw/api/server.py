@@ -179,7 +179,7 @@ class PatchGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mapping: dict[str, Any]
-    repoPath: str | None = None  # noqa: N815
+    repoPath: str  # noqa: N815
 
 
 class ValidationRequest(BaseModel):
@@ -600,11 +600,7 @@ async def map_architecture(request: MappingRequest):
 )
 async def generate_patch(request: PatchGenerateRequest):
     try:
-        generator_repo_path = (
-            _resolve_existing_repo_path(request.repoPath)
-            if request.repoPath
-            else Path(".").resolve()
-        )
+        generator_repo_path = _resolve_existing_repo_path(request.repoPath)
         generator = PatchGenerator(generator_repo_path)
         patch = generator.generate(request.mapping)
 

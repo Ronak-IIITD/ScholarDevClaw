@@ -162,7 +162,7 @@ export class DynamicWorkflowBuilder {
       },
       patch: async (_bridge, context, state) => {
         const { bridge } = this;
-        const result = await (bridge as any).generatePatch(state.context.mapping);
+        const result = await (bridge as any).generatePatch(state.context.mapping, context.repoPath);
         if (!result.success) throw new Error(result.error);
         return result.data;
       },
@@ -266,8 +266,8 @@ export function createQuickWorkflow(
     ),
     generate: (b) => new FunctionNode(
       { id: 'generate', name: 'Generate', timeout: 600000 },
-      async (_context, state) => {
-        const result = await b.generatePatch(state.context.mapping);
+      async (context, state) => {
+        const result = await b.generatePatch(state.context.mapping, context.repoPath as string);
         if (!result.success) throw new Error(result.error);
         return result.data;
       }

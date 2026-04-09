@@ -65,6 +65,19 @@ from .tools import (
 )
 
 
+def redact_sensitive_output(text: str) -> str:
+    """Best-effort redaction for common key=value secret patterns."""
+    import re
+
+    patterns = [
+        r"(?i)\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASS|AUTH|COOKIE|SESSION)[A-Z0-9_]*)\s*=\s*([^\s]+)",
+    ]
+    redacted = text
+    for pattern in patterns:
+        redacted = re.sub(pattern, lambda m: f"{m.group(1)}=***REDACTED***", redacted)
+    return redacted
+
+
 class OSDetector:
     """Detects and provides OS-specific configuration."""
 
@@ -2047,7 +2060,7 @@ class SmartAgentEngine:
             result = self.terminal.run_command(command)
 
         # Format output with colors
-        output = result.get("output", "")
+        output = redact_sensitive_output(str(result.get("output", "")))
         if result.get("returncode", 0) != 0 and not result.get("timed_out"):
             output = self.terminal.colors.error(output)
 

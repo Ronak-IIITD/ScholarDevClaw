@@ -4,6 +4,83 @@
 
 **Last updated:** 2026-04-09
 
+### 2026-04-09 (Security hardening sweep: path confinement, SSRF guardrails, secret redaction, execution policy)
+
+**Goal:** Address high-priority security risks in repo path handling, patch generation safety, URL fetch surfaces, and secret leakage channels before wider launch.
+
+**Summary:** Unified repository allowlist enforcement across additional execution surfaces, removed unsafe patch-generation cwd fallback, tightened URL code extraction host validation to reduce SSRF risk, added unsandboxed-validation policy controls, and introduced secret redaction in shell/env outputs and webhook registration logs.
+
+**What changed:**
+
+- **Path confinement and API hardening**
+  - `core/src/scholardevclaw/security/path_policy.py` (new)
+    - Added centralized allowed-root parsing + enforcement utilities.
+  - `core/src/scholardevclaw/application/pipeline.py`
+    - Reused shared path policy enforcement in `_ensure_repo`.
+  - `core/src/scholardevclaw/api/server.py`
+    - `PatchGenerateRequest.repoPath` is now required.
+    - Removed `/patch/generate` fallback to server cwd.
+  - `core/src/scholardevclaw/agent/engine.py`
+    - Enforced allowed-root policy in repo-switch and command/stream paths (`analyze`, `suggest`, `validate`, `integrate`, `rollback`, `security`).
+  - `core/src/scholardevclaw/tui/app.py`
+    - `_validate_repo_path` now resolves and enforces allowed roots.
+
+- **SSRF reduction in web research URL extraction**
+  - `core/src/scholardevclaw/research_intelligence/web_research.py`
+    - Added strict host allowlist for code extraction.
+    - Added DNS/IP checks to reject private/loopback/link-local/reserved targets.
+    - Reworked GitHub blob→raw URL conversion using parsed URL structure.
+    - Disabled redirects for code fetch requests.
+
+- **Validation execution policy guardrails**
+  - `core/src/scholardevclaw/validation/runner.py`
+    - Added `SCHOLARDEVCLAW_VALIDATION_EXECUTION_MODE` policy handling:
+      - `warn` (default): run with explicit unsandboxed warning.
+      - `strict`: block execution unless `SCHOLARDEVCLAW_VALIDATION_SANDBOX=docker`.
+
+- **Secret leakage reduction**
+  - `core/src/scholardevclaw/agent/terminal.py`
+    - Added masking for sensitive env variables in `env`, `set`, and `export` outputs.
+  - `core/src/scholardevclaw/agent/smart_engine.py`
+    - Added output redaction helper for terminal-mode output before display.
+  - `agent/src/workflow/webhooks.ts`
+    - Sanitized logged webhook URLs (origin + path only, query removed).
+
+- **Agent bridge contract alignment**
+  - `agent/src/bridges/python-http.ts`
+    - `generatePatch(mapping, repoPath)` now sends `repoPath`.
+  - `agent/src/bridges/python-subprocess.ts`
+    - Signature aligned to accept optional `repoPath` (unused in subprocess mode).
+  - Updated call sites:
+    - `agent/src/workflow/integration.ts`
+    - `agent/src/workflow/templates.ts`
+    - `agent/src/workflow/builder.ts`
+    - `agent/src/phases/phase4-patch.ts`
+    - `agent/src/utils/tools.ts`
+
+- **Tests added/updated**
+  - `core/tests/unit/test_api_server.py`
+    - Added tests for `/patch/generate` requiring repoPath and path confinement.
+  - `core/tests/unit/test_path_policy.py` (new)
+    - Added traversal/allowlist enforcement tests.
+  - `core/tests/unit/test_web_research_security.py` (new)
+    - Added host spoofing + URL normalization checks.
+  - `core/tests/unit/test_validation_runner.py`
+    - Added strict execution policy blocking test.
+  - `core/tests/unit/test_tui_app.py`
+    - Added allowed-root rejection test for repo path validation.
+  - `agent/src/bridges/python-http.test.ts`
+    - Added patch-generation request body assertion for `repoPath`.
+  - `agent/src/workflow/webhooks.test.ts` (new)
+    - Added log-sanitization assertion.
+
+**Verification:**
+
+- ✅ `cd core && python -m ruff check src/ tests/`
+- ✅ `cd core && python -m pytest tests/ -x -q` (`1414 passed, 1 skipped`)
+- ✅ `cd agent && bun run build`
+- ✅ `cd agent && bun run test --run`
+
 ### 2026-04-09 (Week-3 kickoff: production doctor preflight check)
 
 **Goal:** Start week-3 rollout by adding an explicit production readiness health check that catches missing deployment configuration before launch.

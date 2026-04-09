@@ -222,9 +222,10 @@ export class PythonSubprocessBridge {
     };
   }
 
-  async generatePatch(mapping: unknown): Promise<PhaseResult> {
+  async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
     logger.info('Generating patch');
     void mapping;
+    void repoPath;
     return {
       success: false,
       error:

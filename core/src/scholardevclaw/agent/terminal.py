@@ -166,6 +166,18 @@ class AdvancedShell:
         "false": "do nothing, unsuccessfully",
     }
 
+    SENSITIVE_ENV_KEY_MARKERS = (
+        "KEY",
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "PASS",
+        "AUTH",
+        "CREDENTIAL",
+        "COOKIE",
+        "SESSION",
+    )
+
     def __init__(self, initial_cwd: str | None = None):
         self.state = ShellState(cwd=initial_cwd or os.getcwd())
         self.colors = TerminalColors()
@@ -417,7 +429,11 @@ class AdvancedShell:
             # Show exported vars
             exported = {k: value for k, value in self.state.env.items() if k.isupper()}
             return {
-                "stdout": "\n".join(f"{k}={exported[k]}" for k in sorted(exported)) + "\n",
+                "stdout": "\n".join(
+                    f"{k}={self._mask_sensitive_env_value(k, exported[k])}"
+                    for k in sorted(exported)
+                )
+                + "\n",
                 "stderr": "",
                 "returncode": 0,
                 "timed_out": False,
@@ -657,7 +673,9 @@ class AdvancedShell:
 
     def _builtin_env(self) -> dict[str, Any]:
         """Show environment variables."""
-        lines = [f"{k}={v}" for k, v in sorted(self.state.env.items())]
+        lines = [
+            f"{k}={self._mask_sensitive_env_value(k, v)}" for k, v in sorted(self.state.env.items())
+        ]
 
         return {
             "stdout": "\n".join(lines) + "\n",
@@ -671,7 +689,10 @@ class AdvancedShell:
         """Set shell options."""
         if not args:
             # Show all variables
-            lines = [f"{k}={v}" for k, v in sorted(self.state.env.items())]
+            lines = [
+                f"{k}={self._mask_sensitive_env_value(k, v)}"
+                for k, v in sorted(self.state.env.items())
+            ]
             return {
                 "stdout": "\n".join(lines) + "\n",
                 "stderr": "",
@@ -681,6 +702,17 @@ class AdvancedShell:
             }
 
         return {"stdout": "", "stderr": "", "returncode": 0, "timed_out": False, "output": ""}
+
+    def _mask_sensitive_env_value(self, key: str, value: Any) -> str:
+        key_upper = key.upper()
+        rendered = str(value)
+        if not any(marker in key_upper for marker in self.SENSITIVE_ENV_KEY_MARKERS):
+            return rendered
+        if not rendered:
+            return ""
+        if len(rendered) <= 6:
+            return "***"
+        return f"{rendered[:2]}***{rendered[-2:]}"
 
     def _builtin_unset(self, args: list[str]) -> dict[str, Any]:
         """Unset environment variable."""

@@ -10,7 +10,7 @@ export async function executePhase4(
   logger.info('=== Phase 4: Patch Generation ===');
 
   try {
-    const result = await bridge.generatePatch(context.mapping);
+    const result = await bridge.generatePatch(context.mapping, context.repoPath);
 
     if (!result.success) {
       logger.error('Phase 4 failed', { error: result.error });

@@ -4,6 +4,15 @@ import { WorkflowEvent } from './types.js';
 const WEBHOOK_FETCH_TIMEOUT_MS = 10_000;
 const MAX_WEBHOOKS = 50;
 
+function sanitizeWebhookUrlForLog(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return '[invalid-url]';
+  }
+}
+
 /**
  * Validate that a URL is an acceptable webhook destination.
  * Blocks private/internal IPs and non-HTTPS URLs (except localhost for dev).
@@ -70,7 +79,7 @@ export class WebhookNotifier {
       throw new Error(`Maximum webhook limit (${MAX_WEBHOOKS}) reached`);
     }
     this.webhooks.set(name, config);
-    logger.info(`[WEBHOOK] Registered: ${name} -> ${config.url}`);
+    logger.info(`[WEBHOOK] Registered: ${name} -> ${sanitizeWebhookUrlForLog(config.url)}`);
   }
 
   unregister(name: string): void {

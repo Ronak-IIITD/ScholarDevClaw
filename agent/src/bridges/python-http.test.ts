@@ -98,6 +98,30 @@ describe('PythonHttpBridge', () => {
     process.env.SCHOLARDEVCLAW_API_AUTH_KEY = original;
   });
 
+  it('sends repoPath when generating patch via HTTP', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ newFiles: [], transformations: [], branchName: 'integration/test' }),
+    });
+    globalThis.fetch = mockFetch as typeof fetch;
+
+    const result = await bridge.generatePatch({ targets: [], strategy: 'replace', confidence: 90 }, '/tmp/repo');
+
+    expect(result.success).toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:8000/patch/generate',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          mapping: { targets: [], strategy: 'replace', confidence: 90 },
+          repoPath: '/tmp/repo',
+        }),
+      }),
+    );
+  });
+
   it('rejects non-JSON content type', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,

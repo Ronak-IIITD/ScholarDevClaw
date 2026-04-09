@@ -89,6 +89,8 @@ class TestValidationResult:
             logs="ok",
             error=None,
         )
+        assert vr.baseline_metrics is not None
+        assert vr.new_metrics is not None
         assert vr.baseline_metrics.loss == 0.5
         assert vr.new_metrics.tokens_per_second == 1100.0
 
@@ -381,6 +383,17 @@ class TestValidationRunnerRun:
 
         # The condition is `not passed and error` — so if error is None, benchmark runs
         assert result.stage == "benchmark"
+
+    def test_strict_execution_policy_blocks_unsandboxed_run(self, tmp_path, monkeypatch):
+        runner = ValidationRunner(tmp_path)
+        monkeypatch.setenv("SCHOLARDEVCLAW_VALIDATION_EXECUTION_MODE", "strict")
+        monkeypatch.delenv("SCHOLARDEVCLAW_VALIDATION_SANDBOX", raising=False)
+
+        result = runner.run({}, str(tmp_path))
+
+        assert result.passed is False
+        assert result.stage == "policy"
+        assert "Unsandboxed" in (result.error or "")
 
 
 # =========================================================================
