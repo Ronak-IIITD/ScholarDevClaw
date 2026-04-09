@@ -4,6 +4,183 @@
 
 **Last updated:** 2026-04-08
 
+### 2026-04-08 (Week-3 kickoff: production doctor preflight check)
+
+**Goal:** Start week-3 rollout by adding an explicit production readiness health check that catches missing deployment configuration before launch.
+
+**Summary:** Added a new `doctor production` check in the health system and CLI to validate required production env vars, bridge mode correctness, and agent/core auth assumptions. Updated deployment verification steps to include this command.
+
+**What changed:**
+
+- `core/src/scholardevclaw/utils/health.py`
+  - Registered new `production` health check.
+  - Implemented `_check_production_preflight()` with:
+    - required env validation for prod mode,
+    - `CORE_BRIDGE_MODE` value validation,
+    - explicit `http` mode auth propagation checks,
+    - actionable recommendations in details payload.
+
+- `core/src/scholardevclaw/cli.py`
+  - Added `production` option to `scholardevclaw doctor <check>`.
+
+- `core/tests/unit/test_health.py`
+  - Added coverage for failing production preflight with missing vars.
+  - Added coverage for passing production preflight when required envs are set.
+
+- `DEPLOYMENT.md`
+  - Added `scholardevclaw doctor production -v` to the minimal release verification command block.
+
+**Verification:**
+
+- ✅ `cd core && python -m pytest tests/unit/test_health.py -q`
+- ✅ `cd core && python -m pytest tests/unit/test_cli.py -q`
+- ✅ `python scripts/docs_lint.py`
+
+### 2026-04-08 (Deployment docs consolidation: full week-1/week-2 production instruction set)
+
+**Goal:** Consolidate all recently introduced hardening requirements into a single deployment document section so operators can deploy without chasing multiple files.
+
+**Summary:** Added a dedicated “Production Readiness Instructions (Week 1 + Week 2)” section in `DEPLOYMENT.md` covering required env vars, agent↔core auth propagation, provider connection setup, quality gates, SLO/alerting checks, CI docs-lint expectations, and pre-release verification commands.
+
+**What changed:**
+
+- `DEPLOYMENT.md`
+  - Added TOC entry and full consolidated readiness section.
+  - Included explicit env snippets for:
+    - core-api security + confinement,
+    - agent/core bridge mode + auth,
+    - provider/model + key setup.
+  - Added operational guidance for:
+    - quality gates (`docs/quality-gates.md`),
+    - SLO alerting (`docker/alerts.yml`, `docs/sre/slo.md`),
+    - docs-lint CI parity.
+  - Added unified pre-deploy validation command block.
+  - Corrected GitHub Pages URL domain to canonical `ronak-iiitd.github.io`.
+
+**Verification:**
+
+- ✅ `python scripts/docs_lint.py`
+- ✅ `python -m py_compile core/src/scholardevclaw/utils/health.py core/tests/unit/test_health.py`
+
+### 2026-04-08 (Production env hardening: bridge auth propagation + env docs completeness)
+
+**Goal:** Close production deployment gaps around missing environment propagation, provider connectivity setup, and explicit operations guidance.
+
+**Summary:** Fixed a critical agent/core auth propagation gap in Docker production config, required explicit CORS origins at deploy-time, expanded `.env.example` with bridge/provider variables, improved doctor environment diagnostics for prod mode, and documented where operators should source each required value.
+
+**What changed:**
+
+- `docker/docker-compose.prod.yml`
+  - Added required `SCHOLARDEVCLAW_CORS_ORIGINS` for core-api container.
+  - Added `SCHOLARDEVCLAW_API_AUTH_KEY` propagation into `agent` (HTTP bridge auth).
+  - Added `OPENCLAW_API_URL`, `CORE_BRIDGE_MODE`, and provider/model pin envs for agent runtime.
+
+- `docker/.env.example`
+  - Added missing production variables:
+    - `SCHOLARDEVCLAW_CORS_ORIGINS`
+    - `CORE_BRIDGE_MODE`
+    - `OPENCLAW_API_URL`
+    - `SCHOLARDEVCLAW_API_PROVIDER`
+    - `SCHOLARDEVCLAW_API_MODEL`
+  - Added optional alternative provider key placeholders.
+
+- `core/src/scholardevclaw/utils/health.py`
+  - Enhanced environment health check:
+    - Enforces required env vars in non-dev mode.
+    - Separates required vs optional missing vars in diagnostic output.
+
+- `agent/src/utils/config.ts`
+  - Added startup warnings for missing `SCHOLARDEVCLAW_API_AUTH_KEY` in HTTP bridge mode.
+  - Added warning for missing `SCHOLARDEVCLAW_CORS_ORIGINS`.
+
+- `DEPLOYMENT.md`
+  - Updated environment examples to include missing production variables.
+  - Added “Where to get values” guidance for operators (OpenClaw, Convex, provider keys, generated secrets).
+
+**Verification:**
+
+- ✅ `python scripts/docs_lint.py`
+- ✅ `cd core && python -m pytest tests/unit/test_api_server.py -q`
+- ✅ `cd core && python -m pytest tests/unit/test_health.py -q`
+- ✅ `cd agent && bun run build`
+
+### 2026-04-08 (Week-2 kickoff: observability + SLO alerting + repo confinement hardening)
+
+**Goal:** Start week-2 production-readiness work by improving observability, introducing explicit SLO alerts, and hardening repository path security behavior.
+
+**Summary:** Added request correlation IDs in API responses, introduced Prometheus alert rules and compose wiring for SLO guardrails, and enforced optional repo path confinement at pipeline-level to complement API-level restrictions.
+
+**What changed:**
+
+- `core/src/scholardevclaw/api/server.py`
+  - Added `request_id_middleware` to generate/propagate `X-Request-ID`.
+  - Added request ID header on unauthorized responses for traceability.
+
+- `core/tests/unit/test_api_server.py`
+  - Added coverage for generated request IDs and echo behavior for provided IDs.
+  - Extended auth-required test to assert request ID presence in 401 responses.
+
+- `core/src/scholardevclaw/application/pipeline.py`
+  - Hardened `_ensure_repo()` with optional `SCHOLARDEVCLAW_ALLOWED_REPO_DIRS` enforcement.
+  - Added clear permission error when requested path is outside allowed roots.
+
+- `core/tests/unit/test_pipeline.py`
+  - Added coverage for allowed-root enforcement in `_ensure_repo()`.
+
+- SLO alerting baseline:
+  - `docker/alerts.yml` (new Prometheus alert rules)
+  - `docker/prometheus.yml` (enabled `rule_files`)
+  - `docker/docker-compose.prod.yml` (mounted `alerts.yml`)
+  - `docs/sre/slo.md` (SLO/alert policy doc)
+
+**Verification:**
+
+- ✅ `cd core && python -m pytest tests/unit/test_api_server.py -q`
+- ⚠️ `cd core && python -m pytest tests/unit/test_pipeline.py -q` (environment missing `libcst`)
+- ✅ `python -m py_compile core/src/scholardevclaw/api/server.py core/src/scholardevclaw/application/pipeline.py`
+
+### 2026-04-08 (Week-1 execution: quality gates + docs lint + benchmark skeleton)
+
+**Goal:** Execute the first-week launch readiness tasks by hardening integration quality controls, tightening docs consistency, and introducing a benchmark scaffold for measurable progress.
+
+**Summary:** Added enforceable integration quality gates in the shared pipeline, introduced CI-backed docs linting with canonical install URL and command coverage checks, fixed deployment doc URL drift, and shipped an initial e2e benchmark scenario manifest + validation test.
+
+**What changed:**
+
+- `core/src/scholardevclaw/application/pipeline.py`
+  - Added versioned quality gate thresholds and evaluation helper.
+  - Enforced mapping-stage gate checks before generation/validation.
+  - Added final gate evaluation after validation and attached gate report to integration payload.
+  - Integration success now requires both validation pass and no failing quality gate checks.
+
+- `core/tests/unit/test_pipeline.py`
+  - Added coverage for dry-run quality gate report inclusion.
+  - Added explicit test for mapping quality-gate failure blocking integration.
+
+- `scripts/docs_lint.py`
+  - Added docs linter for canonical install URL consistency and required CLI command example coverage in root docs.
+
+- `.github/workflows/ci.yml`
+  - Added `docs-lint` job and included it in the CI quality gate dependency chain.
+
+- `DEPLOYMENT.md`
+  - Corrected install URL domain to canonical `ronak-iiitd.github.io`.
+
+- `docs/quality-gates.md`
+  - Added quality gate policy documentation and enforcement location reference.
+
+- Benchmark scaffold:
+  - `core/tests/e2e/benchmarks/README.md`
+  - `core/tests/e2e/benchmarks/scenarios.json`
+  - `core/tests/e2e/test_benchmark_scenarios.py`
+  - Added initial benchmark scenario manifest and structural validation test.
+
+**Verification:**
+
+- ✅ `cd core && python -m pytest tests/unit/test_pipeline.py -q`
+- ✅ `python scripts/docs_lint.py`
+- ✅ `cd core && python -m pytest tests/e2e/test_benchmark_scenarios.py -q`
+
 ### 2026-04-08 (CI stabilization: lint/type/test/build breakage sweep)
 
 **Goal:** Clear the current CI red state by fixing accumulated lint, typing, optional-dependency test import, and TypeScript build errors across `core/` and `agent/`.

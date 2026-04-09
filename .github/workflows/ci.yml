@@ -150,12 +150,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  docs-lint:
+    name: "Docs Lint"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/docs_lint.py
+
   # ──────────────────────────────────────────────
   # Quality gate — all checks must pass
   # ──────────────────────────────────────────────
   quality-gate:
     name: "Quality Gate"
     runs-on: ubuntu-latest
-    needs: [python-lint, python-typecheck, python-test, agent-build, docker-build]
+    needs: [python-lint, python-typecheck, python-test, agent-build, docker-build, docs-lint]
     steps:
       - run: echo "All checks passed"

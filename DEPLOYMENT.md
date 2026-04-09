@@ -5,6 +5,7 @@ This guide covers all deployment scenarios for ScholarDevClaw, from simple landi
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Production Readiness Instructions (Week 1 + Week 2)](#production-readiness-instructions-week-1--week-2)
 - [Deployment Options](#deployment-options)
   - [Option 1: Landing Page (GitHub Pages)](#option-1-landing-page-github-pages)
   - [Option 2: Web Dashboard (Docker)](#option-2-web-dashboard-docker)
@@ -14,12 +15,117 @@ This guide covers all deployment scenarios for ScholarDevClaw, from simple landi
 
 ---
 
+## Production Readiness Instructions (Week 1 + Week 2)
+
+This section consolidates all operational instructions introduced in recent hardening passes (quality gates, env hardening, observability, and CI checks).
+
+### 1) Core security + repo confinement (must-have)
+
+Set these in `docker/.env`:
+
+```bash
+SCHOLARDEVCLAW_API_AUTH_KEY=$(openssl rand -base64 32)
+SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=/repos
+SCHOLARDEVCLAW_CORS_ORIGINS=https://scholardevclaw.ai,https://www.scholardevclaw.ai
+SCHOLARDEVCLAW_ENABLE_HSTS=true
+```
+
+Why:
+- Core API rejects unauthenticated requests when not in dev mode.
+- Repo paths are confined to allowed roots.
+- Explicit CORS is required for production UI origins.
+
+### 2) Agent ↔ Core connection (must-have)
+
+Set these in `docker/.env`:
+
+```bash
+CORE_BRIDGE_MODE=http
+CORE_API_URL=http://core-api:8000
+SCHOLARDEVCLAW_API_AUTH_KEY=<same value as core-api>
+OPENCLAW_TOKEN=...
+OPENCLAW_API_URL=...
+CONVEX_URL=...
+```
+
+Why:
+- In HTTP bridge mode, the agent must send `Authorization: Bearer <SCHOLARDEVCLAW_API_AUTH_KEY>`.
+- Missing token propagation causes 401 failures from core-api.
+
+### 3) Provider connection setup (required based on provider)
+
+Always set provider/model explicitly in production:
+
+```bash
+SCHOLARDEVCLAW_API_PROVIDER=anthropic
+SCHOLARDEVCLAW_API_MODEL=claude-sonnet-4-20250514
+```
+
+Then set the matching key(s):
+
+```bash
+ANTHROPIC_API_KEY=...
+# OPENAI_API_KEY=...
+# OPENROUTER_API_KEY=...
+# GROQ_API_KEY=...
+# DEEPSEEK_API_KEY=...
+# MISTRAL_API_KEY=...
+# COHERE_API_KEY=...
+# TOGETHER_API_KEY=...
+# FIREWORKS_API_KEY=...
+# OLLAMA_HOST=http://localhost:11434
+```
+
+### 4) Quality gates and integration safety
+
+Integration workflow now includes quality-gate checks (mapping/validation thresholds) and attaches gate summaries in integration payloads.
+
+Operator action:
+- Review quality gate policy in `docs/quality-gates.md`.
+- Keep risky changes behind approval gates in production mode.
+
+### 5) Observability + SLO baseline
+
+Prometheus rules are loaded from `docker/alerts.yml` and include:
+- high 5xx ratio,
+- high p95 latency,
+- core target down.
+
+Operator action:
+- Confirm Prometheus can load `/etc/prometheus/alerts.yml`.
+- Verify Grafana credentials are changed from defaults.
+- Review `docs/sre/slo.md`.
+
+### 6) CI enforcement and docs consistency
+
+`docs-lint` runs in CI and validates canonical install URL + command coverage consistency across docs.
+
+Operator action:
+- Run locally before push:
+```bash
+python scripts/docs_lint.py
+```
+
+### 7) Minimal release verification commands
+
+Run before deploying:
+
+```bash
+scholardevclaw doctor production -v
+python scripts/docs_lint.py
+cd core && python -m pytest tests/unit/test_api_server.py tests/unit/test_health.py tests/unit/test_pipeline.py -q
+cd core && python -m pytest tests/e2e/test_benchmark_scenarios.py -q
+cd agent && bun run build
+```
+
+---
+
 ## Quick Start
 
 ### For Users (Just Want to Try It)
 ```bash
 # One-line install
-curl -fsSL https://ronak-iitd.github.io/ScholarDevClaw/install.sh | bash
+curl -fsSL https://ronak-iiitd.github.io/ScholarDevClaw/install.sh | bash
 
 # Or via pip
 pip install scholardevclaw
@@ -59,7 +165,7 @@ scholardevclaw tui
 
 **What it is**: Static HTML page with install instructions and feature showcase
 **Where it's deployed**: GitHub Pages (`gh-pages` branch)
-**URL**: `https://ronak-iitd.github.io/ScholarDevClaw/`
+**URL**: `https://ronak-iiitd.github.io/ScholarDevClaw/`
 **Requirements**: None (just push to GitHub)
 
 #### How It Works
@@ -73,7 +179,7 @@ scholardevclaw tui
 2. Set **Source** to "Deploy from a branch"
 3. Set **Branch** to `gh-pages` and folder to `/ (root)`
 4. Click Save
-5. Your landing page will be available at: `https://ronak-iitd.github.io/ScholarDevClaw/`
+5. Your landing page will be available at: `https://ronak-iiitd.github.io/ScholarDevClaw/`
 
 #### Deploy Changes
 ```bash
@@ -146,17 +252,40 @@ nano docker/.env
 
 Required environment variables:
 ```bash
-# API Keys (optional but recommended)
-ANTHROPIC_API_KEY=your_key_here
-GITHUB_TOKEN=your_token_here
+# Core/API security (required)
+SCHOLARDEVCLAW_API_AUTH_KEY=generate_a_strong_random_secret
+SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=/repos
+SCHOLARDEVCLAW_CORS_ORIGINS=https://scholardevclaw.ai,https://www.scholardevclaw.ai
+SCHOLARDEVCLAW_ENABLE_HSTS=true
+
+# Agent/core bridge (required in production)
+CORE_BRIDGE_MODE=http
+OPENCLAW_TOKEN=your_openclaw_token
+OPENCLAW_API_URL=https://your-openclaw-api-url
+CONVEX_URL=https://your-convex-deployment.convex.cloud
 
 # Grafana (required for monitoring)
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=secure_password_here
 
+# Provider keys (set what you actually use)
+ANTHROPIC_API_KEY=your_key_here
+GITHUB_TOKEN=your_token_here
+# OPENAI_API_KEY=...
+# OPENROUTER_API_KEY=...
+# GROQ_API_KEY=...
+
 # Logging
 LOG_LEVEL=INFO
 ```
+
+Where to get values:
+- `SCHOLARDEVCLAW_API_AUTH_KEY`: generate with `openssl rand -base64 32`.
+- `SCHOLARDEVCLAW_ALLOWED_REPO_DIRS`: absolute paths on the Docker host that core-api may access.
+- `SCHOLARDEVCLAW_CORS_ORIGINS`: your deployed frontend origin(s), comma-separated.
+- `OPENCLAW_TOKEN` / `OPENCLAW_API_URL`: from your OpenClaw deployment.
+- `CONVEX_URL`: from Convex project deployment settings.
+- LLM provider keys (`ANTHROPIC_API_KEY`, etc.): from the selected provider console.
 
 ##### 3. Build and Deploy
 ```bash
@@ -265,7 +394,12 @@ CORE_API_URL=http://core-api:8000
 # Core API hardening (required)
 SCHOLARDEVCLAW_API_AUTH_KEY=$(openssl rand -base64 32)
 SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=/repos
+SCHOLARDEVCLAW_CORS_ORIGINS=https://scholardevclaw.ai,https://www.scholardevclaw.ai
 SCHOLARDEVCLAW_ENABLE_HSTS=true
+
+# Agent bridge runtime
+CORE_BRIDGE_MODE=http
+OPENCLAW_API_URL=https://your-openclaw-api-url
 
 # Grafana (use strong passwords!)
 GRAFANA_ADMIN_USER=admin

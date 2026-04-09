@@ -2039,7 +2039,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "check",
         nargs="?",
         default="all",
-        choices=["all", "quick", "ollama", "openrouter", "auth_store", "environment"],
+        choices=["all", "quick", "ollama", "openrouter", "auth_store", "environment", "production"],
         help="Specific check to run (default: all)",
     )
     p_doctor.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")

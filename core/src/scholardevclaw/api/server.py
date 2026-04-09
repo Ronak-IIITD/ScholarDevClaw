@@ -1,6 +1,7 @@
 import hmac
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Any, Literal
 
@@ -95,6 +96,15 @@ async def security_headers_middleware(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", "").strip() or str(uuid.uuid4())
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 # ---------------------------------------------------------------------------
 # API key authentication middleware
 # ---------------------------------------------------------------------------
@@ -126,6 +136,7 @@ async def api_key_auth_middleware(request: Request, call_next):
                     content=_json.dumps({"detail": "Unauthorized"}),
                     status_code=401,
                     media_type="application/json",
+                    headers={"X-Request-ID": getattr(request.state, "request_id", "")},
                 )
     return await call_next(request)
 
