@@ -6,17 +6,30 @@ import importlib
 from fastapi.testclient import TestClient
 
 
-def _load_server(monkeypatch):
+def _load_server(
+    monkeypatch,
+    *,
+    api_auth_key: str | None = None,
+    ws_query_token_compat: bool | None = None,
+):
     for key in (
         "SCHOLARDEVCLAW_API_AUTH_KEY",
         "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS",
         "SCHOLARDEVCLAW_ENABLE_HSTS",
         "SCHOLARDEVCLAW_CORS_ORIGINS",
+        "SCHOLARDEVCLAW_WS_QUERY_TOKEN_COMPAT",
     ):
         monkeypatch.delenv(key, raising=False)
 
     # Set dev mode so server.py doesn't fail-closed on missing auth/confinement
     monkeypatch.setenv("SCHOLARDEVCLAW_DEV_MODE", "true")
+    if api_auth_key is not None:
+        monkeypatch.setenv("SCHOLARDEVCLAW_API_AUTH_KEY", api_auth_key)
+    if ws_query_token_compat is not None:
+        monkeypatch.setenv(
+            "SCHOLARDEVCLAW_WS_QUERY_TOKEN_COMPAT",
+            "true" if ws_query_token_compat else "false",
+        )
 
     import scholardevclaw.api.routes.dashboard as dashboard
     import scholardevclaw.api.server as server
@@ -64,6 +77,44 @@ def test_websocket_ping_pong_contract(monkeypatch):
         ws.send_text('{"type":"ping"}')
         message = ws.receive_text()
         assert '"type": "pong"' in message
+
+
+def test_websocket_auth_handshake_required_when_api_key_set(monkeypatch):
+    server, _ = _load_server(monkeypatch, api_auth_key="secret")
+    client = TestClient(server.app)
+
+    with client.websocket_connect("/api/ws/pipeline") as ws:
+        ws.send_text('{"type":"auth","token":"secret"}')
+        auth_ok = ws.receive_text()
+        assert '"type": "auth_ok"' in auth_ok
+
+        ws.send_text('{"type":"ping"}')
+        message = ws.receive_text()
+        assert '"type": "pong"' in message
+
+
+def test_websocket_auth_query_token_compat(monkeypatch):
+    server, _ = _load_server(monkeypatch, api_auth_key="secret", ws_query_token_compat=True)
+    client = TestClient(server.app)
+
+    with client.websocket_connect("/api/ws/pipeline?token=secret") as ws:
+        ws.send_text('{"type":"ping"}')
+        message = ws.receive_text()
+        assert '"type": "pong"' in message
+
+
+def test_websocket_auth_fails_with_bad_handshake(monkeypatch):
+    server, _ = _load_server(monkeypatch, api_auth_key="secret")
+    client = TestClient(server.app)
+
+    with client.websocket_connect("/api/ws/pipeline") as ws:
+        ws.send_text('{"type":"auth","token":"wrong"}')
+        # server closes on unauthorized; subsequent receive should fail
+        try:
+            ws.receive_text()
+            assert False, "expected websocket auth failure"
+        except Exception:
+            pass
 
 
 def test_pipeline_async_uses_shared_pipeline_functions(monkeypatch):

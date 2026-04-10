@@ -15,12 +15,28 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urlencode
 
+
+def _allowed_fixed_source_url(url: str) -> bool:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in {
+        "export.arxiv.org",
+        "eutils.ncbi.nlm.nih.gov",
+        "ieeexploreapi.ieee.org",
+    }
+
+
 try:
     import httpx
 
     HAS_HTTPX = True
 except ImportError:
     HAS_HTTPX = False
+    httpx = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -89,7 +105,7 @@ class ArxivSource:
     BASE_URL = "https://export.arxiv.org/api/query"
 
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=30.0) if HAS_HTTPX else None
+        self.client = httpx.AsyncClient(timeout=30.0) if HAS_HTTPX and httpx is not None else None
 
     async def search(
         self,
@@ -102,6 +118,8 @@ class ArxivSource:
         """Search arXiv for papers"""
         if not HAS_HTTPX:
             raise ImportError("httpx is required. Install with: pip install httpx")
+        if self.client is None:
+            raise RuntimeError("HTTP client unavailable")
 
         search_query = query
         if categories:
@@ -117,6 +135,8 @@ class ArxivSource:
         }
 
         url = f"{self.BASE_URL}?{urlencode(params)}"
+        if not _allowed_fixed_source_url(url):
+            raise ValueError(f"Blocked URL: {url}")
         response = await self.client.get(url)
         response.raise_for_status()
 
@@ -175,7 +195,9 @@ class ArxivSource:
                     pdf_url = link.get("href", "")
                     break
 
-            paper_id = arxiv_id or id_text.text or ""
+            id_value = id_text.text if id_text is not None and id_text.text else ""
+            paper_id = arxiv_id or id_value
+            url_value = id_value
             papers.append(
                 Paper(
                     paper_id=paper_id,
@@ -185,7 +207,7 @@ class ArxivSource:
                     year=year,
                     month=month,
                     source="arxiv",
-                    url=id_text.text or "",
+                    url=url_value,
                     arxiv_id=arxiv_id,
                     pdf_url=pdf_url,
                     categories=categories,
@@ -204,7 +226,7 @@ class PubmedSource:
     BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=30.0) if HAS_HTTPX else None
+        self.client = httpx.AsyncClient(timeout=30.0) if HAS_HTTPX and httpx is not None else None
 
     async def search(
         self,
@@ -215,8 +237,12 @@ class PubmedSource:
         """Search PubMed for papers"""
         if not HAS_HTTPX:
             raise ImportError("httpx is required. Install with: pip install httpx")
+        if self.client is None:
+            raise RuntimeError("HTTP client unavailable")
 
         esearch_url = f"{self.BASE_URL}/esearch.fcgi"
+        if not _allowed_fixed_source_url(esearch_url):
+            raise ValueError(f"Blocked URL: {esearch_url}")
         params = {
             "db": "pubmed",
             "term": query,
@@ -237,6 +263,8 @@ class PubmedSource:
         total = int(data.get("esearchresult", {}).get("count", 0))
 
         efetch_url = f"{self.BASE_URL}/efetch.fcgi"
+        if not _allowed_fixed_source_url(efetch_url):
+            raise ValueError(f"Blocked URL: {efetch_url}")
         fetch_params = {
             "db": "pubmed",
             "id": ",".join(id_list),
@@ -350,7 +378,7 @@ class IEEESource:
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or ""
-        self.client = httpx.AsyncClient(timeout=30.0) if HAS_HTTPX else None
+        self.client = httpx.AsyncClient(timeout=30.0) if HAS_HTTPX and httpx is not None else None
 
     async def search(
         self,
@@ -360,6 +388,8 @@ class IEEESource:
         """Search IEEE Xplore for papers"""
         if not HAS_HTTPX:
             raise ImportError("httpx is required. Install with: pip install httpx")
+        if self.client is None:
+            raise RuntimeError("HTTP client unavailable")
 
         params = {
             "apikey": self.api_key,
@@ -369,6 +399,8 @@ class IEEESource:
 
         if self.api_key:
             url = f"{self.BASE_URL}?{urlencode(params)}"
+            if not _allowed_fixed_source_url(url):
+                raise ValueError(f"Blocked URL: {url}")
             response = await self.client.get(url)
             response.raise_for_status()
             data = response.json()

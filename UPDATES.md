@@ -2,7 +2,61 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-09
+**Last updated:** 2026-04-10
+
+### 2026-04-10 (Phase-2 security hardening: WS auth handshake, outbound fetch policy expansion, docker sandbox path)
+
+**Goal:** Continue Phase-2 security hardening by removing query-token dependence for dashboard websocket auth, broadening outbound fetch safety controls across research paths, and adding a dockerized validation execution path for benchmark scripts.
+
+**Summary:** Introduced websocket auth handshake flow with compatibility-gated query-token fallback, expanded URL allow/safety guards across web research and paper source fetchers, and added docker sandbox benchmark execution support in validation strict mode. Also fixed a regression in websocket auth tests that caused hangs due to environment reset timing.
+
+**What changed:**
+
+- **Dashboard websocket auth hardening**
+  - `core/src/scholardevclaw/api/routes/dashboard.py`
+    - Added first-message auth handshake contract (`{"type":"auth","token":"..."}`) when API auth key is configured.
+    - Added `{"type":"auth_ok"}` acknowledgment on successful handshake.
+    - Added compatibility gate for legacy query-token auth via `SCHOLARDEVCLAW_WS_QUERY_TOKEN_COMPAT=true`.
+
+- **Web client websocket auth integration**
+  - `web/src/lib/api.ts`
+    - Sends auth handshake message on websocket open when token is available (`VITE_WS_AUTH_TOKEN` or `localStorage["scholardevclaw_api_token"]`).
+  - `web/src/hooks/usePipelineWs.ts`
+    - Ignores `auth_ok` control frames to keep pipeline message handling clean.
+
+- **Outbound fetch policy expansion (SSRF reduction)**
+  - `core/src/scholardevclaw/research_intelligence/web_research.py`
+    - Added safe GET helper and fixed-source host allow checks on outbound fetch paths.
+  - `core/src/scholardevclaw/research_intelligence/extractor.py`
+    - Hardened arXiv fetch calls: enforced `https`, reduced timeout, disabled redirects, and added allowed-URL checks.
+  - `core/src/scholardevclaw/research_intelligence/paper_sources.py`
+    - Added fixed-source allow checks and guarded URL fetch entrypoints.
+
+- **Validation docker sandbox execution path**
+  - `core/src/scholardevclaw/validation/runner.py`
+    - Added docker benchmark runner path (`_run_bench_script_in_docker`).
+    - Added docker availability check and strict-mode block when docker sandbox is required but unavailable.
+    - Routed benchmark/simple benchmark execution through docker path when sandbox mode is set.
+
+- **Tests added/updated**
+  - `core/tests/unit/test_api_dashboard_routes.py`
+    - Added websocket auth handshake, compat, and bad-auth coverage.
+    - Fixed test fixture loader to apply auth env after reset (eliminates handshake-test hang).
+  - `core/tests/unit/test_web_research_security.py`
+    - Extended fixed-source allowlist/security checks.
+  - `core/tests/unit/test_validation_runner.py`
+    - Added strict-mode/docker-unavailable block coverage.
+    - Added docker benchmark execution-path coverage.
+
+**Verification:**
+
+- ✅ `pytest core/tests/unit/test_api_dashboard_routes.py -q`
+- ✅ `pytest core/tests/unit/test_web_research_security.py -q`
+- ✅ `pytest core/tests/unit/test_validation_runner.py -q`
+- ✅ `ruff check core/src core/tests`
+- ✅ `pytest core/tests -q` (`1421 passed, 1 skipped`)
+- ✅ `cd agent && bun run build`
+- ✅ `cd agent && bun x vitest run` (`30 passed`)
 
 ### 2026-04-09 (Security hardening sweep: path confinement, SSRF guardrails, secret redaction, execution policy)
 

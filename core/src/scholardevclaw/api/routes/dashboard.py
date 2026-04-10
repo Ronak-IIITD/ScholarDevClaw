@@ -42,6 +42,9 @@ router = APIRouter(prefix="/api", tags=["dashboard"])
 # ---------------------------------------------------------------------------
 
 _API_AUTH_KEY = os.environ.get("SCHOLARDEVCLAW_API_AUTH_KEY", "")
+_WS_QUERY_TOKEN_COMPAT = (
+    os.environ.get("SCHOLARDEVCLAW_WS_QUERY_TOKEN_COMPAT", "").lower() == "true"
+)
 
 
 def _validate_repo_path(repo_path: str) -> Path:
@@ -473,22 +476,43 @@ async def _run_pipeline_async(
 async def ws_pipeline(websocket: WebSocket):
     """WebSocket endpoint for real-time pipeline progress.
 
-    Requires Bearer token via query parameter `token` when auth is configured.
+    When auth is configured, clients must authenticate with
+    a first message: {"type":"auth","token":"<api-key>"}.
+    Query-string token auth is optional compatibility mode via
+    SCHOLARDEVCLAW_WS_QUERY_TOKEN_COMPAT=true.
     Limits connections to 20 concurrent clients per server.
     """
-    # Auth check when API key is configured
-    if _API_AUTH_KEY:
-        token = websocket.query_params.get("token", "")
-        if not token or not hmac.compare_digest(token, _API_AUTH_KEY):
-            await websocket.close(code=4001, reason="Unauthorized")
-            return
-
     # Connection cap
     if len(_ws_clients) >= 20:
         await websocket.close(code=4002, reason="Too many connections")
         return
 
     await websocket.accept()
+
+    authenticated = not bool(_API_AUTH_KEY)
+    if _API_AUTH_KEY and _WS_QUERY_TOKEN_COMPAT:
+        token = websocket.query_params.get("token", "")
+        if token and hmac.compare_digest(token, _API_AUTH_KEY):
+            authenticated = True
+
+    if _API_AUTH_KEY and not authenticated:
+        try:
+            auth_payload = await websocket.receive_text()
+            auth_msg = json.loads(auth_payload)
+            token = str(auth_msg.get("token", ""))
+            if (
+                auth_msg.get("type") != "auth"
+                or not token
+                or not hmac.compare_digest(token, _API_AUTH_KEY)
+            ):
+                await websocket.close(code=4001, reason="Unauthorized")
+                return
+            await websocket.send_text(json.dumps({"type": "auth_ok"}))
+            authenticated = True
+        except Exception:
+            await websocket.close(code=4001, reason="Unauthorized")
+            return
+
     _ws_clients.append(websocket)
     logger.info("WebSocket client connected (%d total)", len(_ws_clients))
 

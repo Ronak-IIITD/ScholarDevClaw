@@ -34,6 +34,7 @@ export function usePipelineWs() {
     ws.onmessage = (evt) => {
       try {
         const msg: WsMessage = JSON.parse(evt.data);
+        if (msg.type === "auth_ok") return;
         if (msg.type === "pong") return;
 
         if (msg.type === "pipeline_step") {

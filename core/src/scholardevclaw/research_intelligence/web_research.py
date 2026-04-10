@@ -88,6 +88,41 @@ def _is_allowed_gist_url(url: str) -> bool:
     return host == "gist.github.com" and _validate_public_host(host)
 
 
+def _is_allowed_fixed_source_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    allowed_hosts = {
+        "api.github.com",
+        "paperswithcode.com",
+        "api.stackexchange.com",
+        "raw.githubusercontent.com",
+    }
+    if host not in allowed_hosts:
+        return False
+    return _validate_public_host(host)
+
+
+async def _safe_get(
+    client: Any,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = 5.0,
+) -> Any:
+    if not _is_allowed_fixed_source_url(url):
+        raise ValueError(f"Blocked outbound URL: {url}")
+    return await client.get(
+        url,
+        params=params,
+        headers=headers,
+        timeout=timeout,
+        follow_redirects=False,
+    )
+
+
 try:
     import httpx
 
@@ -220,7 +255,7 @@ class WebResearchEngine:
                 "per_page": max_results,
             }
 
-            response = await self.client.get(url, params=params, headers=headers)
+            response = await _safe_get(self.client, url, params=params, headers=headers)
 
             if response.status_code != 200:
                 logger.warning("GitHub API error: %s", response.status_code)
@@ -298,7 +333,7 @@ class WebResearchEngine:
                 "items_per_page": max_results,
             }
 
-            response = await self.client.get(url, params=params)
+            response = await _safe_get(self.client, url, params=params)
 
             if response.status_code != 200:
                 return []
@@ -339,7 +374,7 @@ class WebResearchEngine:
                 "sort": "relevance",
             }
 
-            response = await self.client.get(url, params=params)
+            response = await _safe_get(self.client, url, params=params)
 
             if response.status_code != 200:
                 return []
@@ -529,7 +564,8 @@ class WebResearchEngine:
         }
 
         try:
-            meta_resp = await self.client.get(
+            meta_resp = await _safe_get(
+                self.client,
                 f"https://api.github.com/repos/{owner}/{repo}",
                 headers=headers,
             )
@@ -544,7 +580,8 @@ class WebResearchEngine:
 
         # Fetch repo tree (first level)
         try:
-            tree_resp = await self.client.get(
+            tree_resp = await _safe_get(
+                self.client,
                 f"https://api.github.com/repos/{owner}/{repo}/git/trees/HEAD",
                 headers=headers,
                 params={"recursive": "1"},
@@ -592,7 +629,7 @@ class WebResearchEngine:
             for file_path in repo_info["key_files"][:5]:
                 try:
                     raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{file_path}"
-                    file_resp = await self.client.get(raw_url)
+                    file_resp = await _safe_get(self.client, raw_url)
                     if file_resp.status_code == 200:
                         file_contents[file_path] = file_resp.text[:4000]
                 except Exception:

@@ -395,6 +395,18 @@ class TestValidationRunnerRun:
         assert result.stage == "policy"
         assert "Unsandboxed" in (result.error or "")
 
+    def test_strict_docker_mode_blocks_when_docker_unavailable(self, tmp_path, monkeypatch):
+        runner = ValidationRunner(tmp_path)
+        monkeypatch.setenv("SCHOLARDEVCLAW_VALIDATION_EXECUTION_MODE", "strict")
+        monkeypatch.setenv("SCHOLARDEVCLAW_VALIDATION_SANDBOX", "docker")
+
+        with patch.object(runner, "_docker_available", return_value=False):
+            result = runner.run({}, str(tmp_path))
+
+        assert result.passed is False
+        assert result.stage == "policy"
+        assert "Docker" in (result.error or "")
+
 
 # =========================================================================
 # ValidationRunner._run_training_test
@@ -463,6 +475,25 @@ class TestRunSimpleBenchmark:
             result = runner.run_simple_benchmark()
         assert result["status"] == "error"
         assert result["simulated"] is False
+
+    def test_simple_benchmark_uses_docker_runner_when_enabled(self, tmp_path, monkeypatch):
+        runner = ValidationRunner(tmp_path)
+        monkeypatch.setenv("SCHOLARDEVCLAW_VALIDATION_SANDBOX", "docker")
+        fake_data = {
+            "status": "completed",
+            "iterations": 10,
+            "avg_duration_seconds": 0.001,
+            "simulated": False,
+        }
+
+        with patch(
+            "scholardevclaw.validation.runner._run_bench_script_in_docker",
+            return_value=fake_data,
+        ) as docker_run:
+            result = runner.run_simple_benchmark()
+
+        assert result["status"] == "completed"
+        docker_run.assert_called_once()
 
 
 # =========================================================================

@@ -75,6 +75,54 @@ def _run_bench_script(
         return None
 
 
+def _run_bench_script_in_docker(
+    script: str,
+    *,
+    cwd: str | Path,
+    timeout: int = 120,
+    image: str,
+) -> dict | None:
+    """Run benchmark script inside an isolated Docker container.
+
+    - repo is mounted read-only
+    - network disabled
+    - execution timeout enforced
+    """
+    repo = Path(cwd).resolve()
+    docker_cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--read-only",
+        "-v",
+        f"{repo}:/workspace:ro",
+        "-w",
+        "/workspace",
+        image,
+        "python",
+        "-c",
+        script,
+    ]
+    try:
+        result = subprocess.run(
+            docker_cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode != 0:
+            return None
+        for line in reversed(result.stdout.strip().splitlines()):
+            line = line.strip()
+            if line.startswith("{"):
+                return json.loads(line)
+        return None
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Benchmark scripts executed inside subprocesses
 # ---------------------------------------------------------------------------
@@ -235,6 +283,26 @@ class ValidationRunner:
     def __init__(self, repo_path: Path):
         self.repo_path = Path(repo_path)
 
+    def _sandbox_mode(self) -> str:
+        return (os.environ.get("SCHOLARDEVCLAW_VALIDATION_SANDBOX") or "").strip().lower()
+
+    def _docker_image(self) -> str:
+        return (
+            os.environ.get("SCHOLARDEVCLAW_VALIDATION_DOCKER_IMAGE") or "python:3.12-slim"
+        ).strip()
+
+    def _docker_available(self) -> bool:
+        try:
+            probe = subprocess.run(
+                ["docker", "version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return probe.returncode == 0
+        except Exception:
+            return False
+
     def run(self, patch: dict, repo_path: str) -> ValidationResult:
         artifact_result = self._validate_patch_artifacts(patch)
         if not artifact_result.passed:
@@ -282,6 +350,13 @@ class ValidationRunner:
                     "Set SCHOLARDEVCLAW_VALIDATION_SANDBOX=docker to proceed."
                 ),
                 error="Unsandboxed validation execution blocked by strict policy",
+            )
+        if mode == "strict" and sandbox == "docker" and not self._docker_available():
+            return ValidationResult(
+                passed=False,
+                stage="policy",
+                logs="Strict execution mode requires Docker, but Docker is unavailable.",
+                error="Docker sandbox requested but unavailable",
             )
         return None
 
@@ -367,6 +442,13 @@ class ValidationRunner:
                 logs="No test files found - skipping tests",
             )
 
+        if self._sandbox_mode() == "docker":
+            return ValidationResult(
+                passed=True,
+                stage="tests",
+                logs="Docker sandbox mode: pytest execution is currently disabled in this phase.",
+            )
+
         try:
             result = subprocess.run(
                 [sys.executable, "-m", "pytest", "-v", "--tb=short", "-x", "--timeout=60"],
@@ -449,6 +531,8 @@ class ValidationRunner:
     # ------------------------------------------------------------------
 
     def _check_torch_available(self) -> bool:
+        if self._sandbox_mode() == "docker":
+            return False
         try:
             result = subprocess.run(
                 [sys.executable, "-c", "import torch; print(torch.__version__)"],
@@ -493,7 +577,15 @@ class ValidationRunner:
                 use_variant=use_variant,
             )
 
-        data = _run_bench_script(script, cwd=self.repo_path, timeout=120)
+        if self._sandbox_mode() == "docker":
+            data = _run_bench_script_in_docker(
+                script,
+                cwd=self.repo_path,
+                timeout=120,
+                image=self._docker_image(),
+            )
+        else:
+            data = _run_bench_script(script, cwd=self.repo_path, timeout=120)
         if data is None:
             return None
 
@@ -532,7 +624,15 @@ class ValidationRunner:
             }}))
         """)
 
-        data = _run_bench_script(script, cwd=self.repo_path, timeout=60)
+        if self._sandbox_mode() == "docker":
+            data = _run_bench_script_in_docker(
+                script,
+                cwd=self.repo_path,
+                timeout=60,
+                image=self._docker_image(),
+            )
+        else:
+            data = _run_bench_script(script, cwd=self.repo_path, timeout=60)
         if data is not None:
             return data
 

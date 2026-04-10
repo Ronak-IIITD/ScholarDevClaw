@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from scholardevclaw.utils.retry import retry
 
@@ -26,6 +27,11 @@ if TYPE_CHECKING:
     from scholardevclaw.llm.research_assistant import LLMResearchAssistant
 
 logger = logging.getLogger(__name__)
+
+
+def _is_allowed_arxiv_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme == "https" and (parsed.hostname or "").lower() == "export.arxiv.org"
 
 
 # ---------------------------------------------------------------------------
@@ -664,11 +670,13 @@ def _fetch_arxiv_abstract(arxiv_id: str) -> str | None:
     try:
         import httpx
 
-        url = f"http://export.arxiv.org/api/query?id_list={clean_id}"
+        url = f"https://export.arxiv.org/api/query?id_list={clean_id}"
+        if not _is_allowed_arxiv_url(url):
+            return None
 
         @retry(max_attempts=2, base_delay=1.0, max_delay=10.0)
         def _fetch_abstract() -> httpx.Response:
-            return httpx.get(url, timeout=15.0, follow_redirects=True)
+            return httpx.get(url, timeout=5.0, follow_redirects=False)
 
         resp = _fetch_abstract()
         if resp.status_code != 200:
@@ -721,10 +729,10 @@ def _fetch_arxiv_papers(
         @retry(max_attempts=2, base_delay=1.0, max_delay=10.0)
         def _search_arxiv() -> httpx.Response:
             return httpx.get(
-                "http://export.arxiv.org/api/query",
+                "https://export.arxiv.org/api/query",
                 params=params,
-                timeout=20.0,
-                follow_redirects=True,
+                timeout=5.0,
+                follow_redirects=False,
             )
 
         resp = _search_arxiv()
