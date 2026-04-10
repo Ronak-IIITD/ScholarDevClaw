@@ -1776,6 +1776,50 @@ def cmd_doctor(args):
             sys.exit(1)
 
 
+def cmd_deploy_check(args):
+    """Run deployment preflight against an env file."""
+    from scholardevclaw.deploy.preflight import parse_env_file, run_deploy_preflight
+
+    env_file = Path(args.env_file).expanduser().resolve()
+    if not env_file.exists():
+        print(f"Error: env file not found: {env_file}", file=sys.stderr)
+        sys.exit(1)
+
+    env = parse_env_file(env_file)
+    report = run_deploy_preflight(env)
+
+    if args.output_json:
+        print(
+            json.dumps(
+                {
+                    "ok": report.ok,
+                    "errors": report.errors,
+                    "warnings": report.warnings,
+                    "checks": report.checks,
+                    "env_file": str(env_file),
+                },
+                indent=2,
+            )
+        )
+    else:
+        print("=" * 50)
+        print("  ScholarDevClaw Deployment Preflight")
+        print("=" * 50)
+        print(f"Env file: {env_file}")
+        print(f"Status  : {'PASS' if report.ok else 'FAIL'}")
+        if report.errors:
+            print("\nErrors:")
+            for err in report.errors:
+                print(f"  - {err}")
+        if report.warnings:
+            print("\nWarnings:")
+            for warning in report.warnings:
+                print(f"  - {warning}")
+
+    if not report.ok:
+        sys.exit(1)
+
+
 def cmd_tui(args):
     """Launch interactive terminal UI (wizard mode)"""
     try:
@@ -2039,10 +2083,21 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "check",
         nargs="?",
         default="all",
-        choices=["all", "quick", "ollama", "openrouter", "auth_store", "environment"],
+        choices=["all", "quick", "ollama", "openrouter", "auth_store", "environment", "production"],
         help="Specific check to run (default: all)",
     )
     p_doctor.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")
+
+    p_deploy_check = subparsers.add_parser(
+        "deploy-check",
+        help="Validate production deployment env file and provider connectivity settings",
+    )
+    p_deploy_check.add_argument(
+        "--env-file",
+        default="docker/.env",
+        help="Path to env file (default: docker/.env)",
+    )
+    p_deploy_check.add_argument("--output-json", action="store_true", help="Output JSON")
 
     # agent
     p_agent = subparsers.add_parser("agent", help="Start interactive AI agent")
@@ -2144,6 +2199,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "demo": cmd_demo,
         "multi-repo": cmd_multi_repo,
         "doctor": cmd_doctor,
+        "deploy-check": cmd_deploy_check,
     }
 
     commands[args.command](args)

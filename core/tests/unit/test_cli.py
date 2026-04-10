@@ -33,6 +33,7 @@ import scholardevclaw.cli as cli
         ("demo", ["scholardevclaw", "demo"], "cmd_demo"),
         ("multi-repo", ["scholardevclaw", "multi-repo", "list"], "cmd_multi_repo"),
         ("tui", ["scholardevclaw", "tui"], "cmd_tui"),
+        ("deploy-check", ["scholardevclaw", "deploy-check"], "cmd_deploy_check"),
     ],
 )
 def test_main_dispatches_all_supported_commands(monkeypatch, command, argv, handler_name):
@@ -198,3 +199,33 @@ def test_cmd_tui_importerror_prints_install_hint(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "TUI dependencies are not installed" in captured.err
     assert 'pip install -e ".[tui]"' in captured.err
+
+
+def test_cmd_deploy_check_json_output(tmp_path, capsys):
+    env = tmp_path / ".env"
+    env.write_text(
+        "\n".join(
+            [
+                "SCHOLARDEVCLAW_API_AUTH_KEY=secret",
+                "SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=/repos",
+                "SCHOLARDEVCLAW_CORS_ORIGINS=https://app.example.com",
+                "OPENCLAW_TOKEN=token",
+                "OPENCLAW_API_URL=https://openclaw.example.com",
+                "GRAFANA_ADMIN_USER=admin",
+                "GRAFANA_ADMIN_PASSWORD=strong-pass",
+                "SCHOLARDEVCLAW_API_PROVIDER=anthropic",
+                "ANTHROPIC_API_KEY=sk-ant-123",
+            ]
+        )
+    )
+
+    cli.cmd_deploy_check(SimpleNamespace(env_file=str(env), output_json=True))
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["ok"] is True
+
+
+def test_cmd_deploy_check_exits_on_missing_file():
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_deploy_check(SimpleNamespace(env_file="/tmp/does-not-exist.env", output_json=False))
+    assert exc.value.code == 1

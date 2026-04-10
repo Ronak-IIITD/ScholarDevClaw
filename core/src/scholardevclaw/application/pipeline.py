@@ -46,12 +46,99 @@ class PipelineResult:
 
 LogCallback = Callable[[str], None]
 PIPELINE_SCHEMA_VERSION = SCHEMA_VERSION
+QUALITY_GATES = {
+    "mapping_confidence_min": 70.0,
+    "mapping_target_count_min": 1,
+    "validation_speedup_min": 0.95,
+    "validation_abs_loss_change_pct_max": 5.0,
+}
 
 
 def _log(logs: list[str], message: str, log_callback: LogCallback | None = None) -> None:
     logs.append(message)
     if log_callback is not None:
         log_callback(message)
+
+
+def _evaluate_quality_gates(
+    *,
+    mapping_result: dict[str, Any] | None = None,
+    validation_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+
+    if mapping_result is not None:
+        targets = mapping_result.get("targets", [])
+        min_targets = int(QUALITY_GATES["mapping_target_count_min"])
+        target_count = len(targets) if isinstance(targets, list) else 0
+        checks.append(
+            {
+                "name": "mapping_target_count",
+                "status": "pass" if target_count >= min_targets else "fail",
+                "value": target_count,
+                "required_min": min_targets,
+            }
+        )
+
+        confidence = mapping_result.get("confidence")
+        if isinstance(confidence, (int, float)):
+            min_confidence = float(QUALITY_GATES["mapping_confidence_min"])
+            checks.append(
+                {
+                    "name": "mapping_confidence",
+                    "status": "pass" if float(confidence) >= min_confidence else "warn",
+                    "value": float(confidence),
+                    "required_min": min_confidence,
+                }
+            )
+        else:
+            checks.append(
+                {
+                    "name": "mapping_confidence",
+                    "status": "warn",
+                    "value": confidence,
+                    "required_min": float(QUALITY_GATES["mapping_confidence_min"]),
+                    "note": "Confidence unavailable from mapping payload",
+                }
+            )
+
+    if validation_payload is not None:
+        deltas = validation_payload.get("scorecard", {}).get("deltas", {})
+
+        speedup = deltas.get("speedup")
+        if isinstance(speedup, (int, float)):
+            min_speedup = float(QUALITY_GATES["validation_speedup_min"])
+            checks.append(
+                {
+                    "name": "validation_speedup",
+                    "status": "pass" if float(speedup) >= min_speedup else "warn",
+                    "value": float(speedup),
+                    "required_min": min_speedup,
+                }
+            )
+
+        loss_change = deltas.get("loss_change_pct")
+        if isinstance(loss_change, (int, float)):
+            max_abs_loss = float(QUALITY_GATES["validation_abs_loss_change_pct_max"])
+            checks.append(
+                {
+                    "name": "validation_abs_loss_change_pct",
+                    "status": "pass" if abs(float(loss_change)) <= max_abs_loss else "warn",
+                    "value": float(loss_change),
+                    "required_abs_max": max_abs_loss,
+                }
+            )
+
+    failed = [c for c in checks if c.get("status") == "fail"]
+    warned = [c for c in checks if c.get("status") == "warn"]
+    return {
+        "version": "1.0",
+        "thresholds": QUALITY_GATES,
+        "checks": checks,
+        "summary": "fail" if failed else "pass",
+        "failed_checks": [c["name"] for c in failed],
+        "warnings": [c["name"] for c in warned],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +182,16 @@ def _ensure_repo(repo_path: str) -> Path:
         raise FileNotFoundError(f"Repository not found: {repo_path}")
     if not path.is_dir():
         raise NotADirectoryError(f"Repository is not a directory: {repo_path}")
+    allowed_roots = [
+        Path(p.strip()).expanduser().resolve()
+        for p in os.environ.get("SCHOLARDEVCLAW_ALLOWED_REPO_DIRS", "").split(":")
+        if p.strip()
+    ]
+    if allowed_roots and not any(path == root or root in path.parents for root in allowed_roots):
+        allowed_text = ", ".join(str(p) for p in allowed_roots)
+        raise PermissionError(
+            f"Repository path is outside allowed roots: {path}. Allowed roots: {allowed_text}"
+        )
     return path
 
 
@@ -952,6 +1049,27 @@ def run_integrate(
             log_callback=log_callback,
         )
         _log(logs, f"Mapping: {len(mapping_result.get('targets', []))} targets", log_callback)
+        map_quality_gates = _evaluate_quality_gates(mapping_result=mapping_result)
+        _log(logs, f"Quality gates (mapping): {map_quality_gates['summary']}", log_callback)
+        if map_quality_gates["summary"] == "fail":
+            return PipelineResult(
+                ok=False,
+                title="Integration",
+                payload=with_meta(
+                    {
+                        "step": "quality_gate",
+                        "spec": selected_spec_name,
+                        "quality_gates": map_quality_gates,
+                        "mapping": mapping_result,
+                    },
+                    "integration",
+                ),
+                logs=logs,
+                error=(
+                    "Mapping quality gates failed: "
+                    f"{', '.join(map_quality_gates['failed_checks'])}"
+                ),
+            )
 
         if create_rollback and not dry_run:
             from scholardevclaw.rollback import RollbackManager
@@ -980,6 +1098,7 @@ def run_integrate(
                     },
                     "preflight": preflight.payload,
                     "mapping": mapping_result,
+                    "quality_gates": map_quality_gates,
                     "generation": None,
                     "validation": None,
                     "output_dir": output_dir,
@@ -1015,6 +1134,11 @@ def run_integrate(
             log_callback=log_callback,
         )
         logs.extend(validate_result.logs)
+        final_quality_gates = _evaluate_quality_gates(
+            mapping_result=mapping_result,
+            validation_payload=validate_result.payload,
+        )
+        _log(logs, f"Quality gates (final): {final_quality_gates['summary']}", log_callback)
 
         payload = with_meta(
             {
@@ -1028,6 +1152,7 @@ def run_integrate(
                 },
                 "preflight": preflight.payload,
                 "mapping": mapping_result,
+                "quality_gates": final_quality_gates,
                 "generation": generate_result.payload,
                 "validation": validate_result.payload,
                 "rollback_snapshot_id": rollback_snapshot_id,
@@ -1061,11 +1186,16 @@ def run_integrate(
         )
 
         return PipelineResult(
-            ok=validate_result.ok,
+            ok=validate_result.ok and final_quality_gates["summary"] != "fail",
             title="Integration",
             payload=payload,
             logs=logs,
-            error=validate_result.error,
+            error=validate_result.error
+            or (
+                "Quality gates failed: " + ", ".join(final_quality_gates["failed_checks"])
+                if final_quality_gates["summary"] == "fail"
+                else None
+            ),
         )
     except Exception as exc:
         _fire_hook(

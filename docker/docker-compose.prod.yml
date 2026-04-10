@@ -36,6 +36,7 @@ services:
       - SCHOLARDEVCLAW_API_AUTH_KEY=${SCHOLARDEVCLAW_API_AUTH_KEY:?SCHOLARDEVCLAW_API_AUTH_KEY must be set}
       - SCHOLARDEVCLAW_ALLOWED_REPO_DIRS=${SCHOLARDEVCLAW_ALLOWED_REPO_DIRS:?SCHOLARDEVCLAW_ALLOWED_REPO_DIRS must be set}
       - SCHOLARDEVCLAW_ENABLE_HSTS=${SCHOLARDEVCLAW_ENABLE_HSTS:-true}
+      - SCHOLARDEVCLAW_CORS_ORIGINS=${SCHOLARDEVCLAW_CORS_ORIGINS:?SCHOLARDEVCLAW_CORS_ORIGINS must be set}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 30s
@@ -70,10 +71,15 @@ services:
     environment:
       - NODE_ENV=production
       - CORE_API_URL=http://core-api:8000
+      - SCHOLARDEVCLAW_API_AUTH_KEY=${SCHOLARDEVCLAW_API_AUTH_KEY:?SCHOLARDEVCLAW_API_AUTH_KEY must be set}
       - OPENCLAW_TOKEN=${OPENCLAW_TOKEN}
+      - OPENCLAW_API_URL=${OPENCLAW_API_URL}
       - CONVEX_URL=${CONVEX_URL}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CORE_BRIDGE_MODE=${CORE_BRIDGE_MODE:-http}
+      - SCHOLARDEVCLAW_API_PROVIDER=${SCHOLARDEVCLAW_API_PROVIDER:-anthropic}
+      - SCHOLARDEVCLAW_API_MODEL=${SCHOLARDEVCLAW_API_MODEL:-claude-sonnet-4-20250514}
     volumes:
       - agent-data:/app/data
     deploy:
@@ -119,6 +125,7 @@ services:
       - "9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
