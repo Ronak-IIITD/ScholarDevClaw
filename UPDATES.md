@@ -4,6 +4,27 @@
 
 **Last updated:** 2026-04-10
 
+### 2026-04-10 (Deploy preflight salvage from PR #32)
+
+**Summary:** Added a dedicated `deploy-check` CLI command and deploy preflight module to validate production env files (required keys, bridge mode, provider key mapping, placeholder detection including `__DOUBLE_UNDERSCORE__`, localhost CORS warnings, and Grafana default-password blocking). Added a production env template and aligned health doctor `production` checks with the same production preflight expectations.
+
+**What changed:**
+
+- `core/src/scholardevclaw/deploy/preflight.py` + `core/src/scholardevclaw/deploy/__init__.py`
+  - New env-file parser and production preflight validator.
+- `core/src/scholardevclaw/cli.py`
+  - Added `scholardevclaw deploy-check --env-file docker/.env --output-json`.
+- `core/src/scholardevclaw/utils/health.py`
+  - Registered `production` check and implemented `_check_production_preflight()`.
+- `docker/.env.production.template`
+  - Added production-ready template with placeholder tokens.
+- `DEPLOYMENT.md`
+  - Added optional template copy path and deploy-check verification command.
+- Tests:
+  - `core/tests/unit/test_deploy_preflight.py`
+  - `core/tests/unit/test_cli.py`
+  - `core/tests/unit/test_health.py`
+
 ### 2026-04-10 (Phase-2 security hardening: WS auth handshake, outbound fetch policy expansion, docker sandbox path)
 
 **Goal:** Continue Phase-2 security hardening by removing query-token dependence for dashboard websocket auth, broadening outbound fetch safety controls across research paths, and adding a dockerized validation execution path for benchmark scripts.

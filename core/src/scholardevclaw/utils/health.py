@@ -48,6 +48,7 @@ class HealthChecker:
         self.register_check("memory", self._check_memory)
         self.register_check("disk", self._check_disk)
         self.register_check("environment", self._check_environment)
+        self.register_check("production", self._check_production_preflight)
         self.register_check("filesystem", self._check_filesystem)
         self.register_check("ollama", self._check_ollama)
         self.register_check("openrouter", self._check_openrouter)
@@ -227,6 +228,97 @@ class HealthChecker:
                 "missing_required": missing_required,
                 "missing_optional": missing_optional,
                 "dev_mode": dev_mode,
+            },
+        )
+
+    def _check_production_preflight(self) -> HealthStatus:
+        from scholardevclaw.deploy.preflight import (
+            PROVIDER_ENV_KEY_MAP,
+            REQUIRED_ENV_KEYS,
+            VALID_BRIDGE_MODES,
+            is_placeholder_value,
+        )
+
+        dev_mode = os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").strip().lower() == "true"
+        if dev_mode:
+            return HealthStatus(
+                name="production",
+                healthy=True,
+                message="Skipped production preflight (dev mode enabled)",
+                details={
+                    "dev_mode": True,
+                    "skipped": True,
+                    "issues": [],
+                    "recommendations": [],
+                },
+            )
+
+        issues: list[str] = []
+        recommendations: list[str] = []
+
+        for key in REQUIRED_ENV_KEYS:
+            value = os.environ.get(key, "").strip()
+            if not value:
+                issues.append(f"Missing required env var: {key}")
+                continue
+            if is_placeholder_value(value):
+                issues.append(f"{key} appears to be a placeholder value")
+
+        bridge_mode = os.environ.get("CORE_BRIDGE_MODE", "").strip().lower()
+        if bridge_mode not in VALID_BRIDGE_MODES:
+            issues.append(
+                f"CORE_BRIDGE_MODE must be one of: {', '.join(sorted(VALID_BRIDGE_MODES))}"
+            )
+        elif bridge_mode == "http" and not os.environ.get("CORE_API_URL", "").strip():
+            issues.append("CORE_API_URL is required when CORE_BRIDGE_MODE=http")
+
+        provider = os.environ.get("SCHOLARDEVCLAW_API_PROVIDER", "").strip().lower()
+        if provider:
+            provider_key = PROVIDER_ENV_KEY_MAP.get(provider)
+            if provider_key is None:
+                issues.append(
+                    "SCHOLARDEVCLAW_API_PROVIDER is unsupported: "
+                    f"{provider} (supported: {', '.join(sorted(PROVIDER_ENV_KEY_MAP))})"
+                )
+            else:
+                provider_value = os.environ.get(provider_key, "").strip()
+                if not provider_value:
+                    issues.append(
+                        f"{provider_key} is required when SCHOLARDEVCLAW_API_PROVIDER={provider}"
+                    )
+                elif is_placeholder_value(provider_value):
+                    issues.append(
+                        f"{provider_key} appears to be a placeholder value for provider {provider}"
+                    )
+
+        cors_origins = os.environ.get("SCHOLARDEVCLAW_CORS_ORIGINS", "")
+        if "localhost" in cors_origins.lower() or "127.0.0.1" in cors_origins:
+            recommendations.append(
+                "Remove localhost/127.0.0.1 from SCHOLARDEVCLAW_CORS_ORIGINS in production"
+            )
+
+        if os.environ.get("GRAFANA_ADMIN_PASSWORD", "").strip() == "change_me_in_production":
+            issues.append("GRAFANA_ADMIN_PASSWORD must not be change_me_in_production")
+
+        healthy = len(issues) == 0
+        message = (
+            "Production preflight passed"
+            if healthy
+            else f"Production preflight failed ({len(issues)} issue(s))"
+        )
+        if healthy and recommendations:
+            message = f"{message} with {len(recommendations)} recommendation(s)"
+
+        return HealthStatus(
+            name="production",
+            healthy=healthy,
+            message=message,
+            details={
+                "dev_mode": False,
+                "skipped": False,
+                "bridge_mode": bridge_mode,
+                "issues": issues,
+                "recommendations": recommendations,
             },
         )
 

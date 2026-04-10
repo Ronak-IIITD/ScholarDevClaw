@@ -1776,6 +1776,49 @@ def cmd_doctor(args):
             sys.exit(1)
 
 
+def cmd_deploy_check(args):
+    """Run deployment environment preflight checks."""
+    from scholardevclaw.deploy.preflight import run_preflight
+
+    try:
+        result = run_preflight(args.env_file)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.output_json:
+        print(
+            json.dumps(
+                {
+                    "env_file": result.env_file,
+                    "ok": result.ok,
+                    "errors": result.errors,
+                    "warnings": result.warnings,
+                    "recommendations": result.recommendations,
+                },
+                indent=2,
+            )
+        )
+    else:
+        status = "passed" if result.ok else "failed"
+        print(f"Deploy preflight {status}: {result.env_file}")
+        if result.errors:
+            print("Errors:")
+            for issue in result.errors:
+                print(f"  - {issue}")
+        if result.warnings:
+            print("Warnings:")
+            for issue in result.warnings:
+                print(f"  - {issue}")
+        if result.recommendations:
+            print("Recommendations:")
+            for item in result.recommendations:
+                print(f"  - {item}")
+
+    if not result.ok:
+        sys.exit(1)
+
+
 def cmd_tui(args):
     """Launch interactive terminal UI (wizard mode)"""
     try:
@@ -2044,6 +2087,13 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     )
     p_doctor.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")
 
+    # deploy-check
+    p_deploy_check = subparsers.add_parser(
+        "deploy-check", help="Validate deployment environment file"
+    )
+    p_deploy_check.add_argument("--env-file", default="docker/.env", help="Path to env file")
+    p_deploy_check.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # agent
     p_agent = subparsers.add_parser("agent", help="Start interactive AI agent")
     p_agent.add_argument(
@@ -2144,6 +2194,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "demo": cmd_demo,
         "multi-repo": cmd_multi_repo,
         "doctor": cmd_doctor,
+        "deploy-check": cmd_deploy_check,
     }
 
     commands[args.command](args)

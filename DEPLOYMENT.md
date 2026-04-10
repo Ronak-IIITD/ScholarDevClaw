@@ -111,6 +111,7 @@ python scripts/docs_lint.py
 Run before deploying:
 
 ```bash
+scholardevclaw deploy-check --env-file docker/.env --output-json
 scholardevclaw doctor production -v
 python scripts/docs_lint.py
 cd core && python -m pytest tests/unit/test_api_server.py tests/unit/test_health.py tests/unit/test_pipeline.py -q
@@ -245,6 +246,9 @@ cd docker
 ```bash
 # Copy example environment file
 cp docker/.env.example docker/.env
+
+# Optional: start from production template placeholders
+cp docker/.env.production.template docker/.env
 
 # Edit environment variables
 nano docker/.env
