@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import shlex
 import json
 import threading
 import uuid
@@ -101,7 +102,7 @@ class ToolSchema:
         properties = {}
 
         for p in params:
-            prop = {"type": p.type, "description": p.description}
+            prop: dict[str, Any] = {"type": p.type, "description": p.description}
             if p.enum:
                 prop["enum"] = p.enum
             if p.default is not None:
@@ -466,7 +467,12 @@ class ToolExecutor:
             if param.name in params:
                 value = params[param.name]
                 if param.type == "string" and not isinstance(value, str):
-                    return False
+                    if not (
+                        param.name == "command"
+                        and isinstance(value, list)
+                        and all(isinstance(item, str) for item in value)
+                    ):
+                        return False
                 if param.type == "integer" and not isinstance(value, int):
                     return False
                 if param.type == "number" and not isinstance(value, (int, float)):
@@ -827,18 +833,64 @@ class ToolManager:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _run_command(self, command: str, cwd: str | None = None) -> dict:
+    def _run_command(self, command: str | list[str], cwd: str | None = None) -> dict:
         import subprocess
 
         try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                cwd=cwd,
-                timeout=60,
-            )
+            if isinstance(command, list):
+                result = subprocess.run(
+                    command,
+                    shell=False,
+                    capture_output=True,
+                    text=True,
+                    cwd=cwd,
+                    timeout=60,
+                )
+            else:
+                command_str = command.strip()
+                if command_str:
+                    try:
+                        argv = shlex.split(command_str)
+                    except ValueError:
+                        argv = []
+                    if argv:
+                        executable = argv[0]
+                        runner_aliases = {
+                            "python",
+                            "python3",
+                            "python3.10",
+                            "python3.11",
+                            "python3.12",
+                            "node",
+                            "bun",
+                            "deno",
+                            "bash",
+                            "sh",
+                            "zsh",
+                        }
+                        if executable in runner_aliases:
+                            result = subprocess.run(
+                                argv,
+                                shell=False,
+                                capture_output=True,
+                                text=True,
+                                cwd=cwd,
+                                timeout=60,
+                            )
+                            return {
+                                "success": result.returncode == 0,
+                                "stdout": result.stdout,
+                                "stderr": result.stderr,
+                                "returncode": result.returncode,
+                            }
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    cwd=cwd,
+                    timeout=60,
+                )
             return {
                 "success": result.returncode == 0,
                 "stdout": result.stdout,
@@ -1057,11 +1109,11 @@ class ParallelToolExecutor:
                 return await self.executor.execute(tool_name, params)
 
         tasks = [execute_with_semaphore(name, params) for name, params in tools]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        gathered = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Convert exceptions to failed executions
         final_results = []
-        for i, result in enumerate(results):
+        for i, result in enumerate(gathered):
             if isinstance(result, Exception):
                 final_results.append(
                     ToolExecution(
@@ -1320,7 +1372,7 @@ class AdvancedToolManager(ToolManager):
         )
 
     def _http_request(
-        self, url: str, method: str = "GET", headers: dict = None, body: str = None
+        self, url: str, method: str = "GET", headers: dict | None = None, body: str | None = None
     ) -> dict:
         import requests
 
@@ -1335,7 +1387,7 @@ class AdvancedToolManager(ToolManager):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _git_operation(self, operation: str, args: dict = None) -> dict:
+    def _git_operation(self, operation: str, args: dict | None = None) -> dict:
         import subprocess
 
         args = args or {}
@@ -1359,7 +1411,7 @@ class AdvancedToolManager(ToolManager):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _analyze_code(self, path: str, rules: dict = None) -> dict:
+    def _analyze_code(self, path: str, rules: dict | None = None) -> dict:
         import subprocess
 
         rules = rules or {}
@@ -1381,7 +1433,7 @@ class AdvancedToolManager(ToolManager):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _transform_data(self, data: dict, transform: str, params: dict = None) -> dict:
+    def _transform_data(self, data: dict, transform: str, params: dict | None = None) -> dict:
         params = params or {}
 
         if transform == "flatten":

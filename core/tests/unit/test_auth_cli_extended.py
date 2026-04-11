@@ -146,6 +146,43 @@ class TestCmdExport:
         out = capsys.readouterr().out
         assert "SCHOLARDEVCLAW_API_KEY=" in out
 
+    def test_export_env_defaults_to_active_key_only(self, store, capsys):
+        store.add_api_key("sk-test-1", "key-1", AuthProvider.CUSTOM)
+        store.add_api_key("sk-test-2", "key-2", AuthProvider.OPENAI, set_default=False)
+
+        args = _make_args(auth_action="export", format="env", output=None)
+        _cmd_export(args, store)
+        out = capsys.readouterr().out
+
+        assert "SCHOLARDEVCLAW_API_KEY=" in out
+        assert "SCHOLARDEVCLAW_API_KEY_1=" not in out
+
+    def test_export_env_include_all_opt_in(self, store, capsys):
+        store.add_api_key("sk-test-1", "key-1", AuthProvider.CUSTOM)
+        store.add_api_key("sk-test-2", "key-2", AuthProvider.OPENAI, set_default=False)
+
+        args = _make_args(auth_action="export", format="env", output=None, include_all=True)
+        _cmd_export(args, store)
+        out = capsys.readouterr().out
+
+        assert "SCHOLARDEVCLAW_API_KEY=" in out
+        assert "SCHOLARDEVCLAW_API_KEY_1=" in out
+
+    def test_export_env_defaults_active_when_include_all_not_present(self, store, capsys):
+        store.add_api_key("sk-test-1", "key-1", AuthProvider.CUSTOM)
+        store.add_api_key("sk-test-2", "key-2", AuthProvider.OPENAI, set_default=False)
+
+        args = _make_args(auth_action="export", format="env", output=None)
+        # Simulate parser namespace that predates include_all
+        if hasattr(args, "include_all"):
+            delattr(args, "include_all")
+
+        _cmd_export(args, store)
+        out = capsys.readouterr().out
+
+        assert "SCHOLARDEVCLAW_API_KEY=" in out
+        assert "SCHOLARDEVCLAW_API_KEY_1=" not in out
+
     def test_export_to_file(self, store, temp_dir, capsys):
         store.add_api_key("sk-test-123456789", "my-key", AuthProvider.CUSTOM)
         output_path = str(temp_dir / "exported.json")

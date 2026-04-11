@@ -27,4 +27,22 @@ describe('WebhookNotifier logging', () => {
     expect(firstCallArgs).toContain('https://example.com/path');
     expect(firstCallArgs).not.toContain('token=secret');
   });
+
+  it('blocks non-https URLs except loopback http', () => {
+    const notifier = new WebhookNotifier();
+
+    expect(() =>
+      notifier.register('insecure', {
+        url: 'http://example.com/webhook',
+        events: ['workflow_started'],
+      })
+    ).toThrow(/https/i);
+
+    expect(() =>
+      notifier.register('loopback', {
+        url: 'http://localhost:8080/webhook',
+        events: ['workflow_started'],
+      })
+    ).not.toThrow();
+  });
 });

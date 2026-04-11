@@ -25,11 +25,12 @@ function validateWebhookUrl(url: string): void {
     throw new Error(`Invalid webhook URL: ${url}`);
   }
 
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error(`Webhook URL must use http or https: ${url}`);
-  }
-
   const hostname = parsed.hostname.toLowerCase();
+  const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback)) {
+    throw new Error(`Webhook URL must use https (http allowed only for localhost loopback): ${url}`);
+  }
 
   // Block private/internal hostnames (SSRF protection)
   const blockedPatterns = [
@@ -51,6 +52,9 @@ function validateWebhookUrl(url: string): void {
 
   for (const pattern of blockedPatterns) {
     if (pattern.test(hostname)) {
+      if (isLoopback) {
+        continue;
+      }
       throw new Error(`Webhook URL points to a blocked address: ${hostname}`);
     }
   }

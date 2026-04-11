@@ -75,15 +75,14 @@ def _is_subpath(child: Path, parent: Path) -> bool:
 
 
 def _validate_output_dir(output_dir: str | None, repo_path: Path) -> Path | None:
-    """Validate output_dir is within or adjacent to the repo path."""
+    """Validate output_dir is strictly within the repo path."""
     if output_dir is None:
         return None
     p = Path(output_dir).expanduser().resolve()
-    # Allow output dirs that are subpaths of repo or siblings
-    if not _is_subpath(p, repo_path.parent) and not _is_subpath(p, repo_path):
+    if not _is_subpath(p, repo_path):
         raise HTTPException(
             status_code=403,
-            detail=f"Output directory must be within or adjacent to the repository: {output_dir}",
+            detail=f"Output directory must be inside the repository: {output_dir}",
         )
     return p
 

@@ -277,12 +277,44 @@ class WebhookServer:
             signature = request.headers.get("X-Hub-Signature-256", "")
             event_type = request.headers.get("X-GitHub-Event", "custom")
 
-            for trigger in router.triggers.values():
-                if trigger.secret:
-                    if not router.verify_signature(body, signature, trigger.secret):
-                        raise HTTPException(status_code=401, detail="Invalid signature")
+            matching_triggers = [
+                trigger
+                for trigger in router.triggers.values()
+                if trigger.enabled
+                and (trigger.event_type == event_type or trigger.event_type == "custom")
+                and router._matches(trigger, payload)
+            ]
 
-            events = router.route_event(event_type, payload)
+            if any(not trigger.secret for trigger in matching_triggers):
+                raise HTTPException(
+                    status_code=401,
+                    detail="Matching webhook triggers must define a secret",
+                )
+
+            events: list[WebhookEvent] = []
+            if matching_triggers:
+                if not signature:
+                    raise HTTPException(status_code=401, detail="Missing webhook signature")
+
+                verified = [
+                    trigger
+                    for trigger in matching_triggers
+                    if router.verify_signature(body, signature, trigger.secret)
+                ]
+
+                if not verified:
+                    raise HTTPException(status_code=401, detail="Invalid signature")
+
+                for trigger in verified:
+                    event = WebhookEvent(
+                        id=str(uuid.uuid4()),
+                        trigger_id=trigger.id,
+                        event_type=event_type,
+                        payload=payload,
+                        received_at=datetime.now().isoformat(),
+                    )
+                    router.events.append(event)
+                    events.append(event)
 
             results = []
             for event in events:

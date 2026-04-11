@@ -21,6 +21,7 @@ produce unified diffs.
 from __future__ import annotations
 
 import logging
+import re
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1146,6 +1147,20 @@ _ALGORITHM_FILE_NAMES: dict[str, str] = {
 }
 
 
+def _safe_new_file_name(name: str, *, default: str = "generated_algorithm.py") -> str:
+    """Sanitize generated file names to a safe basename-like Python file."""
+    base = Path(name).name.replace("\\", "/")
+    base = base.split("/")[-1]
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._-")
+    if not sanitized:
+        sanitized = default
+    if "." not in sanitized:
+        sanitized = f"{sanitized}.py"
+    if sanitized.startswith("."):
+        sanitized = sanitized.lstrip(".") or default
+    return sanitized
+
+
 # ---------------------------------------------------------------------------
 # Patch generator
 # ---------------------------------------------------------------------------
@@ -1270,7 +1285,9 @@ class PatchGenerator:
 
                 if code_blocks:
                     content = "\n\n".join(code_blocks)
-                    file_name = algo_name.lower().replace(" ", "_").replace("-", "_") + ".py"
+                    file_name = _safe_new_file_name(
+                        algo_name.lower().replace(" ", "_").replace("-", "_") + ".py"
+                    )
                     logger.info("LLM synthesised implementation for %s → %s", algo_name, file_name)
                     return NewFile(path=file_name, content=content)
 
@@ -1285,7 +1302,9 @@ class PatchGenerator:
                     desc = opp.get("description", "")
                     if desc:
                         content += f"# {desc}\n"
-                file_name = algo_name.lower().replace(" ", "_").replace("-", "_") + ".py"
+                file_name = _safe_new_file_name(
+                    algo_name.lower().replace(" ", "_").replace("-", "_") + ".py"
+                )
                 return NewFile(path=file_name, content=content)
 
         except Exception:

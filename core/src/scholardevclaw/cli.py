@@ -84,6 +84,15 @@ def _build_mapping_result(repo_path: Path, spec_name: str) -> tuple[dict, dict]:
     return mapping_result, spec
 
 
+def _resolve_confined_destination(base_dir: Path, relative_path: str) -> Path | None:
+    destination = (base_dir / relative_path).resolve()
+    try:
+        destination.relative_to(base_dir)
+    except ValueError:
+        return None
+    return destination
+
+
 def cmd_analyze(args):
     """Analyze a repository (multi-language support)"""
     path = Path(args.repo_path)
@@ -289,11 +298,20 @@ def cmd_generate(args):
     generator = PatchGenerator(path)
     patch = generator.generate(mapping_result)
 
-    output_dir = Path(args.output_dir) if args.output_dir else path / "integration-patch"
+    output_dir = (
+        Path(args.output_dir).expanduser().resolve()
+        if args.output_dir
+        else path / "integration-patch"
+    )
+    output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for nf in patch.new_files:
-        out_file = output_dir / nf.path
+        out_file = _resolve_confined_destination(output_dir, nf.path)
+        if out_file is None:
+            print(f"  ⚠ Skipped unsafe output path: {nf.path}")
+            continue
+        out_file.parent.mkdir(parents=True, exist_ok=True)
         out_file.write_text(nf.content)
         print(f"  ✓ Created: {out_file}")
 
@@ -1284,13 +1302,20 @@ def cmd_demo(args):
             spec_dir = output_path / spec_name
             spec_dir.mkdir(parents=True, exist_ok=True)
             for new_file in patch.new_files:
-                dest = spec_dir / new_file.path
+                dest = _resolve_confined_destination(spec_dir, new_file.path)
+                if dest is None:
+                    print(f"    ⚠ Skipped unsafe output path: {new_file.path}")
+                    continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(new_file.content)
                 written_files.append(str(dest))
                 print(f"    Wrote: {dest}")
             for xform in patch.transformations:
-                xform_file = spec_dir / f"transform_{xform.file.replace('/', '_')}.diff"
+                xform_file_name = f"transform_{xform.file.replace('/', '_')}.diff"
+                xform_file = _resolve_confined_destination(spec_dir, xform_file_name)
+                if xform_file is None:
+                    print(f"    ⚠ Skipped unsafe transformation output path: {xform_file_name}")
+                    continue
                 diff_content = f"--- a/{xform.file}\n+++ b/{xform.file}\n"
                 if xform.changes:
                     for c in xform.changes:

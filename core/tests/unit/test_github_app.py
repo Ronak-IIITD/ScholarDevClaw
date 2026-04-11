@@ -1,4 +1,8 @@
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from scholardevclaw.github_app.client import GitHubAppClient
+from scholardevclaw.github_app.server import create_github_app_router
 from scholardevclaw.github_app.types import (
     CheckConclusion,
     CheckStatus,
@@ -69,6 +73,7 @@ class TestGitHubAppTypes:
 
         assert result.event_type == "pull_request"
         assert result.action == "opened"
+        assert result.repository is not None
         assert result.repository["name"] == "test-repo"
 
     def test_repository_dataclass(self):
@@ -116,6 +121,7 @@ class TestGitHubAppTypes:
 
         assert result.ok is True
         assert result.spec == "rmsnorm"
+        assert result.validation is not None
         assert result.validation.passed is True
 
 
@@ -185,4 +191,32 @@ class TestWebhookHandlerIntegration:
         result = client.parse_webhook("pull_request", payload)
         assert result.event_type == "pull_request"
         assert result.action == "opened"
+        assert result.repository is not None
         assert result.repository["name"] == "test-repo"
+
+
+class TestGitHubAppServerSecurity:
+    def test_repo_endpoint_uses_timing_safe_bearer_compare(self, monkeypatch):
+        monkeypatch.setenv("SCHOLARDEVCLAW_API_AUTH_KEY", "super-secret")
+        app = FastAPI()
+        app.include_router(create_github_app_router())
+
+        compare_calls: list[tuple[str, str]] = []
+
+        def fake_compare_digest(a: str, b: str) -> bool:
+            compare_calls.append((a, b))
+            return False
+
+        monkeypatch.setattr(
+            "scholardevclaw.github_app.server.hmac.compare_digest", fake_compare_digest
+        )
+
+        client = TestClient(app)
+        response = client.get(
+            "/github/repos/octocat/hello-world",
+            headers={"Authorization": "Bearer token-from-header"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == 401
+        assert compare_calls == [("token-from-header", "super-secret")]

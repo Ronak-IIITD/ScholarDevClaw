@@ -736,7 +736,16 @@ def run_generate(
             output_dir_path = Path(output_dir).expanduser().resolve()
             output_dir_path.mkdir(parents=True, exist_ok=True)
             for new_file in patch.new_files:
-                destination = output_dir_path / new_file.path
+                destination = (output_dir_path / new_file.path).resolve()
+                try:
+                    destination.relative_to(output_dir_path)
+                except ValueError:
+                    _log(
+                        logs,
+                        f"Skipped unsafe output path outside output dir: {new_file.path}",
+                        log_callback,
+                    )
+                    continue
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_text(new_file.content)
                 written_files.append(str(destination))

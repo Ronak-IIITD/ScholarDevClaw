@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import os
 
 from fastapi import APIRouter, FastAPI, Request
@@ -152,7 +153,8 @@ def create_github_app_router(
                 message="Service unavailable",
                 error="API authentication not configured on server",
             )
-        if not auth_header.startswith("Bearer ") or auth_header[7:] != expected_token:
+        token = auth_header[7:] if auth_header.startswith("Bearer ") else ""
+        if not token or not hmac.compare_digest(token, expected_token):
             return WebhookResponse(
                 status=401,
                 message="Unauthorized",

@@ -2,6 +2,8 @@ import { ConvexHttpClient } from 'convex/browser';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 
+const CONVEX_AUTH_ENV_KEY = 'SCHOLARDEVCLAW_CONVEX_AUTH_KEY';
+
 export type IntegrationStatus =
   | 'pending'
   | 'phase1_analyzing'
@@ -58,19 +60,27 @@ export interface Approval {
 
 export class ConvexClientWrapper {
   private client: ConvexHttpClient;
+  private authKey: string;
+
+  private getAuthArgs(): { authKey: string } {
+    if (!this.authKey) {
+      throw new Error(`${CONVEX_AUTH_ENV_KEY} is not configured`);
+    }
+    return { authKey: this.authKey };
+  }
 
   private async callMutation<T = unknown>(name: string, args: Record<string, unknown>): Promise<T> {
     const client = this.client as unknown as {
       mutation: (fn: string, payload: Record<string, unknown>) => Promise<T>;
     };
-    return await client.mutation(name, args);
+    return await client.mutation(name, { ...args, ...this.getAuthArgs() });
   }
 
   private async callQuery<T = unknown>(name: string, args: Record<string, unknown> = {}): Promise<T> {
     const client = this.client as unknown as {
       query: (fn: string, payload: Record<string, unknown>) => Promise<T>;
     };
-    return await client.query(name, args);
+    return await client.query(name, { ...args, ...this.getAuthArgs() });
   }
 
   constructor(deploymentUrl?: string) {
@@ -78,6 +88,7 @@ export class ConvexClientWrapper {
     if (!url) {
       throw new Error('Convex deployment URL not configured');
     }
+    this.authKey = process.env[CONVEX_AUTH_ENV_KEY] || '';
     this.client = new ConvexHttpClient(url);
     logger.info('Convex client initialized', { deploymentUrl: url });
   }
@@ -143,7 +154,6 @@ export class ConvexClientWrapper {
     await this.callMutation('integrations:setError', {
       id,
       errorMessage,
-      status: 'failed',
       updatedAt: Date.now(),
     });
   }
@@ -163,28 +173,53 @@ export class ConvexClientWrapper {
 
     return new Promise((resolve) => {
       const checkInterval = setInterval(async () => {
-        const integration = await this.getIntegration(id);
+        try {
+          const integration = await this.getIntegration(id);
 
-        if (!integration) {
-          clearInterval(checkInterval);
-          resolve(false);
-          return;
-        }
+          if (!integration) {
+            clearInterval(checkInterval);
+            resolve(false);
+            return;
+          }
 
-        if (integration.status === 'failed') {
-          clearInterval(checkInterval);
-          resolve(false);
-          return;
-        }
+          if (integration.status === 'failed') {
+            clearInterval(checkInterval);
+            resolve(false);
+            return;
+          }
 
-        if (integration.status !== 'awaiting_approval') {
-          resolve(true);
-          clearInterval(checkInterval);
-          return;
-        }
+          const approvals = await this.listApprovals(id);
+          const phaseApprovals = approvals.filter((approval) => approval.phase === phase);
 
-        if (Date.now() - startedAt > timeoutMs) {
-          logger.warn('Approval wait timed out', { id, phase, timeoutMs });
+          if (phaseApprovals.some((approval) => approval.action === 'rejected')) {
+            clearInterval(checkInterval);
+            resolve(false);
+            return;
+          }
+
+          if (phaseApprovals.some((approval) => approval.action === 'approved')) {
+            clearInterval(checkInterval);
+            resolve(true);
+            return;
+          }
+
+          if (integration.status !== 'awaiting_approval') {
+            clearInterval(checkInterval);
+            resolve(false);
+            return;
+          }
+
+          if (Date.now() - startedAt > timeoutMs) {
+            logger.warn('Approval wait timed out', { id, phase, timeoutMs });
+            clearInterval(checkInterval);
+            resolve(false);
+          }
+        } catch (error) {
+          logger.error('Approval polling failed', {
+            id,
+            phase,
+            error: error instanceof Error ? error.message : String(error),
+          });
           clearInterval(checkInterval);
           resolve(false);
         }

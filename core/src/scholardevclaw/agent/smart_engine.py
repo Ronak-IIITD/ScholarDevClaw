@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 
 # ---------------------------------------------------------------------------
 # OS Detection — for cross-platform shell commands
@@ -2199,8 +2200,9 @@ class SmartAgentEngine:
 
         # Build command
         runner = self.get_language_runners().get(ext, "")
+        cmd_argv: list[str]
         if ext == ".sh":
-            cmd = f"bash {path}"
+            cmd_argv = ["bash", str(path)]
         elif ext in (".c", ".cpp"):
             # Compile first
             compile_result = subprocess.run(
@@ -2214,9 +2216,9 @@ class SmartAgentEngine:
                     action="run_code",
                     error=f"Compilation failed:\n{compile_result.stderr}",
                 )
-            cmd = "/tmp/a.out"
+            cmd_argv = ["/tmp/a.out"]
         elif runner:
-            cmd = f"{runner} {path}"
+            cmd_argv = [*shlex.split(runner), str(path)]
         else:
             return ExecutionResult(
                 ok=False,
@@ -2225,7 +2227,7 @@ class SmartAgentEngine:
             )
 
         cwd = str(path.parent)
-        execution = await self.tools.execute("run_command", command=cmd, cwd=cwd)
+        execution = await self.tools.execute("run_command", command=cmd_argv, cwd=cwd)
         tokens = 800
         self.budget.spend(tokens)
 

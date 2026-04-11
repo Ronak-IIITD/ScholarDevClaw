@@ -509,7 +509,8 @@ def _cmd_export(args, store: AuthStore):
     include_keys = getattr(args, "include_keys", False)
 
     if fmt == "env":
-        content = store.export_env(include_all=True)
+        include_all = bool(getattr(args, "include_all", False))
+        content = store.export_env(include_all=include_all)
     else:
         content = store.export_json(include_keys=include_keys)
 

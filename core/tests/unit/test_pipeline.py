@@ -161,6 +161,38 @@ def test_run_generate_writes_files(monkeypatch, tmp_path):
     assert (output_dir / "rmsnorm.py").exists()
 
 
+def test_run_generate_skips_path_traversal_outputs(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+
+    module = ModuleType("scholardevclaw.patch_generation.generator")
+
+    class FakeGenerator:
+        def __init__(self, repo_path: Path, llm_assistant=None):
+            self.repo_path = repo_path
+
+        def generate(self, mapping):
+            return SimpleNamespace(
+                branch_name="integration/rmsnorm",
+                new_files=[
+                    SimpleNamespace(path="../escape.py", content="print('bad')\n"),
+                    SimpleNamespace(path="safe.py", content="print('ok')\n"),
+                ],
+                transformations=[],
+            )
+
+    module.PatchGenerator = FakeGenerator
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    output_dir = tmp_path / "out"
+    result = _pipeline_module().run_generate(str(tmp_path), "rmsnorm", output_dir=str(output_dir))
+
+    assert result.ok is True
+    assert (output_dir / "safe.py").exists()
+    assert not (tmp_path / "escape.py").exists()
+    assert all("escape.py" not in path for path in result.payload["written_files"])
+
+
 def test_run_integrate_and_validate(monkeypatch, tmp_path):
     _install_fake_tree_sitter(monkeypatch)
     _install_fake_extractor(monkeypatch)

@@ -2,7 +2,78 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-10
+**Last updated:** 2026-04-11
+
+### 2026-04-11 (Security remediation batch: Convex authz, approval gating, path confinement, and command hardening)
+
+**Summary:** Closed the primary high-risk issues from the security audit by enforcing Convex function authentication, hardening approval semantics, confining generated file writes, removing run-code shell interpolation, restricting dashboard output directories, tightening webhook verification behavior, and switching env export defaults to safer behavior.
+
+**What changed:**
+
+- **Convex access control + approval safety**
+  - `convex/integrations.ts`
+    - Converted to validated `query(...)` handlers.
+    - Added required `authKey` argument and timing-safe auth check using `SCHOLARDEVCLAW_CONVEX_AUTH_KEY`.
+    - Added typed argument validation (`v.id("integrations")`, strict status validator).
+  - `convex/integrations-mutations.ts`
+    - Converted to validated `mutation(...)` handlers.
+    - Added required `authKey` and timing-safe auth checks across all mutations.
+    - Enforced status allowlist against integration lifecycle statuses.
+    - Enforced phase-result field allowlist (`phase1Result`..`phase6Result`).
+    - `setError` now forces `status: "failed"` server-side.
+    - `createApproval` validates approval action set.
+  - `agent/src/api/convex.ts`
+    - Injects `authKey` into all Convex query/mutation calls.
+    - `waitForApproval()` now requires explicit approval records for the target phase; no implicit approval by status drift.
+
+- **Path traversal / write confinement hardening**
+  - `core/src/scholardevclaw/application/pipeline.py`
+    - Added resolved-path confinement check before writing generated files to `output_dir`.
+  - `core/src/scholardevclaw/cli.py`
+    - Added `_resolve_confined_destination(...)` helper.
+    - Applied confinement checks to `generate` and `demo` output artifact writes.
+  - `core/src/scholardevclaw/patch_generation/generator.py`
+    - Added `_safe_new_file_name(...)` sanitization for LLM-generated new file names.
+
+- **Command execution hardening**
+  - `core/src/scholardevclaw/agent/smart_engine.py`
+    - `run_code` now executes with argv lists (no shell string interpolation for file paths).
+  - `core/src/scholardevclaw/agent/tools.py`
+    - `run_command` now supports list argv execution with `shell=False`.
+    - Added guarded argv parsing for common runner aliases to avoid unnecessary shell execution.
+
+- **API output-dir scope tightening**
+  - `core/src/scholardevclaw/api/routes/dashboard.py`
+    - `_validate_output_dir` now requires output dir to be inside the target repo only.
+
+- **Webhook + token hardening**
+  - `core/src/scholardevclaw/automation/webhooks.py`
+    - Matching triggers must have secrets; missing signature now fails closed for matched trigger set.
+    - Signature validation now gates event creation for matched triggers.
+  - `agent/src/workflow/webhooks.ts`
+    - Enforced HTTPS webhook URLs, with loopback-only HTTP exception for local development.
+  - `core/src/scholardevclaw/github_app/server.py`
+    - Replaced direct bearer comparison with `hmac.compare_digest`.
+
+- **Safer secret export defaults**
+  - `core/src/scholardevclaw/auth/cli.py`
+    - `auth export --format env` now defaults to exporting active key only.
+    - bulk env export requires explicit `include_all` opt-in.
+
+- **Tests added/updated**
+  - `agent/src/api/convex.test.ts` (new)
+  - `agent/src/workflow/webhooks.test.ts`
+  - `core/tests/unit/test_pipeline.py`
+  - `core/tests/unit/test_patch_generator.py`
+  - `core/tests/unit/test_api_dashboard_routes.py`
+  - `core/tests/unit/test_auth_cli_extended.py`
+  - `core/tests/unit/test_github_app.py`
+
+**Verification:**
+
+- ✅ `cd core && pytest tests/unit/test_pipeline.py tests/unit/test_patch_generator.py tests/unit/test_api_dashboard_routes.py tests/unit/test_github_app.py tests/unit/test_auth_cli_extended.py -q`
+- ✅ `cd agent && bun run test --run src/api/convex.test.ts src/workflow/webhooks.test.ts`
+- ✅ `cd agent && bun run build`
 
 ### 2026-04-10 (Deploy preflight salvage from PR #32)
 

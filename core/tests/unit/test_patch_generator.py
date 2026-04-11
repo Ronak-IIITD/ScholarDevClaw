@@ -16,6 +16,7 @@ Covers:
 from __future__ import annotations
 
 import sys
+from typing import cast
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -459,11 +460,24 @@ class TestCreateNewFiles:
         llm = SimpleNamespace(
             generate_implementation_plan=lambda **kw: plan,
         )
-        gen = PatchGenerator(tmp_path, llm_assistant=llm)
+        gen = PatchGenerator(tmp_path, llm_assistant=cast(object, llm))
         spec = {"algorithm": {"name": "MyAlgo"}, "paper": {"title": "T"}}
         files = gen._create_new_files(spec)
         assert len(files) == 1
         assert "Foo" in files[0].content
+
+    def test_unknown_algorithm_with_llm_sanitizes_filename(self, tmp_path):
+        plan = SimpleNamespace(steps=[{"code": "class Foo: pass"}])
+        llm = SimpleNamespace(
+            generate_implementation_plan=lambda **kw: plan,
+        )
+        gen = PatchGenerator(tmp_path, llm_assistant=cast(object, llm))
+        spec = {"algorithm": {"name": "../../evil\\name"}, "paper": {"title": "T"}}
+        files = gen._create_new_files(spec)
+        assert len(files) == 1
+        assert "/" not in files[0].path
+        assert "\\" not in files[0].path
+        assert files[0].path.endswith(".py")
 
 
 # =========================================================================

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+from fastapi import HTTPException
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -67,6 +69,21 @@ def test_pipeline_run_conflict_when_already_running(monkeypatch):
         assert "already in progress" in resp.json()["detail"]
     finally:
         setattr(dashboard, "_current_run", None)
+
+
+def test_validate_output_dir_requires_repo_subpath(monkeypatch, tmp_path):
+    _, dashboard = _load_server(monkeypatch)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    inside = dashboard._validate_output_dir(str(repo / "out"), repo)
+    assert inside == (repo / "out").resolve()
+
+    with pytest.raises(HTTPException) as exc:
+        dashboard._validate_output_dir(str(tmp_path / "sibling-out"), repo)
+
+    assert exc.value.status_code == 403
+    assert "inside the repository" in str(exc.value.detail)
 
 
 def test_websocket_ping_pong_contract(monkeypatch):
