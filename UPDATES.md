@@ -4,6 +4,43 @@
 
 **Last updated:** 2026-04-11
 
+### 2026-04-11 (TUI Phase-2: deterministic lifecycle state, run inspectability, bounded persistence)
+
+**Summary:** Implemented a Phase-2 run-centric upgrade in the Python TUI with explicit lifecycle states, run inspection commands, bounded recoverability persistence, and clearer degraded transport messaging for chat failures.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Added deterministic run lifecycle model via `RunLifecycleState` enum and centralized `_transition_run_state(...)` helper.
+  - Wired lifecycle transitions for active runs (`queued/running/chatting/completed/failed/cancelled/idle`) to status line and phase tracker.
+  - Extended run artifacts to include terminal state and duration; terminal state is now recorded in replay/inspection data.
+  - Added run inspectability commands:
+    - `runs` (compact recent run list: id/action/status/duration)
+    - `run show <id>` (in-memory detailed artifact + request context + summary + status)
+    - `run rerun <id>` (routes through existing replay path)
+  - Added command hints/suggestions for new run commands while preserving existing command behavior and aliases.
+  - Extended runtime state persistence to include bounded `recent_run_artifacts` and `replay_map` (malformed entries ignored on load).
+  - Added request sanitization for persisted replay data (compact metadata only; no chat transcript persistence).
+  - Improved operator-facing failure visibility:
+    - explicit `DEGRADED` wording for empty/invalid chat stream paths
+    - explicit degraded message when model fallback is disabled and a bad-model transport error occurs.
+
+- `core/src/scholardevclaw/tui/screens.py`
+  - Added help/palette discoverability entries for `runs`, `run show <id>`, and `run rerun <id>`.
+
+- `core/tests/unit/test_tui_app.py`
+  - Added coverage for lifecycle transition helper behavior.
+  - Added coverage for `runs` compact output rendering.
+  - Added coverage for `run show <id>` known/unknown detail rendering.
+  - Added runtime-state round-trip coverage for persisted run artifacts + replay map (including malformed-entry tolerance and request sanitization).
+  - Added coverage that `run rerun <id>` routes via replay path.
+  - Added parser coverage for `runs`, `run show <id>`, and `run rerun <id>` commands.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/ tests/`
+- ✅ `cd core && pytest tests/unit/test_tui_app.py tests/unit/test_tui_screens.py tests/unit/test_llm_client.py -q` (`66 passed`)
+
 ### 2026-04-11 (TUI command namespaces + grounded chat context + LLM stream reliability)
 
 **Summary:** Made the TUI more explicit and safer by introducing `/ask` and `/run` namespaces, disabling natural-language action side effects by default, grounding chat on recent run artifacts, and hardening empty-stream/error handling in both TUI chat flow and the LLM client.

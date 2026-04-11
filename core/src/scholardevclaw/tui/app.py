@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -51,18 +52,21 @@ MODE_HINTS = {
     "analyze": [
         "Hint -> /run analyze ./repo",
         "Hint -> /ask what this repo does",
+        "Hint -> runs",
         "Hint -> suggest ./repo",
         "Hint -> validate ./repo",
     ],
     "search": [
         "Hint -> /run search layer normalization",
         "Hint -> /ask papers on flash attention",
+        "Hint -> runs",
         "Hint -> search flash attention",
         "Hint -> setup",
     ],
     "edit": [
         "Hint -> /run map ./repo rmsnorm",
         "Hint -> /ask implement RMSNorm",
+        "Hint -> runs",
         "Hint -> generate ./repo rmsnorm",
         "Hint -> integrate ./repo rmsnorm",
     ],
@@ -77,6 +81,9 @@ MODE_COMMANDS = {
         "set dir ./repo",
         "set provider openrouter",
         f"set model {DEFAULT_OPENROUTER_MODEL}",
+        "runs",
+        "run show 1",
+        "run rerun 1",
         ":search",
         ":edit",
     ],
@@ -87,6 +94,9 @@ MODE_COMMANDS = {
         "search flash attention",
         "set mode search",
         "chat find fast inference ideas",
+        "runs",
+        "run show 1",
+        "run rerun 1",
         "setup",
         ":analyze",
         ":edit",
@@ -99,6 +109,9 @@ MODE_COMMANDS = {
         "integrate ./repo rmsnorm",
         "set dir ./repo",
         "chat how should I patch this file",
+        "runs",
+        "run show 1",
+        "run rerun 1",
         ":analyze",
         ":search",
     ],
@@ -118,6 +131,9 @@ GLOBAL_COMMANDS = [
     "set provider ollama",
     f"set model {DEFAULT_OPENROUTER_MODEL}",
     "set dir ./repo",
+    "runs",
+    "run show 1",
+    "run rerun 1",
     ":analyze",
     ":search",
     ":edit",
@@ -154,6 +170,7 @@ WORKFLOW_ACTIONS = {
     "integrate",
 }
 RUN_CONTEXT_LIMIT = 8
+RUN_PERSIST_LIMIT = 20
 NATURAL_ACTION_ROUTING_ENV = "SCHOLARDEVCLAW_TUI_ENABLE_NATURAL_ACTION_ROUTING"
 AUTO_MODEL_FALLBACK_ENV = "SCHOLARDEVCLAW_TUI_AUTO_MODEL_FALLBACK"
 CHAT_SYSTEM_PROMPTS = {
@@ -176,12 +193,35 @@ CHAT_SYSTEM_PROMPTS = {
 }
 
 
+class RunLifecycleState(str, Enum):
+    IDLE = "idle"
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    CHATTING = "chatting"
+
+
+RUN_STATE_LABELS = {
+    RunLifecycleState.IDLE: "IDLE",
+    RunLifecycleState.QUEUED: "QUEUED",
+    RunLifecycleState.RUNNING: "RUNNING",
+    RunLifecycleState.COMPLETED: "COMPLETED",
+    RunLifecycleState.FAILED: "FAILED",
+    RunLifecycleState.CANCELLED: "CANCELLED",
+    RunLifecycleState.CHATTING: "CHATTING",
+}
+
+
 @dataclass
 class TUIRuntimeState:
     provider: str = "setup"
     model: str = ""
     directory: str = "."
     models_by_provider: dict[str, str] = field(default_factory=dict)
+    recent_run_artifacts: list[dict[str, Any]] = field(default_factory=list)
+    replay_map: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass
@@ -191,6 +231,9 @@ class RunArtifact:
     status: str
     repo_path: str
     spec: str
+    query: str = ""
+    duration_seconds: float = 0.0
+    terminal_state: str = RunLifecycleState.IDLE.value
     summary_lines: list[str] = field(default_factory=list)
 
 
@@ -299,6 +342,7 @@ class ScholarDevClawApp(App[None]):
         self._active_token = 0
         self._running_action: str | None = None
         self._active_request: dict[str, Any] | None = None
+        self._run_state = RunLifecycleState.IDLE
         self._last_escape_time = 0.0
         self._escape_pressed_count = 0
         self._escape_warning_shown = False
@@ -337,13 +381,32 @@ class ScholarDevClawApp(App[None]):
         if self._directory in {"", "."}:
             self._directory = os.getcwd()
         self._startup_preflight()
-        self._set_phase("idle")
         self._sync_status_bar()
-        self._set_status("Ready", "info")
+        self._transition_run_state(RunLifecycleState.IDLE, action="system", detail="ready")
+        self._hydrate_history_from_recent_artifacts()
         self._update_command_meta()
         self.set_interval(6.0, self._rotate_hint)
         self.query_one("#prompt-input", PromptInput).focus()
         self.set_timer(0.01, self._maybe_show_setup)
+
+    def _hydrate_history_from_recent_artifacts(self) -> None:
+        if not self._recent_run_artifacts:
+            return
+        pane = self.query_one("#history-pane", HistoryPane)
+        pane.clear_history()
+        for artifact in self._recent_run_artifacts[-RUN_PERSIST_LIMIT:]:
+            try:
+                pane.add_entry(
+                    run_id=artifact.run_id,
+                    action=artifact.action,
+                    status=artifact.status,
+                    duration=max(0.0, artifact.duration_seconds),
+                    repo=artifact.repo_path,
+                    spec=artifact.spec,
+                    finished_at="--:--:--",
+                )
+            except Exception:
+                break
 
     # ------------------------------------------------------------------
     # Runtime configuration
@@ -362,6 +425,12 @@ class ScholarDevClawApp(App[None]):
                 models_by_provider = data.get("models_by_provider")
                 if not isinstance(models_by_provider, dict):
                     models_by_provider = {}
+                recent_run_artifacts = data.get("recent_run_artifacts")
+                if not isinstance(recent_run_artifacts, list):
+                    recent_run_artifacts = []
+                replay_map = data.get("replay_map")
+                if not isinstance(replay_map, dict):
+                    replay_map = {}
                 state = TUIRuntimeState(
                     provider=str(data.get("provider", state.provider)),
                     model=str(data.get("model", state.model)),
@@ -371,6 +440,8 @@ class ScholarDevClawApp(App[None]):
                         for k, v in models_by_provider.items()
                         if isinstance(k, str) and isinstance(v, str)
                     },
+                    recent_run_artifacts=[item for item in recent_run_artifacts],
+                    replay_map={str(k): v for k, v in replay_map.items()},
                 )
             except Exception:
                 pass
@@ -394,6 +465,142 @@ class ScholarDevClawApp(App[None]):
         self._model = state.model
         self._directory = state.directory or "."
         self._models_by_provider = dict(state.models_by_provider)
+        self._recent_run_artifacts = self._deserialize_recent_run_artifacts(
+            state.recent_run_artifacts
+        )
+        self._run_replay_map = self._deserialize_replay_map(state.replay_map)
+        if self._run_replay_map:
+            self._task_token = max(self._run_replay_map)
+
+    @staticmethod
+    def _coerce_run_state(value: str | RunLifecycleState) -> RunLifecycleState:
+        raw = (
+            value.value
+            if isinstance(value, RunLifecycleState)
+            else str(value or "").strip().lower()
+        )
+        try:
+            return RunLifecycleState(raw)
+        except ValueError:
+            return RunLifecycleState.IDLE
+
+    @staticmethod
+    def _status_to_terminal_state(status: str) -> RunLifecycleState:
+        normalized = str(status or "").strip().lower()
+        if normalized == "success":
+            return RunLifecycleState.COMPLETED
+        if normalized == "cancelled":
+            return RunLifecycleState.CANCELLED
+        if normalized == "failed":
+            return RunLifecycleState.FAILED
+        return RunLifecycleState.IDLE
+
+    @staticmethod
+    def _sanitize_request_for_persistence(request: dict[str, Any]) -> dict[str, Any]:
+        allowed_keys = {
+            "action",
+            "repo_path",
+            "spec",
+            "query",
+            "include_arxiv",
+            "include_web",
+            "integrate_require_clean",
+        }
+        payload: dict[str, Any] = {}
+        for key in allowed_keys:
+            value = request.get(key)
+            if value is None:
+                continue
+            if isinstance(value, (str, bool, int, float)):
+                payload[key] = value
+        return payload
+
+    def _deserialize_recent_run_artifacts(self, rows: list[Any]) -> list[RunArtifact]:
+        artifacts: list[RunArtifact] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            run_id_value = row.get("run_id")
+            if isinstance(run_id_value, bool):
+                continue
+            if isinstance(run_id_value, int):
+                run_id = run_id_value
+            elif isinstance(run_id_value, float):
+                run_id = int(run_id_value)
+            elif isinstance(run_id_value, str):
+                try:
+                    run_id = int(run_id_value.strip())
+                except Exception:
+                    continue
+            else:
+                continue
+            status = str(row.get("status", "")).strip() or "Unknown"
+            terminal_state = self._coerce_run_state(
+                str(row.get("terminal_state", RunLifecycleState.IDLE.value))
+            )
+            summary_lines_raw = row.get("summary_lines", [])
+            summary_lines = (
+                [str(line).strip() for line in summary_lines_raw if str(line).strip()][:4]
+                if isinstance(summary_lines_raw, list)
+                else []
+            )
+            try:
+                duration_seconds = float(row.get("duration_seconds", 0.0) or 0.0)
+            except Exception:
+                duration_seconds = 0.0
+            artifacts.append(
+                RunArtifact(
+                    run_id=run_id,
+                    action=str(row.get("action", "")).strip() or "unknown",
+                    status=status,
+                    repo_path=str(row.get("repo_path", "") or ""),
+                    spec=str(row.get("spec", "") or ""),
+                    query=str(row.get("query", "") or ""),
+                    duration_seconds=max(0.0, duration_seconds),
+                    terminal_state=terminal_state.value,
+                    summary_lines=summary_lines,
+                )
+            )
+        artifacts.sort(key=lambda item: item.run_id)
+        return artifacts[-RUN_PERSIST_LIMIT:]
+
+    def _deserialize_replay_map(self, replay_map: dict[str, Any]) -> dict[int, dict[str, Any]]:
+        loaded: dict[int, dict[str, Any]] = {}
+        for run_id_raw, entry in replay_map.items():
+            try:
+                run_id = int(run_id_raw)
+            except Exception:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            action = str(entry.get("action", "")).strip().lower()
+            if not action or action == "chat":
+                continue
+            command = str(entry.get("command", "") or "").strip()
+            request = self._sanitize_request_for_persistence(dict(entry.get("request") or {}))
+            terminal_state = self._coerce_run_state(
+                str(entry.get("terminal_state", RunLifecycleState.IDLE.value))
+            )
+            try:
+                duration_seconds = float(entry.get("duration_seconds", 0.0) or 0.0)
+            except Exception:
+                duration_seconds = 0.0
+            loaded[run_id] = {
+                "command": command,
+                "action": action,
+                "request": request,
+                "terminal_state": terminal_state.value,
+                "status": str(entry.get("status", "")).strip() or "Unknown",
+                "duration_seconds": max(0.0, duration_seconds),
+                "summary_lines": [
+                    str(line).strip()
+                    for line in list(entry.get("summary_lines") or [])
+                    if str(line).strip()
+                ][:4],
+            }
+        for stale in sorted(loaded)[:-RUN_PERSIST_LIMIT]:
+            loaded.pop(stale, None)
+        return loaded
 
     def _model_for_provider(self, provider: str) -> str:
         if provider in self._models_by_provider and self._models_by_provider[provider].strip():
@@ -418,6 +625,8 @@ class ScholarDevClawApp(App[None]):
             "model": self._model,
             "directory": self._directory,
             "models_by_provider": self._models_by_provider,
+            "recent_run_artifacts": self._serialize_recent_run_artifacts(),
+            "replay_map": self._serialize_replay_map(),
         }
         try:
             config_path.write_text(json.dumps(payload, indent=2))
@@ -425,6 +634,53 @@ class ScholarDevClawApp(App[None]):
             message = f"Warning: failed to save TUI runtime state ({exc})"
             logger.warning(message)
             self._notify_runtime_state_warning(message)
+
+    def _serialize_recent_run_artifacts(self) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for artifact in self._recent_run_artifacts[-RUN_PERSIST_LIMIT:]:
+            if artifact.action == "chat":
+                continue
+            rows.append(
+                {
+                    "run_id": artifact.run_id,
+                    "action": artifact.action,
+                    "status": artifact.status,
+                    "repo_path": artifact.repo_path,
+                    "spec": artifact.spec,
+                    "query": artifact.query,
+                    "duration_seconds": artifact.duration_seconds,
+                    "terminal_state": self._coerce_run_state(artifact.terminal_state).value,
+                    "summary_lines": artifact.summary_lines[:4],
+                }
+            )
+        return rows[-RUN_PERSIST_LIMIT:]
+
+    def _serialize_replay_map(self) -> dict[str, dict[str, Any]]:
+        compact: dict[str, dict[str, Any]] = {}
+        run_ids = sorted(self._run_replay_map)
+        if len(run_ids) > RUN_PERSIST_LIMIT:
+            run_ids = run_ids[-RUN_PERSIST_LIMIT:]
+        for run_id in run_ids:
+            entry = dict(self._run_replay_map.get(run_id) or {})
+            action = str(entry.get("action", "") or "").strip().lower()
+            if not action or action == "chat":
+                continue
+            compact[str(run_id)] = {
+                "command": str(entry.get("command", "") or "").strip(),
+                "action": action,
+                "request": self._sanitize_request_for_persistence(dict(entry.get("request") or {})),
+                "terminal_state": self._coerce_run_state(
+                    str(entry.get("terminal_state", RunLifecycleState.IDLE.value))
+                ).value,
+                "status": str(entry.get("status", "") or "").strip(),
+                "duration_seconds": float(entry.get("duration_seconds", 0.0) or 0.0),
+                "summary_lines": [
+                    str(line).strip()
+                    for line in list(entry.get("summary_lines") or [])
+                    if str(line).strip()
+                ][:4],
+            }
+        return compact
 
     def _pretty_directory(self) -> str:
         try:
@@ -858,6 +1114,41 @@ class ScholarDevClawApp(App[None]):
             "chat": "research",
         }.get(action, "validating")
 
+    def _phase_for_run_state(self, state: RunLifecycleState, action: str | None = None) -> str:
+        if state == RunLifecycleState.QUEUED:
+            return "validating"
+        if state in {RunLifecycleState.RUNNING, RunLifecycleState.CHATTING}:
+            return self._phase_for_action(action or self._running_action or "analyze")
+        if state == RunLifecycleState.COMPLETED:
+            return "complete"
+        return "idle"
+
+    def _transition_run_state(
+        self,
+        state: RunLifecycleState,
+        *,
+        action: str | None = None,
+        detail: str = "",
+    ) -> None:
+        self._run_state = self._coerce_run_state(state)
+        self._set_phase(self._phase_for_run_state(self._run_state, action))
+        action_name = (action or self._running_action or "run").replace("_", " ")
+        label = RUN_STATE_LABELS[self._run_state]
+        if detail:
+            message = f"Run state: {label} | {action_name} | {detail}"
+        else:
+            message = f"Run state: {label} | {action_name}"
+        level = {
+            RunLifecycleState.IDLE: "info",
+            RunLifecycleState.QUEUED: "accent",
+            RunLifecycleState.RUNNING: "accent",
+            RunLifecycleState.CHATTING: "accent",
+            RunLifecycleState.COMPLETED: "success",
+            RunLifecycleState.FAILED: "error",
+            RunLifecycleState.CANCELLED: "warning",
+        }[self._run_state]
+        self._set_status(message, level)
+
     def _notify_runtime_state_warning(self, message: str) -> None:
         try:
             self._append_output(message, "warning")
@@ -878,6 +1169,8 @@ class ScholarDevClawApp(App[None]):
         action: str,
         status: str,
         duration: float,
+        terminal_state: RunLifecycleState,
+        summary_lines: list[str] | None = None,
         request: dict[str, Any] | None = None,
         command: str | None = None,
     ) -> None:
@@ -900,8 +1193,63 @@ class ScholarDevClawApp(App[None]):
         self._run_replay_map[run_id] = {
             "command": command,
             "action": action,
-            "request": dict(req),
+            "request": self._sanitize_request_for_persistence(dict(req)),
+            "status": status,
+            "duration_seconds": max(0.0, duration),
+            "terminal_state": self._coerce_run_state(terminal_state).value,
+            "summary_lines": [
+                str(line).strip() for line in list(summary_lines or []) if str(line).strip()
+            ][:4],
         }
+        for stale in sorted(self._run_replay_map)[:-RUN_PERSIST_LIMIT]:
+            self._run_replay_map.pop(stale, None)
+
+    def _get_recent_runs(self, limit: int = RUN_CONTEXT_LIMIT) -> list[RunArtifact]:
+        return list(self._recent_run_artifacts[-limit:])[::-1]
+
+    def _find_run_artifact(self, run_id: int) -> RunArtifact | None:
+        for artifact in reversed(self._recent_run_artifacts):
+            if artifact.run_id == run_id:
+                return artifact
+        return None
+
+    def _render_runs_compact(self) -> list[str]:
+        runs = self._get_recent_runs(limit=RUN_CONTEXT_LIMIT)
+        if not runs:
+            return ["No recent runs recorded"]
+        return [
+            (f"#{run.run_id} {run.action:<9} {run.status:<9} {max(0.0, run.duration_seconds):.1f}s")
+            for run in runs
+        ]
+
+    def _render_run_details(self, run_id: int) -> list[str]:
+        artifact = self._find_run_artifact(run_id)
+        if artifact is None:
+            return [f"Run #{run_id} not found"]
+
+        replay = dict(self._run_replay_map.get(run_id) or {})
+        request = dict(replay.get("request") or {})
+        lines = [
+            f"Run #{artifact.run_id}",
+            f"Action: {artifact.action}",
+            f"Status: {artifact.status}",
+            f"Terminal state: {self._coerce_run_state(artifact.terminal_state).value}",
+            f"Duration: {max(0.0, artifact.duration_seconds):.1f}s",
+            f"Repo: {request.get('repo_path') or artifact.repo_path or 'n/a'}",
+            f"Spec: {request.get('spec') or artifact.spec or 'n/a'}",
+            f"Query: {request.get('query') or artifact.query or 'n/a'}",
+        ]
+        if request:
+            request_parts: list[str] = []
+            for key in ("action", "repo_path", "spec", "query", "include_arxiv", "include_web"):
+                if key in request:
+                    request_parts.append(f"{key}={request[key]}")
+            if request_parts:
+                lines.append("Request: " + ", ".join(request_parts))
+        lines.append("Summary:")
+        for line in artifact.summary_lines or ["(none)"]:
+            lines.append(f"- {line}")
+        return lines
 
     def _set_status(self, message: str, level: str = "info") -> None:
         self._status_level = level
@@ -974,6 +1322,9 @@ class ScholarDevClawApp(App[None]):
             "setup",
             "providers",
             "status",
+            "runs",
+            "run show 1",
+            "run rerun 1",
             "chat hello",
         ]
         commands = MODE_COMMANDS[self._mode] + contextual + self._context_hints + GLOBAL_COMMANDS
@@ -1118,6 +1469,28 @@ class ScholarDevClawApp(App[None]):
 
         parts = raw.split()
         head = parts[0].lower()
+
+        if head == "runs":
+            return "runs", {}
+
+        if head == "run" and len(parts) >= 2:
+            subcommand = parts[1].strip().lower()
+            if subcommand == "show":
+                if len(parts) < 3:
+                    return None, {}
+                try:
+                    run_id = int(parts[2])
+                except ValueError:
+                    return None, {}
+                return "run_show", {"run_id": run_id}
+            if subcommand == "rerun":
+                if len(parts) < 3:
+                    return None, {}
+                try:
+                    run_id = int(parts[2])
+                except ValueError:
+                    return None, {}
+                return "run_rerun", {"run_id": run_id}
 
         if head == "/ask":
             return "chat", {"action": "chat", "prompt": raw[len(parts[0]) :].strip()}
@@ -1285,10 +1658,12 @@ class ScholarDevClawApp(App[None]):
         run_id: int,
         action: str,
         status: str,
+        terminal_state: RunLifecycleState,
+        duration: float,
         request: dict[str, Any],
         summary_lines: list[str],
     ) -> None:
-        if action == "chat" or status not in {"Success", "Failed"}:
+        if action == "chat" or status not in {"Success", "Failed", "Cancelled"}:
             return
         artifact = RunArtifact(
             run_id=run_id,
@@ -1296,11 +1671,15 @@ class ScholarDevClawApp(App[None]):
             status=status,
             repo_path=str(request.get("repo_path", "") or ""),
             spec=str(request.get("spec", "") or ""),
+            query=str(request.get("query", "") or ""),
+            duration_seconds=max(0.0, duration),
+            terminal_state=self._coerce_run_state(terminal_state).value,
             summary_lines=[line.strip() for line in summary_lines if str(line).strip()][:4],
         )
         self._recent_run_artifacts.append(artifact)
-        if len(self._recent_run_artifacts) > RUN_CONTEXT_LIMIT:
-            self._recent_run_artifacts = self._recent_run_artifacts[-RUN_CONTEXT_LIMIT:]
+        if len(self._recent_run_artifacts) > RUN_PERSIST_LIMIT:
+            self._recent_run_artifacts = self._recent_run_artifacts[-RUN_PERSIST_LIMIT:]
+        self._save_runtime_state()
 
     def _build_recent_run_context(self) -> str:
         if not self._recent_run_artifacts:
@@ -1346,7 +1725,10 @@ class ScholarDevClawApp(App[None]):
         if isinstance(exc, LLMAPIError) and exc.status_code == 0:
             detail = (exc.detail or "").lower()
             if "no parseable" in detail or "empty" in detail:
-                return "LLM returned an empty/invalid stream. Retry or run `set model <provider-model>`."
+                return (
+                    "DEGRADED: chat transport returned empty/invalid stream. "
+                    "Retry, check provider transport, or run `set model <provider-model>`."
+                )
         if isinstance(exc, LLMAPIError) and exc.status_code in {400, 404}:
             detail = (exc.detail or "").lower()
             if "model" in detail or "not found" in detail or "does not exist" in detail:
@@ -1377,7 +1759,10 @@ class ScholarDevClawApp(App[None]):
     def _chat_result_from_text(self, prompt: str, response_text: str) -> Any:
         content = (response_text or "").strip()
         if not content:
-            message = "LLM returned an empty response. Retry or run `set model <provider-model>`."
+            message = (
+                "DEGRADED: chat transport produced empty response/output. "
+                "Retry, verify provider health, or run `set model <provider-model>`."
+            )
             return self._make_result(ok=False, payload={}, error=message, logs=[message])
 
         input_tokens = self._estimate_tokens(prompt)
@@ -1477,7 +1862,7 @@ class ScholarDevClawApp(App[None]):
         command: str | None = None,
     ) -> None:
         if self._running_action is not None:
-            self._set_status("Task already running", "warning")
+            self._set_status("Run state: RUNNING | another task in progress", "warning")
             return
 
         ok, errors, warnings = self._validate_request_inputs(request)
@@ -1501,9 +1886,9 @@ class ScholarDevClawApp(App[None]):
         self._line_progress = 0
         self._context_hints = []
         self._cancel_events[self._active_token] = threading.Event()
-        self._set_phase(self._phase_for_action(action))
+        self._transition_run_state(RunLifecycleState.QUEUED, action=action)
         self.query_one("#status-bar", StatusBar).start_timer()
-        self._set_status(f"Running {action.title()}", "accent")
+        self._transition_run_state(RunLifecycleState.RUNNING, action=action)
         self._emit_progress(action, 0.05)
         self._update_command_meta()
 
@@ -1517,7 +1902,7 @@ class ScholarDevClawApp(App[None]):
 
     def _start_chat(self, prompt: str, *, command: str | None = None) -> None:
         if self._running_action is not None:
-            self._set_status("Task already running", "warning")
+            self._set_status("Run state: RUNNING | another task in progress", "warning")
             return
         if not self._llm_ready():
             self._append_output("Error: configure OpenRouter or Ollama first", "error")
@@ -1536,9 +1921,8 @@ class ScholarDevClawApp(App[None]):
         self._chat_preview = ""
         self._context_hints = []
         self._cancel_events[self._active_token] = threading.Event()
-        self._set_phase(self._phase_for_action("chat"))
+        self._transition_run_state(RunLifecycleState.CHATTING, action="chat")
         self.query_one("#status-bar", StatusBar).start_timer()
-        self._set_status(f"Chatting with {self._provider}", "accent")
         self._set_live_text("Thinking...", "system")
         self._update_command_meta()
 
@@ -1714,6 +2098,16 @@ class ScholarDevClawApp(App[None]):
                 else:
                     error_message = self._format_chat_error(exc)
                     result = self._make_result(ok=False, payload={}, error=error_message)
+            elif looks_like_bad_model and not auto_fallback:
+                result = self._make_result(
+                    ok=False,
+                    payload={},
+                    error=(
+                        "DEGRADED: model lookup failed and automatic fallback is disabled "
+                        f"({AUTO_MODEL_FALLBACK_ENV}=false). "
+                        "Run `set model <provider-model>` or enable fallback explicitly."
+                    ),
+                )
             else:
                 error_message = self._format_chat_error(exc)
                 result = self._make_result(ok=False, payload={}, error=error_message)
@@ -1768,9 +2162,30 @@ class ScholarDevClawApp(App[None]):
             self._append_output(f"Provider: {self._provider}")
             self._append_output(f"Model: {self._model or 'unset'}")
             self._append_output(f"Directory: {self._pretty_directory()}")
+            self._append_output(f"Run state: {RUN_STATE_LABELS[self._run_state]}")
             self._append_output(
                 f"Session tokens: {self._session_input_tokens + self._session_output_tokens}"
             )
+            return
+        if action == "runs":
+            for line in self._render_runs_compact():
+                self._append_output(line)
+            self._set_status("Recent runs listed", "info")
+            return
+        if action == "run_show":
+            run_id = int(request.get("run_id", 0) or 0)
+            detail_lines = self._render_run_details(run_id)
+            level = "warning" if detail_lines and "not found" in detail_lines[0].lower() else "info"
+            for line in detail_lines:
+                self._append_output(line, level if line == detail_lines[0] else "info")
+            if level == "warning":
+                self._set_status(f"Run #{run_id} not found", "warning")
+            else:
+                self._set_status(f"Run #{run_id} details", "info")
+            return
+        if action == "run_rerun":
+            run_id = int(request.get("run_id", 0) or 0)
+            self._rerun_history_item(run_id)
             return
         if action == "quit":
             self.exit()
@@ -1871,14 +2286,14 @@ class ScholarDevClawApp(App[None]):
 
     def _rerun_history_item(self, run_id: int) -> None:
         if self._running_action is not None:
-            self._set_status("Task Already Running", "warning")
+            self._set_status("Run state: RUNNING | cannot rerun while active", "warning")
             self._append_output("Warning: finish or cancel current task before rerun", "warning")
             return
 
         replay = self._run_replay_map.get(run_id)
         if not replay:
             self._append_output(f"Warning: no replay data for run #{run_id}", "warning")
-            self._set_status("Rerun Unavailable", "warning")
+            self._set_status("Run rerun unavailable", "warning")
             return
 
         command = str(replay.get("command") or "").strip()
@@ -1890,7 +2305,7 @@ class ScholarDevClawApp(App[None]):
         request = dict(replay.get("request") or {})
         if not action:
             self._append_output(f"Warning: invalid replay payload for run #{run_id}", "warning")
-            self._set_status("Rerun Unavailable", "warning")
+            self._set_status("Run rerun unavailable", "warning")
             return
 
         self._append_output(f"> rerun #{run_id}", "accent")
@@ -2023,16 +2438,17 @@ class ScholarDevClawApp(App[None]):
             self._context_hints = self._suggest_next_commands(
                 "chat", result.payload, message.request
             )
-            self._set_status(self._completion_status_text("chat", "completed"), "success")
+            self._transition_run_state(RunLifecycleState.COMPLETED, action="chat")
             self._add_history_entry(
                 run_id=message.token,
                 action=message.action,
                 status="Success",
                 duration=duration,
+                terminal_state=RunLifecycleState.COMPLETED,
+                summary_lines=[f"Assistant: {content.splitlines()[0]}"] if content else [],
                 request=message.request,
                 command=str(message.request.get("_original_command") or "") or None,
             )
-            self._set_phase("complete")
         elif result.ok:
             summary_lines = self._summarize_result(message.action, result.payload)
             self._set_progress(message.action, 1.0)
@@ -2046,12 +2462,14 @@ class ScholarDevClawApp(App[None]):
             self._context_hints = self._suggest_next_commands(
                 message.action, result.payload, message.request
             )
-            self._set_status(self._completion_status_text(message.action, "completed"), "success")
+            self._transition_run_state(RunLifecycleState.COMPLETED, action=message.action)
             self._add_history_entry(
                 run_id=message.token,
                 action=message.action,
                 status="Success",
                 duration=duration,
+                terminal_state=RunLifecycleState.COMPLETED,
+                summary_lines=summary_lines,
                 request=message.request,
                 command=str(message.request.get("_original_command") or "") or None,
             )
@@ -2059,39 +2477,44 @@ class ScholarDevClawApp(App[None]):
                 run_id=message.token,
                 action=message.action,
                 status="Success",
+                terminal_state=RunLifecycleState.COMPLETED,
+                duration=duration,
                 request=message.request,
                 summary_lines=summary_lines,
             )
-            self._set_phase("complete")
         else:
             payload = dict(getattr(result, "payload", {}) or {})
             summary_lines = self._summarize_result(message.action, payload)
             self._clear_progress()
             status = "Failed"
+            terminal_state = RunLifecycleState.FAILED
             if bool(payload.get("cancelled")) or str(result.error or "").lower().startswith(
                 "task cancelled"
             ):
                 self._append_output("Task cancelled", "warning")
-                self._set_status(
-                    self._completion_status_text(message.action, "cancelled"), "warning"
-                )
+                self._transition_run_state(RunLifecycleState.CANCELLED, action=message.action)
                 status = "Cancelled"
+                terminal_state = RunLifecycleState.CANCELLED
                 self._add_history_entry(
                     run_id=message.token,
                     action=message.action,
                     status="Cancelled",
                     duration=duration,
+                    terminal_state=RunLifecycleState.CANCELLED,
+                    summary_lines=summary_lines,
                     request=message.request,
                     command=str(message.request.get("_original_command") or "") or None,
                 )
             else:
                 self._append_output(f"Error: {result.error or 'command failed'}", "error")
-                self._set_status(self._completion_status_text(message.action, "failed"), "error")
+                self._transition_run_state(RunLifecycleState.FAILED, action=message.action)
                 self._add_history_entry(
                     run_id=message.token,
                     action=message.action,
                     status="Failed",
                     duration=duration,
+                    terminal_state=RunLifecycleState.FAILED,
+                    summary_lines=summary_lines,
                     request=message.request,
                     command=str(message.request.get("_original_command") or "") or None,
                 )
@@ -2099,11 +2522,12 @@ class ScholarDevClawApp(App[None]):
                 run_id=message.token,
                 action=message.action,
                 status=status,
+                terminal_state=terminal_state,
+                duration=duration,
                 request=message.request,
                 summary_lines=summary_lines,
             )
             self._context_hints = []
-            self._set_phase("idle")
 
         self._update_command_meta()
         self.query_one("#prompt-input", PromptInput).focus()
@@ -2120,7 +2544,7 @@ class ScholarDevClawApp(App[None]):
         if cancel_event is not None:
             cancel_event.set()
         self._append_output("Cancel requested (stopping current task)...", "warning")
-        self._set_status("Cancelling Task", "warning")
+        self._set_status("Run state: RUNNING | cancel requested", "warning")
 
     def action_clear_screen(self) -> None:
         self._clear_output()
@@ -2168,6 +2592,7 @@ class ScholarDevClawApp(App[None]):
             event.set()
         self._running_action = None
         self._active_request = None
+        self._run_state = RunLifecycleState.IDLE
 
 
 def run_tui() -> None:

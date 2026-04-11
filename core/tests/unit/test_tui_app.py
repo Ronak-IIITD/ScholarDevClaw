@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import os
 import time
 
@@ -9,7 +10,7 @@ import pytest
 pytest.importorskip("textual")
 
 from scholardevclaw.llm.client import LLMAPIError
-from scholardevclaw.tui.app import ScholarDevClawApp, TaskCompleted
+from scholardevclaw.tui.app import RunArtifact, RunLifecycleState, ScholarDevClawApp, TaskCompleted
 
 
 def _minimal_app_for_unit() -> ScholarDevClawApp:
@@ -741,3 +742,182 @@ def test_save_runtime_state_failure_is_handled_without_raising():
 
     assert any("failed to save TUI runtime state" in value for _, value in observed)
     assert ("warning", "Runtime State Warning") in observed
+
+
+def test_transition_run_state_updates_phase_and_status_message():
+    app = _minimal_app_for_unit()
+    phases: list[str] = []
+    statuses: list[tuple[str, str]] = []
+
+    app._set_phase = lambda phase: phases.append(phase)
+    app._set_status = lambda message, level="info": statuses.append((level, message))
+
+    app._transition_run_state(RunLifecycleState.QUEUED, action="generate", detail="dispatch")
+
+    assert app._run_state == RunLifecycleState.QUEUED
+    assert phases[-1] == "validating"
+    assert statuses[-1][0] == "accent"
+    assert "Run state: QUEUED | generate | dispatch" in statuses[-1][1]
+
+
+def test_runs_command_outputs_compact_recent_runs():
+    app = _minimal_app_for_unit()
+    app._recent_run_artifacts = [
+        RunArtifact(
+            run_id=1,
+            action="analyze",
+            status="Success",
+            repo_path="./repo",
+            spec="",
+            duration_seconds=1.4,
+            terminal_state=RunLifecycleState.COMPLETED.value,
+            summary_lines=["Languages: python"],
+        ),
+        RunArtifact(
+            run_id=2,
+            action="generate",
+            status="Failed",
+            repo_path="./repo",
+            spec="rmsnorm",
+            duration_seconds=3.2,
+            terminal_state=RunLifecycleState.FAILED.value,
+            summary_lines=["Branch: feature/rmsnorm"],
+        ),
+    ]
+    output: list[str] = []
+    statuses: list[str] = []
+    app._append_output = lambda line, level="auto": output.append(line)
+    app._set_status = lambda message, level="info": statuses.append(message)
+
+    app._execute_action_request("runs", {}, command="runs")
+
+    assert output
+    assert output[0].startswith("#2 generate")
+    assert "Failed" in output[0]
+    assert output[1].startswith("#1 analyze")
+    assert "Recent runs listed" in statuses[-1]
+
+
+def test_run_show_command_renders_known_and_unknown_ids():
+    app = _minimal_app_for_unit()
+    app._recent_run_artifacts = [
+        RunArtifact(
+            run_id=7,
+            action="map",
+            status="Success",
+            repo_path="./repo",
+            spec="rmsnorm",
+            duration_seconds=2.0,
+            terminal_state=RunLifecycleState.COMPLETED.value,
+            summary_lines=["Targets: 3", "Confidence: 90%"],
+        )
+    ]
+    app._run_replay_map = {
+        7: {
+            "command": "map ./repo rmsnorm",
+            "action": "map",
+            "request": {
+                "action": "map",
+                "repo_path": "./repo",
+                "spec": "rmsnorm",
+            },
+            "terminal_state": RunLifecycleState.COMPLETED.value,
+            "status": "Success",
+            "duration_seconds": 2.0,
+            "summary_lines": ["Targets: 3", "Confidence: 90%"],
+        }
+    }
+    output: list[str] = []
+    statuses: list[tuple[str, str]] = []
+    app._append_output = lambda line, level="auto": output.append(line)
+    app._set_status = lambda message, level="info": statuses.append((level, message))
+
+    app._execute_action_request("run_show", {"run_id": 7}, command="run show 7")
+
+    assert any(line == "Run #7" for line in output)
+    assert any("Action: map" in line for line in output)
+    assert any("Summary:" in line for line in output)
+    assert statuses[-1][1] == "Run #7 details"
+
+    output.clear()
+    app._execute_action_request("run_show", {"run_id": 404}, command="run show 404")
+    assert output[0] == "Run #404 not found"
+
+
+def test_run_rerun_command_routes_through_replay_path():
+    app = _minimal_app_for_unit()
+    called: list[int] = []
+    app._rerun_history_item = lambda run_id: called.append(run_id)
+
+    app._execute_action_request("run_rerun", {"run_id": 12}, command="run rerun 12")
+
+    assert called == [12]
+
+
+def test_runtime_state_persists_recent_run_artifacts_and_replay_map(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCHOLARDEVCLAW_AUTH_DIR", str(tmp_path))
+    app = _minimal_app_for_unit()
+    app._provider = "openrouter"
+    app._model = "anthropic/claude-sonnet-4"
+    app._directory = "/tmp/repo"
+    app._recent_run_artifacts = [
+        RunArtifact(
+            run_id=9,
+            action="validate",
+            status="Cancelled",
+            repo_path="./repo",
+            spec="rmsnorm",
+            query="",
+            duration_seconds=4.2,
+            terminal_state=RunLifecycleState.CANCELLED.value,
+            summary_lines=["Stage: generated"],
+        )
+    ]
+    app._run_replay_map = {
+        9: {
+            "command": "validate ./repo",
+            "action": "validate",
+            "request": {
+                "action": "validate",
+                "repo_path": "./repo",
+                "spec": "rmsnorm",
+                "prompt": "secret should not persist",
+            },
+            "status": "Cancelled",
+            "terminal_state": RunLifecycleState.CANCELLED.value,
+            "duration_seconds": 4.2,
+            "summary_lines": ["Stage: generated"],
+        }
+    }
+
+    app._save_runtime_state()
+
+    state_path = app._runtime_state_path()
+    saved = json.loads(state_path.read_text())
+    assert saved["recent_run_artifacts"][0]["run_id"] == 9
+    assert "prompt" not in saved["replay_map"]["9"]["request"]
+
+    # Also include malformed entries; loader should ignore safely.
+    saved["recent_run_artifacts"].append({"run_id": None, "action": 1})
+    saved["replay_map"]["not-a-run"] = {"action": "analyze"}
+    state_path.write_text(json.dumps(saved))
+
+    reloaded = ScholarDevClawApp()
+    assert any(item.run_id == 9 for item in reloaded._recent_run_artifacts)
+    assert 9 in reloaded._run_replay_map
+    assert "prompt" not in reloaded._run_replay_map[9]["request"]
+
+
+def test_build_request_supports_runs_show_and_rerun_commands():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("runs")
+    assert action == "runs"
+
+    action, req = app._build_request("run show 7")
+    assert action == "run_show"
+    assert req == {"run_id": 7}
+
+    action, req = app._build_request("run rerun 7")
+    assert action == "run_rerun"
+    assert req == {"run_id": 7}

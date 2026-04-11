@@ -46,6 +46,9 @@ HELP_TEXT = (
     "/ask <question>\n"
     "/run <action> [args...]\n"
     "  actions: analyze suggest search map generate validate integrate\n"
+    "runs\n"
+    "run show <id>\n"
+    "run rerun <id>\n"
     "Backward compatible: analyze/map/generate/chat still work\n\n"
     "Modes\n"
     ":analyze\n"
@@ -268,6 +271,9 @@ class CommandPalette(ModalScreen[str | None]):
         "map ./repo rmsnorm",
         "generate ./repo rmsnorm",
         "validate ./repo",
+        "runs",
+        "run show 1",
+        "run rerun 1",
         "set provider openrouter",
         "set provider ollama",
         f"set model {DEFAULT_OPENROUTER_MODEL}",
