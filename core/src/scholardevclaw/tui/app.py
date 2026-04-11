@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import logging
+import math
 import os
 import subprocess
 import threading
@@ -53,6 +54,7 @@ MODE_HINTS = {
         "Hint -> /run analyze ./repo",
         "Hint -> /ask what this repo does",
         "Hint -> runs",
+        "Hint -> run events 1",
         "Hint -> suggest ./repo",
         "Hint -> validate ./repo",
     ],
@@ -60,6 +62,7 @@ MODE_HINTS = {
         "Hint -> /run search layer normalization",
         "Hint -> /ask papers on flash attention",
         "Hint -> runs",
+        "Hint -> run events 1",
         "Hint -> search flash attention",
         "Hint -> setup",
     ],
@@ -67,6 +70,7 @@ MODE_HINTS = {
         "Hint -> /run map ./repo rmsnorm",
         "Hint -> /ask implement RMSNorm",
         "Hint -> runs",
+        "Hint -> run events 1",
         "Hint -> generate ./repo rmsnorm",
         "Hint -> integrate ./repo rmsnorm",
     ],
@@ -83,6 +87,7 @@ MODE_COMMANDS = {
         f"set model {DEFAULT_OPENROUTER_MODEL}",
         "runs",
         "run show 1",
+        "run events 1",
         "run rerun 1",
         ":search",
         ":edit",
@@ -96,6 +101,7 @@ MODE_COMMANDS = {
         "chat find fast inference ideas",
         "runs",
         "run show 1",
+        "run events 1",
         "run rerun 1",
         "setup",
         ":analyze",
@@ -111,6 +117,7 @@ MODE_COMMANDS = {
         "chat how should I patch this file",
         "runs",
         "run show 1",
+        "run events 1",
         "run rerun 1",
         ":analyze",
         ":search",
@@ -133,6 +140,7 @@ GLOBAL_COMMANDS = [
     "set dir ./repo",
     "runs",
     "run show 1",
+    "run events 1",
     "run rerun 1",
     ":analyze",
     ":search",
@@ -171,6 +179,8 @@ WORKFLOW_ACTIONS = {
 }
 RUN_CONTEXT_LIMIT = 8
 RUN_PERSIST_LIMIT = 20
+RUN_EVENT_LIMIT_PER_RUN = 120
+RUN_EVENT_RUN_LIMIT = 20
 NATURAL_ACTION_ROUTING_ENV = "SCHOLARDEVCLAW_TUI_ENABLE_NATURAL_ACTION_ROUTING"
 AUTO_MODEL_FALLBACK_ENV = "SCHOLARDEVCLAW_TUI_AUTO_MODEL_FALLBACK"
 CHAT_SYSTEM_PROMPTS = {
@@ -222,6 +232,7 @@ class TUIRuntimeState:
     models_by_provider: dict[str, str] = field(default_factory=dict)
     recent_run_artifacts: list[dict[str, Any]] = field(default_factory=list)
     replay_map: dict[str, dict[str, Any]] = field(default_factory=dict)
+    run_events: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -235,6 +246,19 @@ class RunArtifact:
     duration_seconds: float = 0.0
     terminal_state: str = RunLifecycleState.IDLE.value
     summary_lines: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RunEvent:
+    run_id: int
+    seq: int
+    timestamp: float
+    type: str
+    phase: str = ""
+    state: str = ""
+    message: str = ""
+    level: str = "info"
+    payload: dict[str, Any] | None = None
 
 
 class TaskLog(Message):
@@ -357,6 +381,10 @@ class ScholarDevClawApp(App[None]):
         self._run_started_at: dict[int, float] = {}
         self._run_replay_map: dict[int, dict[str, Any]] = {}
         self._recent_run_artifacts: list[RunArtifact] = []
+        self._run_events: dict[int, list[RunEvent]] = {}
+        self._run_event_seq: dict[int, int] = {}
+        self._chat_event_accumulator: dict[int, str] = {}
+        self._chat_event_chunks: dict[int, int] = {}
         self._models_by_provider: dict[str, str] = {}
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
@@ -431,6 +459,9 @@ class ScholarDevClawApp(App[None]):
                 replay_map = data.get("replay_map")
                 if not isinstance(replay_map, dict):
                     replay_map = {}
+                run_events = data.get("run_events")
+                if not isinstance(run_events, dict):
+                    run_events = {}
                 state = TUIRuntimeState(
                     provider=str(data.get("provider", state.provider)),
                     model=str(data.get("model", state.model)),
@@ -442,6 +473,7 @@ class ScholarDevClawApp(App[None]):
                     },
                     recent_run_artifacts=[item for item in recent_run_artifacts],
                     replay_map={str(k): v for k, v in replay_map.items()},
+                    run_events={str(k): v for k, v in run_events.items()},
                 )
             except Exception:
                 pass
@@ -469,8 +501,10 @@ class ScholarDevClawApp(App[None]):
             state.recent_run_artifacts
         )
         self._run_replay_map = self._deserialize_replay_map(state.replay_map)
-        if self._run_replay_map:
-            self._task_token = max(self._run_replay_map)
+        self._run_events, self._run_event_seq = self._deserialize_run_events(state.run_events)
+        candidate_ids = list(self._run_replay_map) + list(self._run_events)
+        if candidate_ids:
+            self._task_token = max(candidate_ids)
 
     @staticmethod
     def _coerce_run_state(value: str | RunLifecycleState) -> RunLifecycleState:
@@ -602,6 +636,208 @@ class ScholarDevClawApp(App[None]):
             loaded.pop(stale, None)
         return loaded
 
+    @staticmethod
+    def _trim_event_message(text: str, *, limit: int = 220) -> str:
+        value = str(text or "").replace("\n", " ").strip()
+        if len(value) <= limit:
+            return value
+        return value[: max(0, limit - 1)].rstrip() + "…"
+
+    @staticmethod
+    def _sanitize_event_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        clean: dict[str, Any] = {}
+        for key, value in payload.items():
+            key_name = str(key).strip()
+            if not key_name:
+                continue
+            if isinstance(value, (bool, int, float)):
+                clean[key_name] = value
+            elif isinstance(value, str):
+                clean[key_name] = ScholarDevClawApp._trim_event_message(value, limit=180)
+        return clean or None
+
+    def _deserialize_run_events(
+        self, rows: dict[str, Any]
+    ) -> tuple[dict[int, list[RunEvent]], dict[int, int]]:
+        loaded: dict[int, list[RunEvent]] = {}
+        seq_map: dict[int, int] = {}
+        for run_id_raw, events_raw in rows.items():
+            try:
+                run_id = int(str(run_id_raw).strip())
+            except Exception:
+                continue
+            if not isinstance(events_raw, list):
+                continue
+            decoded: list[RunEvent] = []
+            for row in events_raw:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    seq = int(row.get("seq", 0))
+                    timestamp = float(row.get("timestamp", 0.0) or 0.0)
+                except Exception:
+                    continue
+                if seq <= 0 or timestamp <= 0:
+                    continue
+                if not math.isfinite(timestamp):
+                    continue
+                event_type = str(row.get("type", "")).strip() or "event"
+                decoded.append(
+                    RunEvent(
+                        run_id=run_id,
+                        seq=seq,
+                        timestamp=timestamp,
+                        type=event_type,
+                        phase=str(row.get("phase", "") or "").strip(),
+                        state=str(row.get("state", "") or "").strip(),
+                        message=self._trim_event_message(str(row.get("message", "") or "")),
+                        level=str(row.get("level", "info") or "info").strip() or "info",
+                        payload=self._sanitize_event_payload(
+                            row.get("payload") if isinstance(row.get("payload"), dict) else None
+                        ),
+                    )
+                )
+            if not decoded:
+                continue
+            decoded.sort(key=lambda item: item.seq)
+            trimmed = decoded[-RUN_EVENT_LIMIT_PER_RUN:]
+            loaded[run_id] = trimmed
+            seq_map[run_id] = max(item.seq for item in trimmed)
+
+        for stale in sorted(loaded)[:-RUN_EVENT_RUN_LIMIT]:
+            loaded.pop(stale, None)
+            seq_map.pop(stale, None)
+        return loaded, seq_map
+
+    def _append_run_event(
+        self,
+        run_id: int,
+        event_type: str,
+        *,
+        phase: str = "",
+        state: str = "",
+        message: str = "",
+        level: str = "info",
+        payload: dict[str, Any] | None = None,
+    ) -> RunEvent:
+        next_seq = self._run_event_seq.get(run_id, 0) + 1
+        event = RunEvent(
+            run_id=run_id,
+            seq=next_seq,
+            timestamp=time.time(),
+            type=str(event_type or "event").strip() or "event",
+            phase=str(phase or "").strip(),
+            state=str(state or "").strip(),
+            message=self._trim_event_message(message),
+            level=str(level or "info").strip() or "info",
+            payload=self._sanitize_event_payload(payload),
+        )
+        bucket = self._run_events.setdefault(run_id, [])
+        bucket.append(event)
+        if len(bucket) > RUN_EVENT_LIMIT_PER_RUN:
+            self._run_events[run_id] = bucket[-RUN_EVENT_LIMIT_PER_RUN:]
+        self._run_event_seq[run_id] = next_seq
+
+        for stale in sorted(self._run_events)[:-RUN_EVENT_RUN_LIMIT]:
+            self._run_events.pop(stale, None)
+            self._run_event_seq.pop(stale, None)
+            self._chat_event_accumulator.pop(stale, None)
+            self._chat_event_chunks.pop(stale, None)
+        return event
+
+    def _serialize_run_events(self) -> dict[str, list[dict[str, Any]]]:
+        compact: dict[str, list[dict[str, Any]]] = {}
+        for run_id in sorted(self._run_events)[-RUN_EVENT_RUN_LIMIT:]:
+            rows: list[dict[str, Any]] = []
+            for event in self._run_events.get(run_id, [])[-RUN_EVENT_LIMIT_PER_RUN:]:
+                rows.append(
+                    {
+                        "run_id": run_id,
+                        "seq": int(event.seq),
+                        "timestamp": float(event.timestamp),
+                        "type": str(event.type),
+                        "phase": str(event.phase),
+                        "state": str(event.state),
+                        "message": self._trim_event_message(event.message),
+                        "level": str(event.level),
+                        "payload": self._sanitize_event_payload(event.payload),
+                    }
+                )
+            if rows:
+                compact[str(run_id)] = rows
+        return compact
+
+    @staticmethod
+    def _event_state_phase_label(event: RunEvent) -> str:
+        state = event.state.strip()
+        phase = event.phase.strip()
+        if state and phase:
+            return f"{state}/{phase}"
+        return state or phase or "-"
+
+    def _render_run_events(self, run_id: int, limit: int | None = None) -> list[str]:
+        events = list(self._run_events.get(run_id) or [])
+        if not events:
+            return [f"Run #{run_id} has no recorded events"]
+        if limit is not None and limit > 0:
+            events = events[-limit:]
+        return [
+            f"{event.seq:03d} {event.type:<14} {self._event_state_phase_label(event):<24} {event.message or '-'}"
+            for event in events
+        ]
+
+    def _record_task_log_event(self, run_id: int, line: str) -> None:
+        message = self._trim_event_message(line, limit=180)
+        if not message:
+            return
+        self._append_run_event(
+            run_id,
+            "log.line",
+            phase=self._phase_for_run_state(self._run_state, self._running_action),
+            state=self._run_state.value,
+            message=message,
+            level="info",
+        )
+
+    def _record_chat_delta_event(self, run_id: int, full_content: str) -> None:
+        text = str(full_content or "")
+        if not text:
+            return
+        self._chat_event_accumulator[run_id] = text
+        chunks = self._chat_event_chunks.get(run_id, 0) + 1
+        self._chat_event_chunks[run_id] = chunks
+        should_sample = chunks % 6 == 0 or len(text) <= 80 or len(text) % 120 < 20
+        if not should_sample:
+            return
+        snippet = self._trim_event_message(text[-160:], limit=160)
+        self._append_run_event(
+            run_id,
+            "chat.delta",
+            phase=self._phase_for_run_state(self._run_state, "chat"),
+            state=self._run_state.value,
+            message=f"…{snippet}" if len(text) > len(snippet) else snippet,
+            level="info",
+            payload={"chars": len(text), "chunks": chunks},
+        )
+
+    def _flush_chat_delta_event(self, run_id: int) -> None:
+        content = self._chat_event_accumulator.pop(run_id, "")
+        chunks = self._chat_event_chunks.pop(run_id, 0)
+        if not content:
+            return
+        snippet = self._trim_event_message(content[-180:], limit=180)
+        self._append_run_event(
+            run_id,
+            "chat.delta.final",
+            phase=self._phase_for_run_state(self._run_state, "chat"),
+            state=self._run_state.value,
+            message=f"…{snippet}" if len(content) > len(snippet) else snippet,
+            level="info",
+            payload={"chars": len(content), "chunks": chunks},
+        )
+
     def _model_for_provider(self, provider: str) -> str:
         if provider in self._models_by_provider and self._models_by_provider[provider].strip():
             return self._models_by_provider[provider].strip()
@@ -627,6 +863,7 @@ class ScholarDevClawApp(App[None]):
             "models_by_provider": self._models_by_provider,
             "recent_run_artifacts": self._serialize_recent_run_artifacts(),
             "replay_map": self._serialize_replay_map(),
+            "run_events": self._serialize_run_events(),
         }
         try:
             config_path.write_text(json.dumps(payload, indent=2))
@@ -1324,6 +1561,7 @@ class ScholarDevClawApp(App[None]):
             "status",
             "runs",
             "run show 1",
+            "run events 1",
             "run rerun 1",
             "chat hello",
         ]
@@ -1491,6 +1729,20 @@ class ScholarDevClawApp(App[None]):
                 except ValueError:
                     return None, {}
                 return "run_rerun", {"run_id": run_id}
+            if subcommand == "events":
+                if len(parts) < 3:
+                    return "run_events", {}
+                try:
+                    run_id = int(parts[2])
+                except ValueError:
+                    return "run_events", {}
+                parsed: dict[str, Any] = {"run_id": run_id}
+                if len(parts) >= 4:
+                    try:
+                        parsed["limit"] = int(parts[3])
+                    except ValueError:
+                        return "run_events", parsed
+                return "run_events", parsed
 
         if head == "/ask":
             return "chat", {"action": "chat", "prompt": raw[len(parts[0]) :].strip()}
@@ -1886,9 +2138,33 @@ class ScholarDevClawApp(App[None]):
         self._line_progress = 0
         self._context_hints = []
         self._cancel_events[self._active_token] = threading.Event()
+        self._append_run_event(
+            self._active_token,
+            "run.accepted",
+            phase=self._phase_for_action(action),
+            state=RunLifecycleState.IDLE.value,
+            message=f"Accepted {action}",
+            level="info",
+        )
         self._transition_run_state(RunLifecycleState.QUEUED, action=action)
+        self._append_run_event(
+            self._active_token,
+            "run.queued",
+            phase=self._phase_for_run_state(RunLifecycleState.QUEUED, action),
+            state=RunLifecycleState.QUEUED.value,
+            message=f"Queued {action}",
+            level="info",
+        )
         self.query_one("#status-bar", StatusBar).start_timer()
         self._transition_run_state(RunLifecycleState.RUNNING, action=action)
+        self._append_run_event(
+            self._active_token,
+            "run.running",
+            phase=self._phase_for_run_state(RunLifecycleState.RUNNING, action),
+            state=RunLifecycleState.RUNNING.value,
+            message=f"Running {action}",
+            level="info",
+        )
         self._emit_progress(action, 0.05)
         self._update_command_meta()
 
@@ -1921,7 +2197,31 @@ class ScholarDevClawApp(App[None]):
         self._chat_preview = ""
         self._context_hints = []
         self._cancel_events[self._active_token] = threading.Event()
+        self._append_run_event(
+            self._active_token,
+            "run.accepted",
+            phase=self._phase_for_action("chat"),
+            state=RunLifecycleState.IDLE.value,
+            message="Accepted chat prompt",
+            level="info",
+        )
+        self._append_run_event(
+            self._active_token,
+            "run.queued",
+            phase=self._phase_for_run_state(RunLifecycleState.QUEUED, "chat"),
+            state=RunLifecycleState.QUEUED.value,
+            message="Queued chat prompt",
+            level="info",
+        )
         self._transition_run_state(RunLifecycleState.CHATTING, action="chat")
+        self._append_run_event(
+            self._active_token,
+            "run.running",
+            phase=self._phase_for_run_state(RunLifecycleState.CHATTING, "chat"),
+            state=RunLifecycleState.CHATTING.value,
+            message="Streaming chat response",
+            level="info",
+        )
         self.query_one("#status-bar", StatusBar).start_timer()
         self._set_live_text("Thinking...", "system")
         self._update_command_meta()
@@ -2187,6 +2487,30 @@ class ScholarDevClawApp(App[None]):
             run_id = int(request.get("run_id", 0) or 0)
             self._rerun_history_item(run_id)
             return
+        if action == "run_events":
+            run_id_raw = request.get("run_id")
+            if run_id_raw is None:
+                self._append_output(
+                    "Warning: run id required. Usage: run events <id> [limit]", "warning"
+                )
+                self._set_status("Run events requires id", "warning")
+                return
+            run_id = int(run_id_raw)
+            limit_raw = request.get("limit")
+            limit: int | None = None
+            if isinstance(limit_raw, int) and limit_raw > 0:
+                limit = limit_raw
+            lines = self._render_run_events(run_id, limit=limit)
+            level = "warning" if lines and "no recorded events" in lines[0].lower() else "info"
+            for idx, line in enumerate(lines):
+                self._append_output(line, level if idx == 0 else "info")
+            if level == "warning":
+                self._set_status(f"Run #{run_id} has no events", "warning")
+            elif limit is not None:
+                self._set_status(f"Run #{run_id} events (last {limit})", "info")
+            else:
+                self._set_status(f"Run #{run_id} events", "info")
+            return
         if action == "quit":
             self.exit()
             return
@@ -2296,6 +2620,18 @@ class ScholarDevClawApp(App[None]):
             self._set_status("Run rerun unavailable", "warning")
             return
 
+        self._append_run_event(
+            run_id,
+            "run.rerun_invoked",
+            phase="validating",
+            state=self._coerce_run_state(
+                str(replay.get("terminal_state", RunLifecycleState.IDLE.value))
+            ).value,
+            message=f"Rerun requested for run #{run_id}",
+            level="info",
+        )
+        self._save_runtime_state()
+
         command = str(replay.get("command") or "").strip()
         if command:
             self._execute_command(command, record_history=False, echo=True)
@@ -2365,6 +2701,7 @@ class ScholarDevClawApp(App[None]):
         if message.token != self._active_token or self._running_action != "chat":
             return
         self._chat_preview = message.content
+        self._record_chat_delta_event(message.token, message.content)
         self.query_one("#status-bar", StatusBar).update_timer()
         self._set_live_text(f"Assistant: {message.content}", "info")
 
@@ -2376,6 +2713,7 @@ class ScholarDevClawApp(App[None]):
         fraction = min(0.9, 0.1 + (self._line_progress * 0.08))
         line = (message.line or "").strip()
         if line:
+            self._record_task_log_event(message.token, line)
             lower = line.lower()
             # Show meaningful workflow logs (not only errors) so users can follow progress.
             if any(term in lower for term in ("error", "failed", "warning")):
@@ -2406,6 +2744,8 @@ class ScholarDevClawApp(App[None]):
     def on_task_completed(self, message: TaskCompleted) -> None:
         if message.token != self._active_token:
             return
+
+        self._flush_chat_delta_event(message.token)
 
         self.query_one("#status-bar", StatusBar).stop_timer()
         self._running_action = None
@@ -2439,6 +2779,15 @@ class ScholarDevClawApp(App[None]):
                 "chat", result.payload, message.request
             )
             self._transition_run_state(RunLifecycleState.COMPLETED, action="chat")
+            self._append_run_event(
+                message.token,
+                "run.completed",
+                phase=self._phase_for_run_state(RunLifecycleState.COMPLETED, "chat"),
+                state=RunLifecycleState.COMPLETED.value,
+                message="Chat completed",
+                level="success",
+                payload={"duration_seconds": round(duration, 3)},
+            )
             self._add_history_entry(
                 run_id=message.token,
                 action=message.action,
@@ -2463,6 +2812,15 @@ class ScholarDevClawApp(App[None]):
                 message.action, result.payload, message.request
             )
             self._transition_run_state(RunLifecycleState.COMPLETED, action=message.action)
+            self._append_run_event(
+                message.token,
+                "run.completed",
+                phase=self._phase_for_run_state(RunLifecycleState.COMPLETED, message.action),
+                state=RunLifecycleState.COMPLETED.value,
+                message=f"{message.action} completed",
+                level="success",
+                payload={"duration_seconds": round(duration, 3)},
+            )
             self._add_history_entry(
                 run_id=message.token,
                 action=message.action,
@@ -2493,6 +2851,15 @@ class ScholarDevClawApp(App[None]):
             ):
                 self._append_output("Task cancelled", "warning")
                 self._transition_run_state(RunLifecycleState.CANCELLED, action=message.action)
+                self._append_run_event(
+                    message.token,
+                    "run.cancelled",
+                    phase=self._phase_for_run_state(RunLifecycleState.CANCELLED, message.action),
+                    state=RunLifecycleState.CANCELLED.value,
+                    message=f"{message.action} cancelled",
+                    level="warning",
+                    payload={"duration_seconds": round(duration, 3)},
+                )
                 status = "Cancelled"
                 terminal_state = RunLifecycleState.CANCELLED
                 self._add_history_entry(
@@ -2508,6 +2875,15 @@ class ScholarDevClawApp(App[None]):
             else:
                 self._append_output(f"Error: {result.error or 'command failed'}", "error")
                 self._transition_run_state(RunLifecycleState.FAILED, action=message.action)
+                self._append_run_event(
+                    message.token,
+                    "run.failed",
+                    phase=self._phase_for_run_state(RunLifecycleState.FAILED, message.action),
+                    state=RunLifecycleState.FAILED.value,
+                    message=self._trim_event_message(result.error or "command failed", limit=180),
+                    level="error",
+                    payload={"duration_seconds": round(duration, 3)},
+                )
                 self._add_history_entry(
                     run_id=message.token,
                     action=message.action,
@@ -2530,6 +2906,7 @@ class ScholarDevClawApp(App[None]):
             self._context_hints = []
 
         self._update_command_meta()
+        self._save_runtime_state()
         self.query_one("#prompt-input", PromptInput).focus()
 
     # ------------------------------------------------------------------

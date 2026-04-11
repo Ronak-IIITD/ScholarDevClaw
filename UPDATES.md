@@ -4,6 +4,50 @@
 
 **Last updated:** 2026-04-11
 
+### 2026-04-11 (TUI Phase-3: structured run events + inspectable event timeline)
+
+**Summary:** Implemented a Phase-3 TUI upgrade that introduces structured per-run events, bounded timeline persistence/recovery, and a new `run events` inspect command for compact lifecycle/log/chat visibility.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Added lightweight `RunEvent` dataclass (`run_id`, monotonic `seq`, `timestamp`, `type`, `phase`, `state`, `message`, `level`, optional compact `payload`).
+  - Added bounded in-memory event storage keyed by `run_id` (max 120 events per run, max 20 runs) with monotonic append helper.
+  - Emitted additive events across run lifecycle:
+    - accepted / queued / running
+    - normalized workflow log lines (`log.line`)
+    - sampled/coalesced chat delta events (`chat.delta` + final flush)
+    - terminal outcomes (`run.completed`, `run.failed`, `run.cancelled`)
+    - rerun invocations (`run.rerun_invoked`)
+  - Added inspect command support:
+    - `run events <id>`
+    - `run events <id> <limit>` (last N)
+    - clear warning path for missing run id.
+  - Added compact timeline renderer format (`seq`, `type`, `state/phase`, brief message).
+  - Extended runtime state persistence with serialized event history (`run_events`) and safe deserialization that ignores malformed entries.
+  - Preserves privacy constraints for chat event persistence by storing only trimmed sampled snippets/compact metadata (no full transcript persistence).
+
+- `core/src/scholardevclaw/tui/screens.py`
+  - Added `run events <id> [limit]` to help text and command palette examples.
+
+- `core/tests/unit/test_tui_app.py`
+  - Added coverage for event sequence monotonicity.
+  - Added lifecycle emission coverage for accepted/queued/running.
+  - Added sampled chat-delta event coverage.
+  - Added parser coverage for `run events` variants (with/without id/limit).
+  - Added rendering coverage for known run, unknown run, and limit handling.
+  - Added missing-id warning coverage for `run events`.
+  - Added terminal completion event emission coverage.
+  - Extended persistence roundtrip test to include event serialization/deserialization, malformed-entry tolerance, and trimmed chat event payload behavior.
+
+- `core/tests/unit/test_tui_screens.py`
+  - Added assertion that help/palette include `run events` command.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/ tests/`
+- ✅ `cd core && pytest tests/unit/test_tui_app.py tests/unit/test_tui_screens.py tests/unit/test_llm_client.py -q` (`74 passed`)
+
 ### 2026-04-11 (TUI Phase-2: deterministic lifecycle state, run inspectability, bounded persistence)
 
 **Summary:** Implemented a Phase-2 run-centric upgrade in the Python TUI with explicit lifecycle states, run inspection commands, bounded recoverability persistence, and clearer degraded transport messaging for chat failures.

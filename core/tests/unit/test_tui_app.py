@@ -10,7 +10,13 @@ import pytest
 pytest.importorskip("textual")
 
 from scholardevclaw.llm.client import LLMAPIError
-from scholardevclaw.tui.app import RunArtifact, RunLifecycleState, ScholarDevClawApp, TaskCompleted
+from scholardevclaw.tui.app import (
+    RunArtifact,
+    RunEvent,
+    RunLifecycleState,
+    ScholarDevClawApp,
+    TaskCompleted,
+)
 
 
 def _minimal_app_for_unit() -> ScholarDevClawApp:
@@ -760,6 +766,180 @@ def test_transition_run_state_updates_phase_and_status_message():
     assert "Run state: QUEUED | generate | dispatch" in statuses[-1][1]
 
 
+def test_append_run_event_sequence_is_monotonic_per_run():
+    app = _minimal_app_for_unit()
+
+    first = app._append_run_event(17, "run.accepted", message="accepted")
+    second = app._append_run_event(17, "run.queued", message="queued")
+    other = app._append_run_event(23, "run.accepted", message="accepted")
+
+    assert first.seq == 1
+    assert second.seq == 2
+    assert other.seq == 1
+    assert app._run_event_seq[17] == 2
+
+
+def test_start_task_emits_core_lifecycle_events(monkeypatch):
+    app = _minimal_app_for_unit()
+    app._validate_request_inputs = lambda req: (True, [], [])
+    app._set_status = lambda *_a, **_k: None
+    app._emit_progress = lambda *_a, **_k: None
+    app._update_command_meta = lambda: None
+
+    class _DummyStatus:
+        def start_timer(self):
+            return None
+
+    app.query_one = lambda *_a, **_k: _DummyStatus()  # type: ignore[assignment]
+
+    class _NoopThread:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr("scholardevclaw.tui.app.threading.Thread", _NoopThread)
+
+    app._start_task("analyze", {"action": "analyze", "repo_path": "./repo"}, command="analyze")
+
+    run_id = app._active_token
+    event_types = [item.type for item in app._run_events[run_id][:3]]
+    assert event_types == ["run.accepted", "run.queued", "run.running"]
+
+
+def test_on_chat_delta_records_sampled_event():
+    app = _minimal_app_for_unit()
+    app._active_token = 31
+    app._running_action = "chat"
+
+    class _DummyStatus:
+        def update_timer(self):
+            return None
+
+    app.query_one = lambda *_a, **_k: _DummyStatus()  # type: ignore[assignment]
+    app._set_live_text = lambda *_a, **_k: None
+
+    from scholardevclaw.tui.app import ChatDelta
+
+    app.on_chat_delta(ChatDelta(31, "hello there"))
+
+    assert any(event.type == "chat.delta" for event in app._run_events[31])
+
+
+def test_run_events_command_renders_known_unknown_and_limit():
+    app = _minimal_app_for_unit()
+    app._run_events = {
+        44: [
+            RunEvent(run_id=44, seq=1, timestamp=1.0, type="run.accepted", message="accepted"),
+            RunEvent(run_id=44, seq=2, timestamp=2.0, type="run.queued", message="queued"),
+            RunEvent(run_id=44, seq=3, timestamp=3.0, type="run.running", message="running"),
+            RunEvent(run_id=44, seq=4, timestamp=4.0, type="run.completed", message="done"),
+        ]
+    }
+    output: list[str] = []
+    statuses: list[tuple[str, str]] = []
+    app._append_output = lambda line, level="auto": output.append(line)
+    app._set_status = lambda message, level="info": statuses.append((level, message))
+
+    app._execute_action_request("run_events", {"run_id": 44}, command="run events 44")
+
+    assert output
+    assert output[0].startswith("001 run.accepted")
+    assert statuses[-1][1] == "Run #44 events"
+
+    output.clear()
+    app._execute_action_request("run_events", {"run_id": 44, "limit": 2}, command="run events 44 2")
+    assert len(output) == 2
+    assert output[0].startswith("003 run.running")
+    assert output[1].startswith("004 run.completed")
+    assert statuses[-1][1] == "Run #44 events (last 2)"
+
+    output.clear()
+    app._execute_action_request("run_events", {"run_id": 999}, command="run events 999")
+    assert output[0] == "Run #999 has no recorded events"
+
+
+def test_run_events_command_warns_when_run_id_missing():
+    app = _minimal_app_for_unit()
+    output: list[tuple[str, str]] = []
+    statuses: list[tuple[str, str]] = []
+    app._append_output = lambda line, level="auto": output.append((level, line))
+    app._set_status = lambda message, level="info": statuses.append((level, message))
+
+    app._execute_action_request("run_events", {}, command="run events")
+
+    assert output[0][0] == "warning"
+    assert "run id required" in output[0][1].lower()
+    assert statuses[-1][1] == "Run events requires id"
+
+
+def test_build_request_supports_run_events_commands_and_limit():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("run events")
+    assert action == "run_events"
+    assert req == {}
+
+    action, req = app._build_request("run events 7")
+    assert action == "run_events"
+    assert req == {"run_id": 7}
+
+    action, req = app._build_request("run events 7 3")
+    assert action == "run_events"
+    assert req == {"run_id": 7, "limit": 3}
+
+
+def test_on_task_completed_emits_terminal_completion_event():
+    app = _minimal_app_for_unit()
+    app._active_token = 88
+    app._running_action = "analyze"
+    app._run_started_at = {88: time.perf_counter() - 0.3}
+
+    class _DummyStatus:
+        def stop_timer(self):
+            return None
+
+    class _DummyPrompt:
+        def focus(self):
+            return None
+
+    class _DummyHistory:
+        def add_entry(self, **kwargs):
+            return None
+
+    def _query_one(selector, *_args, **_kwargs):
+        if selector == "#status-bar":
+            return _DummyStatus()
+        if selector == "#prompt-input":
+            return _DummyPrompt()
+        if selector == "#history-pane":
+            return _DummyHistory()
+        raise AssertionError(f"unexpected selector: {selector}")
+
+    app.query_one = _query_one  # type: ignore[assignment]
+    app._set_progress = lambda *_a, **_k: None
+    app._clear_progress = lambda: None
+    app._append_output = lambda *_a, **_k: None
+    app._set_status = lambda *_a, **_k: None
+    app._summarize_result = lambda *_a, **_k: []
+    app._suggest_next_commands = lambda *_a, **_k: []
+    app._update_command_meta = lambda: None
+    app._save_runtime_state = lambda: None
+
+    result = type("Result", (), {"ok": True, "payload": {}, "error": "", "logs": []})()
+    request = {
+        "action": "analyze",
+        "repo_path": "./repo",
+        "spec": "",
+        "_original_command": "analyze ./repo",
+    }
+
+    app.on_task_completed(TaskCompleted(88, "analyze", result, request))
+
+    assert any(event.type == "run.completed" for event in app._run_events[88])
+
+
 def test_runs_command_outputs_compact_recent_runs():
     app = _minimal_app_for_unit()
     app._recent_run_artifacts = [
@@ -854,7 +1034,7 @@ def test_run_rerun_command_routes_through_replay_path():
     assert called == [12]
 
 
-def test_runtime_state_persists_recent_run_artifacts_and_replay_map(monkeypatch, tmp_path):
+def test_runtime_state_persists_recent_run_artifacts_replay_map_and_events(monkeypatch, tmp_path):
     monkeypatch.setenv("SCHOLARDEVCLAW_AUTH_DIR", str(tmp_path))
     app = _minimal_app_for_unit()
     app._provider = "openrouter"
@@ -889,6 +1069,27 @@ def test_runtime_state_persists_recent_run_artifacts_and_replay_map(monkeypatch,
             "summary_lines": ["Stage: generated"],
         }
     }
+    long_chat = "chunk-" * 80
+    app._run_events = {
+        9: [
+            RunEvent(
+                run_id=9,
+                seq=1,
+                timestamp=1.0,
+                type="run.accepted",
+                message="accepted",
+            ),
+            RunEvent(
+                run_id=9,
+                seq=2,
+                timestamp=2.0,
+                type="chat.delta",
+                message=long_chat,
+                payload={"chars": len(long_chat), "chunk": long_chat},
+            ),
+        ]
+    }
+    app._run_event_seq = {9: 2}
 
     app._save_runtime_state()
 
@@ -896,15 +1097,23 @@ def test_runtime_state_persists_recent_run_artifacts_and_replay_map(monkeypatch,
     saved = json.loads(state_path.read_text())
     assert saved["recent_run_artifacts"][0]["run_id"] == 9
     assert "prompt" not in saved["replay_map"]["9"]["request"]
+    assert "run_events" in saved
+    assert saved["run_events"]["9"][1]["type"] == "chat.delta"
+    assert len(saved["run_events"]["9"][1]["message"]) <= 220
+    assert len(saved["run_events"]["9"][1]["payload"]["chunk"]) <= 180
 
     # Also include malformed entries; loader should ignore safely.
     saved["recent_run_artifacts"].append({"run_id": None, "action": 1})
     saved["replay_map"]["not-a-run"] = {"action": "analyze"}
+    saved["run_events"]["bad"] = [{"seq": "x"}]
+    saved["run_events"]["9"].append({"seq": "bad", "timestamp": "nan", "type": 1})
     state_path.write_text(json.dumps(saved))
 
     reloaded = ScholarDevClawApp()
     assert any(item.run_id == 9 for item in reloaded._recent_run_artifacts)
     assert 9 in reloaded._run_replay_map
+    assert 9 in reloaded._run_events
+    assert any(event.type == "chat.delta" for event in reloaded._run_events[9])
     assert "prompt" not in reloaded._run_replay_map[9]["request"]
 
 

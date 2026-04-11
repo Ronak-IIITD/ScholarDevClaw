@@ -6,7 +6,12 @@ import pytest
 
 pytest.importorskip("textual")
 
-from scholardevclaw.tui.screens import ProviderSetupScreen
+from scholardevclaw.tui.screens import (
+    DEFAULT_OPENROUTER_MODEL,
+    HELP_TEXT,
+    CommandPalette,
+    ProviderSetupScreen,
+)
 
 
 def test_provider_setup_submitted_handlers_are_field_scoped():
@@ -19,19 +24,18 @@ def test_provider_setup_submitted_handlers_are_field_scoped():
 
 
 def test_help_text_uses_current_openrouter_default_model():
-    from scholardevclaw.tui.screens import DEFAULT_OPENROUTER_MODEL, HELP_TEXT
-
     assert DEFAULT_OPENROUTER_MODEL in HELP_TEXT
 
 
 def test_no_hardcoded_hex_palette_in_help_text():
-    from scholardevclaw.tui.screens import HELP_TEXT
-
     assert "#" not in HELP_TEXT
 
 
 def test_help_text_mentions_ask_and_run_namespaces():
-    from scholardevclaw.tui.screens import HELP_TEXT
-
     assert "/ask <question>" in HELP_TEXT
     assert "/run <action> [args...]" in HELP_TEXT
+
+
+def test_help_and_palette_include_run_events_command():
+    assert "run events <id> [limit]" in HELP_TEXT
+    assert "run events 1" in CommandPalette.PALETTE_COMMANDS

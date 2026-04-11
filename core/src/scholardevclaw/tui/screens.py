@@ -48,6 +48,7 @@ HELP_TEXT = (
     "  actions: analyze suggest search map generate validate integrate\n"
     "runs\n"
     "run show <id>\n"
+    "run events <id> [limit]\n"
     "run rerun <id>\n"
     "Backward compatible: analyze/map/generate/chat still work\n\n"
     "Modes\n"
@@ -273,6 +274,7 @@ class CommandPalette(ModalScreen[str | None]):
         "validate ./repo",
         "runs",
         "run show 1",
+        "run events 1",
         "run rerun 1",
         "set provider openrouter",
         "set provider ollama",
