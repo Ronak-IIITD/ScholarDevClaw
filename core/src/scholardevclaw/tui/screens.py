@@ -19,6 +19,8 @@ WELCOME_TEXT = (
     "Keyboard-first research-to-code shell.\n"
     "Type commands like:\n"
     "  setup\n"
+    "  /run analyze ./repo\n"
+    "  /ask explain this repository\n"
     "  analyze ./repo\n"
     "  chat explain this repository\n"
     "  set mode search\n"
@@ -40,6 +42,11 @@ HELP_TEXT = (
     "set provider openrouter\n"
     "set provider ollama\n"
     f"set model {DEFAULT_OPENROUTER_MODEL}\n\n"
+    "Commands\n"
+    "/ask <question>\n"
+    "/run <action> [args...]\n"
+    "  actions: analyze suggest search map generate validate integrate\n"
+    "Backward compatible: analyze/map/generate/chat still work\n\n"
     "Modes\n"
     ":analyze\n"
     ":search\n"
@@ -251,6 +258,9 @@ class CommandPalette(ModalScreen[str | None]):
 
     PALETTE_COMMANDS = [
         "setup",
+        "/ask explain this repository",
+        "/run analyze ./repo",
+        "/run generate ./repo rmsnorm",
         "analyze ./repo",
         "suggest ./repo",
         "chat hello",

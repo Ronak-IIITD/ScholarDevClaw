@@ -548,6 +548,7 @@ class LLMClient:
             ) from exc
 
         try:
+            yielded_any = False
             for line in resp.iter_lines():
                 if not line or not line.startswith("data: "):
                     continue
@@ -561,7 +562,17 @@ class LLMClient:
 
                 chunk = self._parse_stream_event(event)
                 if chunk:
+                    yielded_any = True
                     yield chunk
+            if not yielded_any:
+                raise LLMAPIError(
+                    provider=self.provider.value,
+                    status_code=0,
+                    detail=(
+                        "Stream closed with no parseable chunks. "
+                        "Verify model/provider compatibility and retry."
+                    ),
+                )
         finally:
             resp.close()
 

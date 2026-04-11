@@ -5,7 +5,7 @@ import json
 import httpx
 
 from scholardevclaw.auth.types import AuthProvider
-from scholardevclaw.llm.client import LLMClient
+from scholardevclaw.llm.client import LLMAPIError, LLMClient
 from scholardevclaw.utils.retry import RetryPolicy
 
 
@@ -103,3 +103,27 @@ def test_chat_stream_retries_transient_startup_429_and_then_succeeds():
 
     assert "".join(chunk.delta for chunk in chunks) == "ok"
     assert fake_http.calls == 2
+
+
+def test_chat_stream_raises_when_no_parseable_chunks():
+    client = LLMClient.from_provider("ollama", base_url="http://127.0.0.1:11434/")
+
+    class _FakeHTTP:
+        @staticmethod
+        def build_request(method: str, url: str, **_: object) -> httpx.Request:
+            return httpx.Request(method, url)
+
+        @staticmethod
+        def send(request: httpx.Request, *, stream: bool = False) -> httpx.Response:
+            assert stream is True
+            content = b"data: not-json\n\ndata: [DONE]\n\n"
+            return httpx.Response(200, request=request, content=content)
+
+    client._http = _FakeHTTP()  # type: ignore[assignment]
+
+    try:
+        list(client.chat_stream("hello"))
+        raise AssertionError("Expected LLMAPIError for empty stream")
+    except LLMAPIError as exc:
+        assert exc.status_code == 0
+        assert "no parseable chunks" in exc.detail.lower()

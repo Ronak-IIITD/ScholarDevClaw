@@ -4,6 +4,49 @@
 
 **Last updated:** 2026-04-11
 
+### 2026-04-11 (TUI command namespaces + grounded chat context + LLM stream reliability)
+
+**Summary:** Made the TUI more explicit and safer by introducing `/ask` and `/run` namespaces, disabling natural-language action side effects by default, grounding chat on recent run artifacts, and hardening empty-stream/error handling in both TUI chat flow and the LLM client.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Added namespaced command parsing:
+    - `/ask <question>` -> chat
+    - `/run <action> [args...]` where action is one of analyze/suggest/search/map/generate/validate/integrate
+  - Preserved backward-compatible explicit commands (`analyze`, `map`, `generate`, etc.) and plain free-text chat behavior.
+  - Changed natural-language action routing behavior:
+    - default: free text routes to chat (no implicit workflow action execution)
+    - opt-in via `SCHOLARDEVCLAW_TUI_ENABLE_NATURAL_ACTION_ROUTING=true` to restore natural action routing.
+  - Added bounded recent run artifact memory (`last 8` successful/failed non-chat runs) with run id/action/status/repo/spec + compact summary lines.
+  - Added dedicated recent-run context section in chat system prompt with strict grounding instructions.
+  - Added chat result guard: empty/whitespace streamed output is now treated as failure with actionable guidance.
+  - Made model fallback on 400/404 opt-in via `SCHOLARDEVCLAW_TUI_AUTO_MODEL_FALLBACK=true`.
+    - default: no silent model switch; actionable error returned
+    - fallback path no longer persists fallback model to runtime state.
+
+- `core/src/scholardevclaw/llm/client.py`
+  - `chat_stream()` now raises `LLMAPIError` when stream closes without any parseable/yielded chunks.
+
+- `core/src/scholardevclaw/tui/screens.py`
+  - Updated welcome/help/palette command copy to surface `/ask` and `/run` as first-class patterns while retaining legacy command examples.
+
+- Tests updated:
+  - `core/tests/unit/test_tui_app.py`
+    - added coverage for `/ask`, `/run analyze`, `/run generate`
+    - verified natural action routing disabled by default and enabled by env flag
+    - verified empty chat result path is treated as failure
+    - verified recent run context appears in chat system prompt after completed run
+  - `core/tests/unit/test_llm_client.py`
+    - added coverage that `chat_stream` raises when no parseable chunks are produced
+  - `core/tests/unit/test_tui_screens.py`
+    - added help text assertions for `/ask` and `/run`
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/ tests/`
+- ✅ `cd core && pytest tests/unit/test_tui_app.py tests/unit/test_tui_screens.py tests/unit/test_llm_client.py -q` (`60 passed`)
+
 ### 2026-04-11 (TUI Phase-1 UX architecture upgrade: run history, palette, phase visibility)
 
 **Summary:** Upgraded the Python Textual TUI from a single-stream shell toward a run-centric workflow UI by wiring phase and history surfaces, adding replay ergonomics, improving command discoverability, hardening runtime-state persistence, and improving semantic status readability.

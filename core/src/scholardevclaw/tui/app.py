@@ -49,26 +49,28 @@ SUPPORTED_TUI_PROVIDERS = {
 DEFAULT_OPENROUTER_MODEL = DEFAULT_MODELS[AuthProvider.OPENROUTER]
 MODE_HINTS = {
     "analyze": [
-        "Hint -> analyze ./repo",
-        "Hint -> ask what this repo does",
+        "Hint -> /run analyze ./repo",
+        "Hint -> /ask what this repo does",
         "Hint -> suggest ./repo",
         "Hint -> validate ./repo",
     ],
     "search": [
-        "Hint -> search layer normalization",
-        "Hint -> ask for papers on flash attention",
+        "Hint -> /run search layer normalization",
+        "Hint -> /ask papers on flash attention",
         "Hint -> search flash attention",
         "Hint -> setup",
     ],
     "edit": [
-        "Hint -> map ./repo rmsnorm",
-        "Hint -> ask how to implement RMSNorm",
+        "Hint -> /run map ./repo rmsnorm",
+        "Hint -> /ask implement RMSNorm",
         "Hint -> generate ./repo rmsnorm",
         "Hint -> integrate ./repo rmsnorm",
     ],
 }
 MODE_COMMANDS = {
     "analyze": [
+        "/run analyze ./repo",
+        "/ask explain this repository",
         "analyze ./repo",
         "suggest ./repo",
         "validate ./repo",
@@ -79,6 +81,8 @@ MODE_COMMANDS = {
         ":edit",
     ],
     "search": [
+        "/run search layer normalization",
+        "/ask find fast inference ideas",
         "search layer normalization",
         "search flash attention",
         "set mode search",
@@ -88,6 +92,8 @@ MODE_COMMANDS = {
         ":edit",
     ],
     "edit": [
+        "/run map ./repo rmsnorm",
+        "/ask how should I patch this file",
         "map ./repo rmsnorm",
         "generate ./repo rmsnorm",
         "integrate ./repo rmsnorm",
@@ -101,6 +107,9 @@ GLOBAL_COMMANDS = [
     "setup",
     "providers",
     "status",
+    "/ask hello",
+    "/run analyze ./repo",
+    "/run generate ./repo rmsnorm",
     "chat hello",
     "set mode analyze",
     "set mode search",
@@ -135,6 +144,18 @@ PROGRESS_LABELS = {
     "integrate": "Running integration workflow...",
     "chat": "Thinking...",
 }
+WORKFLOW_ACTIONS = {
+    "analyze",
+    "suggest",
+    "search",
+    "map",
+    "generate",
+    "validate",
+    "integrate",
+}
+RUN_CONTEXT_LIMIT = 8
+NATURAL_ACTION_ROUTING_ENV = "SCHOLARDEVCLAW_TUI_ENABLE_NATURAL_ACTION_ROUTING"
+AUTO_MODEL_FALLBACK_ENV = "SCHOLARDEVCLAW_TUI_AUTO_MODEL_FALLBACK"
 CHAT_SYSTEM_PROMPTS = {
     "analyze": (
         "You are ScholarDevClaw, a terse coding assistant inside a terminal UI. "
@@ -161,6 +182,16 @@ class TUIRuntimeState:
     model: str = ""
     directory: str = "."
     models_by_provider: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class RunArtifact:
+    run_id: int
+    action: str
+    status: str
+    repo_path: str
+    spec: str
+    summary_lines: list[str] = field(default_factory=list)
 
 
 class TaskLog(Message):
@@ -281,6 +312,7 @@ class ScholarDevClawApp(App[None]):
         self._task_threads: dict[int, threading.Thread] = {}
         self._run_started_at: dict[int, float] = {}
         self._run_replay_map: dict[int, dict[str, Any]] = {}
+        self._recent_run_artifacts: list[RunArtifact] = []
         self._models_by_provider: dict[str, str] = {}
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
@@ -888,6 +920,13 @@ class ScholarDevClawApp(App[None]):
         self._sync_status_bar()
 
     @staticmethod
+    def _env_flag_enabled(name: str, *, default: bool = False) -> bool:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
     def _estimate_tokens(text: str) -> int:
         stripped = text.strip()
         if not stripped:
@@ -923,6 +962,9 @@ class ScholarDevClawApp(App[None]):
     def _all_commands(self) -> list[str]:
         command_dir = self._directory if self._directory not in {"", "."} else "./repo"
         contextual = [
+            f"/run analyze {command_dir}",
+            f"/run generate {command_dir} rmsnorm",
+            "/ask explain this repository",
             f"analyze {command_dir}",
             f"suggest {command_dir}",
             f"validate {command_dir}",
@@ -1077,6 +1119,21 @@ class ScholarDevClawApp(App[None]):
         parts = raw.split()
         head = parts[0].lower()
 
+        if head == "/ask":
+            return "chat", {"action": "chat", "prompt": raw[len(parts[0]) :].strip()}
+
+        if head == "/run":
+            if len(parts) < 2:
+                return None, {}
+            namespaced_action = parts[1].strip().lower()
+            if namespaced_action not in WORKFLOW_ACTIONS:
+                return None, {}
+            remainder = raw.split(maxsplit=2)
+            namespaced_command = namespaced_action
+            if len(remainder) == 3 and remainder[2].strip():
+                namespaced_command = f"{namespaced_action} {remainder[2].strip()}"
+            return self._build_request(namespaced_command)
+
         if head == "set" and len(parts) >= 3:
             key = parts[1].lower()
             value = " ".join(parts[2:]).strip()
@@ -1150,15 +1207,20 @@ class ScholarDevClawApp(App[None]):
             return head, {"action": head, "repo_path": repo_path, "spec": spec}
 
         action, ctx = self._parse_natural_command(raw)
+        if self._env_flag_enabled(NATURAL_ACTION_ROUTING_ENV, default=False):
+            if action == "chat":
+                return "chat", {"action": "chat", "prompt": ctx.get("prompt", raw)}
+            ctx.setdefault("action", action)
+            if action == "search":
+                ctx.setdefault("include_arxiv", True)
+                ctx.setdefault("include_web", False)
+            if action != "search":
+                ctx.setdefault("repo_path", self._directory)
+            return action, ctx
+
         if action == "chat":
             return "chat", {"action": "chat", "prompt": ctx.get("prompt", raw)}
-        ctx.setdefault("action", action)
-        if action == "search":
-            ctx.setdefault("include_arxiv", True)
-            ctx.setdefault("include_web", False)
-        if action != "search":
-            ctx.setdefault("repo_path", self._directory)
-        return action, ctx
+        return "chat", {"action": "chat", "prompt": raw}
 
     def _summarize_result(self, action: str, payload: dict[str, Any]) -> list[str]:
         if action == "analyze":
@@ -1217,9 +1279,47 @@ class ScholarDevClawApp(App[None]):
             return []
         return []
 
+    def _record_run_artifact(
+        self,
+        *,
+        run_id: int,
+        action: str,
+        status: str,
+        request: dict[str, Any],
+        summary_lines: list[str],
+    ) -> None:
+        if action == "chat" or status not in {"Success", "Failed"}:
+            return
+        artifact = RunArtifact(
+            run_id=run_id,
+            action=action,
+            status=status,
+            repo_path=str(request.get("repo_path", "") or ""),
+            spec=str(request.get("spec", "") or ""),
+            summary_lines=[line.strip() for line in summary_lines if str(line).strip()][:4],
+        )
+        self._recent_run_artifacts.append(artifact)
+        if len(self._recent_run_artifacts) > RUN_CONTEXT_LIMIT:
+            self._recent_run_artifacts = self._recent_run_artifacts[-RUN_CONTEXT_LIMIT:]
+
+    def _build_recent_run_context(self) -> str:
+        if not self._recent_run_artifacts:
+            return "(none)"
+
+        lines: list[str] = []
+        for artifact in self._recent_run_artifacts[-RUN_CONTEXT_LIMIT:]:
+            repo_part = f" repo={artifact.repo_path}" if artifact.repo_path else ""
+            spec_part = f" spec={artifact.spec}" if artifact.spec else ""
+            summary = " | ".join(artifact.summary_lines) if artifact.summary_lines else "no summary"
+            lines.append(
+                f"- run #{artifact.run_id}: {artifact.action} [{artifact.status}]{repo_part}{spec_part} :: {summary}"
+            )
+        return "\n".join(lines)
+
     def _build_chat_system_prompt(self) -> str:
         base = CHAT_SYSTEM_PROMPTS[self._mode]
         repo_snapshot = self._build_repo_snapshot()
+        run_context = self._build_recent_run_context()
         return (
             f"{base} "
             f"Current working directory: {self._pretty_directory()}. "
@@ -1227,9 +1327,12 @@ class ScholarDevClawApp(App[None]):
             "For short greetings, reply naturally in one short sentence and avoid repo/tooling details unless asked. "
             "For conversational messages (for example: how are you, thanks), respond naturally and briefly without forcing repository context. "
             "Do not mention repository details or cwd unless the user asks about repo/workflow/code tasks. "
+            "Grounding rule: only claim facts present in the run context, repo snapshot, or user prompt. "
+            "If unknown, say unknown and suggest one concrete `/run ...` command. "
             "Only claim frameworks, libraries, or architecture details when they are explicitly present in the repo snapshot below or user-provided context. "
             "If uncertain, say so briefly and suggest the next concrete command. "
             "Do not pretend you already executed commands unless the transcript shows it. "
+            f"Recent run context:\n{run_context}\n"
             f"Repo snapshot: {repo_snapshot}"
         )
 
@@ -1240,6 +1343,10 @@ class ScholarDevClawApp(App[None]):
             return "Authentication failed (401). Run `setup` and paste a valid API key."
         if isinstance(exc, LLMAPIError) and exc.status_code == 402:
             return "Provider credits issue (402). Check billing or run `set provider ollama`."
+        if isinstance(exc, LLMAPIError) and exc.status_code == 0:
+            detail = (exc.detail or "").lower()
+            if "no parseable" in detail or "empty" in detail:
+                return "LLM returned an empty/invalid stream. Retry or run `set model <provider-model>`."
         if isinstance(exc, LLMAPIError) and exc.status_code in {400, 404}:
             detail = (exc.detail or "").lower()
             if "model" in detail or "not found" in detail or "does not exist" in detail:
@@ -1247,6 +1354,44 @@ class ScholarDevClawApp(App[None]):
         if isinstance(exc, LLMConfigError):
             return str(exc)
         return "LLM request failed. Retry, run `setup`, or switch provider."
+
+    @staticmethod
+    def _make_result(
+        *,
+        ok: bool,
+        payload: dict[str, Any] | None = None,
+        error: str = "",
+        logs: list[str] | None = None,
+    ) -> Any:
+        return type(
+            "Result",
+            (),
+            {
+                "ok": ok,
+                "payload": payload or {},
+                "error": error,
+                "logs": logs or ([] if not error else [error]),
+            },
+        )()
+
+    def _chat_result_from_text(self, prompt: str, response_text: str) -> Any:
+        content = (response_text or "").strip()
+        if not content:
+            message = "LLM returned an empty response. Retry or run `set model <provider-model>`."
+            return self._make_result(ok=False, payload={}, error=message, logs=[message])
+
+        input_tokens = self._estimate_tokens(prompt)
+        output_tokens = self._estimate_tokens(content)
+        return self._make_result(
+            ok=True,
+            payload={
+                "content": content,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            },
+            error="",
+            logs=[],
+        )
 
     @staticmethod
     def _extract_spec_from_tokens(tokens: list[str]) -> str:
@@ -1500,41 +1645,22 @@ class ScholarDevClawApp(App[None]):
                     if chunk.delta:
                         response_text += chunk.delta
                         self.call_from_thread(self.post_message, ChatDelta(token, response_text))
-
-            input_tokens = self._estimate_tokens(prompt)
-            output_tokens = self._estimate_tokens(response_text)
-            result = type(
-                "Result",
-                (),
-                {
-                    "ok": True,
-                    "payload": {
-                        "content": response_text.strip(),
-                        "input_tokens": input_tokens,
-                        "output_tokens": output_tokens,
-                    },
-                    "error": "",
-                    "logs": [],
-                },
-            )()
+            result = self._chat_result_from_text(prompt, response_text)
         except TaskCancelledError:
-            result = type(
-                "Result",
-                (),
-                {
-                    "ok": False,
-                    "payload": {"cancelled": True},
-                    "error": "Task cancelled",
-                    "logs": [],
-                },
-            )()
+            result = self._make_result(
+                ok=False,
+                payload={"cancelled": True},
+                error="Task cancelled",
+                logs=[],
+            )
         except LLMAPIError as exc:
             detail = (exc.detail or "").lower()
             looks_like_bad_model = exc.status_code in {400, 404} and (
                 "model" in detail or "not found" in detail or "does not exist" in detail
             )
+            auto_fallback = self._env_flag_enabled(AUTO_MODEL_FALLBACK_ENV, default=False)
 
-            if looks_like_bad_model and self._provider in SUPPORTED_TUI_PROVIDERS:
+            if looks_like_bad_model and auto_fallback and self._provider in SUPPORTED_TUI_PROVIDERS:
                 fallback_model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
                 if fallback_model and fallback_model != self._model:
                     try:
@@ -1542,14 +1668,11 @@ class ScholarDevClawApp(App[None]):
                             client.close()
                             client = None
 
-                        self._model = fallback_model
-                        self._remember_model_for_provider(self._provider, fallback_model)
-                        self._save_runtime_state()
                         self.call_from_thread(
                             self.post_message,
                             TaskLog(
                                 token,
-                                f"Model unavailable; switched to fallback '{fallback_model}' and retrying.",
+                                f"Model unavailable; retrying once with fallback '{fallback_model}'.",
                             ),
                         )
 
@@ -1566,7 +1689,7 @@ class ScholarDevClawApp(App[None]):
                                 prompt,
                                 messages=messages,
                                 system=self._build_chat_system_prompt(),
-                                model=self._model,
+                                model=fallback_model,
                                 max_tokens=2048,
                                 temperature=0.2,
                             ):
@@ -1577,72 +1700,26 @@ class ScholarDevClawApp(App[None]):
                                     self.call_from_thread(
                                         self.post_message, ChatDelta(token, response_text)
                                     )
-
-                        input_tokens = self._estimate_tokens(prompt)
-                        output_tokens = self._estimate_tokens(response_text)
-                        result = type(
-                            "Result",
-                            (),
-                            {
-                                "ok": True,
-                                "payload": {
-                                    "content": response_text.strip(),
-                                    "input_tokens": input_tokens,
-                                    "output_tokens": output_tokens,
-                                },
-                                "error": "",
-                                "logs": [],
-                            },
-                        )()
+                        result = self._chat_result_from_text(prompt, response_text)
                     except TaskCancelledError:
-                        result = type(
-                            "Result",
-                            (),
-                            {
-                                "ok": False,
-                                "payload": {"cancelled": True},
-                                "error": "Task cancelled",
-                                "logs": [],
-                            },
-                        )()
+                        result = self._make_result(
+                            ok=False,
+                            payload={"cancelled": True},
+                            error="Task cancelled",
+                            logs=[],
+                        )
                     except Exception as fallback_exc:
                         error_message = self._format_chat_error(fallback_exc)
-                        result = type(
-                            "Result",
-                            (),
-                            {
-                                "ok": False,
-                                "payload": {},
-                                "error": error_message,
-                                "logs": [error_message],
-                            },
-                        )()
+                        result = self._make_result(ok=False, payload={}, error=error_message)
                 else:
                     error_message = self._format_chat_error(exc)
-                    result = type(
-                        "Result",
-                        (),
-                        {
-                            "ok": False,
-                            "payload": {},
-                            "error": error_message,
-                            "logs": [error_message],
-                        },
-                    )()
+                    result = self._make_result(ok=False, payload={}, error=error_message)
             else:
                 error_message = self._format_chat_error(exc)
-                result = type(
-                    "Result",
-                    (),
-                    {"ok": False, "payload": {}, "error": error_message, "logs": [error_message]},
-                )()
+                result = self._make_result(ok=False, payload={}, error=error_message)
         except (LLMConfigError, Exception) as exc:
             error_message = self._format_chat_error(exc)
-            result = type(
-                "Result",
-                (),
-                {"ok": False, "payload": {}, "error": error_message, "logs": [error_message]},
-            )()
+            result = self._make_result(ok=False, payload={}, error=error_message)
         finally:
             if client is not None:
                 try:
@@ -1957,13 +2034,14 @@ class ScholarDevClawApp(App[None]):
             )
             self._set_phase("complete")
         elif result.ok:
+            summary_lines = self._summarize_result(message.action, result.payload)
             self._set_progress(message.action, 1.0)
             self._clear_progress()
             self._append_output(
                 f"{PROGRESS_LABELS.get(message.action, 'Done')} {self._progress_bar(1.0)}",
                 "success",
             )
-            for line in self._summarize_result(message.action, result.payload):
+            for line in summary_lines:
                 self._append_output(line)
             self._context_hints = self._suggest_next_commands(
                 message.action, result.payload, message.request
@@ -1977,16 +2055,27 @@ class ScholarDevClawApp(App[None]):
                 request=message.request,
                 command=str(message.request.get("_original_command") or "") or None,
             )
+            self._record_run_artifact(
+                run_id=message.token,
+                action=message.action,
+                status="Success",
+                request=message.request,
+                summary_lines=summary_lines,
+            )
             self._set_phase("complete")
         else:
+            payload = dict(getattr(result, "payload", {}) or {})
+            summary_lines = self._summarize_result(message.action, payload)
             self._clear_progress()
-            if bool(getattr(result, "payload", {}).get("cancelled")) or str(
-                result.error or ""
-            ).lower().startswith("task cancelled"):
+            status = "Failed"
+            if bool(payload.get("cancelled")) or str(result.error or "").lower().startswith(
+                "task cancelled"
+            ):
                 self._append_output("Task cancelled", "warning")
                 self._set_status(
                     self._completion_status_text(message.action, "cancelled"), "warning"
                 )
+                status = "Cancelled"
                 self._add_history_entry(
                     run_id=message.token,
                     action=message.action,
@@ -2006,6 +2095,13 @@ class ScholarDevClawApp(App[None]):
                     request=message.request,
                     command=str(message.request.get("_original_command") or "") or None,
                 )
+            self._record_run_artifact(
+                run_id=message.token,
+                action=message.action,
+                status=status,
+                request=message.request,
+                summary_lines=summary_lines,
+            )
             self._context_hints = []
             self._set_phase("idle")
 

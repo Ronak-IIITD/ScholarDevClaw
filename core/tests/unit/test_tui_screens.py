@@ -28,3 +28,10 @@ def test_no_hardcoded_hex_palette_in_help_text():
     from scholardevclaw.tui.screens import HELP_TEXT
 
     assert "#" not in HELP_TEXT
+
+
+def test_help_text_mentions_ask_and_run_namespaces():
+    from scholardevclaw.tui.screens import HELP_TEXT
+
+    assert "/ask <question>" in HELP_TEXT
+    assert "/run <action> [args...]" in HELP_TEXT

@@ -172,6 +172,36 @@ def test_build_request_supports_setup_and_provider_commands():
     assert req == {}
 
 
+def test_build_request_supports_ask_namespace():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("/ask what does this repo do?")
+
+    assert action == "chat"
+    assert req["prompt"] == "what does this repo do?"
+
+
+def test_build_request_supports_run_namespace_analyze():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("/run analyze ./repo")
+
+    assert action == "analyze"
+    assert req["action"] == "analyze"
+    assert req["repo_path"] == "./repo"
+
+
+def test_build_request_supports_run_namespace_generate():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("/run generate ./repo rmsnorm")
+
+    assert action == "generate"
+    assert req["action"] == "generate"
+    assert req["repo_path"] == "./repo"
+    assert req["spec"] == "rmsnorm"
+
+
 def test_build_request_routes_plain_text_to_chat():
     app = _minimal_app_for_unit()
 
@@ -179,6 +209,26 @@ def test_build_request_routes_plain_text_to_chat():
 
     assert action == "chat"
     assert req["prompt"] == "hello model"
+
+
+def test_build_request_natural_action_routing_disabled_by_default():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("please analyze ./repo")
+
+    assert action == "chat"
+    assert req["prompt"] == "please analyze ./repo"
+
+
+def test_build_request_natural_action_routing_enabled_by_env(monkeypatch):
+    app = _minimal_app_for_unit()
+    monkeypatch.setenv("SCHOLARDEVCLAW_TUI_ENABLE_NATURAL_ACTION_ROUTING", "true")
+
+    action, req = app._build_request("please analyze ./repo")
+
+    assert action == "analyze"
+    assert req["action"] == "analyze"
+    assert req["repo_path"] == "./repo"
 
 
 def test_compute_suggestions_prioritizes_best_match():
@@ -531,6 +581,68 @@ def test_build_chat_system_prompt_contains_natural_greeting_guidance():
     prompt = app._build_chat_system_prompt()
 
     assert "For short greetings, reply naturally" in prompt
+
+
+def test_chat_result_from_text_empty_response_is_failure():
+    app = _minimal_app_for_unit()
+
+    result = app._chat_result_from_text("hello", "   \n")
+
+    assert result.ok is False
+    assert "empty response" in result.error.lower()
+
+
+def test_chat_prompt_includes_recent_run_context_after_completed_run():
+    app = _minimal_app_for_unit()
+    app._active_token = 51
+    app._running_action = "analyze"
+    app._run_started_at = {51: time.perf_counter() - 1.0}
+
+    class _DummyStatus:
+        def stop_timer(self):
+            return None
+
+    class _DummyPrompt:
+        def focus(self):
+            return None
+
+    class _DummyHistory:
+        def add_entry(self, **kwargs):
+            return None
+
+    def _query_one(selector, *_args, **_kwargs):
+        if selector == "#status-bar":
+            return _DummyStatus()
+        if selector == "#prompt-input":
+            return _DummyPrompt()
+        if selector == "#history-pane":
+            return _DummyHistory()
+        raise AssertionError(f"unexpected selector: {selector}")
+
+    app.query_one = _query_one  # type: ignore[assignment]
+    app._set_progress = lambda *_a, **_k: None
+    app._clear_progress = lambda: None
+    app._append_output = lambda *_a, **_k: None
+    app._set_status = lambda *_a, **_k: None
+    app._summarize_result = lambda *_a, **_k: ["Languages: python", "Entry points: 2"]
+    app._suggest_next_commands = lambda *_a, **_k: []
+    app._update_command_meta = lambda: None
+    app._set_phase = lambda *_a, **_k: None
+
+    result = type("Result", (), {"ok": True, "payload": {}, "error": "", "logs": []})()
+    request = {
+        "action": "analyze",
+        "repo_path": "./repo",
+        "spec": "",
+        "_original_command": "analyze ./repo",
+    }
+    app.on_task_completed(TaskCompleted(51, "analyze", result, request))
+
+    prompt = app._build_chat_system_prompt()
+    assert "Recent run context" in prompt
+    assert "run #51: analyze [Success]" in prompt
+    assert "repo=./repo" in prompt
+    assert "Languages: python" in prompt
 
 
 def test_parse_natural_command_repeated_prefixes_still_resolve_action():
