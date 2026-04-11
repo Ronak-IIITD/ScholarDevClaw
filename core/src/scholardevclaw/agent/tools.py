@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import shlex
 import json
+import shlex
 import threading
 import uuid
 from collections.abc import Callable

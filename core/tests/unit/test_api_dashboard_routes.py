@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-from fastapi import HTTPException
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 

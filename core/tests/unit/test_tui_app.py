@@ -10,7 +10,6 @@ pytest.importorskip("textual")
 
 from scholardevclaw.llm.client import LLMAPIError
 from scholardevclaw.tui.app import ScholarDevClawApp, TaskCompleted
-from scholardevclaw.tui.widgets import HistoryPane, PhaseTracker
 
 
 def _minimal_app_for_unit() -> ScholarDevClawApp:

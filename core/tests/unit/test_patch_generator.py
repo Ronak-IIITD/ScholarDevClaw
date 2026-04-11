@@ -16,9 +16,9 @@ Covers:
 from __future__ import annotations
 
 import sys
-from typing import cast
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
