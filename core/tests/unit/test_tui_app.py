@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import inspect
 import os
+import time
 
 import pytest
 
 pytest.importorskip("textual")
 
 from scholardevclaw.llm.client import LLMAPIError
-from scholardevclaw.tui.app import ScholarDevClawApp
+from scholardevclaw.tui.app import ScholarDevClawApp, TaskCompleted
+from scholardevclaw.tui.widgets import HistoryPane, PhaseTracker
 
 
 def _minimal_app_for_unit() -> ScholarDevClawApp:
@@ -134,6 +136,20 @@ def test_handle_escape_double_press_triggers_stop(monkeypatch):
 
     assert any("warning:Press ESC again" in e for e in events)
     assert "stopped" in events
+
+
+def test_bindings_include_escape_and_command_palette_shortcut():
+    source = inspect.getsource(ScholarDevClawApp)
+
+    assert '("escape", "handle_escape", "ESC")' in source
+    assert '("ctrl+j", "open_command_palette", "Palette")' in source
+
+
+def test_compose_includes_phase_tracker_and_history_pane():
+    source = inspect.getsource(ScholarDevClawApp.compose)
+
+    assert "PhaseTracker" in source
+    assert "HistoryPane" in source
 
 
 def test_build_request_supports_mode_shorthand():
@@ -540,3 +556,77 @@ def test_extract_spec_from_tokens_skips_filler_words():
     spec = app._extract_spec_from_tokens(["this", "repo", "rmsnorm"])
 
     assert spec == "rmsnorm"
+
+
+def test_on_task_completed_creates_run_history_entry_for_success():
+    app = _minimal_app_for_unit()
+    app._active_token = 41
+    app._running_action = "analyze"
+    app._run_started_at = {41: time.perf_counter() - 1.0}
+
+    entries: list[dict[str, object]] = []
+
+    class _DummyStatus:
+        def stop_timer(self):
+            return None
+
+    class _DummyPrompt:
+        def focus(self):
+            return None
+
+    class _DummyHistory:
+        def add_entry(self, **kwargs):
+            entries.append(kwargs)
+
+    def _query_one(selector, *_args, **_kwargs):
+        if selector == "#status-bar":
+            return _DummyStatus()
+        if selector == "#prompt-input":
+            return _DummyPrompt()
+        if selector == "#history-pane":
+            return _DummyHistory()
+        raise AssertionError(f"unexpected selector: {selector}")
+
+    app.query_one = _query_one  # type: ignore[assignment]
+    app._set_progress = lambda *_a, **_k: None
+    app._clear_progress = lambda: None
+    app._append_output = lambda *_a, **_k: None
+    app._set_status = lambda *_a, **_k: None
+    app._summarize_result = lambda *_a, **_k: []
+    app._suggest_next_commands = lambda *_a, **_k: []
+    app._update_command_meta = lambda: None
+    app._set_phase = lambda *_a, **_k: None
+
+    result = type("Result", (), {"ok": True, "payload": {}, "error": "", "logs": []})()
+    request = {
+        "action": "analyze",
+        "repo_path": "./repo",
+        "spec": "rmsnorm",
+        "_original_command": "analyze ./repo",
+    }
+    app.on_task_completed(TaskCompleted(41, "analyze", result, request))
+
+    assert len(entries) == 1
+    assert entries[0]["run_id"] == 41
+    assert entries[0]["action"] == "analyze"
+    assert entries[0]["status"] == "Success"
+    assert entries[0]["repo"] == "./repo"
+    assert app._run_replay_map[41]["command"] == "analyze ./repo"
+
+
+def test_save_runtime_state_failure_is_handled_without_raising():
+    app = _minimal_app_for_unit()
+    observed: list[tuple[str, str]] = []
+
+    class _FailingPath:
+        def write_text(self, *_args, **_kwargs):
+            raise OSError("disk full")
+
+    app._runtime_state_path = lambda: _FailingPath()  # type: ignore[assignment]
+    app._append_output = lambda line, level="auto": observed.append((level, line))
+    app._set_status = lambda message, level="info": observed.append((level, message))
+
+    app._save_runtime_state()
+
+    assert any("failed to save TUI runtime state" in value for _, value in observed)
+    assert ("warning", "Runtime State Warning") in observed

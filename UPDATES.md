@@ -4,6 +4,49 @@
 
 **Last updated:** 2026-04-11
 
+### 2026-04-11 (TUI Phase-1 UX architecture upgrade: run history, palette, phase visibility)
+
+**Summary:** Upgraded the Python Textual TUI from a single-stream shell toward a run-centric workflow UI by wiring phase and history surfaces, adding replay ergonomics, improving command discoverability, hardening runtime-state persistence, and improving semantic status readability.
+
+**What changed:**
+
+- **Run-centric UI structure in main compose tree**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Mounted `PhaseTracker` and `HistoryPane` alongside existing status/log/prompt flow.
+
+- **Run history capture + replay ergonomics**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Added per-run tracking metadata (start time, replay map).
+    - Added history entry writes on task/chat completion with status/duration/repo/spec context.
+    - Added history selection handler to rerun prior command/request.
+    - Added safety guard to block rerun while another task is running.
+
+- **Command discoverability improvements**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Added `Ctrl+J` binding to open `CommandPalette` and execute selected command.
+    - Added explicit `Esc` binding for escape handling parity/discoverability.
+
+- **Status language and phase feedback hardening**
+  - `core/src/scholardevclaw/tui/app.py`
+    - Standardized completion status language to title-cased, consistent labels.
+    - Added lightweight action→phase mapping updates in lifecycle transitions.
+
+- **Resilience improvement**
+  - `core/src/scholardevclaw/tui/app.py`
+    - `_save_runtime_state` now handles write failures without crashing the app and surfaces warnings.
+
+- **Readability/accessibility improvement**
+  - `core/src/scholardevclaw/tui/theme.py`
+    - Increased semantic differentiation for success/warning/error/info colors.
+
+- **Tests added/updated**
+  - `core/tests/unit/test_tui_app.py`
+    - Added coverage for layout integration, key bindings, history entry creation/replay metadata, and runtime-state save failure handling.
+
+**Verification:**
+
+- ✅ `cd core && pytest tests/unit/test_tui_app.py tests/unit/test_tui_widgets.py tests/unit/test_tui_screens.py -q` (`56 passed`)
+
 ### 2026-04-11 (Security remediation batch: Convex authz, approval gating, path confinement, and command hardening)
 
 **Summary:** Closed the primary high-risk issues from the security audit by enforcing Convex function authentication, hardening approval semantics, confining generated file writes, removing run-code shell interpolation, restricting dashboard output directories, tightening webhook verification behavior, and switching env export defaults to safer behavior.

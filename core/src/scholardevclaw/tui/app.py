@@ -35,9 +35,9 @@ from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.llm.client import DEFAULT_MODELS, LLMAPIError, LLMClient, LLMConfigError
 from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 
-from .screens import HelpOverlay, ProviderSetupScreen
+from .screens import CommandPalette, HelpOverlay, ProviderSetupScreen
 from .theme import COLORS as TUI_COLORS
-from .widgets import LogView, PromptInput, StatusBar
+from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, StatusBar
 
 logger = logging.getLogger(__name__)
 
@@ -195,8 +195,10 @@ class ScholarDevClawApp(App[None]):
 
     BINDINGS = [
         ("ctrl+c", "cancel_task", "Cancel"),
+        ("ctrl+j", "open_command_palette", "Palette"),
         ("ctrl+k", "clear_screen", "Clear"),
         ("ctrl+h", "show_help", "Help"),
+        ("escape", "handle_escape", "ESC"),
     ]
 
     CSS = """
@@ -277,6 +279,8 @@ class ScholarDevClawApp(App[None]):
         self._last_total_tokens = 0
         self._cancel_events: dict[int, threading.Event] = {}
         self._task_threads: dict[int, threading.Thread] = {}
+        self._run_started_at: dict[int, float] = {}
+        self._run_replay_map: dict[int, dict[str, Any]] = {}
         self._models_by_provider: dict[str, str] = {}
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
@@ -287,7 +291,11 @@ class ScholarDevClawApp(App[None]):
         yield Static("────────────────────────", classes="separator")
         yield StatusBar(id="status-bar")
         yield Static("────────────────────────", classes="separator")
+        yield PhaseTracker(id="phase-tracker")
+        yield Static("────────────────────────", classes="separator")
         yield LogView(id="main-output")
+        yield Static("────────────────────────", classes="separator")
+        yield HistoryPane(id="history-pane")
         yield Static("────────────────────────", classes="separator")
         with Vertical():
             yield Static("", id="command-meta")
@@ -297,6 +305,7 @@ class ScholarDevClawApp(App[None]):
         if self._directory in {"", "."}:
             self._directory = os.getcwd()
         self._startup_preflight()
+        self._set_phase("idle")
         self._sync_status_bar()
         self._set_status("Ready", "info")
         self._update_command_meta()
@@ -378,7 +387,12 @@ class ScholarDevClawApp(App[None]):
             "directory": self._directory,
             "models_by_provider": self._models_by_provider,
         }
-        config_path.write_text(json.dumps(payload, indent=2))
+        try:
+            config_path.write_text(json.dumps(payload, indent=2))
+        except Exception as exc:
+            message = f"Warning: failed to save TUI runtime state ({exc})"
+            logger.warning(message)
+            self._notify_runtime_state_warning(message)
 
     def _pretty_directory(self) -> str:
         try:
@@ -793,6 +807,69 @@ class ScholarDevClawApp(App[None]):
             session_tokens=self._session_input_tokens + self._session_output_tokens,
             last_tokens=self._last_total_tokens,
         )
+
+    def _set_phase(self, phase: str) -> None:
+        try:
+            self.query_one("#phase-tracker", PhaseTracker).set_phase(phase)
+        except Exception:
+            pass
+
+    def _phase_for_action(self, action: str) -> str:
+        return {
+            "analyze": "analyzing",
+            "suggest": "research",
+            "search": "research",
+            "map": "mapping",
+            "generate": "generating",
+            "validate": "validating_patches",
+            "integrate": "validating_patches",
+            "chat": "research",
+        }.get(action, "validating")
+
+    def _notify_runtime_state_warning(self, message: str) -> None:
+        try:
+            self._append_output(message, "warning")
+            self._set_status("Runtime State Warning", "warning")
+        except Exception:
+            pass
+
+    @staticmethod
+    def _completion_status_text(action: str, status: str) -> str:
+        action_label = action.replace("_", " ").title()
+        status_label = status.replace("_", " ").title()
+        return f"{action_label} {status_label}"
+
+    def _add_history_entry(
+        self,
+        *,
+        run_id: int,
+        action: str,
+        status: str,
+        duration: float,
+        request: dict[str, Any] | None = None,
+        command: str | None = None,
+    ) -> None:
+        req = request or {}
+        repo = str(req.get("repo_path", "") or "")
+        spec = str(req.get("spec", "") or "")
+        try:
+            self.query_one("#history-pane", HistoryPane).add_entry(
+                run_id=run_id,
+                action=action,
+                status=status,
+                duration=max(0.0, duration),
+                repo=repo,
+                spec=spec,
+                finished_at=time.strftime("%H:%M:%S"),
+            )
+        except Exception:
+            pass
+
+        self._run_replay_map[run_id] = {
+            "command": command,
+            "action": action,
+            "request": dict(req),
+        }
 
     def _set_status(self, message: str, level: str = "info") -> None:
         self._status_level = level
@@ -1247,7 +1324,13 @@ class ScholarDevClawApp(App[None]):
         event = self._cancel_events.get(token)
         return bool(event and event.is_set())
 
-    def _start_task(self, action: str, request: dict[str, Any]) -> None:
+    def _start_task(
+        self,
+        action: str,
+        request: dict[str, Any],
+        *,
+        command: str | None = None,
+    ) -> None:
         if self._running_action is not None:
             self._set_status("Task already running", "warning")
             return
@@ -1264,25 +1347,30 @@ class ScholarDevClawApp(App[None]):
 
         self._task_token += 1
         self._active_token = self._task_token
+        request_payload = dict(request)
+        if command:
+            request_payload["_original_command"] = command
         self._running_action = action
-        self._active_request = request
+        self._active_request = request_payload
+        self._run_started_at[self._active_token] = time.perf_counter()
         self._line_progress = 0
         self._context_hints = []
         self._cancel_events[self._active_token] = threading.Event()
+        self._set_phase(self._phase_for_action(action))
         self.query_one("#status-bar", StatusBar).start_timer()
-        self._set_status(f"Running {action}", "accent")
+        self._set_status(f"Running {action.title()}", "accent")
         self._emit_progress(action, 0.05)
         self._update_command_meta()
 
         thread = threading.Thread(
             target=self._run_task_in_thread,
-            args=(self._active_token, action, request),
+            args=(self._active_token, action, request_payload),
             daemon=True,
         )
         self._task_threads[self._active_token] = thread
         thread.start()
 
-    def _start_chat(self, prompt: str) -> None:
+    def _start_chat(self, prompt: str, *, command: str | None = None) -> None:
         if self._running_action is not None:
             self._set_status("Task already running", "warning")
             return
@@ -1294,11 +1382,16 @@ class ScholarDevClawApp(App[None]):
 
         self._task_token += 1
         self._active_token = self._task_token
+        request_payload = {"action": "chat", "prompt": prompt}
+        if command:
+            request_payload["_original_command"] = command
         self._running_action = "chat"
-        self._active_request = {"action": "chat", "prompt": prompt}
+        self._active_request = request_payload
+        self._run_started_at[self._active_token] = time.perf_counter()
         self._chat_preview = ""
         self._context_hints = []
         self._cancel_events[self._active_token] = threading.Event()
+        self._set_phase(self._phase_for_action("chat"))
         self.query_one("#status-bar", StatusBar).start_timer()
         self._set_status(f"Chatting with {self._provider}", "accent")
         self._set_live_text("Thinking...", "system")
@@ -1306,7 +1399,7 @@ class ScholarDevClawApp(App[None]):
 
         thread = threading.Thread(
             target=self._run_chat_in_thread,
-            args=(self._active_token, prompt),
+            args=(self._active_token, prompt, request_payload),
             daemon=True,
         )
         self._task_threads[self._active_token] = thread
@@ -1382,7 +1475,7 @@ class ScholarDevClawApp(App[None]):
 
         self.call_from_thread(self.post_message, TaskCompleted(token, action, result, request))
 
-    def _run_chat_in_thread(self, token: int, prompt: str) -> None:
+    def _run_chat_in_thread(self, token: int, prompt: str, request: dict[str, Any]) -> None:
         response_text = ""
         client: LLMClient | None = None
         try:
@@ -1561,7 +1654,7 @@ class ScholarDevClawApp(App[None]):
 
         self.call_from_thread(
             self.post_message,
-            TaskCompleted(token, "chat", result, {"action": "chat", "prompt": prompt}),
+            TaskCompleted(token, "chat", result, request),
         )
 
     # ------------------------------------------------------------------
@@ -1573,24 +1666,13 @@ class ScholarDevClawApp(App[None]):
         self._suggestions = self._compute_suggestions(event.value)
         self._update_command_meta()
 
-    @on(Input.Submitted, "#prompt-input")
-    def on_prompt_submitted(self, event: Input.Submitted) -> None:
-        command = event.value.strip()
-        if not command:
-            return
-        prompt = self.query_one("#prompt-input", PromptInput)
-        prompt.value = ""
-        self._record_command(command)
-        self._append_output(f"> {command}", "accent")
-        self._suggestions = []
-        self._update_command_meta()
-
-        action, request = self._build_request(command)
-        if action is None:
-            self._append_output("Error: command not understood", "error")
-            self._set_status("Unknown command", "error")
-            return
-
+    def _execute_action_request(
+        self,
+        action: str,
+        request: dict[str, Any],
+        *,
+        command: str | None = None,
+    ) -> None:
         if action == "help":
             self.push_screen(HelpOverlay())
             return
@@ -1660,14 +1742,14 @@ class ScholarDevClawApp(App[None]):
                 self._set_status("Key rejected", "error")
                 return
             self._sync_status_bar()
-            self._set_status("Key saved", "success")
+            self._set_status("Key Saved", "success")
             return
         if action == "set_dir":
             directory = str(request.get("directory", "") or "")
             valid, err = self._validate_repo_path(directory)
             if not valid:
                 self._append_output(f"Error: {err}", "error")
-                self._set_status("Directory rejected", "error")
+                self._set_status("Directory Rejected", "error")
                 return
             self._directory = directory
             self._save_runtime_state()
@@ -1677,10 +1759,76 @@ class ScholarDevClawApp(App[None]):
             self._update_command_meta()
             return
         if action == "chat":
-            self._start_chat(str(request.get("prompt", "") or command))
+            self._start_chat(str(request.get("prompt", "") or command or ""), command=command)
             return
 
-        self._start_task(action, request)
+        self._start_task(action, request, command=command)
+
+    def _execute_command(
+        self,
+        command: str,
+        *,
+        record_history: bool = True,
+        echo: bool = True,
+    ) -> None:
+        command_text = command.strip()
+        if not command_text:
+            return
+
+        prompt = self.query_one("#prompt-input", PromptInput)
+        prompt.value = ""
+        if record_history:
+            self._record_command(command_text)
+        if echo:
+            self._append_output(f"> {command_text}", "accent")
+        self._suggestions = []
+        self._update_command_meta()
+
+        action, request = self._build_request(command_text)
+        if action is None:
+            self._append_output("Error: command not understood", "error")
+            self._set_status("Unknown Command", "error")
+            return
+
+        self._execute_action_request(action, request, command=command_text)
+
+    def _rerun_history_item(self, run_id: int) -> None:
+        if self._running_action is not None:
+            self._set_status("Task Already Running", "warning")
+            self._append_output("Warning: finish or cancel current task before rerun", "warning")
+            return
+
+        replay = self._run_replay_map.get(run_id)
+        if not replay:
+            self._append_output(f"Warning: no replay data for run #{run_id}", "warning")
+            self._set_status("Rerun Unavailable", "warning")
+            return
+
+        command = str(replay.get("command") or "").strip()
+        if command:
+            self._execute_command(command, record_history=False, echo=True)
+            return
+
+        action = str(replay.get("action") or "").strip()
+        request = dict(replay.get("request") or {})
+        if not action:
+            self._append_output(f"Warning: invalid replay payload for run #{run_id}", "warning")
+            self._set_status("Rerun Unavailable", "warning")
+            return
+
+        self._append_output(f"> rerun #{run_id}", "accent")
+        self._execute_action_request(action, request, command=None)
+
+    @on(Input.Submitted, "#prompt-input")
+    def on_prompt_submitted(self, event: Input.Submitted) -> None:
+        command = event.value.strip()
+        if not command:
+            return
+        self._execute_command(command)
+
+    @on(HistoryPane.RunSelected)
+    def on_history_run_selected(self, message: HistoryPane.RunSelected) -> None:
+        self._rerun_history_item(int(message.run_id))
 
     @on(PromptInput.HistoryPrev)
     def on_history_prev(self) -> None:
@@ -1770,6 +1918,10 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#status-bar", StatusBar).stop_timer()
         self._running_action = None
         self._active_request = None
+        duration = 0.0
+        started_at = self._run_started_at.pop(message.token, None)
+        if started_at is not None:
+            duration = max(0.0, time.perf_counter() - started_at)
 
         result = message.result
         if result.ok and message.action == "chat":
@@ -1794,7 +1946,16 @@ class ScholarDevClawApp(App[None]):
             self._context_hints = self._suggest_next_commands(
                 "chat", result.payload, message.request
             )
-            self._set_status("chat complete", "success")
+            self._set_status(self._completion_status_text("chat", "completed"), "success")
+            self._add_history_entry(
+                run_id=message.token,
+                action=message.action,
+                status="Success",
+                duration=duration,
+                request=message.request,
+                command=str(message.request.get("_original_command") or "") or None,
+            )
+            self._set_phase("complete")
         elif result.ok:
             self._set_progress(message.action, 1.0)
             self._clear_progress()
@@ -1807,18 +1968,46 @@ class ScholarDevClawApp(App[None]):
             self._context_hints = self._suggest_next_commands(
                 message.action, result.payload, message.request
             )
-            self._set_status(f"{message.action} complete", "success")
+            self._set_status(self._completion_status_text(message.action, "completed"), "success")
+            self._add_history_entry(
+                run_id=message.token,
+                action=message.action,
+                status="Success",
+                duration=duration,
+                request=message.request,
+                command=str(message.request.get("_original_command") or "") or None,
+            )
+            self._set_phase("complete")
         else:
             self._clear_progress()
             if bool(getattr(result, "payload", {}).get("cancelled")) or str(
                 result.error or ""
             ).lower().startswith("task cancelled"):
                 self._append_output("Task cancelled", "warning")
-                self._set_status("Task cancelled", "warning")
+                self._set_status(
+                    self._completion_status_text(message.action, "cancelled"), "warning"
+                )
+                self._add_history_entry(
+                    run_id=message.token,
+                    action=message.action,
+                    status="Cancelled",
+                    duration=duration,
+                    request=message.request,
+                    command=str(message.request.get("_original_command") or "") or None,
+                )
             else:
                 self._append_output(f"Error: {result.error or 'command failed'}", "error")
-                self._set_status(f"{message.action} failed", "error")
+                self._set_status(self._completion_status_text(message.action, "failed"), "error")
+                self._add_history_entry(
+                    run_id=message.token,
+                    action=message.action,
+                    status="Failed",
+                    duration=duration,
+                    request=message.request,
+                    command=str(message.request.get("_original_command") or "") or None,
+                )
             self._context_hints = []
+            self._set_phase("idle")
 
         self._update_command_meta()
         self.query_one("#prompt-input", PromptInput).focus()
@@ -1831,18 +2020,11 @@ class ScholarDevClawApp(App[None]):
         if self._running_action is None:
             self.exit()
             return
-        old_token = self._active_token
-        cancel_event = self._cancel_events.get(old_token)
+        cancel_event = self._cancel_events.get(self._active_token)
         if cancel_event is not None:
             cancel_event.set()
-        self._task_token += 1
-        self._active_token = self._task_token
-        self._clear_progress()
         self._append_output("Cancel requested (stopping current task)...", "warning")
-        self._running_action = None
-        self._active_request = None
-        self.query_one("#status-bar", StatusBar).stop_timer()
-        self._set_status("Task cancelled", "warning")
+        self._set_status("Cancelling Task", "warning")
 
     def action_clear_screen(self) -> None:
         self._clear_output()
@@ -1852,6 +2034,14 @@ class ScholarDevClawApp(App[None]):
 
     def action_show_help(self) -> None:
         self.push_screen(HelpOverlay())
+
+    def action_open_command_palette(self) -> None:
+        self.push_screen(CommandPalette(), self._on_command_palette_result)
+
+    def _on_command_palette_result(self, command: str | None) -> None:
+        if not command:
+            return
+        self._execute_command(command)
 
     def action_handle_escape(self) -> None:
         now = time.time()
