@@ -39,3 +39,8 @@ def test_help_text_mentions_ask_and_run_namespaces():
 def test_help_and_palette_include_run_events_command():
     assert "run events <id> [limit]" in HELP_TEXT
     assert "run events 1" in CommandPalette.PALETTE_COMMANDS
+
+
+def test_help_and_palette_include_inspect_command():
+    assert "inspect" in HELP_TEXT
+    assert "inspect" in CommandPalette.PALETTE_COMMANDS

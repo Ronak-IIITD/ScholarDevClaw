@@ -6,7 +6,14 @@ import pytest
 
 pytest.importorskip("textual")
 
-from scholardevclaw.tui.widgets import HistoryPane, LogView, PhaseTracker, PromptInput, StatusBar
+from scholardevclaw.tui.widgets import (
+    HistoryPane,
+    LogView,
+    PhaseTracker,
+    PromptInput,
+    RunInspector,
+    StatusBar,
+)
 
 
 def test_logview_detect_level_classification():
@@ -136,3 +143,40 @@ def test_promptinput_delegates_key_handling_to_app_level():
     # PromptInput should not have its own on_key override
     assert not hasattr(PromptInput, "on_key")
     # App-level on_key intercepts up/down/tab/escape before Input consumes them.
+
+
+def test_run_inspector_render_snapshot_lines_truncates_error_and_limits_events():
+    long_error = "x" * 300
+    lines = RunInspector.render_snapshot_lines(
+        {
+            "run_id": 9,
+            "action": "generate",
+            "status": "Failed",
+            "duration": 3.2,
+            "terminal_state": "failed",
+            "failure_code": "E_RUNTIME_EXCEPTION",
+            "error": long_error,
+            "repo": "./repo",
+            "spec": "rmsnorm",
+            "query": "",
+            "summary_lines": ["step-a", "step-b", "step-c"],
+            "event_lines": [
+                "001 run.accepted idle accepted",
+                "002 run.running running running",
+                "003 log.line running phase 1",
+                "004 run.failed failed boom",
+            ],
+        },
+        max_events=2,
+        max_error_chars=80,
+    )
+
+    assert any(line.startswith("Run #9 | generate | Failed") for line in lines)
+    assert any(line.startswith("Error: ") for line in lines)
+    error_line = next(line for line in lines if line.startswith("Error: "))
+    assert len(error_line) <= 88
+    assert error_line.endswith("…")
+    assert "Events:" in lines
+    assert "003 log.line running phase 1" in lines
+    assert "004 run.failed failed boom" in lines
+    assert "001 run.accepted idle accepted" not in lines

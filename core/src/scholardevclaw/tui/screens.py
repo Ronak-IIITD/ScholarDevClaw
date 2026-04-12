@@ -47,6 +47,7 @@ HELP_TEXT = (
     "/run <action> [args...]\n"
     "  actions: analyze suggest search map generate validate integrate\n"
     "runs\n"
+    "inspect\n"
     "run show <id>\n"
     "run events <id> [limit]\n"
     "run rerun <id>\n"
@@ -273,6 +274,7 @@ class CommandPalette(ModalScreen[str | None]):
         "generate ./repo rmsnorm",
         "validate ./repo",
         "runs",
+        "inspect",
         "run show 1",
         "run events 1",
         "run rerun 1",

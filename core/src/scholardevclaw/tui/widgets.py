@@ -405,6 +405,139 @@ class HistoryPane(VerticalScroll):
         self._render_entries()
 
 
+class RunInspector(Static):
+    """Compact, always-visible run inspector pane."""
+
+    DEFAULT_CSS = """
+    RunInspector {
+        width: 100%;
+        height: auto;
+        max-height: 10;
+        color: $text-muted;
+    }
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__("", **kwargs)
+        self.set_placeholder("Run Inspector: no runs yet")
+
+    @staticmethod
+    def _trim(text: str, limit: int) -> str:
+        value = str(text or "").replace("\n", " ").strip()
+        if len(value) <= limit:
+            return value
+        return value[: max(0, limit - 1)].rstrip() + "…"
+
+    @classmethod
+    def render_snapshot_lines(
+        cls,
+        snapshot: dict[str, Any],
+        *,
+        max_events: int = 3,
+        max_summary: int = 2,
+        max_error_chars: int = 160,
+        max_lines: int = 10,
+    ) -> list[str]:
+        run_id = int(snapshot.get("run_id", 0) or 0)
+        action = str(snapshot.get("action", "") or "unknown")
+        status = str(snapshot.get("status", "") or "Unknown")
+        duration = float(snapshot.get("duration", 0.0) or 0.0)
+        terminal_state = str(snapshot.get("terminal_state", "") or "")
+        failure_code = str(snapshot.get("failure_code", "") or "")
+        repo = str(snapshot.get("repo", "") or "")
+        spec = str(snapshot.get("spec", "") or "")
+        query = str(snapshot.get("query", "") or "")
+        error = cls._trim(str(snapshot.get("error", "") or ""), max_error_chars)
+        summary_lines = [
+            cls._trim(str(line), 140)
+            for line in list(snapshot.get("summary_lines") or [])
+            if str(line).strip()
+        ]
+        event_lines = [
+            cls._trim(str(line), 180)
+            for line in list(snapshot.get("event_lines") or [])
+            if str(line).strip()
+        ]
+
+        header = f"Run #{run_id} | {action} | {status} | {max(0.0, duration):.1f}s"
+        lines: list[str] = [header]
+
+        state_line_parts: list[str] = []
+        if terminal_state:
+            state_line_parts.append(f"state={terminal_state}")
+        if failure_code:
+            state_line_parts.append(f"failure={failure_code}")
+        if state_line_parts:
+            lines.append(" | ".join(state_line_parts))
+
+        context_parts: list[str] = []
+        if repo:
+            context_parts.append(f"repo={cls._trim(repo, 44)}")
+        if spec:
+            context_parts.append(f"spec={cls._trim(spec, 24)}")
+        if query:
+            context_parts.append(f"query={cls._trim(query, 36)}")
+        if context_parts:
+            lines.append(" | ".join(context_parts))
+
+        if error:
+            lines.append(f"Error: {error}")
+
+        if summary_lines:
+            lines.append("Summary:")
+            for line in summary_lines[:max_summary]:
+                lines.append(f"- {line}")
+
+        if event_lines:
+            lines.append("Events:")
+            for line in event_lines[-max_events:]:
+                lines.append(line)
+
+        return lines[:max_lines]
+
+    def set_placeholder(self, message: str) -> None:
+        self.update(message)
+
+    def set_lines(self, lines: list[str]) -> None:
+        clean = [str(line).rstrip() for line in lines if str(line).strip()]
+        self.update("\n".join(clean) if clean else "Run Inspector: no runs yet")
+
+    def set_snapshot(
+        self,
+        *,
+        run_id: int,
+        action: str,
+        status: str,
+        terminal_state: str,
+        duration: float,
+        repo: str,
+        spec: str,
+        query: str,
+        failure_code: str,
+        error: str,
+        summary_lines: list[str],
+        event_lines: list[str],
+    ) -> None:
+        self.set_lines(
+            self.render_snapshot_lines(
+                {
+                    "run_id": run_id,
+                    "action": action,
+                    "status": status,
+                    "terminal_state": terminal_state,
+                    "duration": duration,
+                    "repo": repo,
+                    "spec": spec,
+                    "query": query,
+                    "failure_code": failure_code,
+                    "error": error,
+                    "summary_lines": summary_lines,
+                    "event_lines": event_lines,
+                }
+            )
+        )
+
+
 class AgentStatus(Static):
     """Minimal inline agent status."""
 

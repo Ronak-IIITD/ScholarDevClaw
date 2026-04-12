@@ -4,6 +4,53 @@
 
 **Last updated:** 2026-04-11
 
+### 2026-04-11 (TUI Phase-4: dedicated live run inspector pane + failure-code metadata)
+
+**Summary:** Added a dedicated always-visible run inspector pane in the Python Textual TUI, wired to active/lifecycle data and persisted run artifacts/events, plus a non-breaking `inspect` command to print the same snapshot to the main log.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Wired `RunInspector` into compose layout between `HistoryPane` and command metadata area while preserving existing widgets/behavior.
+  - Added inspector snapshot flow:
+    - `_build_run_inspector_snapshot()` chooses active run first, otherwise latest run artifact/replay.
+    - `_refresh_run_inspector()` renders and pushes snapshot into widget, storing last rendered lines for command reuse.
+    - Hooks added at mount hydration, task/chat start, log delta updates, completion, and rerun event path.
+  - Added lightweight failure classification helper `_classify_failure_code(...)` with deterministic codes:
+    - cancelled => `E_CANCELLED_BY_USER`
+    - auth/config/model/rate-limit detections => `E_LLM_AUTH` / `E_LLM_CONFIG` / `E_LLM_MODEL` / `E_LLM_RATE_LIMIT`
+    - fallback => `E_RUNTIME_EXCEPTION`
+  - Extended run artifact + replay persistence metadata with `failure_code` and `error` and surfaced in `run show` output.
+  - Added non-breaking `inspect` command parsing and execution to print inspector snapshot lines into main output.
+  - Updated hints/command suggestions to include `inspect`.
+
+- `core/src/scholardevclaw/tui/widgets.py`
+  - Expanded `RunInspector` with reusable rendering helper `render_snapshot_lines(...)`.
+  - Added `set_lines(...)` and trimming helpers for robust compact rendering.
+  - Kept existing `set_snapshot(...)` API intact (now internally delegated to shared renderer).
+
+- `core/src/scholardevclaw/tui/screens.py`
+  - Added `inspect` command to help text and command palette list.
+
+- `core/tests/unit/test_tui_app.py`
+  - Added layout assertion ensuring `RunInspector` is in compose.
+  - Added active-vs-latest snapshot selection coverage.
+  - Added failure completion coverage validating `failure_code`/`error` and inspector output.
+  - Added `inspect` command output parity coverage.
+  - Extended runtime-state persistence roundtrip to assert `failure_code`/`error` in artifacts and replay map.
+  - Added parser coverage for `inspect` command.
+
+- `core/tests/unit/test_tui_widgets.py`
+  - Added `RunInspector` render helper coverage for long-error truncation and event line limiting.
+
+- `core/tests/unit/test_tui_screens.py`
+  - Added assertions that help/palette include `inspect` command.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/ tests/`
+- ✅ `cd core && pytest tests/unit/test_tui_app.py tests/unit/test_tui_widgets.py tests/unit/test_tui_screens.py tests/unit/test_llm_client.py -q`
+
 ### 2026-04-11 (TUI Phase-3: structured run events + inspectable event timeline)
 
 **Summary:** Implemented a Phase-3 TUI upgrade that introduces structured per-run events, bounded timeline persistence/recovery, and a new `run events` inspect command for compact lifecycle/log/chat visibility.

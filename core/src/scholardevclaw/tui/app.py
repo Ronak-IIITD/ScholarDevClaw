@@ -39,7 +39,7 @@ from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 
 from .screens import CommandPalette, HelpOverlay, ProviderSetupScreen
 from .theme import COLORS as TUI_COLORS
-from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, StatusBar
+from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspector, StatusBar
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ MODE_HINTS = {
         "Hint -> /run analyze ./repo",
         "Hint -> /ask what this repo does",
         "Hint -> runs",
+        "Hint -> inspect",
         "Hint -> run events 1",
         "Hint -> suggest ./repo",
         "Hint -> validate ./repo",
@@ -62,6 +63,7 @@ MODE_HINTS = {
         "Hint -> /run search layer normalization",
         "Hint -> /ask papers on flash attention",
         "Hint -> runs",
+        "Hint -> inspect",
         "Hint -> run events 1",
         "Hint -> search flash attention",
         "Hint -> setup",
@@ -70,6 +72,7 @@ MODE_HINTS = {
         "Hint -> /run map ./repo rmsnorm",
         "Hint -> /ask implement RMSNorm",
         "Hint -> runs",
+        "Hint -> inspect",
         "Hint -> run events 1",
         "Hint -> generate ./repo rmsnorm",
         "Hint -> integrate ./repo rmsnorm",
@@ -86,6 +89,7 @@ MODE_COMMANDS = {
         "set provider openrouter",
         f"set model {DEFAULT_OPENROUTER_MODEL}",
         "runs",
+        "inspect",
         "run show 1",
         "run events 1",
         "run rerun 1",
@@ -100,6 +104,7 @@ MODE_COMMANDS = {
         "set mode search",
         "chat find fast inference ideas",
         "runs",
+        "inspect",
         "run show 1",
         "run events 1",
         "run rerun 1",
@@ -116,6 +121,7 @@ MODE_COMMANDS = {
         "set dir ./repo",
         "chat how should I patch this file",
         "runs",
+        "inspect",
         "run show 1",
         "run events 1",
         "run rerun 1",
@@ -139,6 +145,7 @@ GLOBAL_COMMANDS = [
     f"set model {DEFAULT_OPENROUTER_MODEL}",
     "set dir ./repo",
     "runs",
+    "inspect",
     "run show 1",
     "run events 1",
     "run rerun 1",
@@ -245,6 +252,8 @@ class RunArtifact:
     query: str = ""
     duration_seconds: float = 0.0
     terminal_state: str = RunLifecycleState.IDLE.value
+    failure_code: str = ""
+    error: str = ""
     summary_lines: list[str] = field(default_factory=list)
 
 
@@ -385,6 +394,8 @@ class ScholarDevClawApp(App[None]):
         self._run_event_seq: dict[int, int] = {}
         self._chat_event_accumulator: dict[int, str] = {}
         self._chat_event_chunks: dict[int, int] = {}
+        self._inspector_run_id: int | None = None
+        self._inspector_lines: list[str] = []
         self._models_by_provider: dict[str, str] = {}
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
@@ -401,6 +412,8 @@ class ScholarDevClawApp(App[None]):
         yield Static("────────────────────────", classes="separator")
         yield HistoryPane(id="history-pane")
         yield Static("────────────────────────", classes="separator")
+        yield RunInspector(id="run-inspector")
+        yield Static("────────────────────────", classes="separator")
         with Vertical():
             yield Static("", id="command-meta")
             yield PromptInput(placeholder="> ", id="prompt-input")
@@ -412,6 +425,7 @@ class ScholarDevClawApp(App[None]):
         self._sync_status_bar()
         self._transition_run_state(RunLifecycleState.IDLE, action="system", detail="ready")
         self._hydrate_history_from_recent_artifacts()
+        self._refresh_run_inspector()
         self._update_command_meta()
         self.set_interval(6.0, self._rotate_hint)
         self.query_one("#prompt-input", PromptInput).focus()
@@ -578,6 +592,8 @@ class ScholarDevClawApp(App[None]):
                 if isinstance(summary_lines_raw, list)
                 else []
             )
+            failure_code = str(row.get("failure_code", "") or "").strip()
+            error = self._trim_event_message(str(row.get("error", "") or ""), limit=220)
             try:
                 duration_seconds = float(row.get("duration_seconds", 0.0) or 0.0)
             except Exception:
@@ -592,6 +608,8 @@ class ScholarDevClawApp(App[None]):
                     query=str(row.get("query", "") or ""),
                     duration_seconds=max(0.0, duration_seconds),
                     terminal_state=terminal_state.value,
+                    failure_code=failure_code,
+                    error=error,
                     summary_lines=summary_lines,
                 )
             )
@@ -626,6 +644,8 @@ class ScholarDevClawApp(App[None]):
                 "terminal_state": terminal_state.value,
                 "status": str(entry.get("status", "")).strip() or "Unknown",
                 "duration_seconds": max(0.0, duration_seconds),
+                "failure_code": str(entry.get("failure_code", "") or "").strip(),
+                "error": self._trim_event_message(str(entry.get("error", "") or ""), limit=220),
                 "summary_lines": [
                     str(line).strip()
                     for line in list(entry.get("summary_lines") or [])
@@ -887,6 +907,8 @@ class ScholarDevClawApp(App[None]):
                     "query": artifact.query,
                     "duration_seconds": artifact.duration_seconds,
                     "terminal_state": self._coerce_run_state(artifact.terminal_state).value,
+                    "failure_code": artifact.failure_code,
+                    "error": self._trim_event_message(artifact.error, limit=220),
                     "summary_lines": artifact.summary_lines[:4],
                 }
             )
@@ -911,6 +933,8 @@ class ScholarDevClawApp(App[None]):
                 ).value,
                 "status": str(entry.get("status", "") or "").strip(),
                 "duration_seconds": float(entry.get("duration_seconds", 0.0) or 0.0),
+                "failure_code": str(entry.get("failure_code", "") or "").strip(),
+                "error": self._trim_event_message(str(entry.get("error", "") or ""), limit=220),
                 "summary_lines": [
                     str(line).strip()
                     for line in list(entry.get("summary_lines") or [])
@@ -1407,6 +1431,8 @@ class ScholarDevClawApp(App[None]):
         status: str,
         duration: float,
         terminal_state: RunLifecycleState,
+        failure_code: str = "",
+        error: str = "",
         summary_lines: list[str] | None = None,
         request: dict[str, Any] | None = None,
         command: str | None = None,
@@ -1434,6 +1460,8 @@ class ScholarDevClawApp(App[None]):
             "status": status,
             "duration_seconds": max(0.0, duration),
             "terminal_state": self._coerce_run_state(terminal_state).value,
+            "failure_code": str(failure_code or "").strip(),
+            "error": self._trim_event_message(str(error or ""), limit=220),
             "summary_lines": [
                 str(line).strip() for line in list(summary_lines or []) if str(line).strip()
             ][:4],
@@ -1475,7 +1503,11 @@ class ScholarDevClawApp(App[None]):
             f"Repo: {request.get('repo_path') or artifact.repo_path or 'n/a'}",
             f"Spec: {request.get('spec') or artifact.spec or 'n/a'}",
             f"Query: {request.get('query') or artifact.query or 'n/a'}",
+            f"Failure code: {replay.get('failure_code') or artifact.failure_code or 'n/a'}",
         ]
+        error_text = str(replay.get("error") or artifact.error or "").strip()
+        if error_text:
+            lines.append(f"Error: {self._trim_event_message(error_text, limit=220)}")
         if request:
             request_parts: list[str] = []
             for key in ("action", "repo_path", "spec", "query", "include_arxiv", "include_web"):
@@ -1487,6 +1519,132 @@ class ScholarDevClawApp(App[None]):
         for line in artifact.summary_lines or ["(none)"]:
             lines.append(f"- {line}")
         return lines
+
+    @staticmethod
+    def _classify_failure_code(error_text: str, *, cancelled: bool = False) -> str:
+        text = str(error_text or "").strip().lower()
+        if cancelled or "cancelled" in text:
+            return "E_CANCELLED_BY_USER"
+        if "429" in text or "rate limit" in text:
+            return "E_LLM_RATE_LIMIT"
+        if any(token in text for token in ("401", "auth", "api key", "unauthorized", "forbidden")):
+            return "E_LLM_AUTH"
+        if any(
+            token in text
+            for token in (
+                "model unavailable",
+                "model lookup failed",
+                "model not found",
+                "does not exist",
+                "unknown model",
+            )
+        ):
+            return "E_LLM_MODEL"
+        if any(
+            token in text
+            for token in (
+                "config",
+                "setup",
+                "no openrouter key",
+                "llm setup",
+                "provider",
+            )
+        ):
+            return "E_LLM_CONFIG"
+        return "E_RUNTIME_EXCEPTION"
+
+    def _latest_run_id_for_inspector(self) -> int | None:
+        if self._active_token and self._running_action is not None:
+            return self._active_token
+        if self._recent_run_artifacts:
+            return self._recent_run_artifacts[-1].run_id
+        if self._run_replay_map:
+            return max(self._run_replay_map)
+        return None
+
+    def _build_run_inspector_snapshot(self) -> dict[str, Any] | None:
+        run_id = self._latest_run_id_for_inspector()
+        if run_id is None:
+            return None
+
+        replay = dict(self._run_replay_map.get(run_id) or {})
+        events = self._render_run_events(run_id, limit=4)
+        event_lines = [] if (events and "no recorded events" in events[0].lower()) else events
+
+        if self._running_action is not None and run_id == self._active_token:
+            active_req = dict(self._active_request or {})
+            started_at = self._run_started_at.get(run_id)
+            duration = 0.0
+            if started_at is not None:
+                duration = max(0.0, time.perf_counter() - started_at)
+            return {
+                "run_id": run_id,
+                "action": self._running_action,
+                "status": RUN_STATE_LABELS[self._run_state].title(),
+                "duration": duration,
+                "terminal_state": self._run_state.value,
+                "failure_code": "",
+                "error": "",
+                "repo": str(active_req.get("repo_path", "") or ""),
+                "spec": str(active_req.get("spec", "") or ""),
+                "query": str(active_req.get("query", "") or active_req.get("prompt", "") or ""),
+                "summary_lines": list(replay.get("summary_lines") or []),
+                "event_lines": event_lines,
+            }
+
+        artifact = self._find_run_artifact(run_id)
+        if artifact is None:
+            req = dict(replay.get("request") or {})
+            return {
+                "run_id": run_id,
+                "action": str(replay.get("action", "unknown") or "unknown"),
+                "status": str(replay.get("status", "Unknown") or "Unknown"),
+                "duration": float(replay.get("duration_seconds", 0.0) or 0.0),
+                "terminal_state": self._coerce_run_state(
+                    str(replay.get("terminal_state", RunLifecycleState.IDLE.value))
+                ).value,
+                "failure_code": str(replay.get("failure_code", "") or ""),
+                "error": str(replay.get("error", "") or ""),
+                "repo": str(req.get("repo_path", "") or ""),
+                "spec": str(req.get("spec", "") or ""),
+                "query": str(req.get("query", "") or ""),
+                "summary_lines": list(replay.get("summary_lines") or []),
+                "event_lines": event_lines,
+            }
+
+        req = dict(replay.get("request") or {})
+        return {
+            "run_id": artifact.run_id,
+            "action": artifact.action,
+            "status": artifact.status,
+            "duration": max(0.0, artifact.duration_seconds),
+            "terminal_state": self._coerce_run_state(artifact.terminal_state).value,
+            "failure_code": artifact.failure_code or str(replay.get("failure_code", "") or ""),
+            "error": artifact.error or str(replay.get("error", "") or ""),
+            "repo": str(req.get("repo_path") or artifact.repo_path or ""),
+            "spec": str(req.get("spec") or artifact.spec or ""),
+            "query": str(req.get("query") or artifact.query or ""),
+            "summary_lines": list(artifact.summary_lines or replay.get("summary_lines") or []),
+            "event_lines": event_lines,
+        }
+
+    def _refresh_run_inspector(self) -> list[str]:
+        snapshot = self._build_run_inspector_snapshot()
+        if snapshot is None:
+            self._inspector_run_id = None
+            self._inspector_lines = ["Run Inspector: no runs yet"]
+            with contextlib.suppress(Exception):
+                self.query_one("#run-inspector", RunInspector).set_placeholder(
+                    self._inspector_lines[0]
+                )
+            return list(self._inspector_lines)
+
+        lines = RunInspector.render_snapshot_lines(snapshot)
+        self._inspector_run_id = int(snapshot.get("run_id", 0) or 0)
+        self._inspector_lines = list(lines)
+        with contextlib.suppress(Exception):
+            self.query_one("#run-inspector", RunInspector).set_lines(lines)
+        return list(lines)
 
     def _set_status(self, message: str, level: str = "info") -> None:
         self._status_level = level
@@ -1560,6 +1718,7 @@ class ScholarDevClawApp(App[None]):
             "providers",
             "status",
             "runs",
+            "inspect",
             "run show 1",
             "run events 1",
             "run rerun 1",
@@ -1710,6 +1869,9 @@ class ScholarDevClawApp(App[None]):
 
         if head == "runs":
             return "runs", {}
+
+        if head == "inspect":
+            return "inspect", {}
 
         if head == "run" and len(parts) >= 2:
             subcommand = parts[1].strip().lower()
@@ -1913,6 +2075,8 @@ class ScholarDevClawApp(App[None]):
         terminal_state: RunLifecycleState,
         duration: float,
         request: dict[str, Any],
+        failure_code: str = "",
+        error: str = "",
         summary_lines: list[str],
     ) -> None:
         if action == "chat" or status not in {"Success", "Failed", "Cancelled"}:
@@ -1926,6 +2090,8 @@ class ScholarDevClawApp(App[None]):
             query=str(request.get("query", "") or ""),
             duration_seconds=max(0.0, duration),
             terminal_state=self._coerce_run_state(terminal_state).value,
+            failure_code=str(failure_code or "").strip(),
+            error=self._trim_event_message(str(error or ""), limit=220),
             summary_lines=[line.strip() for line in summary_lines if str(line).strip()][:4],
         )
         self._recent_run_artifacts.append(artifact)
@@ -2167,6 +2333,7 @@ class ScholarDevClawApp(App[None]):
         )
         self._emit_progress(action, 0.05)
         self._update_command_meta()
+        self._refresh_run_inspector()
 
         thread = threading.Thread(
             target=self._run_task_in_thread,
@@ -2225,6 +2392,7 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#status-bar", StatusBar).start_timer()
         self._set_live_text("Thinking...", "system")
         self._update_command_meta()
+        self._refresh_run_inspector()
 
         thread = threading.Thread(
             target=self._run_chat_in_thread,
@@ -2472,6 +2640,12 @@ class ScholarDevClawApp(App[None]):
                 self._append_output(line)
             self._set_status("Recent runs listed", "info")
             return
+        if action == "inspect":
+            lines = self._refresh_run_inspector()
+            for idx, line in enumerate(lines):
+                self._append_output(line, "info" if idx > 0 else "accent")
+            self._set_status("Run inspector snapshot", "info")
+            return
         if action == "run_show":
             run_id = int(request.get("run_id", 0) or 0)
             detail_lines = self._render_run_details(run_id)
@@ -2631,6 +2805,7 @@ class ScholarDevClawApp(App[None]):
             level="info",
         )
         self._save_runtime_state()
+        self._refresh_run_inspector()
 
         command = str(replay.get("command") or "").strip()
         if command:
@@ -2704,6 +2879,7 @@ class ScholarDevClawApp(App[None]):
         self._record_chat_delta_event(message.token, message.content)
         self.query_one("#status-bar", StatusBar).update_timer()
         self._set_live_text(f"Assistant: {message.content}", "info")
+        self._refresh_run_inspector()
 
     @on(TaskLog)
     def on_task_log(self, message: TaskLog) -> None:
@@ -2739,6 +2915,7 @@ class ScholarDevClawApp(App[None]):
                 self._append_output(line, "system")
         self.query_one("#status-bar", StatusBar).update_timer()
         self._set_progress(self._running_action or "analyze", fraction)
+        self._refresh_run_inspector()
 
     @on(TaskCompleted)
     def on_task_completed(self, message: TaskCompleted) -> None:
@@ -2756,6 +2933,8 @@ class ScholarDevClawApp(App[None]):
             duration = max(0.0, time.perf_counter() - started_at)
 
         result = message.result
+        failure_code = ""
+        failure_error = ""
         if result.ok and message.action == "chat":
             self._clear_progress()
             content = str(result.payload.get("content", "") or "").strip()
@@ -2794,6 +2973,8 @@ class ScholarDevClawApp(App[None]):
                 status="Success",
                 duration=duration,
                 terminal_state=RunLifecycleState.COMPLETED,
+                failure_code="",
+                error="",
                 summary_lines=[f"Assistant: {content.splitlines()[0]}"] if content else [],
                 request=message.request,
                 command=str(message.request.get("_original_command") or "") or None,
@@ -2827,6 +3008,8 @@ class ScholarDevClawApp(App[None]):
                 status="Success",
                 duration=duration,
                 terminal_state=RunLifecycleState.COMPLETED,
+                failure_code="",
+                error="",
                 summary_lines=summary_lines,
                 request=message.request,
                 command=str(message.request.get("_original_command") or "") or None,
@@ -2838,6 +3021,8 @@ class ScholarDevClawApp(App[None]):
                 terminal_state=RunLifecycleState.COMPLETED,
                 duration=duration,
                 request=message.request,
+                failure_code="",
+                error="",
                 summary_lines=summary_lines,
             )
         else:
@@ -2851,6 +3036,8 @@ class ScholarDevClawApp(App[None]):
             ):
                 self._append_output("Task cancelled", "warning")
                 self._transition_run_state(RunLifecycleState.CANCELLED, action=message.action)
+                failure_error = str(result.error or "Task cancelled")
+                failure_code = self._classify_failure_code(failure_error, cancelled=True)
                 self._append_run_event(
                     message.token,
                     "run.cancelled",
@@ -2858,7 +3045,10 @@ class ScholarDevClawApp(App[None]):
                     state=RunLifecycleState.CANCELLED.value,
                     message=f"{message.action} cancelled",
                     level="warning",
-                    payload={"duration_seconds": round(duration, 3)},
+                    payload={
+                        "duration_seconds": round(duration, 3),
+                        "failure_code": failure_code,
+                    },
                 )
                 status = "Cancelled"
                 terminal_state = RunLifecycleState.CANCELLED
@@ -2868,21 +3058,28 @@ class ScholarDevClawApp(App[None]):
                     status="Cancelled",
                     duration=duration,
                     terminal_state=RunLifecycleState.CANCELLED,
+                    failure_code=failure_code,
+                    error=failure_error,
                     summary_lines=summary_lines,
                     request=message.request,
                     command=str(message.request.get("_original_command") or "") or None,
                 )
             else:
-                self._append_output(f"Error: {result.error or 'command failed'}", "error")
+                failure_error = str(result.error or "command failed")
+                failure_code = self._classify_failure_code(failure_error)
+                self._append_output(f"Error: {failure_error}", "error")
                 self._transition_run_state(RunLifecycleState.FAILED, action=message.action)
                 self._append_run_event(
                     message.token,
                     "run.failed",
                     phase=self._phase_for_run_state(RunLifecycleState.FAILED, message.action),
                     state=RunLifecycleState.FAILED.value,
-                    message=self._trim_event_message(result.error or "command failed", limit=180),
+                    message=self._trim_event_message(failure_error, limit=180),
                     level="error",
-                    payload={"duration_seconds": round(duration, 3)},
+                    payload={
+                        "duration_seconds": round(duration, 3),
+                        "failure_code": failure_code,
+                    },
                 )
                 self._add_history_entry(
                     run_id=message.token,
@@ -2890,6 +3087,8 @@ class ScholarDevClawApp(App[None]):
                     status="Failed",
                     duration=duration,
                     terminal_state=RunLifecycleState.FAILED,
+                    failure_code=failure_code,
+                    error=failure_error,
                     summary_lines=summary_lines,
                     request=message.request,
                     command=str(message.request.get("_original_command") or "") or None,
@@ -2901,12 +3100,15 @@ class ScholarDevClawApp(App[None]):
                 terminal_state=terminal_state,
                 duration=duration,
                 request=message.request,
+                failure_code=failure_code,
+                error=failure_error,
                 summary_lines=summary_lines,
             )
             self._context_hints = []
 
         self._update_command_meta()
         self._save_runtime_state()
+        self._refresh_run_inspector()
         self.query_one("#prompt-input", PromptInput).focus()
 
     # ------------------------------------------------------------------

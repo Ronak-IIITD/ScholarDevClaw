@@ -156,6 +156,42 @@ def test_compose_includes_phase_tracker_and_history_pane():
 
     assert "PhaseTracker" in source
     assert "HistoryPane" in source
+    assert "RunInspector" in source
+
+
+def test_refresh_run_inspector_prefers_active_run_then_latest_artifact():
+    app = _minimal_app_for_unit()
+    app._active_token = 22
+    app._running_action = "validate"
+    app._run_state = RunLifecycleState.RUNNING
+    app._active_request = {"repo_path": "./active-repo", "spec": "rmsnorm", "query": ""}
+    app._run_started_at = {22: time.perf_counter() - 0.2}
+    app._recent_run_artifacts = [
+        RunArtifact(
+            run_id=10,
+            action="analyze",
+            status="Success",
+            repo_path="./old",
+            spec="",
+            duration_seconds=1.1,
+            terminal_state=RunLifecycleState.COMPLETED.value,
+            summary_lines=["old summary"],
+        )
+    ]
+
+    active_snapshot = app._build_run_inspector_snapshot()
+    assert active_snapshot is not None
+    assert active_snapshot["run_id"] == 22
+    assert active_snapshot["action"] == "validate"
+    assert active_snapshot["repo"] == "./active-repo"
+
+    app._running_action = None
+    app._active_request = None
+    latest_snapshot = app._build_run_inspector_snapshot()
+    assert latest_snapshot is not None
+    assert latest_snapshot["run_id"] == 10
+    assert latest_snapshot["action"] == "analyze"
+    assert latest_snapshot["repo"] == "./old"
 
 
 def test_build_request_supports_mode_shorthand():
@@ -940,6 +976,96 @@ def test_on_task_completed_emits_terminal_completion_event():
     assert any(event.type == "run.completed" for event in app._run_events[88])
 
 
+def test_on_task_completed_failure_sets_failure_code_and_inspector_lines():
+    app = _minimal_app_for_unit()
+    app._active_token = 77
+    app._running_action = "search"
+    app._active_request = {"action": "search", "query": "flash attention"}
+    app._run_started_at = {77: time.perf_counter() - 0.2}
+
+    class _DummyStatus:
+        def stop_timer(self):
+            return None
+
+    class _DummyPrompt:
+        def focus(self):
+            return None
+
+    class _DummyHistory:
+        def add_entry(self, **kwargs):
+            return None
+
+    def _query_one(selector, *_args, **_kwargs):
+        if selector == "#status-bar":
+            return _DummyStatus()
+        if selector == "#prompt-input":
+            return _DummyPrompt()
+        if selector == "#history-pane":
+            return _DummyHistory()
+        raise AssertionError(f"unexpected selector: {selector}")
+
+    app.query_one = _query_one  # type: ignore[assignment]
+    app._set_progress = lambda *_a, **_k: None
+    app._clear_progress = lambda: None
+    app._append_output = lambda *_a, **_k: None
+    app._set_status = lambda *_a, **_k: None
+    app._summarize_result = lambda *_a, **_k: ["search failed"]
+    app._update_command_meta = lambda: None
+    app._save_runtime_state = lambda: None
+
+    result = type(
+        "Result",
+        (),
+        {
+            "ok": False,
+            "payload": {},
+            "error": "Rate limit reached (429) while querying model",
+            "logs": [],
+        },
+    )()
+    request = {"action": "search", "query": "flash attention", "_original_command": "search"}
+
+    app.on_task_completed(TaskCompleted(77, "search", result, request))
+
+    artifact = app._recent_run_artifacts[-1]
+    assert artifact.failure_code == "E_LLM_RATE_LIMIT"
+    assert "Rate limit" in artifact.error
+    assert any("failure=E_LLM_RATE_LIMIT" in line for line in app._inspector_lines)
+    assert any("Error:" in line for line in app._inspector_lines)
+
+
+def test_inspect_command_outputs_current_inspector_snapshot_lines():
+    app = _minimal_app_for_unit()
+    app._recent_run_artifacts = [
+        RunArtifact(
+            run_id=5,
+            action="generate",
+            status="Failed",
+            repo_path="./repo",
+            spec="rmsnorm",
+            duration_seconds=3.1,
+            terminal_state=RunLifecycleState.FAILED.value,
+            failure_code="E_RUNTIME_EXCEPTION",
+            error="boom",
+            summary_lines=["failed summary"],
+        )
+    ]
+    app._run_events = {
+        5: [RunEvent(run_id=5, seq=1, timestamp=1.0, type="run.failed", message="boom")]
+    }
+    output: list[str] = []
+    statuses: list[tuple[str, str]] = []
+    app._append_output = lambda line, level="auto": output.append(line)
+    app._set_status = lambda message, level="info": statuses.append((level, message))
+
+    expected = app._refresh_run_inspector()
+    output.clear()
+    app._execute_action_request("inspect", {}, command="inspect")
+
+    assert output == expected
+    assert statuses[-1][1] == "Run inspector snapshot"
+
+
 def test_runs_command_outputs_compact_recent_runs():
     app = _minimal_app_for_unit()
     app._recent_run_artifacts = [
@@ -1050,6 +1176,8 @@ def test_runtime_state_persists_recent_run_artifacts_replay_map_and_events(monke
             query="",
             duration_seconds=4.2,
             terminal_state=RunLifecycleState.CANCELLED.value,
+            failure_code="E_CANCELLED_BY_USER",
+            error="Task cancelled",
             summary_lines=["Stage: generated"],
         )
     ]
@@ -1066,6 +1194,8 @@ def test_runtime_state_persists_recent_run_artifacts_replay_map_and_events(monke
             "status": "Cancelled",
             "terminal_state": RunLifecycleState.CANCELLED.value,
             "duration_seconds": 4.2,
+            "failure_code": "E_CANCELLED_BY_USER",
+            "error": "Task cancelled",
             "summary_lines": ["Stage: generated"],
         }
     }
@@ -1096,6 +1226,9 @@ def test_runtime_state_persists_recent_run_artifacts_replay_map_and_events(monke
     state_path = app._runtime_state_path()
     saved = json.loads(state_path.read_text())
     assert saved["recent_run_artifacts"][0]["run_id"] == 9
+    assert saved["recent_run_artifacts"][0]["failure_code"] == "E_CANCELLED_BY_USER"
+    assert "Task cancelled" in saved["recent_run_artifacts"][0]["error"]
+    assert saved["replay_map"]["9"]["failure_code"] == "E_CANCELLED_BY_USER"
     assert "prompt" not in saved["replay_map"]["9"]["request"]
     assert "run_events" in saved
     assert saved["run_events"]["9"][1]["type"] == "chat.delta"
@@ -1115,6 +1248,9 @@ def test_runtime_state_persists_recent_run_artifacts_replay_map_and_events(monke
     assert 9 in reloaded._run_events
     assert any(event.type == "chat.delta" for event in reloaded._run_events[9])
     assert "prompt" not in reloaded._run_replay_map[9]["request"]
+    assert reloaded._run_replay_map[9]["failure_code"] == "E_CANCELLED_BY_USER"
+    restored = next(item for item in reloaded._recent_run_artifacts if item.run_id == 9)
+    assert restored.failure_code == "E_CANCELLED_BY_USER"
 
 
 def test_build_request_supports_runs_show_and_rerun_commands():
@@ -1122,6 +1258,10 @@ def test_build_request_supports_runs_show_and_rerun_commands():
 
     action, req = app._build_request("runs")
     assert action == "runs"
+
+    action, req = app._build_request("inspect")
+    assert action == "inspect"
+    assert req == {}
 
     action, req = app._build_request("run show 7")
     assert action == "run_show"
