@@ -353,6 +353,61 @@ def test_build_request_natural_action_routing_enabled_by_env(monkeypatch):
     assert req["repo_path"] == "./repo"
 
 
+def test_parse_approval_value_accepts_common_truthy_and_falsey_values():
+    app = _minimal_app_for_unit()
+
+    assert app._parse_approval_value("yes") is True
+    assert app._parse_approval_value("Approve") is True
+    assert app._parse_approval_value("no") is False
+    assert app._parse_approval_value("reject") is False
+    assert app._parse_approval_value("maybe") is None
+
+
+def test_build_integrate_approval_callback_env_enabled_uses_stage_override(monkeypatch):
+    app = _minimal_app_for_unit()
+    monkeypatch.setenv("SCHOLARDEVCLAW_TUI_APPROVAL_GATES", "true")
+    monkeypatch.setenv("SCHOLARDEVCLAW_TUI_APPROVAL_PATCH_APPLICATION", "true")
+
+    emitted: list[str] = []
+    app.call_from_thread = lambda fn, *args, **kwargs: fn(*args, **kwargs)  # type: ignore[assignment]
+    app.post_message = lambda msg: emitted.append(getattr(msg, "line", ""))  # type: ignore[assignment]
+
+    callback = app._build_integrate_approval_callback(5, input_reader=lambda _prompt: "n")
+    assert callback is not None
+
+    decision = callback("patch_application", {})
+
+    assert decision is True
+    assert any("Approval required [patch_application]" in line for line in emitted)
+    assert any("Approval [patch_application] from env: approved" in line for line in emitted)
+
+
+def test_build_integrate_approval_callback_noninteractive_auto_approves(monkeypatch):
+    app = _minimal_app_for_unit()
+    monkeypatch.setenv("SCHOLARDEVCLAW_TUI_APPROVAL_GATES", "true")
+    monkeypatch.delenv("SCHOLARDEVCLAW_TUI_APPROVAL_DEFAULT", raising=False)
+
+    emitted: list[str] = []
+    app.call_from_thread = lambda fn, *args, **kwargs: fn(*args, **kwargs)  # type: ignore[assignment]
+    app.post_message = lambda msg: emitted.append(getattr(msg, "line", ""))  # type: ignore[assignment]
+
+    monkeypatch.setattr("scholardevclaw.tui.app.sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("scholardevclaw.tui.app.sys.stdout.isatty", lambda: False)
+
+    callback = app._build_integrate_approval_callback(
+        8,
+        input_reader=lambda _prompt: (_ for _ in ()).throw(
+            AssertionError("input should not be used")
+        ),
+    )
+    assert callback is not None
+
+    decision = callback("impact_acceptance", {})
+
+    assert decision is True
+    assert any("auto-approved (non-interactive terminal)" in line for line in emitted)
+
+
 def test_compute_suggestions_prioritizes_best_match():
     app = _minimal_app_for_unit()
 

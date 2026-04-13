@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import difflib
 import logging
 import os
+import shutil
 import subprocess
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +50,7 @@ class PipelineResult:
 
 
 LogCallback = Callable[[str], None]
+ApprovalCallback = Callable[[str, dict[str, Any]], bool]
 PIPELINE_SCHEMA_VERSION = SCHEMA_VERSION
 QUALITY_GATES = {
     "mapping_confidence_min": 70.0,
@@ -60,6 +64,173 @@ def _log(logs: list[str], message: str, log_callback: LogCallback | None = None)
     logs.append(message)
     if log_callback is not None:
         log_callback(message)
+
+
+def _resolve_copy_target(copy_root: Path, relative_path: str) -> Path:
+    candidate = (copy_root / relative_path).resolve()
+    try:
+        candidate.relative_to(copy_root.resolve())
+    except ValueError as exc:
+        raise ValueError(f"Unsafe patch path outside temp copy: {relative_path}") from exc
+    return candidate
+
+
+def _line_count(text: str) -> int:
+    if not text:
+        return 0
+    return len(text.splitlines())
+
+
+def _build_diff_evidence(patch_payload: dict[str, Any] | None) -> dict[str, Any]:
+    payload = patch_payload if isinstance(patch_payload, dict) else {}
+    new_files = payload.get("new_files", [])
+    transformations = payload.get("transformations", [])
+
+    files_new: list[str] = []
+    files_changed: list[str] = []
+    line_additions = 0
+    line_removals = 0
+    representative_hunks: list[dict[str, str]] = []
+
+    for new_file in new_files if isinstance(new_files, list) else []:
+        if not isinstance(new_file, dict):
+            continue
+        path = str(new_file.get("path", "")).strip()
+        if not path:
+            continue
+        content = str(new_file.get("content", ""))
+        files_new.append(path)
+        line_additions += _line_count(content)
+        snippet_lines = [line for line in content.splitlines()[:4] if line.strip()]
+        if snippet_lines and len(representative_hunks) < 6:
+            representative_hunks.append(
+                {
+                    "file": path,
+                    "kind": "new",
+                    "summary": "\\n".join(f"+{line}" for line in snippet_lines),
+                }
+            )
+
+    for transformation in transformations if isinstance(transformations, list) else []:
+        if not isinstance(transformation, dict):
+            continue
+        path = str(transformation.get("file", "")).strip()
+        if not path:
+            continue
+        original = str(transformation.get("original", ""))
+        modified = str(transformation.get("modified", ""))
+        files_changed.append(path)
+        diff_lines = list(
+            difflib.unified_diff(
+                original.splitlines(),
+                modified.splitlines(),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+                lineterm="",
+            )
+        )
+        for line in diff_lines:
+            if line.startswith("+++") or line.startswith("---"):
+                continue
+            if line.startswith("+"):
+                line_additions += 1
+            elif line.startswith("-"):
+                line_removals += 1
+
+        if len(representative_hunks) < 6:
+            hunk_lines = [
+                line
+                for line in diff_lines
+                if line.startswith("@@")
+                or (line.startswith("+") and not line.startswith("+++"))
+                or (line.startswith("-") and not line.startswith("---"))
+            ][:6]
+            if hunk_lines:
+                representative_hunks.append(
+                    {
+                        "file": path,
+                        "kind": "modified",
+                        "summary": "\\n".join(hunk_lines),
+                    }
+                )
+
+    return {
+        "files_changed": sorted(set(files_changed)),
+        "files_new": sorted(set(files_new)),
+        "line_additions": int(line_additions),
+        "line_removals": int(line_removals),
+        "representative_hunks": representative_hunks[:3],
+    }
+
+
+def _create_validation_copy(repo_path: Path) -> tuple[Path, Path]:
+    temp_root = Path(tempfile.mkdtemp(prefix="scholardevclaw-integrate-")).resolve()
+    copied_repo = temp_root / "repo"
+    shutil.copytree(repo_path, copied_repo, symlinks=True)
+    return temp_root, copied_repo
+
+
+def _cleanup_validation_copy(temp_root: Path | None) -> None:
+    if temp_root is None:
+        return
+    shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def _apply_patch_to_copy(copy_path: Path, patch_payload: dict[str, Any] | None) -> dict[str, Any]:
+    payload = patch_payload if isinstance(patch_payload, dict) else {}
+    new_files = payload.get("new_files", [])
+    transformations = payload.get("transformations", [])
+
+    applied_new_files: list[str] = []
+    applied_transformations: list[str] = []
+
+    for new_file in new_files if isinstance(new_files, list) else []:
+        if not isinstance(new_file, dict):
+            continue
+        file_path = str(new_file.get("path", "")).strip()
+        if not file_path:
+            continue
+        destination = _resolve_copy_target(copy_path, file_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(str(new_file.get("content", "")))
+        applied_new_files.append(file_path)
+
+    for transformation in transformations if isinstance(transformations, list) else []:
+        if not isinstance(transformation, dict):
+            continue
+        file_path = str(transformation.get("file", "")).strip()
+        if not file_path:
+            continue
+        destination = _resolve_copy_target(copy_path, file_path)
+        if not destination.exists():
+            raise FileNotFoundError(f"Transformation target missing in temp copy: {file_path}")
+        destination.write_text(str(transformation.get("modified", "")))
+        applied_transformations.append(file_path)
+
+    return {
+        "applied_new_files": sorted(set(applied_new_files)),
+        "applied_transformations": sorted(set(applied_transformations)),
+    }
+
+
+def _request_approval(
+    *,
+    stage: str,
+    context: dict[str, Any],
+    approval_callback: ApprovalCallback | None,
+    logs: list[str],
+    log_callback: LogCallback | None,
+) -> bool:
+    if approval_callback is None:
+        return True
+    try:
+        approved = bool(approval_callback(stage, context))
+    except Exception as exc:
+        _log(logs, f"Approval gate [{stage}] callback failed: {exc}", log_callback)
+        return False
+
+    _log(logs, f"Approval gate [{stage}]: {'approved' if approved else 'rejected'}", log_callback)
+    return approved
 
 
 def _evaluate_quality_gates(
@@ -961,6 +1132,7 @@ def run_integrate(
     output_dir: str | None = None,
     create_rollback: bool = True,
     log_callback: LogCallback | None = None,
+    approval_callback: ApprovalCallback | None = None,
 ) -> PipelineResult:
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
@@ -1128,17 +1300,134 @@ def run_integrate(
                 error=generate_result.error,
             )
 
-        validate_result = run_validate(
-            str(path),
-            generate_result.payload,
+        diff_evidence = _build_diff_evidence(generate_result.payload)
+        validation_provenance: dict[str, Any] = {
+            "validated_on": "original",
+            "validation_repo_path": str(path),
+            "patch_application_succeeded": False,
+        }
+
+        if not _request_approval(
+            stage="patch_application",
+            context={
+                "spec": selected_spec_name,
+                "repo_path": str(path),
+                "diff_evidence": diff_evidence,
+            },
+            approval_callback=approval_callback,
+            logs=logs,
             log_callback=log_callback,
+        ):
+            return PipelineResult(
+                ok=False,
+                title="Integration",
+                payload=with_meta(
+                    {
+                        "step": "approval_gate",
+                        "gate_stage": "patch_application",
+                        "spec": selected_spec_name,
+                        "generation": generate_result.payload,
+                        "diff_evidence": diff_evidence,
+                        "validation_provenance": validation_provenance,
+                        "rollback_snapshot_id": rollback_snapshot_id,
+                    },
+                    "integration",
+                ),
+                logs=logs,
+                error="Patch application stage was not approved",
+            )
+
+        temp_copy_root: Path | None = None
+        apply_metadata: dict[str, Any] = {}
+        try:
+            temp_copy_root, temp_repo_path = _create_validation_copy(path)
+            _log(logs, f"Created validation temp copy: {temp_repo_path}", log_callback)
+            apply_metadata = _apply_patch_to_copy(temp_repo_path, generate_result.payload)
+            validation_provenance = {
+                "validated_on": "patched_copy",
+                "validation_repo_path": str(temp_repo_path),
+                "patch_application_succeeded": True,
+                "patch_application": apply_metadata,
+            }
+            _log(
+                logs,
+                "Applied generated patch artifacts to validation temp copy",
+                log_callback,
+            )
+
+            validate_result = run_validate(
+                str(temp_repo_path),
+                generate_result.payload,
+                log_callback=log_callback,
+            )
+            logs.extend(validate_result.logs)
+        except Exception as exc:
+            _log(logs, f"Patch application/validation setup failed: {exc}", log_callback)
+            return PipelineResult(
+                ok=False,
+                title="Integration",
+                payload=with_meta(
+                    {
+                        "step": "patch_apply",
+                        "spec": selected_spec_name,
+                        "generation": generate_result.payload,
+                        "diff_evidence": diff_evidence,
+                        "validation_provenance": validation_provenance,
+                        "patch_application_error": str(exc),
+                        "rollback_snapshot_id": rollback_snapshot_id,
+                    },
+                    "integration",
+                ),
+                logs=logs,
+                error=str(exc),
+            )
+        finally:
+            if temp_copy_root is not None:
+                _cleanup_validation_copy(temp_copy_root)
+                _log(logs, f"Cleaned validation temp copy: {temp_copy_root}", log_callback)
+
+        validation_payload = (
+            dict(validate_result.payload) if isinstance(validate_result.payload, dict) else {}
         )
-        logs.extend(validate_result.logs)
+        validation_payload["provenance"] = validation_provenance
         final_quality_gates = _evaluate_quality_gates(
             mapping_result=mapping_result,
-            validation_payload=validate_result.payload,
+            validation_payload=validation_payload,
         )
         _log(logs, f"Quality gates (final): {final_quality_gates['summary']}", log_callback)
+
+        if not _request_approval(
+            stage="impact_acceptance",
+            context={
+                "spec": selected_spec_name,
+                "validation": validation_payload,
+                "quality_gates": final_quality_gates,
+                "diff_evidence": diff_evidence,
+            },
+            approval_callback=approval_callback,
+            logs=logs,
+            log_callback=log_callback,
+        ):
+            return PipelineResult(
+                ok=False,
+                title="Integration",
+                payload=with_meta(
+                    {
+                        "step": "approval_gate",
+                        "gate_stage": "impact_acceptance",
+                        "spec": selected_spec_name,
+                        "generation": generate_result.payload,
+                        "validation": validation_payload,
+                        "quality_gates": final_quality_gates,
+                        "diff_evidence": diff_evidence,
+                        "validation_provenance": validation_provenance,
+                        "rollback_snapshot_id": rollback_snapshot_id,
+                    },
+                    "integration",
+                ),
+                logs=logs,
+                error="Post-validation impact stage was not approved",
+            )
 
         payload = with_meta(
             {
@@ -1154,7 +1443,9 @@ def run_integrate(
                 "mapping": mapping_result,
                 "quality_gates": final_quality_gates,
                 "generation": generate_result.payload,
-                "validation": validate_result.payload,
+                "validation": validation_payload,
+                "diff_evidence": diff_evidence,
+                "validation_provenance": validation_provenance,
                 "rollback_snapshot_id": rollback_snapshot_id,
             },
             "integration",

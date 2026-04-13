@@ -4,6 +4,60 @@
 
 **Last updated:** 2026-04-11
 
+### 2026-04-11 (Phase-2 trust loop: patched-copy validation + evidence + TUI approvals)
+
+**Summary:** Implemented a pragmatic Phase-2 trust loop in the integrate flow: generated patch artifacts are now applied to a temporary working copy before validation, validation provenance and compact diff evidence are emitted in integration payloads, and optional TUI approval gates are available for patch-application and post-validation impact stages.
+
+**What changed:**
+
+- `core/src/scholardevclaw/application/pipeline.py`
+  - Added integrate trust-loop helpers:
+    - temp repo copy lifecycle (`_create_validation_copy`, `_cleanup_validation_copy`)
+    - patch artifact application into temp copy (`_apply_patch_to_copy`)
+    - compact textual diff evidence generation (`_build_diff_evidence`)
+    - optional approval gate callback handling (`_request_approval`)
+  - Updated `run_integrate(...)` to:
+    - generate patch artifacts as before,
+    - optionally require approval at `patch_application` stage,
+    - apply generated artifacts to a temp working copy,
+    - run validation against the patched temp copy (not original repo path),
+    - safely clean temp artifacts in `finally` flow,
+    - optionally require approval at `impact_acceptance` stage,
+    - emit additive payload evidence:
+      - `diff_evidence` (`files_changed`, `files_new`, `line_additions`, `line_removals`, `representative_hunks`)
+      - `validation_provenance` (`validated_on`, `validation_repo_path`, `patch_application_succeeded`, patch apply metadata)
+      - mirrored provenance under `validation.provenance` for consumers already reading validation subpayloads.
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Added lightweight approval-gate support for integrate flow (default off):
+    - env gate: `SCHOLARDEVCLAW_TUI_APPROVAL_GATES=true`
+    - per-stage/default env overrides:
+      - `SCHOLARDEVCLAW_TUI_APPROVAL_PATCH_APPLICATION`
+      - `SCHOLARDEVCLAW_TUI_APPROVAL_IMPACT_ACCEPTANCE`
+      - `SCHOLARDEVCLAW_TUI_APPROVAL_DEFAULT`
+  - Added parsing + flow helpers:
+    - `_parse_approval_value(...)`
+    - `_approval_gates_enabled(...)`
+    - `_approval_env_decision(...)`
+    - `_build_integrate_approval_callback(...)`
+  - Wired approval callback into integrate task execution path.
+  - Non-interactive safety: when approvals are enabled but terminal is non-interactive, approval auto-approves rather than blocking.
+
+- Tests:
+  - `core/tests/unit/test_pipeline.py`
+    - Added regression ensuring integrate validation runs against a patched temp copy path (not original path).
+    - Added regression ensuring original repo content remains unchanged after integrate validation phase.
+    - Added regression ensuring `diff_evidence` and `validation_provenance` fields are present with sane values.
+  - `core/tests/unit/test_tui_app.py`
+    - Added approval value parsing coverage.
+    - Added approval callback flow coverage with env-enabled stage override.
+    - Added non-interactive auto-approval coverage when gates are enabled.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/ tests/`
+- ✅ `cd core && pytest tests/unit/test_pipeline.py tests/unit/test_validation_runner.py tests/unit/test_tui_app.py -q` (`196 passed, 1 skipped`)
+
 ### 2026-04-11 (Pipeline Contract Phase-1 hardening)
 
 **Summary:** Hardened research→mapping→patch chaining contracts by normalizing mapping/extraction payloads, removing fabricated extraction fallbacks, and wiring optional LLM assistants through API and pipeline mapping paths without breaking no-LLM mode.

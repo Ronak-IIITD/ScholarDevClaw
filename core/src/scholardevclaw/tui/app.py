@@ -9,8 +9,10 @@ import logging
 import math
 import os
 import subprocess
+import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -190,6 +192,7 @@ RUN_EVENT_LIMIT_PER_RUN = 120
 RUN_EVENT_RUN_LIMIT = 20
 NATURAL_ACTION_ROUTING_ENV = "SCHOLARDEVCLAW_TUI_ENABLE_NATURAL_ACTION_ROUTING"
 AUTO_MODEL_FALLBACK_ENV = "SCHOLARDEVCLAW_TUI_AUTO_MODEL_FALLBACK"
+TUI_APPROVAL_GATES_ENV = "SCHOLARDEVCLAW_TUI_APPROVAL_GATES"
 CHAT_SYSTEM_PROMPTS = {
     "analyze": (
         "You are ScholarDevClaw, a terse coding assistant inside a terminal UI. "
@@ -1692,6 +1695,95 @@ class ScholarDevClawApp(App[None]):
         return raw.strip().lower() in {"1", "true", "yes", "on"}
 
     @staticmethod
+    def _parse_approval_value(raw: str | None) -> bool | None:
+        if raw is None:
+            return None
+        value = raw.strip().lower()
+        if value in {"1", "true", "yes", "y", "on", "approve", "approved", "allow"}:
+            return True
+        if value in {"0", "false", "no", "n", "off", "reject", "rejected", "deny"}:
+            return False
+        return None
+
+    def _approval_gates_enabled(self) -> bool:
+        return self._env_flag_enabled(TUI_APPROVAL_GATES_ENV, default=False)
+
+    def _approval_env_decision(self, stage: str) -> bool | None:
+        normalized_stage = stage.strip().upper().replace("-", "_")
+        stage_key = f"SCHOLARDEVCLAW_TUI_APPROVAL_{normalized_stage}"
+        stage_value = self._parse_approval_value(os.environ.get(stage_key))
+        if stage_value is not None:
+            return stage_value
+        return self._parse_approval_value(os.environ.get("SCHOLARDEVCLAW_TUI_APPROVAL_DEFAULT"))
+
+    @staticmethod
+    def _approval_stage_message(stage: str) -> str:
+        if stage == "patch_application":
+            return "Apply generated patch artifacts to temporary validation copy?"
+        if stage == "impact_acceptance":
+            return "Accept post-validation impact and finalize integration?"
+        return f"Approve stage '{stage}'?"
+
+    def _build_integrate_approval_callback(
+        self, token: int, *, input_reader: Callable[[str], str] = input
+    ) -> Callable[[str, dict[str, Any]], bool] | None:
+        if not self._approval_gates_enabled():
+            return None
+
+        def _callback(stage: str, context: dict[str, Any]) -> bool:
+            prompt = self._approval_stage_message(stage)
+            self.call_from_thread(
+                self.post_message,
+                TaskLog(
+                    token,
+                    f"Approval required [{stage}] — {prompt}",
+                ),
+            )
+
+            env_decision = self._approval_env_decision(stage)
+            if env_decision is not None:
+                self.call_from_thread(
+                    self.post_message,
+                    TaskLog(
+                        token,
+                        f"Approval [{stage}] from env: {'approved' if env_decision else 'rejected'}",
+                    ),
+                )
+                return env_decision
+
+            if not (sys.stdin.isatty() and sys.stdout.isatty()):
+                self.call_from_thread(
+                    self.post_message,
+                    TaskLog(
+                        token,
+                        f"Approval [{stage}] auto-approved (non-interactive terminal)",
+                    ),
+                )
+                return True
+
+            try:
+                response = input_reader(f"{prompt} [y/N]: ")
+            except EOFError:
+                self.call_from_thread(
+                    self.post_message,
+                    TaskLog(token, f"Approval [{stage}] rejected (EOF while prompting)"),
+                )
+                return False
+
+            parsed = self._parse_approval_value(response)
+            decision = bool(parsed) if parsed is not None else False
+            self.call_from_thread(
+                self.post_message,
+                TaskLog(
+                    token,
+                    f"Approval [{stage}] {'approved' if decision else 'rejected'}",
+                ),
+            )
+            return decision
+
+        return _callback
+
+    @staticmethod
     def _estimate_tokens(text: str) -> int:
         stripped = text.strip()
         if not stripped:
@@ -2463,10 +2555,12 @@ class ScholarDevClawApp(App[None]):
                 elif action == "validate":
                     result = run_validate(request["repo_path"], log_callback=_log_callback)
                 elif action == "integrate":
+                    approval_callback = self._build_integrate_approval_callback(token)
                     result = run_integrate(
                         request["repo_path"],
                         request["spec"],
                         log_callback=_log_callback,
+                        approval_callback=approval_callback,
                     )
                 else:
                     raise RuntimeError(f"Unsupported action: {action}")

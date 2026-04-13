@@ -1610,6 +1610,172 @@ def test_run_integrate_error_hook_called(monkeypatch, tmp_path):
     assert "on_pipeline_error" in called_hooks
 
 
+def test_run_integrate_uses_patched_temp_copy_for_validation(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+    pipeline = _pipeline_module()
+
+    source_file = tmp_path / "model.py"
+    source_file.write_text("x = 1\n")
+
+    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+        return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
+
+    monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
+
+    patch_payload = {
+        "new_files": [{"path": "rmsnorm.py", "content": "class RMSNorm:\n    pass\n"}],
+        "transformations": [
+            {
+                "file": "model.py",
+                "original": "x = 1\n",
+                "modified": "x = 2\n",
+                "changes": [{"type": "replace"}],
+            }
+        ],
+    }
+
+    monkeypatch.setattr(
+        pipeline,
+        "run_generate",
+        lambda *a, **k: pipeline.PipelineResult(
+            ok=True,
+            title="Patch Generation",
+            payload=patch_payload,
+            logs=["generated"],
+        ),
+    )
+
+    seen: dict[str, str] = {}
+
+    def _fake_run_validate(repo_path, patch=None, *, log_callback=None):
+        seen["repo_path"] = repo_path
+        seen["model_contents"] = (Path(repo_path) / "model.py").read_text()
+        return pipeline.PipelineResult(
+            ok=True,
+            title="Validation",
+            payload={"passed": True, "stage": "benchmark", "scorecard": {"summary": "pass"}},
+            logs=["validated"],
+        )
+
+    monkeypatch.setattr(pipeline, "run_validate", _fake_run_validate)
+
+    result = pipeline.run_integrate(str(tmp_path), "rmsnorm", create_rollback=False)
+
+    assert result.ok is True
+    assert seen["repo_path"] != str(tmp_path.resolve())
+    assert seen["model_contents"] == "x = 2\n"
+    assert not Path(seen["repo_path"]).exists()
+
+
+def test_run_integrate_keeps_original_repo_unchanged_after_validation(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+    pipeline = _pipeline_module()
+
+    source_file = tmp_path / "model.py"
+    source_file.write_text("x = 1\n")
+
+    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+        return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
+
+    monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
+    monkeypatch.setattr(
+        pipeline,
+        "run_generate",
+        lambda *a, **k: pipeline.PipelineResult(
+            ok=True,
+            title="Patch Generation",
+            payload={
+                "new_files": [],
+                "transformations": [
+                    {
+                        "file": "model.py",
+                        "original": "x = 1\n",
+                        "modified": "x = 99\n",
+                        "changes": [{"type": "replace"}],
+                    }
+                ],
+            },
+            logs=["generated"],
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_validate",
+        lambda *a, **k: pipeline.PipelineResult(
+            ok=True,
+            title="Validation",
+            payload={"passed": True, "stage": "benchmark", "scorecard": {"summary": "pass"}},
+            logs=["validated"],
+        ),
+    )
+
+    result = pipeline.run_integrate(str(tmp_path), "rmsnorm", create_rollback=False)
+
+    assert result.ok is True
+    assert source_file.read_text() == "x = 1\n"
+
+
+def test_run_integrate_emits_diff_evidence_and_validation_provenance(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+    _install_fake_extractor(monkeypatch)
+    pipeline = _pipeline_module()
+
+    (tmp_path / "model.py").write_text("x = 1\n")
+
+    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+        return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
+
+    monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
+    monkeypatch.setattr(
+        pipeline,
+        "run_generate",
+        lambda *a, **k: pipeline.PipelineResult(
+            ok=True,
+            title="Patch Generation",
+            payload={
+                "new_files": [
+                    {"path": "new_module.py", "content": "def helper():\n    return 1\n"}
+                ],
+                "transformations": [
+                    {
+                        "file": "model.py",
+                        "original": "x = 1\n",
+                        "modified": "x = 2\n",
+                        "changes": [{"type": "replace"}],
+                    }
+                ],
+            },
+            logs=["generated"],
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_validate",
+        lambda *a, **k: pipeline.PipelineResult(
+            ok=True,
+            title="Validation",
+            payload={"passed": True, "stage": "benchmark", "scorecard": {"summary": "pass"}},
+            logs=["validated"],
+        ),
+    )
+
+    result = pipeline.run_integrate(str(tmp_path), "rmsnorm", create_rollback=False)
+
+    assert result.ok is True
+    evidence = result.payload["diff_evidence"]
+    assert "new_module.py" in evidence["files_new"]
+    assert "model.py" in evidence["files_changed"]
+    assert evidence["line_additions"] > 0
+    assert evidence["line_removals"] > 0
+    assert isinstance(evidence["representative_hunks"], list)
+
+    provenance = result.payload["validation_provenance"]
+    assert provenance["validated_on"] == "patched_copy"
+    assert provenance["patch_application_succeeded"] is True
+
+
 # =========================================================================
 # Tests for run_planner
 # =========================================================================
