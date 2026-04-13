@@ -20,10 +20,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+
+import scholardevclaw.cli as cli
 
 
 # =========================================================================
@@ -932,6 +936,149 @@ class TestCLIWiring:
         assert "multi_repo_action" in source
         assert "compare" in source
         assert "transfer" in source
+
+
+class TestWorkspaceCLI:
+    def test_workspace_list_prints_empty_message_when_no_profiles(self, monkeypatch, capsys):
+        class FakeManager:
+            def __init__(self):
+                pass
+
+            def list_profiles(self):
+                return []
+
+        monkeypatch.setattr("scholardevclaw.multi_repo.manager.MultiRepoManager", FakeManager)
+
+        args = type(
+            "Args",
+            (),
+            {
+                "workspace_action": "list",
+                "repo_id_or_path": None,
+                "name": None,
+                "all": False,
+                "output_json": False,
+            },
+        )()
+
+        cli.cmd_workspace(args)
+        out = capsys.readouterr().out
+        assert "Workspace is empty." in out
+
+    def test_workspace_analyze_rejects_invalid_argument_combinations(self, monkeypatch):
+        class FakeManager:
+            def __init__(self):
+                pass
+
+        monkeypatch.setattr("scholardevclaw.multi_repo.manager.MultiRepoManager", FakeManager)
+
+        args_both = type(
+            "Args",
+            (),
+            {
+                "workspace_action": "analyze",
+                "repo_id_or_path": "repo-a",
+                "name": None,
+                "all": True,
+                "output_json": False,
+            },
+        )()
+        with pytest.raises(SystemExit) as exc_both:
+            cli.cmd_workspace(args_both)
+        assert exc_both.value.code == 1
+
+        args_neither = type(
+            "Args",
+            (),
+            {
+                "workspace_action": "analyze",
+                "repo_id_or_path": None,
+                "name": None,
+                "all": False,
+                "output_json": False,
+            },
+        )()
+        with pytest.raises(SystemExit) as exc_neither:
+            cli.cmd_workspace(args_neither)
+        assert exc_neither.value.code == 1
+
+    def test_workspace_add_validates_directory_and_adds_repo(self, tmp_path, monkeypatch, capsys):
+        class FakeProfile:
+            def __init__(self):
+                self.repo_id = "repo-123"
+                self.name = "demo"
+                self.repo_path = ""
+
+        class FakeManager:
+            def __init__(self):
+                self.received: tuple[str, str | None] | None = None
+
+            def add_repo(self, repo_path, *, name=None):
+                profile = FakeProfile()
+                profile.repo_path = repo_path
+                profile.name = name or "demo"
+                self.received = (repo_path, name)
+                return profile
+
+        manager = FakeManager()
+        monkeypatch.setattr("scholardevclaw.multi_repo.manager.MultiRepoManager", lambda: manager)
+
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+
+        args = type(
+            "Args",
+            (),
+            {
+                "workspace_action": "add",
+                "repo_id_or_path": str(repo_dir),
+                "name": "demo",
+                "all": False,
+                "output_json": False,
+            },
+        )()
+
+        cli.cmd_workspace(args)
+
+        assert manager.received is not None
+        assert Path(manager.received[0]) == repo_dir.resolve()
+        assert manager.received[1] == "demo"
+        assert "Added workspace repo: demo (repo-123)" in capsys.readouterr().out
+
+    def test_workspace_analyze_all_prints_summary(self, monkeypatch, capsys):
+        ready_profile = _make_profile(name="alpha", repo_id="aaa", status="ready")
+        error_profile = _make_profile(name="beta", repo_id="bbb", status="error")
+        error_profile.error = "failed"
+
+        class FakeManager:
+            def __init__(self):
+                pass
+
+            def list_profiles(self):
+                return [ready_profile, error_profile]
+
+            def analyze_all(self):
+                return [ready_profile, error_profile]
+
+        monkeypatch.setattr("scholardevclaw.multi_repo.manager.MultiRepoManager", FakeManager)
+
+        args = type(
+            "Args",
+            (),
+            {
+                "workspace_action": "analyze",
+                "repo_id_or_path": None,
+                "name": None,
+                "all": True,
+                "output_json": False,
+            },
+        )()
+
+        cli.cmd_workspace(args)
+        out = capsys.readouterr().out
+        assert "Workspace analyze summary: total=2 ready=1 errors=1" in out
+        assert "- alpha (aaa) [READY]" in out
+        assert "- beta (bbb) [ERROR] error=failed" in out
 
 
 # =========================================================================

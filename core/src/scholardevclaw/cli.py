@@ -1604,6 +1604,172 @@ def cmd_security(args):
         sys.exit(1)
 
 
+def cmd_workspace(args):
+    """Manage CLI-first multi-repo workspace."""
+    from scholardevclaw.multi_repo.manager import MultiRepoManager
+
+    action = args.workspace_action
+    repo_ref = args.repo_id_or_path
+    manager = MultiRepoManager()
+
+    if action == "add":
+        if not repo_ref:
+            print("Error: repository path is required for 'workspace add'", file=sys.stderr)
+            sys.exit(1)
+
+        repo_path = Path(repo_ref).expanduser().resolve()
+        if not repo_path.exists():
+            print(f"Error: repository not found: {repo_ref}", file=sys.stderr)
+            sys.exit(1)
+        if not repo_path.is_dir():
+            print(f"Error: repository path must be a directory: {repo_ref}", file=sys.stderr)
+            sys.exit(1)
+
+        profile = manager.add_repo(str(repo_path), name=args.name)
+        if args.output_json:
+            print(
+                json.dumps(
+                    {
+                        "action": "add",
+                        "repo": {
+                            "repo_id": profile.repo_id,
+                            "name": profile.name,
+                            "repo_path": profile.repo_path,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+            return
+
+        print(f"Added workspace repo: {profile.name} ({profile.repo_id})")
+        return
+
+    if action == "list":
+        profiles = sorted(manager.list_profiles(), key=lambda p: (p.name, p.repo_id))
+        if args.output_json:
+            print(json.dumps([p.to_dict() for p in profiles], indent=2))
+            return
+
+        if not profiles:
+            print("Workspace is empty.")
+            return
+
+        for profile in profiles:
+            print(
+                f"[{profile.status.value.upper()}] {profile.name} ({profile.repo_id}) {profile.repo_path}"
+            )
+        return
+
+    if action == "remove":
+        if not repo_ref:
+            print("Error: repo id/name/path is required for 'workspace remove'", file=sys.stderr)
+            sys.exit(1)
+
+        removed = manager.remove_repo(repo_ref)
+        if args.output_json:
+            print(json.dumps({"action": "remove", "removed": removed, "repo": repo_ref}, indent=2))
+            if not removed:
+                sys.exit(1)
+            return
+
+        if not removed:
+            print(f"Error: workspace repo not found: {repo_ref}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Removed workspace repo: {repo_ref}")
+        return
+
+    if action == "analyze":
+        if args.all and repo_ref:
+            print("Error: cannot specify both --all and repo", file=sys.stderr)
+            sys.exit(1)
+        if not args.all and not repo_ref:
+            print("Error: provide repo id/name/path or use --all", file=sys.stderr)
+            sys.exit(1)
+
+        if args.all:
+            profiles = manager.list_profiles()
+            if not profiles:
+                if args.output_json:
+                    print(
+                        json.dumps(
+                            {
+                                "action": "analyze",
+                                "mode": "all",
+                                "total": 0,
+                                "ready": 0,
+                                "errors": 0,
+                                "repos": [],
+                            },
+                            indent=2,
+                        )
+                    )
+                else:
+                    print("Workspace is empty.")
+                return
+
+            analyzed = manager.analyze_all()
+            analyzed_sorted = sorted(analyzed, key=lambda p: (p.name, p.repo_id))
+            ready_count = sum(1 for p in analyzed_sorted if p.status.value == "ready")
+            error_count = sum(1 for p in analyzed_sorted if p.status.value == "error")
+
+            if args.output_json:
+                print(
+                    json.dumps(
+                        {
+                            "action": "analyze",
+                            "mode": "all",
+                            "total": len(analyzed_sorted),
+                            "ready": ready_count,
+                            "errors": error_count,
+                            "repos": [
+                                {
+                                    "repo_id": p.repo_id,
+                                    "name": p.name,
+                                    "status": p.status.value,
+                                    "error": p.error,
+                                }
+                                for p in analyzed_sorted
+                            ],
+                        },
+                        indent=2,
+                    )
+                )
+                return
+
+            print(
+                f"Workspace analyze summary: total={len(analyzed_sorted)} ready={ready_count} errors={error_count}"
+            )
+            for p in analyzed_sorted:
+                suffix = f" error={p.error}" if p.error else ""
+                print(f"- {p.name} ({p.repo_id}) [{p.status.value.upper()}]{suffix}")
+            return
+
+        profile = manager.analyze_repo(repo_ref)
+        if args.output_json:
+            print(
+                json.dumps(
+                    {
+                        "action": "analyze",
+                        "mode": "single",
+                        "repo": {
+                            "repo_id": profile.repo_id,
+                            "name": profile.name,
+                            "status": profile.status.value,
+                            "error": profile.error,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+            return
+
+        status = profile.status.value.upper()
+        suffix = f" error={profile.error}" if profile.error else ""
+        print(f"Analyzed workspace repo: {profile.name} ({profile.repo_id}) [{status}]{suffix}")
+
+
 def cmd_multi_repo(args):
     """Multi-repo analysis, comparison, and knowledge transfer"""
     import json
@@ -2171,6 +2337,26 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     )
     p_multi_repo.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # workspace
+    p_workspace = subparsers.add_parser("workspace", help="Manage multi-repo workspace (CLI-first)")
+    p_workspace.add_argument(
+        "workspace_action",
+        choices=["add", "remove", "list", "analyze"],
+        help="Workspace action",
+    )
+    p_workspace.add_argument(
+        "repo_id_or_path",
+        nargs="?",
+        help="Repo path (add) or repo id/name/path (remove/analyze)",
+    )
+    p_workspace.add_argument("--name", help="Optional display name for 'add'")
+    p_workspace.add_argument(
+        "--all",
+        action="store_true",
+        help="Analyze all workspace repos (for analyze action)",
+    )
+    p_workspace.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # tui
     subparsers.add_parser("tui", help="Launch interactive terminal UI")
 
@@ -2218,6 +2404,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "auth": cmd_auth,
         "demo": cmd_demo,
         "multi-repo": cmd_multi_repo,
+        "workspace": cmd_workspace,
         "doctor": cmd_doctor,
         "deploy-check": cmd_deploy_check,
     }

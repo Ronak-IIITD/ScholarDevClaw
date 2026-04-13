@@ -4,6 +4,60 @@
 
 **Last updated:** 2026-04-13
 
+### 2026-04-13 (Track-4 milestone-1: CLI-first multi-repo workspace)
+
+**Summary:** Added a new `workspace` CLI command for minimal, robust multi-repo workspace operations (`add`, `list`, `remove`, `analyze`) while preserving backward compatibility with the existing `multi-repo` command.
+
+**What changed:**
+
+- `core/src/scholardevclaw/cli.py`
+  - Added new command handler: `cmd_workspace(args)`.
+  - Implemented actions:
+    - `workspace add <repo_path> [--name]`
+      - Validates path exists and is a directory before adding.
+      - Reuses `MultiRepoManager.add_repo(...)`.
+    - `workspace list`
+      - Prints deterministic output (sorted by name/repo id).
+      - Prints `Workspace is empty.` when no repos are present.
+    - `workspace remove <repo_id_or_path>`
+      - Removes by id/name/path via manager resolution.
+      - Returns concise success/error output with proper exit code on not found.
+    - `workspace analyze [--all] [repo_id_or_path]`
+      - Enforces argument rules:
+        - `--all` + repo -> error + `exit(1)`
+        - neither `--all` nor repo -> error + `exit(1)`
+      - `--all`: analyzes all workspace repos and prints concise summary.
+      - single repo: analyzes selected repo via manager behavior (`analyze_repo`).
+  - Added `workspace` argparse parser in `main()` with:
+    - positional `workspace_action` (`add|remove|list|analyze`)
+    - optional positional `repo_id_or_path`
+    - `--name` for add
+    - `--all` for analyze
+    - `--output-json`
+  - Added dispatch map entry: `"workspace": cmd_workspace`.
+  - Kept existing `multi-repo` command unchanged.
+
+- `core/tests/unit/test_cli.py`
+  - Extended dispatch coverage to include `workspace` command.
+  - Added focused parser tests for:
+    - `workspace list`
+    - `workspace add /tmp/repo --name demo`
+    - `workspace analyze --all`
+    - `workspace analyze my-repo`
+
+- `core/tests/unit/test_multi_repo.py`
+  - Added `cmd_workspace` behavior tests with monkeypatched manager fakes:
+    - `workspace list` empty workspace output.
+    - `workspace analyze` invalid arg combination failures (`--all + repo`, neither provided).
+    - happy paths:
+      - `workspace add` validates existing directory and adds repo.
+      - `workspace analyze --all` prints deterministic summary/results.
+
+**Verification:**
+
+- ✅ `cd core && pytest tests/unit/test_cli.py -q` (`36 passed`)
+- ✅ `cd core && pytest tests/unit/test_multi_repo.py -q` (`82 passed`)
+
 ### 2026-04-13 (Track-3 milestone-1: additive mapping confidence breakdown propagation)
 
 **Summary:** Added an additive `confidence_breakdown` contract for mapping results while preserving existing numeric `confidence` behavior and compatibility across pipeline and API surfaces.

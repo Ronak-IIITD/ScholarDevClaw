@@ -32,6 +32,7 @@ import scholardevclaw.cli as cli
         ("auth", ["scholardevclaw", "auth", "status"], "cmd_auth"),
         ("demo", ["scholardevclaw", "demo"], "cmd_demo"),
         ("multi-repo", ["scholardevclaw", "multi-repo", "list"], "cmd_multi_repo"),
+        ("workspace", ["scholardevclaw", "workspace", "list"], "cmd_workspace"),
         ("deploy-check", ["scholardevclaw", "deploy-check"], "cmd_deploy_check"),
         ("tui", ["scholardevclaw", "tui"], "cmd_tui"),
     ],
@@ -199,6 +200,74 @@ def test_cmd_tui_importerror_prints_install_hint(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "TUI dependencies are not installed" in captured.err
     assert 'pip install -e ".[tui]"' in captured.err
+
+
+def test_workspace_parser_list(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["action"] = args.workspace_action
+        called["repo"] = args.repo_id_or_path
+        called["output_json"] = args.output_json
+
+    monkeypatch.setattr(cli, "cmd_workspace", fake_cmd)
+    monkeypatch.setattr(cli.sys, "argv", ["scholardevclaw", "workspace", "list"])
+
+    cli.main()
+
+    assert called == {"action": "list", "repo": None, "output_json": False}
+
+
+def test_workspace_parser_add_with_name(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["action"] = args.workspace_action
+        called["repo"] = args.repo_id_or_path
+        called["name"] = args.name
+
+    monkeypatch.setattr(cli, "cmd_workspace", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["scholardevclaw", "workspace", "add", "/tmp/repo", "--name", "demo"],
+    )
+
+    cli.main()
+
+    assert called == {"action": "add", "repo": "/tmp/repo", "name": "demo"}
+
+
+def test_workspace_parser_analyze_all(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["action"] = args.workspace_action
+        called["all"] = args.all
+        called["repo"] = args.repo_id_or_path
+
+    monkeypatch.setattr(cli, "cmd_workspace", fake_cmd)
+    monkeypatch.setattr(cli.sys, "argv", ["scholardevclaw", "workspace", "analyze", "--all"])
+
+    cli.main()
+
+    assert called == {"action": "analyze", "all": True, "repo": None}
+
+
+def test_workspace_parser_analyze_single_repo(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["action"] = args.workspace_action
+        called["all"] = args.all
+        called["repo"] = args.repo_id_or_path
+
+    monkeypatch.setattr(cli, "cmd_workspace", fake_cmd)
+    monkeypatch.setattr(cli.sys, "argv", ["scholardevclaw", "workspace", "analyze", "my-repo"])
+
+    cli.main()
+
+    assert called == {"action": "analyze", "all": False, "repo": "my-repo"}
 
 
 def test_cmd_deploy_check_json_success(tmp_path, capsys):
