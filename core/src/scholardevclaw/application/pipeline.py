@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,10 @@ from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 from .schema_contract import SCHEMA_VERSION, with_meta
 
 _logger = logging.getLogger(__name__)
+
+_PLUGIN_AUTOLOAD_DISABLE_ENV = "SCHOLARDEVCLAW_DISABLE_PLUGIN_AUTOLOAD"
+_PLUGIN_AUTOLOAD_ATTEMPTED = False
+_PLUGIN_AUTOLOAD_LOCK = threading.Lock()
 
 
 def _resolve_llm_selection() -> tuple[str | None, str | None]:
@@ -590,6 +595,39 @@ def _evaluate_quality_gates(
 # ---------------------------------------------------------------------------
 
 
+def _plugin_autoload_disabled() -> bool:
+    raw = os.environ.get(_PLUGIN_AUTOLOAD_DISABLE_ENV, "")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _bootstrap_plugin_hooks_once() -> None:
+    """Lazy-load plugins exactly once per process for hook execution."""
+    global _PLUGIN_AUTOLOAD_ATTEMPTED
+
+    if _PLUGIN_AUTOLOAD_ATTEMPTED:
+        return
+
+    with _PLUGIN_AUTOLOAD_LOCK:
+        if _PLUGIN_AUTOLOAD_ATTEMPTED:
+            return
+        _PLUGIN_AUTOLOAD_ATTEMPTED = True
+
+        if _plugin_autoload_disabled():
+            _logger.debug("Plugin autoload disabled via %s", _PLUGIN_AUTOLOAD_DISABLE_ENV)
+            return
+
+        try:
+            from scholardevclaw.plugins.hooks import get_hook_registry
+            from scholardevclaw.plugins.manager import PluginManager
+
+            registry = get_hook_registry()
+            manager = PluginManager(hook_registry=registry)
+            loaded = manager.load_all()
+            _logger.debug("Plugin autoload bootstrap loaded %d plugin(s)", len(loaded))
+        except Exception as exc:
+            _logger.debug("Plugin autoload bootstrap failed: %s", exc)
+
+
 def _fire_hook(
     hook_point: str,
     *,
@@ -603,6 +641,8 @@ def _fire_hook(
     Failures are logged but never propagate.
     """
     try:
+        _bootstrap_plugin_hooks_once()
+
         from scholardevclaw.plugins.hooks import get_hook_registry
 
         registry = get_hook_registry()

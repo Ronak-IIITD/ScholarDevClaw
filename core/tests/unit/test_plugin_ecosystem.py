@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -169,7 +170,11 @@ class TestHookRegistry:
         from scholardevclaw.plugins.hooks import HookPoint
 
         reg = self._make_registry()
-        reg.register(HookPoint.PIPELINE_ERROR, lambda e: 1 / 0, plugin_name="bad")
+
+        def boom(_event) -> None:
+            raise ZeroDivisionError("simulated")
+
+        reg.register(HookPoint.PIPELINE_ERROR, boom, plugin_name="bad")
         event = reg.fire(HookPoint.PIPELINE_ERROR)
         assert len(event.errors) == 1
         assert "ZeroDivisionError" in event.errors[0]
@@ -179,7 +184,11 @@ class TestHookRegistry:
 
         reg = self._make_registry()
         calls = []
-        reg.register(HookPoint.BEFORE_VALIDATE, lambda e: 1 / 0, plugin_name="bad", priority=1)
+
+        def boom(_event) -> None:
+            raise ZeroDivisionError("simulated")
+
+        reg.register(HookPoint.BEFORE_VALIDATE, boom, plugin_name="bad", priority=1)
         reg.register(
             HookPoint.BEFORE_VALIDATE, lambda e: calls.append("ok"), plugin_name="good", priority=2
         )
@@ -630,6 +639,124 @@ class TestFireHookHelper:
         result = _fire_hook("nonexistent_hook", payload={"safe": True})
         assert result is not None
         assert result.get("safe") is True
+
+    def test_fire_hook_bootstraps_plugins_once_idempotent(self, monkeypatch):
+        from scholardevclaw.application import pipeline
+
+        class _Registry:
+            def __init__(self):
+                self.hook_count = 1
+                self.fire_calls = 0
+
+            def fire(self, hook_point, *, stage="", payload=None, metadata=None):
+                self.fire_calls += 1
+                return SimpleNamespace(payload=payload if payload is not None else {})
+
+        registry = _Registry()
+        hooks_module = ModuleType("scholardevclaw.plugins.hooks")
+        setattr(hooks_module, "get_hook_registry", lambda: registry)
+
+        manager_module = ModuleType("scholardevclaw.plugins.manager")
+
+        class _Manager:
+            init_calls = 0
+            load_all_calls = 0
+
+            def __init__(self, plugin_dir=None, hook_registry=None, config_root=None):
+                _Manager.init_calls += 1
+                assert hook_registry is registry
+
+            def load_all(self, *, include_disabled=False):
+                _Manager.load_all_calls += 1
+                return ["fake_plugin"]
+
+        setattr(manager_module, "PluginManager", _Manager)
+
+        monkeypatch.setitem(sys.modules, hooks_module.__name__, hooks_module)
+        monkeypatch.setitem(sys.modules, manager_module.__name__, manager_module)
+        monkeypatch.delenv("SCHOLARDEVCLAW_DISABLE_PLUGIN_AUTOLOAD", raising=False)
+        monkeypatch.setattr(pipeline, "_PLUGIN_AUTOLOAD_ATTEMPTED", False)
+
+        first = pipeline._fire_hook("on_before_analyze", payload={"n": 1})
+        second = pipeline._fire_hook("on_before_analyze", payload={"n": 2})
+
+        assert first == {"n": 1}
+        assert second == {"n": 2}
+        assert _Manager.init_calls == 1
+        assert _Manager.load_all_calls == 1
+        assert registry.fire_calls == 2
+
+    def test_fire_hook_bootstrap_failure_isolated(self, monkeypatch):
+        from scholardevclaw.application import pipeline
+
+        class _Registry:
+            hook_count = 0
+
+            def fire(self, hook_point, *, stage="", payload=None, metadata=None):
+                return SimpleNamespace(payload=payload if payload is not None else {})
+
+        hooks_module = ModuleType("scholardevclaw.plugins.hooks")
+        setattr(hooks_module, "get_hook_registry", lambda: _Registry())
+
+        manager_module = ModuleType("scholardevclaw.plugins.manager")
+
+        class _Manager:
+            def __init__(self, plugin_dir=None, hook_registry=None, config_root=None):
+                pass
+
+            def load_all(self, *, include_disabled=False):
+                raise RuntimeError("boom")
+
+        setattr(manager_module, "PluginManager", _Manager)
+
+        monkeypatch.setitem(sys.modules, hooks_module.__name__, hooks_module)
+        monkeypatch.setitem(sys.modules, manager_module.__name__, manager_module)
+        monkeypatch.delenv("SCHOLARDEVCLAW_DISABLE_PLUGIN_AUTOLOAD", raising=False)
+        monkeypatch.setattr(pipeline, "_PLUGIN_AUTOLOAD_ATTEMPTED", False)
+
+        payload = {"safe": True}
+        result = pipeline._fire_hook("on_before_map", payload=payload)
+
+        assert result == payload
+
+    def test_fire_hook_respects_disable_autoload_env(self, monkeypatch):
+        from scholardevclaw.application import pipeline
+
+        class _Registry:
+            hook_count = 0
+
+            def fire(self, hook_point, *, stage="", payload=None, metadata=None):
+                return SimpleNamespace(payload=payload if payload is not None else {})
+
+        hooks_module = ModuleType("scholardevclaw.plugins.hooks")
+        setattr(hooks_module, "get_hook_registry", lambda: _Registry())
+
+        manager_module = ModuleType("scholardevclaw.plugins.manager")
+
+        class _Manager:
+            init_calls = 0
+            load_all_calls = 0
+
+            def __init__(self, plugin_dir=None, hook_registry=None, config_root=None):
+                _Manager.init_calls += 1
+
+            def load_all(self, *, include_disabled=False):
+                _Manager.load_all_calls += 1
+                return []
+
+        setattr(manager_module, "PluginManager", _Manager)
+
+        monkeypatch.setitem(sys.modules, hooks_module.__name__, hooks_module)
+        monkeypatch.setitem(sys.modules, manager_module.__name__, manager_module)
+        monkeypatch.setenv("SCHOLARDEVCLAW_DISABLE_PLUGIN_AUTOLOAD", "1")
+        monkeypatch.setattr(pipeline, "_PLUGIN_AUTOLOAD_ATTEMPTED", False)
+
+        payload = {"noop": True}
+        result = pipeline._fire_hook("on_before_validate", payload=payload)
+
+        assert result == payload
+        assert _Manager.init_calls == 0
+        assert _Manager.load_all_calls == 0
 
 
 # =========================================================================

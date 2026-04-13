@@ -4,6 +4,33 @@
 
 **Last updated:** 2026-04-13
 
+### 2026-04-13 (Track-5 milestone-1: plugin auto-bootstrap in pipeline hooks)
+
+**Summary:** Added safe, lazy plugin hook auto-bootstrap in the pipeline so normal stage flows (`analyze/suggest/map/generate/validate/integrate`) automatically activate plugin hooks without requiring manual CLI plugin commands.
+
+**What changed:**
+
+- `core/src/scholardevclaw/application/pipeline.py`
+  - Added module-level lazy bootstrap state and lock for plugin autoload idempotency:
+    - `_PLUGIN_AUTOLOAD_ATTEMPTED`
+    - `_PLUGIN_AUTOLOAD_LOCK`
+  - Added helper `_bootstrap_plugin_hooks_once()` that:
+    - loads plugins exactly once per process using `PluginManager(hook_registry=get_hook_registry())`,
+    - keeps failures non-fatal (debug-log + continue),
+    - supports explicit opt-out via `SCHOLARDEVCLAW_DISABLE_PLUGIN_AUTOLOAD=1|true|yes|on`.
+  - Wired `_fire_hook(...)` to call bootstrap before checking `hook_count` and firing events.
+
+- `core/tests/unit/test_plugin_ecosystem.py`
+  - Added `_fire_hook` bootstrap behavior tests:
+    - bootstrap occurs when hook firing starts from clean module state,
+    - bootstrap attempt is idempotent (`PluginManager.load_all()` called once across repeated `_fire_hook` calls),
+    - bootstrap failure is isolated and returns payload unchanged,
+    - disable-env path skips autoload cleanly.
+
+**Verification:**
+
+- ✅ `cd core && pytest tests/unit/test_plugin_ecosystem.py -q` (`58 passed`)
+
 ### 2026-04-13 (Track-4 milestone-1: CLI-first multi-repo workspace)
 
 **Summary:** Added a new `workspace` CLI command for minimal, robust multi-repo workspace operations (`add`, `list`, `remove`, `analyze`) while preserving backward compatibility with the existing `multi-repo` command.
