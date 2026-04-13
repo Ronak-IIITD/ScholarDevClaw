@@ -620,6 +620,36 @@ class ImplementationSpec:
     confidence: float = 0.0
 
 
+class ResearchExtractionError(ValueError):
+    """Raised when extraction cannot produce a trustworthy spec."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        source: str,
+        source_type: str,
+        reason: str,
+        suggestion: str,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.source = source
+        self.source_type = source_type
+        self.reason = reason
+        self.suggestion = suggestion
+
+    def to_error_metadata(self) -> dict[str, str]:
+        return {
+            "error": "extraction_failed",
+            "message": self.message,
+            "source": self.source,
+            "source_type": self.source_type,
+            "reason": self.reason,
+            "suggestion": self.suggestion,
+        }
+
+
 # ---------------------------------------------------------------------------
 # PDF text extraction helper
 # ---------------------------------------------------------------------------
@@ -1257,7 +1287,7 @@ class ResearchExtractor:
             return self._extract_from_known_paper(source)
 
     # ------------------------------------------------------------------
-    # PDF extraction — LLM-powered with hardcoded fallback
+    # PDF extraction — LLM-powered only (no fabricated fallback)
     # ------------------------------------------------------------------
 
     def _extract_from_pdf(self, pdf_path: str) -> dict:
@@ -1267,10 +1297,21 @@ class ResearchExtractor:
         1. Try to read the PDF text.
         2. If text is available and an LLM is configured, use the LLM to
            extract a structured spec.
-        3. Fall back to the hardcoded RMSNorm spec (legacy behaviour).
+        3. Return a structured extraction error when unavailable/unsupported.
         """
         # Step 1: attempt PDF text extraction
         paper_text = _read_pdf_text(pdf_path)
+        if not paper_text:
+            raise ResearchExtractionError(
+                "Could not extract readable text from PDF source",
+                source=pdf_path,
+                source_type="pdf",
+                reason="pdf_unreadable_or_unsupported",
+                suggestion=(
+                    "Provide a valid local PDF with extractable text or use an arXiv source. "
+                    "Install PyPDF2 or pdfminer.six for local PDF parsing support."
+                ),
+            )
 
         # Step 2: LLM-powered extraction
         if paper_text and self._llm is not None and self._llm.is_available:
@@ -1288,40 +1329,28 @@ class ResearchExtractor:
                         logger.info("LLM-extracted spec registered as '%s'", key)
                     return spec
             except Exception as exc:
-                logger.warning("LLM PDF extraction failed, using fallback: %s", exc)
+                logger.warning("LLM PDF extraction failed: %s", exc)
+                raise ResearchExtractionError(
+                    "LLM extraction failed for PDF source",
+                    source=pdf_path,
+                    source_type="pdf",
+                    reason="llm_extraction_failed",
+                    suggestion=(
+                        "Retry with a clearer PDF, verify LLM provider credentials/model, "
+                        "or use a known built-in spec name."
+                    ),
+                ) from exc
 
-        # Step 3: hardcoded fallback
-        return {
-            "paper": {
-                "title": "Root Mean Square Layer Normalization",
-                "authors": ["Biao Zhang", "Rico Sennrich"],
-                "year": 2019,
-            },
-            "algorithm": {
-                "name": "RMSNorm",
-                "replaces": "LayerNorm",
-                "description": "Simplified layer normalization without mean-centering",
-                "formula": "x / sqrt(mean(x^2) + eps) * gamma",
-            },
-            "implementation": {
-                "module_name": "RMSNorm",
-                "parent_class": "nn.Module",
-                "parameters": ["ndim", "eps"],
-                "code_template": self._get_rmsnorm_template(),
-            },
-            "changes": {
-                "type": "replace",
-                "target_patterns": ["LayerNorm", "nn.LayerNorm"],
-                "replacement": "RMSNorm",
-                "insertion_points": ["Block", "GPT"],
-                "expected_benefits": ["5-10% training speedup", "Simplified computation"],
-            },
-            "validation": {
-                "test_type": "training_comparison",
-                "metrics": ["loss", "perplexity", "tokens_per_second"],
-                "max_benchmark_time": 300,
-            },
-        }
+        raise ResearchExtractionError(
+            "LLM extraction is unavailable for PDF source",
+            source=pdf_path,
+            source_type="pdf",
+            reason="llm_unavailable",
+            suggestion=(
+                "Configure SCHOLARDEVCLAW_API_PROVIDER and provider credentials for extraction, "
+                "or use a known built-in spec name."
+            ),
+        )
 
     # ------------------------------------------------------------------
     # arXiv extraction — enhanced with abstract fetch + LLM
@@ -1333,7 +1362,7 @@ class ResearchExtractor:
         Strategy:
         1. Check local specs for a matching arXiv ID.
         2. Fetch the abstract from arXiv and use the LLM.
-        3. Fall back to ``_extract_from_pdf`` (hardcoded default).
+        3. Return a structured extraction error when unavailable/unsupported.
         """
         arxiv_id_clean = arxiv_id.strip().lower()
 
@@ -1363,8 +1392,38 @@ class ResearchExtractor:
                         return spec
                 except Exception as exc:
                     logger.warning("LLM arXiv extraction failed for %s: %s", arxiv_id, exc)
+                    raise ResearchExtractionError(
+                        "LLM extraction failed for arXiv source",
+                        source=arxiv_id,
+                        source_type="arxiv",
+                        reason="llm_extraction_failed",
+                        suggestion=(
+                            "Verify LLM provider credentials/model and retry, or provide a built-in "
+                            "spec name."
+                        ),
+                    ) from exc
 
-        return self._extract_from_pdf(arxiv_id)
+            raise ResearchExtractionError(
+                "Could not fetch arXiv abstract for extraction",
+                source=arxiv_id,
+                source_type="arxiv",
+                reason="arxiv_abstract_unavailable",
+                suggestion=(
+                    "Confirm the arXiv identifier is valid and reachable via export.arxiv.org, "
+                    "then retry."
+                ),
+            )
+
+        raise ResearchExtractionError(
+            "No local spec match and LLM extraction is unavailable for arXiv source",
+            source=arxiv_id,
+            source_type="arxiv",
+            reason="llm_unavailable",
+            suggestion=(
+                "Configure SCHOLARDEVCLAW_API_PROVIDER and provider credentials, or use one of "
+                "the known specs from 'scholardevclaw specs'."
+            ),
+        )
 
     def _extract_from_known_paper(self, paper_name: str) -> dict:
         paper_lower = paper_name.lower().replace("-", "").replace("_", "").replace(" ", "")
@@ -1376,7 +1435,13 @@ class ResearchExtractor:
             ):
                 return spec
 
-        return self._extract_from_pdf(paper_name)
+        raise ResearchExtractionError(
+            "Unknown paper identifier; no matching built-in spec",
+            source=paper_name,
+            source_type="paper",
+            reason="unknown_paper_identifier",
+            suggestion="Use 'scholardevclaw specs' to list supported spec names or provide PDF/arXiv input.",
+        )
 
     # ------------------------------------------------------------------
     # Templates and accessors (unchanged public interface)

@@ -4,6 +4,47 @@
 
 **Last updated:** 2026-04-11
 
+### 2026-04-11 (Pipeline Contract Phase-1 hardening)
+
+**Summary:** Hardened research→mapping→patch chaining contracts by normalizing mapping/extraction payloads, removing fabricated extraction fallbacks, and wiring optional LLM assistants through API and pipeline mapping paths without breaking no-LLM mode.
+
+**What changed:**
+
+- `core/src/scholardevclaw/api/server.py`
+  - Added canonical + alias handling for mapping/patch/validation request models (`repo_analysis/repoAnalysis`, `research_spec/researchSpec`, `repo_path/repoPath`).
+  - Added mapping-spec normalization to canonical `changes.target_patterns` shape (with support for `targetPattern`/`targetPatterns` aliases).
+  - Expanded `/mapping/map` response to include patch-continuity fields:
+    - `research_spec` (canonical)
+    - `researchSpec` (camelCase compatibility)
+    - per-target `context`, `original`, `replacement`
+  - Added patch-input normalization in `/patch/generate` so mapping payloads are coerced to generator-expected keys (`research_spec`, `current_code`, `replacement_required`, context original/replacement).
+  - Wired optional LLM assistant creation into `/research/extract`, `/mapping/map`, and `/patch/generate`.
+  - `/research/extract` now returns structured `422` extraction failures for unsupported/unavailable extraction paths.
+
+- `core/src/scholardevclaw/research_intelligence/extractor.py`
+  - Added `ResearchExtractionError` with actionable metadata.
+  - Removed hardcoded RMSNorm fabricated fallback behavior from unknown PDF/arXiv extraction paths.
+  - Unknown/unreadable PDF/arXiv now raises explicit extraction failure metadata instead of returning synthetic specs.
+
+- `core/src/scholardevclaw/application/pipeline.py`
+  - Passed `llm_assistant` into `MappingEngine(...)` in `_build_mapping_result` to preserve optional LLM semantic mapping path.
+
+- Tests:
+  - `core/tests/unit/test_api_server.py`
+    - Added mapping response contract assertions for patch-generation continuity fields.
+    - Added `/mapping/map` → `/patch/generate` continuity regression test.
+    - Added unknown arXiv extraction structured-422 regression test.
+  - `core/tests/unit/test_pipeline.py`
+    - Added analyze→map→generate contract continuity regression.
+    - Added no-LLM mapping wiring regression ensuring optional LLM path does not crash when disabled.
+  - `core/tests/unit/test_research_extractor.py` (new)
+    - Added regressions ensuring unknown PDF/arXiv extraction no longer fabricates RMSNorm specs.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/ tests/`
+- ✅ `cd core && pytest tests/unit/test_api_server.py tests/unit/test_patch_generator.py tests/unit/test_pipeline.py tests/unit/test_research_extractor.py -q`
+
 ### 2026-04-11 (TUI Phase-5: split-pane workspace + focusable inspector interactions)
 
 **Summary:** Upgraded the TUI workspace from stacked panes to a split-pane layout and made `RunInspector` keyboard-focusable/interactive with direct run actions (`show`, `events`, `rerun`) routed through existing command flows.

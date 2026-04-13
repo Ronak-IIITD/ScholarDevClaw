@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -228,3 +229,159 @@ def test_repo_analyze_uses_multilang_analyzer(monkeypatch, tmp_path):
     assert payload["architecture"]["models"]
     assert payload["architecture"]["models"][0]["name"] == "DemoModel"
     assert payload["architecture"]["trainingLoop"]["file"] == "model.py"
+
+
+def test_mapping_response_contains_patch_contract_fields(monkeypatch):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    class FakeMappingEngine:
+        seen_llm_assistant = "unset"
+
+        def __init__(self, repo_analysis, research_spec, llm_assistant=None):
+            FakeMappingEngine.seen_llm_assistant = llm_assistant
+            self.research_spec = research_spec
+
+        def map(self):
+            return SimpleNamespace(
+                targets=[
+                    SimpleNamespace(
+                        file="model.py",
+                        line=12,
+                        current_code="LayerNorm",
+                        replacement_required=True,
+                        context={"match_tier": "exact"},
+                    )
+                ],
+                strategy="replace",
+                confidence=88,
+                research_spec=self.research_spec,
+            )
+
+    monkeypatch.setattr(server, "MappingEngine", FakeMappingEngine)
+
+    resp = client.post(
+        "/mapping/map",
+        json={
+            "repoAnalysis": {"elements": [], "imports": []},
+            "researchSpec": {
+                "paper": {"title": "P", "authors": ["A"], "year": 2024},
+                "algorithm": {"name": "RMSNorm", "description": "d"},
+                "implementation": {"moduleName": "RMSNorm", "parentClass": "nn.Module"},
+                "changes": {
+                    "type": "replace",
+                    "targetPattern": "LayerNorm",
+                    "insertionPoints": ["Block"],
+                    "replacement": "RMSNorm",
+                    "expectedBenefits": ["speed"],
+                },
+            },
+        },
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["research_spec"]["changes"]["target_patterns"] == ["LayerNorm"]
+    assert payload["researchSpec"]["changes"]["targetPattern"] == "LayerNorm"
+    assert payload["targets"][0]["context"]["original"] == "LayerNorm"
+    assert payload["targets"][0]["context"]["replacement"] == "RMSNorm"
+    assert payload["targets"][0]["original"] == "LayerNorm"
+    assert payload["targets"][0]["replacement"] == "RMSNorm"
+    assert FakeMappingEngine.seen_llm_assistant is None
+
+
+def test_mapping_to_patch_contract_continuity(monkeypatch, tmp_path):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    class FakeMappingEngine:
+        def __init__(self, repo_analysis, research_spec, llm_assistant=None):
+            self.research_spec = research_spec
+
+        def map(self):
+            return SimpleNamespace(
+                targets=[
+                    SimpleNamespace(
+                        file="model.py",
+                        line=5,
+                        current_code="LayerNorm",
+                        replacement_required=True,
+                        context={},
+                    )
+                ],
+                strategy="replace",
+                confidence=90,
+                research_spec=self.research_spec,
+            )
+
+    class FakePatchGenerator:
+        received_mapping = None
+
+        def __init__(self, repo_path, llm_assistant=None):
+            self.repo_path = repo_path
+
+        def generate(self, mapping):
+            FakePatchGenerator.received_mapping = mapping
+            return SimpleNamespace(
+                new_files=[SimpleNamespace(path="rmsnorm.py", content="class RMSNorm: ...\n")],
+                transformations=[],
+                branch_name="integration/rmsnorm",
+            )
+
+    monkeypatch.setattr(server, "MappingEngine", FakeMappingEngine)
+    monkeypatch.setattr(server, "PatchGenerator", FakePatchGenerator)
+
+    map_resp = client.post(
+        "/mapping/map",
+        json={
+            "repoAnalysis": {"elements": [], "imports": []},
+            "researchSpec": {
+                "paper": {"title": "P", "authors": ["A"], "year": 2024},
+                "algorithm": {"name": "RMSNorm", "description": "d"},
+                "implementation": {"moduleName": "RMSNorm", "parentClass": "nn.Module"},
+                "changes": {
+                    "type": "replace",
+                    "targetPattern": "LayerNorm",
+                    "insertionPoints": ["Block"],
+                    "replacement": "RMSNorm",
+                },
+            },
+        },
+    )
+    assert map_resp.status_code == 200
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "model.py").write_text("class LayerNorm:\n    pass\n")
+
+    gen_resp = client.post(
+        "/patch/generate",
+        json={"mapping": map_resp.json(), "repoPath": str(repo)},
+    )
+    assert gen_resp.status_code == 200
+    assert FakePatchGenerator.received_mapping is not None
+    assert FakePatchGenerator.received_mapping["research_spec"]["changes"]["target_patterns"] == [
+        "LayerNorm"
+    ]
+    assert FakePatchGenerator.received_mapping["targets"][0]["context"]["original"] == "LayerNorm"
+    assert FakePatchGenerator.received_mapping["targets"][0]["context"]["replacement"] == "RMSNorm"
+
+
+def test_research_extract_unknown_arxiv_returns_structured_422(monkeypatch):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    resp = client.post(
+        "/research/extract",
+        json={"source": "9999.99999", "sourceType": "arxiv"},
+    )
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["error"] == "extraction_failed"
+    assert detail["source_type"] == "arxiv"
+    assert detail["reason"] in {
+        "llm_unavailable",
+        "arxiv_abstract_unavailable",
+        "llm_extraction_failed",
+    }

@@ -614,7 +614,7 @@ def _build_mapping_result(
     if spec is None:
         raise ValueError(f"Unknown spec: {spec_name}")
 
-    engine = MappingEngine(analysis.__dict__, spec)
+    engine = MappingEngine(analysis.__dict__, spec, llm_assistant=llm_assistant)
     if log_callback is not None:
         log_callback("Running mapping engine")
     mapping = engine.map()

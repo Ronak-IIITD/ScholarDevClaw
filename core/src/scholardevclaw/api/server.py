@@ -14,7 +14,7 @@ from ..application.schema_contract import SCHEMA_VERSION
 from ..mapping.engine import MappingEngine
 from ..patch_generation.generator import PatchGenerator
 from ..repo_intelligence.tree_sitter_analyzer import RepoAnalysis, TreeSitterAnalyzer
-from ..research_intelligence.extractor import ResearchExtractor
+from ..research_intelligence.extractor import ResearchExtractionError, ResearchExtractor
 from ..utils.health import health_checker, liveness_probe, readiness_probe
 from ..utils.shutdown import shutdown_manager
 from ..validation.runner import ValidationRunner
@@ -169,24 +169,24 @@ class ResearchExtractRequest(BaseModel):
 
 
 class MappingRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    repoAnalysis: dict[str, Any]  # noqa: N815
-    researchSpec: dict[str, Any]  # noqa: N815
+    repo_analysis: dict[str, Any] = Field(alias="repoAnalysis")
+    research_spec: dict[str, Any] = Field(alias="researchSpec")
 
 
 class PatchGenerateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     mapping: dict[str, Any]
-    repoPath: str  # noqa: N815
+    repo_path: str = Field(alias="repoPath")
 
 
 class ValidationRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     patch: dict[str, Any]
-    repoPath: str  # noqa: N815
+    repo_path: str = Field(alias="repoPath")
 
 
 class ModelEntry(BaseModel):
@@ -244,7 +244,8 @@ class ResearchImplementation(BaseModel):
 
 class ResearchChanges(BaseModel):
     type: str
-    targetPattern: str  # noqa: N815
+    targetPattern: str = ""  # noqa: N815
+    targetPatterns: list[str] = Field(default_factory=list)  # noqa: N815
     insertionPoints: list[str]  # noqa: N815
     replacement: str | None = None
     expectedBenefits: list[str] = Field(default_factory=list)  # noqa: N815
@@ -263,12 +264,17 @@ class MappingTargetResponse(BaseModel):
     line: int
     currentCode: str  # noqa: N815
     replacementRequired: bool  # noqa: N815
+    context: dict[str, Any] = Field(default_factory=dict)
+    original: str | None = None
+    replacement: str | None = None
 
 
 class MappingResponse(BaseModel):
     targets: list[MappingTargetResponse]
     strategy: str
     confidence: int
+    research_spec: dict[str, Any] = Field(default_factory=dict)
+    researchSpec: dict[str, Any] = Field(default_factory=dict)  # noqa: N815
 
 
 class PatchFileResponse(BaseModel):
@@ -339,9 +345,21 @@ def _normalize_research_spec(raw: dict[str, Any]) -> ResearchExtractResponse:
     implementation = raw.get("implementation", {})
     changes = raw.get("changes", {})
 
-    target_patterns = changes.get("target_patterns") or []
-    insertion_points = changes.get("insertion_points") or []
-    expected_benefits = changes.get("expected_benefits") or []
+    target_patterns = _as_str_list(changes.get("target_patterns"))
+    if not target_patterns:
+        target_patterns = _as_str_list(changes.get("targetPatterns"))
+    if not target_patterns and isinstance(changes.get("targetPattern"), str):
+        single_target = str(changes.get("targetPattern") or "").strip()
+        if single_target:
+            target_patterns = [single_target]
+
+    insertion_points = _as_str_list(changes.get("insertion_points"))
+    if not insertion_points:
+        insertion_points = _as_str_list(changes.get("insertionPoints"))
+
+    expected_benefits = _as_str_list(changes.get("expected_benefits"))
+    if not expected_benefits:
+        expected_benefits = _as_str_list(changes.get("expectedBenefits"))
 
     normalized = {
         "paper": {
@@ -367,6 +385,7 @@ def _normalize_research_spec(raw: dict[str, Any]) -> ResearchExtractResponse:
         "changes": {
             "type": changes.get("type", "replace"),
             "targetPattern": target_patterns[0] if target_patterns else "",
+            "targetPatterns": target_patterns,
             "insertionPoints": insertion_points,
             "replacement": changes.get("replacement"),
             "expectedBenefits": expected_benefits,
@@ -386,6 +405,173 @@ def _metrics_to_response(metrics: Any) -> MetricsResponse | None:
         tokensPerSecond=metrics.tokens_per_second,
         memoryMb=metrics.memory_mb,
     )
+
+
+def _as_str_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        candidate_values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        candidate_values = list(value)
+    else:
+        return []
+
+    normalized: list[str] = []
+    for item in candidate_values:
+        if not isinstance(item, str):
+            continue
+        text = item.strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def _coerce_int(value: Any, *, field_name: str, default: int | None = None) -> int:
+    if value in (None, ""):
+        if default is not None:
+            return default
+        raise HTTPException(status_code=422, detail=f"Missing integer field: {field_name}")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid integer field: {field_name}") from exc
+
+
+def _resolve_llm_selection() -> tuple[str | None, str | None]:
+    provider = os.environ.get("SCHOLARDEVCLAW_API_PROVIDER", "").strip().lower()
+    model = os.environ.get("SCHOLARDEVCLAW_API_MODEL", "").strip()
+    if not provider or provider == "auto":
+        return None, None
+    return provider, model or None
+
+
+def _create_llm_assistant() -> Any | None:
+    provider, model = _resolve_llm_selection()
+    if not provider:
+        return None
+    try:
+        from scholardevclaw.llm.research_assistant import LLMResearchAssistant
+
+        assistant = LLMResearchAssistant.create(provider=provider, model=model)
+        return assistant if assistant.is_available else None
+    except Exception as exc:
+        logger.debug("LLM assistant unavailable for provider=%s: %s", provider, exc)
+        return None
+
+
+def _normalize_research_spec_for_mapping(raw: dict[str, Any]) -> dict[str, Any]:
+    paper = raw.get("paper", {}) if isinstance(raw.get("paper"), dict) else {}
+    algorithm = raw.get("algorithm", {}) if isinstance(raw.get("algorithm"), dict) else {}
+    implementation = (
+        raw.get("implementation", {}) if isinstance(raw.get("implementation"), dict) else {}
+    )
+    changes = raw.get("changes", {}) if isinstance(raw.get("changes"), dict) else {}
+
+    target_patterns = _as_str_list(changes.get("target_patterns"))
+    if not target_patterns:
+        target_patterns = _as_str_list(changes.get("targetPatterns"))
+    if not target_patterns and isinstance(changes.get("targetPattern"), str):
+        single_target = str(changes.get("targetPattern") or "").strip()
+        if single_target:
+            target_patterns = [single_target]
+
+    insertion_points = _as_str_list(changes.get("insertion_points"))
+    if not insertion_points:
+        insertion_points = _as_str_list(changes.get("insertionPoints"))
+
+    expected_benefits = _as_str_list(changes.get("expected_benefits"))
+    if not expected_benefits:
+        expected_benefits = _as_str_list(changes.get("expectedBenefits"))
+
+    return {
+        "paper": {
+            "title": paper.get("title", "Unknown"),
+            "authors": paper.get("authors") or [],
+            "arxiv": paper.get("arxiv"),
+            "year": int(paper.get("year", 2024)),
+        },
+        "algorithm": {
+            "name": algorithm.get("name", "Unknown"),
+            "replaces": algorithm.get("replaces"),
+            "description": algorithm.get("description", ""),
+            "formula": algorithm.get("formula"),
+            "category": algorithm.get("category"),
+        },
+        "implementation": {
+            "module_name": implementation.get("module_name", implementation.get("moduleName", "")),
+            "parent_class": implementation.get(
+                "parent_class", implementation.get("parentClass", "")
+            ),
+            "parameters": implementation.get("parameters") or [],
+            "code_template": implementation.get(
+                "code_template", implementation.get("codeTemplate", "")
+            ),
+        },
+        "changes": {
+            "type": changes.get("type", "replace"),
+            "target_patterns": target_patterns,
+            "replacement": changes.get("replacement", ""),
+            "insertion_points": insertion_points,
+            "expected_benefits": expected_benefits,
+        },
+        "validation": raw.get("validation") if isinstance(raw.get("validation"), dict) else {},
+    }
+
+
+def _normalize_mapping_for_patch(mapping: dict[str, Any]) -> dict[str, Any]:
+    raw_spec = mapping.get("research_spec") or mapping.get("researchSpec") or {}
+    research_spec = (
+        _normalize_research_spec_for_mapping(raw_spec) if isinstance(raw_spec, dict) else {}
+    )
+    default_replacement = research_spec.get("changes", {}).get("replacement", "")
+
+    targets: list[dict[str, Any]] = []
+    for raw_target in mapping.get("targets", []):
+        if not isinstance(raw_target, dict):
+            continue
+        raw_context = raw_target.get("context")
+        context = dict(raw_context) if isinstance(raw_context, dict) else {}
+
+        current_code = raw_target.get("current_code", raw_target.get("currentCode", ""))
+        if not current_code and isinstance(context.get("original"), str):
+            current_code = context.get("original", "")
+
+        original = raw_target.get("original") or context.get("original") or current_code
+        replacement = (
+            raw_target.get("replacement") or context.get("replacement") or default_replacement
+        )
+
+        context.setdefault("original", original)
+        if replacement:
+            context.setdefault("replacement", replacement)
+
+        targets.append(
+            {
+                "file": raw_target.get("file", ""),
+                "line": _coerce_int(
+                    raw_target.get("line", 0),
+                    field_name="mapping.targets[].line",
+                    default=0,
+                ),
+                "current_code": current_code,
+                "replacement_required": bool(
+                    raw_target.get(
+                        "replacement_required", raw_target.get("replacementRequired", True)
+                    )
+                ),
+                "context": context,
+            }
+        )
+
+    return {
+        "targets": targets,
+        "strategy": mapping.get("strategy", "none"),
+        "confidence": _coerce_int(
+            mapping.get("confidence", 0),
+            field_name="mapping.confidence",
+            default=0,
+        ),
+        "research_spec": research_spec,
+    }
 
 
 def _select_model_elements(analysis: RepoAnalysis) -> list[dict[str, Any]]:
@@ -544,13 +730,16 @@ async def analyze_repo(request: RepoAnalyzeRequest):
 )
 async def extract_research(request: ResearchExtractRequest):
     try:
-        extractor = ResearchExtractor()
+        llm_assistant = _create_llm_assistant()
+        extractor = ResearchExtractor(llm_assistant=llm_assistant)
         raw_result = extractor.extract(request.source, request.sourceType)
 
         if not isinstance(raw_result, dict):
             raise HTTPException(status_code=500, detail="Invalid research extraction result")
 
         return _normalize_research_spec(raw_result)
+    except ResearchExtractionError as e:
+        raise HTTPException(status_code=422, detail=e.to_error_metadata())
     except HTTPException:
         raise
     except Exception as e:
@@ -567,7 +756,13 @@ async def extract_research(request: ResearchExtractRequest):
 )
 async def map_architecture(request: MappingRequest):
     try:
-        engine = MappingEngine(request.repoAnalysis, request.researchSpec)
+        llm_assistant = _create_llm_assistant()
+        normalized_spec = _normalize_research_spec_for_mapping(request.research_spec)
+        engine = MappingEngine(
+            request.repo_analysis,
+            normalized_spec,
+            llm_assistant=llm_assistant,
+        )
         result = engine.map()
 
         response = {
@@ -577,11 +772,40 @@ async def map_architecture(request: MappingRequest):
                     "line": t.line,
                     "currentCode": t.current_code,
                     "replacementRequired": t.replacement_required,
+                    "context": {
+                        **(t.context if isinstance(t.context, dict) else {}),
+                        "original": (
+                            t.context.get("original", t.current_code)
+                            if isinstance(t.context, dict)
+                            else t.current_code
+                        ),
+                        "replacement": (
+                            t.context.get(
+                                "replacement", normalized_spec.get("changes", {}).get("replacement")
+                            )
+                            if isinstance(t.context, dict)
+                            else normalized_spec.get("changes", {}).get("replacement")
+                        ),
+                    },
+                    "original": (
+                        t.context.get("original", t.current_code)
+                        if isinstance(t.context, dict)
+                        else t.current_code
+                    ),
+                    "replacement": (
+                        t.context.get(
+                            "replacement", normalized_spec.get("changes", {}).get("replacement")
+                        )
+                        if isinstance(t.context, dict)
+                        else normalized_spec.get("changes", {}).get("replacement")
+                    ),
                 }
                 for t in result.targets
             ],
             "strategy": result.strategy,
             "confidence": result.confidence,
+            "research_spec": result.research_spec,
+            "researchSpec": request.research_spec,
         }
         return MappingResponse.model_validate(response)
     except HTTPException:
@@ -600,9 +824,11 @@ async def map_architecture(request: MappingRequest):
 )
 async def generate_patch(request: PatchGenerateRequest):
     try:
-        generator_repo_path = _resolve_existing_repo_path(request.repoPath)
-        generator = PatchGenerator(generator_repo_path)
-        patch = generator.generate(request.mapping)
+        generator_repo_path = _resolve_existing_repo_path(request.repo_path)
+        llm_assistant = _create_llm_assistant()
+        generator = PatchGenerator(generator_repo_path, llm_assistant=llm_assistant)
+        normalized_mapping = _normalize_mapping_for_patch(request.mapping)
+        patch = generator.generate(normalized_mapping)
 
         response = {
             "newFiles": [{"path": f.path, "content": f.content} for f in patch.new_files],
@@ -634,10 +860,10 @@ async def generate_patch(request: PatchGenerateRequest):
 )
 async def run_validation(request: ValidationRequest):
     try:
-        repo_path = _resolve_existing_repo_path(request.repoPath)
+        repo_path = _resolve_existing_repo_path(request.repo_path)
 
         runner = ValidationRunner(repo_path)
-        result = runner.run(request.patch, request.repoPath)
+        result = runner.run(request.patch, str(repo_path))
 
         response = {
             "passed": result.passed,

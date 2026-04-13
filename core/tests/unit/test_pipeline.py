@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -191,6 +192,126 @@ def test_run_generate_skips_path_traversal_outputs(monkeypatch, tmp_path):
     assert (output_dir / "safe.py").exists()
     assert not (tmp_path / "escape.py").exists()
     assert all("escape.py" not in path for path in result.payload["written_files"])
+
+
+def test_analyze_map_generate_contract_continuity(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+
+    extractor_module = ModuleType("scholardevclaw.research_intelligence.extractor")
+
+    class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
+        def get_spec(self, name: str):
+            return {
+                "paper": {"title": "RMSNorm", "arxiv": "1910.07467"},
+                "algorithm": {"name": "RMSNorm"},
+                "changes": {
+                    "type": "replace",
+                    "target_patterns": ["LayerNorm"],
+                    "replacement": "RMSNorm",
+                },
+            }
+
+    extractor_module.ResearchExtractor = FakeExtractor
+    monkeypatch.setitem(sys.modules, extractor_module.__name__, extractor_module)
+
+    mapping_module = ModuleType("scholardevclaw.mapping.engine")
+
+    class FakeMappingEngine:
+        def __init__(self, repo_analysis, research_spec, llm_assistant=None):
+            self.research_spec = research_spec
+
+        def map(self):
+            return SimpleNamespace(
+                targets=[
+                    SimpleNamespace(
+                        file="model.py",
+                        line=10,
+                        current_code="LayerNorm",
+                        replacement_required=True,
+                        context={"original": "LayerNorm", "replacement": "RMSNorm"},
+                    )
+                ],
+                strategy="replace",
+                confidence=85,
+                research_spec=self.research_spec,
+            )
+
+    mapping_module.MappingEngine = FakeMappingEngine
+    monkeypatch.setitem(sys.modules, mapping_module.__name__, mapping_module)
+
+    patch_module = ModuleType("scholardevclaw.patch_generation.generator")
+    seen: dict[str, Any] = {}
+
+    class FakeGenerator:
+        def __init__(self, repo_path: Path, llm_assistant=None):
+            self.repo_path = repo_path
+
+        def generate(self, mapping):
+            seen["mapping"] = mapping
+            return SimpleNamespace(
+                branch_name="integration/rmsnorm",
+                new_files=[SimpleNamespace(path="rmsnorm.py", content="class RMSNorm: ...\n")],
+                transformations=[],
+            )
+
+    patch_module.PatchGenerator = FakeGenerator
+    monkeypatch.setitem(sys.modules, patch_module.__name__, patch_module)
+
+    result = _pipeline_module().run_generate(str(tmp_path), "rmsnorm")
+
+    assert result.ok is True
+    assert seen["mapping"]["research_spec"]["changes"]["target_patterns"] == ["LayerNorm"]
+    assert seen["mapping"]["targets"][0]["context"]["original"] == "LayerNorm"
+    assert seen["mapping"]["targets"][0]["context"]["replacement"] == "RMSNorm"
+
+
+def test_build_mapping_result_llm_optional_disabled_no_crash(monkeypatch, tmp_path):
+    _install_fake_tree_sitter(monkeypatch)
+
+    extractor_module = ModuleType("scholardevclaw.research_intelligence.extractor")
+
+    class FakeExtractor:
+        def __init__(self, llm_assistant=None):
+            pass
+
+        def get_spec(self, name: str):
+            return {
+                "paper": {"title": "RMSNorm"},
+                "algorithm": {"name": "RMSNorm"},
+                "changes": {"target_patterns": ["LayerNorm"], "replacement": "RMSNorm"},
+            }
+
+    extractor_module.ResearchExtractor = FakeExtractor
+    monkeypatch.setitem(sys.modules, extractor_module.__name__, extractor_module)
+
+    mapping_module = ModuleType("scholardevclaw.mapping.engine")
+    seen: dict[str, Any] = {}
+
+    class FakeMappingEngine:
+        def __init__(self, repo_analysis, research_spec, llm_assistant=None):
+            seen["llm_assistant"] = llm_assistant
+            self.research_spec = research_spec
+
+        def map(self):
+            return SimpleNamespace(
+                targets=[],
+                strategy="none",
+                confidence=40,
+                research_spec=self.research_spec,
+            )
+
+    mapping_module.MappingEngine = FakeMappingEngine
+    monkeypatch.setitem(sys.modules, mapping_module.__name__, mapping_module)
+
+    pipeline = _pipeline_module()
+    mapping_result, spec = pipeline._build_mapping_result(tmp_path, "rmsnorm", llm_assistant=None)
+
+    assert spec["algorithm"]["name"] == "RMSNorm"
+    assert mapping_result["research_spec"]["algorithm"]["name"] == "RMSNorm"
+    assert seen["llm_assistant"] is None
 
 
 def test_run_integrate_and_validate(monkeypatch, tmp_path):
