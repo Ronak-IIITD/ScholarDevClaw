@@ -180,3 +180,38 @@ def test_run_inspector_render_snapshot_lines_truncates_error_and_limits_events()
     assert "003 log.line running phase 1" in lines
     assert "004 run.failed failed boom" in lines
     assert "001 run.accepted idle accepted" not in lines
+
+
+def test_run_inspector_keyboard_navigation_and_action_messages():
+    inspector = RunInspector()
+    inspector.set_lines(
+        [
+            "Run #9 | generate | Failed | 3.2s",
+            "Events:",
+            "001 run.accepted idle accepted",
+            "002 run.running running running",
+            "003 run.failed failed boom",
+        ],
+        run_id=9,
+    )
+
+    posted: list[tuple[str, int | None, int | None]] = []
+
+    def _post_message(message):
+        posted.append((message.action, message.run_id, message.seq))
+        return True
+
+    object.__setattr__(inspector, "post_message", _post_message)
+
+    inspector.on_key(SimpleNamespace(key="down", stop=lambda: None))  # type: ignore[arg-type]
+    assert inspector._selected_event_index == 1
+
+    inspector.on_key(SimpleNamespace(key="enter", stop=lambda: None))  # type: ignore[arg-type]
+    inspector.on_key(SimpleNamespace(key="r", stop=lambda: None))  # type: ignore[arg-type]
+    inspector.on_key(SimpleNamespace(key="s", stop=lambda: None))  # type: ignore[arg-type]
+    inspector.on_key(SimpleNamespace(key="e", stop=lambda: None))  # type: ignore[arg-type]
+
+    assert posted[0] == ("events", 9, 2)
+    assert posted[1] == ("rerun", 9, 2)
+    assert posted[2] == ("show", 9, 2)
+    assert posted[3] == ("events", 9, 2)

@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Input, Static
 
@@ -304,6 +304,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+c", "cancel_task", "Cancel"),
         ("ctrl+j", "open_command_palette", "Palette"),
         ("ctrl+k", "clear_screen", "Clear"),
+        ("ctrl+i", "focus_inspector", "Inspector"),
         ("ctrl+h", "show_help", "Help"),
         ("escape", "handle_escape", "ESC"),
     ]
@@ -330,6 +331,22 @@ class ScholarDevClawApp(App[None]):
     #command-meta {
         height: auto;
         color: $text-muted;
+    }
+
+    #workspace {
+        width: 100%;
+        height: 1fr;
+    }
+
+    #main-pane {
+        width: 2fr;
+        height: 1fr;
+    }
+
+    #side-pane {
+        width: 1fr;
+        min-width: 36;
+        height: 1fr;
     }
 
     #prompt-input {
@@ -408,11 +425,13 @@ class ScholarDevClawApp(App[None]):
         yield Static("────────────────────────", classes="separator")
         yield PhaseTracker(id="phase-tracker")
         yield Static("────────────────────────", classes="separator")
-        yield LogView(id="main-output")
-        yield Static("────────────────────────", classes="separator")
-        yield HistoryPane(id="history-pane")
-        yield Static("────────────────────────", classes="separator")
-        yield RunInspector(id="run-inspector")
+        with Horizontal(id="workspace"):
+            with Vertical(id="main-pane"):
+                yield LogView(id="main-output")
+            with Vertical(id="side-pane"):
+                yield RunInspector(id="run-inspector")
+                yield Static("────────────────────────", classes="separator")
+                yield HistoryPane(id="history-pane")
         yield Static("────────────────────────", classes="separator")
         with Vertical():
             yield Static("", id="command-meta")
@@ -1643,7 +1662,10 @@ class ScholarDevClawApp(App[None]):
         self._inspector_run_id = int(snapshot.get("run_id", 0) or 0)
         self._inspector_lines = list(lines)
         with contextlib.suppress(Exception):
-            self.query_one("#run-inspector", RunInspector).set_lines(lines)
+            self.query_one("#run-inspector", RunInspector).set_lines(
+                lines,
+                run_id=self._inspector_run_id if self._inspector_run_id > 0 else None,
+            )
         return list(lines)
 
     def _set_status(self, message: str, level: str = "info") -> None:
@@ -2833,6 +2855,32 @@ class ScholarDevClawApp(App[None]):
     def on_history_run_selected(self, message: HistoryPane.RunSelected) -> None:
         self._rerun_history_item(int(message.run_id))
 
+    @on(RunInspector.InspectorAction)
+    def on_inspector_action(self, message: RunInspector.InspectorAction) -> None:
+        run_id = int(message.run_id or 0)
+        if run_id <= 0:
+            self._append_output("Warning: no run selected in inspector", "warning")
+            self._set_status("Inspector has no run selected", "warning")
+            with contextlib.suppress(Exception):
+                self.query_one("#prompt-input", PromptInput).focus()
+            return
+
+        if message.action == "show":
+            self._execute_action_request(
+                "run_show", {"run_id": run_id}, command=f"run show {run_id}"
+            )
+        elif message.action == "rerun":
+            self._execute_action_request(
+                "run_rerun", {"run_id": run_id}, command=f"run rerun {run_id}"
+            )
+        else:
+            self._execute_action_request(
+                "run_events", {"run_id": run_id}, command=f"run events {run_id}"
+            )
+
+        with contextlib.suppress(Exception):
+            self.query_one("#prompt-input", PromptInput).focus()
+
     @on(PromptInput.HistoryPrev)
     def on_history_prev(self) -> None:
         if not self._command_history:
@@ -3136,6 +3184,13 @@ class ScholarDevClawApp(App[None]):
 
     def action_open_command_palette(self) -> None:
         self.push_screen(CommandPalette(), self._on_command_palette_result)
+
+    def action_focus_inspector(self) -> None:
+        try:
+            self.query_one("#run-inspector", RunInspector).focus()
+            self._set_status("Inspector focused (j/k navigate, enter/r/s/e action)", "accent")
+        except Exception:
+            self._set_status("Inspector unavailable", "warning")
 
     def _on_command_palette_result(self, command: str | None) -> None:
         if not command:

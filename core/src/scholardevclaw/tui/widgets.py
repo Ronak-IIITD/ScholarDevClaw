@@ -408,6 +408,15 @@ class HistoryPane(VerticalScroll):
 class RunInspector(Static):
     """Compact, always-visible run inspector pane."""
 
+    can_focus = True
+
+    class InspectorAction(Message):
+        def __init__(self, action: str, run_id: int | None, seq: int | None = None):
+            super().__init__()
+            self.action = action
+            self.run_id = run_id
+            self.seq = seq
+
     DEFAULT_CSS = """
     RunInspector {
         width: 100%;
@@ -415,10 +424,19 @@ class RunInspector(Static):
         max-height: 10;
         color: $text-muted;
     }
+
+    RunInspector:focus {
+        color: $text;
+        text-style: bold;
+    }
     """
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__("", **kwargs)
+        self._run_id: int | None = None
+        self._lines: list[str] = []
+        self._event_line_indices: list[int] = []
+        self._selected_event_index = 0
         self.set_placeholder("Run Inspector: no runs yet")
 
     @staticmethod
@@ -496,11 +514,106 @@ class RunInspector(Static):
         return lines[:max_lines]
 
     def set_placeholder(self, message: str) -> None:
+        self._run_id = None
+        self._lines = [message]
+        self._event_line_indices = []
+        self._selected_event_index = 0
         self.update(message)
 
-    def set_lines(self, lines: list[str]) -> None:
+    def _extract_event_seq(self, line: str) -> int | None:
+        token = str(line or "").strip().split(" ", 1)[0]
+        if not token.isdigit():
+            return None
+        return int(token)
+
+    def _selected_event_seq(self) -> int | None:
+        if not self._event_line_indices:
+            return None
+        line_index = self._event_line_indices[self._selected_event_index]
+        return self._extract_event_seq(self._lines[line_index])
+
+    def _render_with_selection(self) -> None:
+        if not self._lines:
+            self.update("Run Inspector: no runs yet")
+            return
+        lines = list(self._lines)
+        if self._event_line_indices:
+            selected_line = self._event_line_indices[self._selected_event_index]
+            lines[selected_line] = f"▶ {lines[selected_line]}"
+        self.update("\n".join(lines))
+
+    def _move_selection(self, delta: int) -> None:
+        if not self._event_line_indices:
+            return
+        self._selected_event_index = (self._selected_event_index + delta) % len(
+            self._event_line_indices
+        )
+        self._render_with_selection()
+
+    def _emit_action(self, action: str) -> None:
+        self.post_message(
+            self.InspectorAction(
+                action=action,
+                run_id=self._run_id,
+                seq=self._selected_event_seq(),
+            )
+        )
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key in {"up", "k"}:
+            self._move_selection(-1)
+            event.stop()
+            return
+        if event.key in {"down", "j"}:
+            self._move_selection(1)
+            event.stop()
+            return
+        if event.key in {"enter", "space"}:
+            self._emit_action("events")
+            event.stop()
+            return
+        if event.key == "r":
+            self._emit_action("rerun")
+            event.stop()
+            return
+        if event.key == "s":
+            self._emit_action("show")
+            event.stop()
+            return
+        if event.key == "e":
+            self._emit_action("events")
+            event.stop()
+
+    def set_lines(self, lines: list[str], *, run_id: int | None = None) -> None:
         clean = [str(line).rstrip() for line in lines if str(line).strip()]
-        self.update("\n".join(clean) if clean else "Run Inspector: no runs yet")
+        if not clean:
+            self.set_placeholder("Run Inspector: no runs yet")
+            return
+
+        selected_seq = self._selected_event_seq()
+        self._run_id = run_id
+        self._lines = clean
+        self._event_line_indices = [
+            index for index, line in enumerate(clean) if self._extract_event_seq(line) is not None
+        ]
+        if not self._event_line_indices:
+            self._selected_event_index = 0
+            self.update("\n".join(clean))
+            return
+
+        if selected_seq is not None:
+            for idx, line_index in enumerate(self._event_line_indices):
+                if self._extract_event_seq(self._lines[line_index]) == selected_seq:
+                    self._selected_event_index = idx
+                    break
+            else:
+                self._selected_event_index = 0
+        else:
+            self._selected_event_index = min(
+                self._selected_event_index, len(self._event_line_indices) - 1
+            )
+
+        self._render_with_selection()
 
     def set_snapshot(
         self,
@@ -534,7 +647,8 @@ class RunInspector(Static):
                     "summary_lines": summary_lines,
                     "event_lines": event_lines,
                 }
-            )
+            ),
+            run_id=run_id,
         )
 
 

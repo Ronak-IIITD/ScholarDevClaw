@@ -17,6 +17,7 @@ from scholardevclaw.tui.app import (
     ScholarDevClawApp,
     TaskCompleted,
 )
+from scholardevclaw.tui.widgets import RunInspector
 
 
 def _minimal_app_for_unit() -> ScholarDevClawApp:
@@ -149,14 +150,92 @@ def test_bindings_include_escape_and_command_palette_shortcut():
 
     assert '("escape", "handle_escape", "ESC")' in source
     assert '("ctrl+j", "open_command_palette", "Palette")' in source
+    assert '("ctrl+i", "focus_inspector", "Inspector")' in source
 
 
-def test_compose_includes_phase_tracker_and_history_pane():
+def test_compose_includes_split_workspace_and_side_inspector_history_pane():
     source = inspect.getsource(ScholarDevClawApp.compose)
 
+    assert 'Horizontal(id="workspace")' in source
+    assert 'Vertical(id="main-pane")' in source
+    assert 'Vertical(id="side-pane")' in source
     assert "PhaseTracker" in source
+    assert "LogView" in source
     assert "HistoryPane" in source
     assert "RunInspector" in source
+
+
+def test_action_focus_inspector_focuses_widget_and_sets_status():
+    app = _minimal_app_for_unit()
+    called: list[str] = []
+    statuses: list[tuple[str, str]] = []
+
+    class _DummyInspector:
+        def focus(self):
+            called.append("focus")
+
+    app.query_one = lambda *_a, **_k: _DummyInspector()  # type: ignore[assignment]
+    app._set_status = lambda message, level="info": statuses.append((level, message))
+
+    app.action_focus_inspector()
+
+    assert called == ["focus"]
+    assert statuses[-1][0] == "accent"
+    assert "Inspector focused" in statuses[-1][1]
+
+
+def test_on_inspector_action_routes_to_show_events_and_rerun():
+    app = _minimal_app_for_unit()
+    calls: list[tuple[str, dict[str, int], str | None]] = []
+
+    class _DummyPrompt:
+        def focus(self):
+            return None
+
+    def _query_one(selector, *_args, **_kwargs):
+        if selector == "#prompt-input":
+            return _DummyPrompt()
+        raise AssertionError(f"unexpected selector: {selector}")
+
+    app.query_one = _query_one  # type: ignore[assignment]
+
+    def _exec(action, request, *, command=None):
+        calls.append((action, request, command))
+
+    app._execute_action_request = _exec  # type: ignore[assignment]
+
+    app.on_inspector_action(RunInspector.InspectorAction("show", 8, 3))
+    app.on_inspector_action(RunInspector.InspectorAction("events", 8, 3))
+    app.on_inspector_action(RunInspector.InspectorAction("rerun", 8, 3))
+
+    assert calls[0] == ("run_show", {"run_id": 8}, "run show 8")
+    assert calls[1] == ("run_events", {"run_id": 8}, "run events 8")
+    assert calls[2] == ("run_rerun", {"run_id": 8}, "run rerun 8")
+
+
+def test_on_inspector_action_warns_when_no_run_selected():
+    app = _minimal_app_for_unit()
+    output: list[tuple[str, str]] = []
+    statuses: list[tuple[str, str]] = []
+
+    class _DummyPrompt:
+        def focus(self):
+            return None
+
+    def _query_one(selector, *_args, **_kwargs):
+        if selector == "#prompt-input":
+            return _DummyPrompt()
+        raise AssertionError(f"unexpected selector: {selector}")
+
+    app.query_one = _query_one  # type: ignore[assignment]
+    app._append_output = lambda line, level="auto": output.append((level, line))
+    app._set_status = lambda message, level="info": statuses.append((level, message))
+
+    app.on_inspector_action(RunInspector.InspectorAction("show", None, None))
+
+    assert output[-1][0] == "warning"
+    assert "no run selected" in output[-1][1].lower()
+    assert statuses[-1][0] == "warning"
 
 
 def test_refresh_run_inspector_prefers_active_run_then_latest_artifact():

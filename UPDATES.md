@@ -4,6 +4,60 @@
 
 **Last updated:** 2026-04-11
 
+### 2026-04-11 (TUI Phase-5: split-pane workspace + focusable inspector interactions)
+
+**Summary:** Upgraded the TUI workspace from stacked panes to a split-pane layout and made `RunInspector` keyboard-focusable/interactive with direct run actions (`show`, `events`, `rerun`) routed through existing command flows.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Replaced stacked body layout with split-pane workspace containers:
+    - left/main pane: `LogView`
+    - right/side pane: `RunInspector` + `HistoryPane` stacked
+  - Added `Ctrl+I` binding and `action_focus_inspector()` to focus the inspector quickly.
+  - Added `@on(RunInspector.InspectorAction)` app-level handler to route inspector actions to existing execution paths:
+    - `run show <id>`
+    - `run events <id>`
+    - `run rerun <id>`
+  - Added warning path when inspector has no selected/available run.
+  - Ensured prompt focus is restored after inspector-triggered actions for intuitive command-first flow.
+  - Wired inspector refresh to pass `run_id` into widget rendering for action context.
+
+- `core/src/scholardevclaw/tui/widgets.py`
+  - Made `RunInspector` focusable (`can_focus = True`).
+  - Added `RunInspector.InspectorAction` message (`action`, `run_id`, optional `seq`).
+  - Added event-row selection state (`_event_line_indices`, `_selected_event_index`) and keyboard handling:
+    - up/down or `k/j` to move selection
+    - enter/space to trigger events action
+    - `r` rerun, `s` show, `e` events
+  - Preserved machine-readable event rows for internal seq mapping.
+  - Added visual selected-row highlight prefix (`▶`) without mutating source event lines.
+  - Extended `set_lines(...)` to accept `run_id` and preserve selected event when possible.
+
+- `core/src/scholardevclaw/tui/screens.py`
+  - Updated `HELP_TEXT` discoverability with:
+    - `Ctrl+I focus inspector`
+    - inspector key actions (`j/k`, Enter/Space, `r/s/e`).
+
+- `core/tests/unit/test_tui_app.py`
+  - Added/updated assertions for split-pane compose structure.
+  - Added binding assertion for `Ctrl+I`.
+  - Added `action_focus_inspector()` behavior test.
+  - Added inspector action routing tests for `show/events/rerun`.
+  - Added warning-path test for inspector action without run selection.
+
+- `core/tests/unit/test_tui_widgets.py`
+  - Added `RunInspector` keyboard navigation + action message emission coverage.
+
+- `core/tests/unit/test_tui_screens.py`
+  - Added help text assertions for inspector focus and key-action discoverability.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/ tests/`
+- ✅ `cd core && pytest tests/unit/test_tui_app.py tests/unit/test_tui_widgets.py tests/unit/test_tui_screens.py tests/unit/test_llm_client.py -q` (`93 passed`)
+- ⚠️ LSP diagnostics: pyright diagnostics requests timed out in this environment.
+
 ### 2026-04-11 (TUI Phase-4: dedicated live run inspector pane + failure-code metadata)
 
 **Summary:** Added a dedicated always-visible run inspector pane in the Python Textual TUI, wired to active/lifecycle data and persisted run artifacts/events, plus a non-breaking `inspect` command to print the same snapshot to the main log.

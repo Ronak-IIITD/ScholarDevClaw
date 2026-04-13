@@ -33,6 +33,8 @@ HELP_TEXT = (
     "Keys\n"
     "Tab autocomplete\n"
     "Up/Down history\n"
+    "Ctrl+I focus inspector\n"
+    "Inspector: j/k move, Enter/Space events, r rerun, s show, e events\n"
     "Ctrl+C cancel task or exit\n"
     "Ctrl+K clear output\n"
     "Enter execute\n"
