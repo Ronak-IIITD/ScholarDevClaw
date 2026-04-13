@@ -300,6 +300,7 @@ class TestMappingResult:
         assert mr.targets == []
         assert mr.strategy == "replace"
         assert mr.confidence == 80
+        assert mr.confidence_breakdown == {}
 
 
 # =========================================================================
@@ -688,6 +689,23 @@ class TestSelectStrategy:
 
 
 class TestCalculateConfidence:
+    def test_confidence_breakdown_total_matches_calculate_confidence(self):
+        engine = _make_engine()
+        ips = [
+            InsertionPoint(
+                file="f.py",
+                line=1,
+                current_code="x",
+                replacement_required=True,
+                context={"match_tier": "exact"},
+            )
+        ]
+        validation = ValidationResult(passed=True)
+        breakdown = engine._calculate_confidence_breakdown(validation, ips)
+        score = engine._calculate_confidence(validation, ips)
+        assert breakdown
+        assert breakdown["total"] == score
+
     def test_no_targets_base_plus_validation(self):
         engine = _make_engine()
         validation = ValidationResult(passed=True)
@@ -859,6 +877,13 @@ class TestMapOrchestration:
         engine = _make_engine(elements=[el])
         result = engine.map()
         assert len(result.targets) >= 1
+
+    def test_map_returns_confidence_breakdown_with_matching_total(self):
+        el = _make_element(name="LayerNorm")
+        engine = _make_engine(elements=[el])
+        result = engine.map()
+        assert result.confidence_breakdown
+        assert result.confidence_breakdown["total"] == result.confidence
 
 
 # =========================================================================

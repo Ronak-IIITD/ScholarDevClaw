@@ -4,6 +4,145 @@
 
 **Last updated:** 2026-04-13
 
+### 2026-04-13 (Track-3 milestone-1: additive mapping confidence breakdown propagation)
+
+**Summary:** Added an additive `confidence_breakdown` contract for mapping results while preserving existing numeric `confidence` behavior and compatibility across pipeline and API surfaces.
+
+**What changed:**
+
+- `core/src/scholardevclaw/mapping/engine.py`
+  - Extended `MappingResult` with additive field: `confidence_breakdown: dict[str, Any] = field(default_factory=dict)`.
+  - Added `_calculate_confidence_breakdown(...)` helper that computes stable additive scoring metadata (`version`, `total`, `base`, `awards`, `penalties`, `counts`).
+  - Kept `_calculate_confidence(...) -> int` signature unchanged, now sourced from breakdown `total`.
+  - Updated `map()` to attach `confidence_breakdown` in returned `MappingResult`.
+
+- `core/src/scholardevclaw/application/pipeline.py`
+  - `_build_mapping_result(...)` now includes `confidence_breakdown` in `mapping_result` dict with safe fallback for legacy/fake mapping engines.
+  - `run_map(...)` payload now includes top-level `confidence_breakdown`.
+
+- `core/src/scholardevclaw/api/server.py`
+  - Extended `MappingResponse` model with additive field `confidence_breakdown: dict[str, Any] = Field(default_factory=dict)`.
+  - `/mapping/map` response now propagates `confidence_breakdown` from mapping result with fallback `{}`.
+
+- Tests:
+  - `core/tests/unit/test_mapping_engine.py`
+    - Added assertions for default `MappingResult.confidence_breakdown`.
+    - Added confidence breakdown consistency test: `breakdown["total"] == _calculate_confidence(...)`.
+    - Added map orchestration test asserting `confidence_breakdown` presence and total/score parity.
+  - `core/tests/unit/test_api_server.py`
+    - Extended mapping contract tests to include `confidence_breakdown` in fake mapping result and verify it appears in `/mapping/map` responses.
+
+**Verification:**
+
+- ✅ `cd core && pytest tests/unit/test_mapping_engine.py -q` (`91 passed`)
+- ✅ `cd core && pytest tests/unit/test_api_server.py -q -k "mapping_response_contains_patch_contract_fields or mapping_to_patch_contract_continuity"` (`2 passed, 16 deselected`)
+- ✅ `cd core && pytest tests/unit/test_pipeline.py -q -k "map or quality_gate"` (`7 passed, 80 deselected`)
+
+### 2026-04-13 (Track-1 milestone-1: web dashboard timeline + scorecard + trust metadata + actionable errors)
+
+**Summary:** Implemented milestone-1 dashboard review surfaces with richer backend step payloads, websocket snapshot hydration, and new read-only UI cards for timeline, validation scorecard, trust metadata, and actionable error guidance.
+
+**What changed:**
+
+- `core/src/scholardevclaw/api/routes/dashboard.py`
+  - Extended `PipelineStepResult` with additive timing metadata: `sequence`, `started_at`, `finished_at`.
+  - Updated async step recording to maintain per-run sequence and persist actual step timing metadata.
+  - WebSocket connect now sends typed snapshot envelope: `{"type":"pipeline_snapshot","run":...}` while also sending legacy raw snapshot payload for backward compatibility.
+  - Enriched validate step payload with bounded scorecard fields (`summary`, `checks`, `highlights`, `deltas`) and included `baseline_metrics` / `new_metrics` when available.
+  - Enriched generate step payload with `preview_files` and existing/optional `output_dir`.
+
+- `web/src/types/api.ts`
+  - Added optional `sequence`, `started_at`, `finished_at` to `PipelineStepResult`.
+  - Added websocket message typings for `pipeline_snapshot` and `auth_ok`.
+  - Added `TimelineEvent` UI model.
+
+- `web/src/hooks/usePipelineWs.ts`
+  - Added snapshot hydration flow for both typed `pipeline_snapshot` messages and legacy raw snapshot payloads.
+  - Added timeline event accumulation for step/complete/error websocket events with timestamps.
+  - Exposed `timelineEvents` in hook return and reset it in `reset()`.
+
+- New milestone-1 UI components:
+  - `web/src/components/PipelineTimelinePanel.tsx`
+  - `web/src/components/ValidationScorecardCard.tsx`
+  - `web/src/components/TrustMetadataCard.tsx`
+  - `web/src/components/ActionableErrorPanel.tsx`
+
+- `web/src/pages/PipelinePage.tsx`
+  - Replaced step-card progress section with new run workspace:
+    - run summary strip (status, elapsed, completed count),
+    - actionable error panel,
+    - xl two-column layout with timeline + insight stack.
+  - Wired hook `timelineEvents` and derived latest validate/generate payloads from displayed steps.
+
+**Verification:**
+
+- ✅ `cd core && pytest tests/unit/test_api_dashboard_routes.py -q` (`9 passed`)
+- ✅ `cd web && npm run build` (successful production build)
+
+### 2026-04-13 (Track-2A: full pipeline e2e scenario + shared nanoGPT fixture hardening)
+
+**Summary:** Added deterministic end-to-end coverage for the full analyze→suggest→map→generate→validate→integrate sequence on the nanoGPT benchmark repo, and standardized e2e nanoGPT path resolution via shared conftest fixture.
+
+**What changed:**
+
+- `core/tests/e2e/conftest.py`
+  - Corrected e2e root/path wiring so shared constants resolve consistently:
+    - `CORE_ROOT` points to `.../ScholarDevClaw/core`
+    - `REPO_ROOT` points to repo root `.../ScholarDevClaw`
+    - `SRC` remains `core/src` for import bootstrap
+    - `NANOGPT_REPO` now resolves to `repo_root/test_repos/nanogpt`
+  - Added reusable fixture `nanogpt_repo_path` that delegates to `get_nanogpt_path()`.
+  - Kept backward-compat alias `ROOT = CORE_ROOT` for any existing test imports.
+
+- `core/tests/e2e/test_full_pipeline.py` (new)
+  - Added one robust full-flow e2e scenario:
+    - `run_analyze(repo)`
+    - `run_suggest(repo)`
+    - `run_map(repo, "rmsnorm")`
+    - `run_generate(repo, "rmsnorm", output_dir=tmp_path/...)`
+    - `run_validate(repo, generate_payload)`
+    - `run_integrate(repo, "rmsnorm", dry_run=False, create_rollback=False)`
+  - Added deterministic assertions to verify:
+    - analyze/suggest/map/generate/validate contracts and payload shape,
+    - mapping target floor (`target_count >= 1` for `rmsnorm` on nanoGPT),
+    - schema metadata continuity (`_meta.payload_type`) for validation and integration,
+    - integrate payload supports either full validation path keys or actionable failure-step output, avoiding flaky assumptions on benchmark pass/fail outcomes.
+
+**Verification:**
+
+- ✅ `cd core && pytest tests/e2e/test_full_pipeline.py -q` (`1 passed`)
+- ✅ `cd core && pytest tests/e2e/test_integrate.py -q` (`9 passed`)
+
+### 2026-04-13 (Track-2B: bridge/sandbox integration test coverage expansion)
+
+**Summary:** Expanded integration-oriented test coverage across validation sandbox routing, dashboard async pipeline control flow, and agent HTTP bridge validation contracts to reduce regressions in real bridge + policy-driven execution paths.
+
+**What changed:**
+
+- `core/tests/unit/test_validation_runner.py`
+  - Added `test_training_test_uses_docker_runner_when_enabled` to verify:
+    - docker sandbox mode routes `_run_training_test(...)` through `_run_bench_script_in_docker(...)`,
+    - host runner `_run_bench_script(...)` is not called,
+    - docker call receives expected `cwd` and configured docker image.
+
+- `core/tests/unit/test_api_dashboard_routes.py`
+  - Added `test_pipeline_async_skip_validate_omits_validate_step` to verify dashboard async orchestrator behavior when `skip_validate=True`:
+    - validate stage is not invoked,
+    - run status still completes,
+    - emitted step sequence excludes `validate:<spec>`.
+
+- `agent/src/bridges/python-http.test.ts`
+  - Added `posts validate payload to /validation/run` to verify HTTP bridge contract for validation:
+    - endpoint path `/validation/run`,
+    - request body includes both `patch` and `repoPath`,
+    - policy-stage responses are returned as successful HTTP data payloads.
+
+**Verification:**
+
+- ✅ `cd core && pytest tests/unit/test_validation_runner.py -q -k "docker or strict"` (`4 passed`)
+- ✅ `cd core && pytest tests/unit/test_api_dashboard_routes.py -q` (`9 passed`)
+- ✅ `cd agent && bun run test --run src/bridges/python-http.test.ts` (`10 passed`)
+
 ### 2026-04-13 (Phase-3 trust loop: hunk-level inspector review + accept/reject/regenerate)
 
 **Summary:** Implemented hunk-level patch review in the TUI inspector for integrate approvals. Approval is now tied to specific code hunks (accept/reject/regenerate), and integration applies only accepted hunks before validation.

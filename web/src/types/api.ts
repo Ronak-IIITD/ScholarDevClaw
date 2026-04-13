@@ -20,6 +20,9 @@ export interface PipelineRunRequest {
 export interface PipelineStepResult {
   step: string;
   status: "running" | "completed" | "failed";
+  sequence?: number;
+  started_at?: number;
+  finished_at?: number;
   duration_seconds: number;
   data: Record<string, unknown>;
   error: string | null;
@@ -42,8 +45,20 @@ export interface WsStepMessage {
   run_id: string;
   step: string;
   status: string;
+  sequence?: number;
+  started_at?: number;
+  finished_at?: number;
   data?: Record<string, unknown>;
   duration?: number;
+}
+
+export interface WsSnapshotMessage {
+  type: "pipeline_snapshot";
+  run: PipelineRunStatus;
+}
+
+export interface WsAuthOkMessage {
+  type: "auth_ok";
 }
 
 export interface WsCompleteMessage {
@@ -63,8 +78,20 @@ export interface WsPongMessage {
   type: "pong";
 }
 
+export interface TimelineEvent {
+  id: string;
+  eventType: "step" | "complete" | "error";
+  status: string;
+  step?: string;
+  timestamp: number;
+  duration_seconds?: number;
+  error?: string;
+}
+
 export type WsMessage =
   | WsStepMessage
+  | WsSnapshotMessage
+  | WsAuthOkMessage
   | WsCompleteMessage
   | WsErrorMessage
   | WsPongMessage;

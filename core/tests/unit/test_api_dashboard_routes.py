@@ -290,3 +290,140 @@ def test_pipeline_async_uses_shared_pipeline_functions(monkeypatch):
         "generate:rmsnorm",
         "validate:rmsnorm",
     ]
+
+
+def test_pipeline_async_skip_validate_omits_validate_step(monkeypatch):
+    _, dashboard = _load_server(monkeypatch)
+
+    validate_calls: list[str] = []
+
+    monkeypatch.setattr(
+        dashboard,
+        "run_analyze",
+        lambda repo_path: type(
+            "Result",
+            (),
+            {
+                "ok": True,
+                "payload": {
+                    "languages": ["python"],
+                    "language_stats": [{"file_count": 1}],
+                    "frameworks": ["pytorch"],
+                    "entry_points": ["main.py"],
+                    "test_files": ["tests/test_demo.py"],
+                    "patterns": {"rmsnorm": ["model.py"]},
+                },
+                "error": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "run_suggest",
+        lambda repo_path: type(
+            "Result",
+            (),
+            {
+                "ok": True,
+                "payload": {
+                    "suggestions": [
+                        {
+                            "pattern": "layernorm",
+                            "paper": {"name": "rmsnorm", "title": "RMSNorm"},
+                        }
+                    ]
+                },
+                "error": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "run_map",
+        lambda repo_path, spec_name: type(
+            "Result",
+            (),
+            {
+                "ok": True,
+                "payload": {
+                    "target_count": 1,
+                    "strategy": "exact",
+                    "confidence": 92,
+                    "targets": [{"file": "model.py", "line": 3}],
+                },
+                "error": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "run_generate",
+        lambda repo_path, spec_name, output_dir=None: type(
+            "Result",
+            (),
+            {
+                "ok": True,
+                "payload": {
+                    "branch_name": "integration/rmsnorm",
+                    "new_files": [{"path": "rmsnorm.py"}],
+                    "transformations": [{"file": "model.py"}],
+                    "output_dir": output_dir,
+                },
+                "error": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "run_validate",
+        lambda repo_path, _patch=None: (
+            validate_calls.append(repo_path)
+            or type(
+                "Result",
+                (),
+                {
+                    "ok": True,
+                    "payload": {
+                        "passed": True,
+                        "stage": "benchmark",
+                        "scorecard": {"summary": "pass"},
+                    },
+                    "error": None,
+                },
+            )()
+        ),
+    )
+
+    setattr(
+        dashboard,
+        "_current_run",
+        dashboard.PipelineRunStatus(
+            run_id="run5678",
+            status="running",
+            repo_path="/tmp/repo",
+            spec_names=[],
+            started_at=0.0,
+        ),
+    )
+    dashboard._ws_clients.clear()
+
+    asyncio.run(
+        dashboard._run_pipeline_async(
+            run_id="run5678",
+            repo_path="/tmp/repo",
+            spec_names=[],
+            skip_validate=True,
+            output_dir="/tmp/out",
+        )
+    )
+
+    assert validate_calls == []
+    current_run = getattr(dashboard, "_current_run")
+    assert current_run is not None
+    assert current_run.status == "completed"
+    assert [step.step for step in current_run.steps] == [
+        "analyze",
+        "suggest",
+        "map:rmsnorm",
+        "generate:rmsnorm",
+    ]

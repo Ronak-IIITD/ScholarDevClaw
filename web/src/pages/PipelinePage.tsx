@@ -3,11 +3,13 @@ import { getSpecs, getPipelineStatus, startPipelineRun } from "@/lib/api";
 import { usePipelineWs } from "@/hooks/usePipelineWs";
 import type { SpecSummary, PipelineRunStatus } from "@/types/api";
 import SpecCard from "@/components/SpecCard";
-import StepCard from "@/components/StepCard";
 import StatusBadge from "@/components/StatusBadge";
+import PipelineTimelinePanel from "@/components/PipelineTimelinePanel";
+import ValidationScorecardCard from "@/components/ValidationScorecardCard";
+import TrustMetadataCard from "@/components/TrustMetadataCard";
+import ActionableErrorPanel from "@/components/ActionableErrorPanel";
 import {
   Play,
-  Square,
   FolderOpen,
   Wifi,
   WifiOff,
@@ -26,7 +28,14 @@ export default function PipelinePage() {
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState("");
 
-  const { connected, liveSteps, pipelineStatus, totalSeconds, reset } =
+  const {
+    connected,
+    liveSteps,
+    pipelineStatus,
+    totalSeconds,
+    timelineEvents,
+    reset,
+  } =
     usePipelineWs();
 
   // Load specs and current status on mount
@@ -79,9 +88,30 @@ export default function PipelinePage() {
     }
   }, [repoPath, selectedSpecs, skipValidate, reset]);
 
+  const hasLiveSignal =
+    liveSteps.length > 0 || timelineEvents.length > 0 || pipelineStatus !== "idle";
   const isRunning = pipelineStatus === "running" || serverStatus?.status === "running";
-  const displaySteps = liveSteps.length > 0 ? liveSteps : serverStatus?.steps ?? [];
-  const displayStatus = liveSteps.length > 0 ? pipelineStatus : serverStatus?.status ?? "idle";
+  const displaySteps = hasLiveSignal ? liveSteps : serverStatus?.steps ?? [];
+  const orderedDisplaySteps = [...displaySteps].sort(
+    (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)
+  );
+  const displayStatus = hasLiveSignal ? pipelineStatus : serverStatus?.status ?? "idle";
+  const elapsedSeconds = totalSeconds > 0 ? totalSeconds : serverStatus?.total_seconds ?? 0;
+  const completedCount = orderedDisplaySteps.filter(
+    (step) => step.status === "completed"
+  ).length;
+
+  const latestValidateStep = [...orderedDisplaySteps]
+    .reverse()
+    .find((step) => step.step.startsWith("validate:") && step.status === "completed");
+  const latestGenerateStep = [...orderedDisplaySteps]
+    .reverse()
+    .find((step) => step.step.startsWith("generate:") && step.status === "completed");
+  const latestError =
+    launchError ||
+    [...timelineEvents].reverse().find((event) => event.eventType === "error")?.error ||
+    [...orderedDisplaySteps].reverse().find((step) => Boolean(step.error))?.error ||
+    null;
 
   return (
     <div>
@@ -212,52 +242,47 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      {/* Pipeline progress */}
-      {displaySteps.length > 0 && (
-        <div className="mt-8">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-200">
-              Pipeline Progress
-            </h3>
-            <div className="flex items-center gap-3">
+      {/* Run workspace */}
+      {(displaySteps.length > 0 || displayStatus !== "idle") && (
+        <div className="mt-8 space-y-4">
+          <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+            <div className="flex flex-wrap items-center gap-4">
               <StatusBadge status={displayStatus} size="md" />
-              {totalSeconds > 0 && (
-                <span className="flex items-center gap-1 text-xs text-gray-500">
-                  <Clock size={12} />
-                  {totalSeconds.toFixed(1)}s
-                </span>
-              )}
+              <span className="text-sm text-gray-300">
+                Completed steps: <span className="font-medium">{completedCount}</span>
+              </span>
+              <span className="flex items-center gap-1 text-sm text-gray-400">
+                <Clock size={14} />
+                {elapsedSeconds.toFixed(1)}s elapsed
+              </span>
             </div>
           </div>
 
-          {/* Progress bar */}
-          <div className="mt-3 h-1.5 rounded-full bg-gray-800 overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                displayStatus === "completed"
-                  ? "bg-green-500"
-                  : displayStatus === "failed"
-                  ? "bg-red-500"
-                  : "bg-brand-500"
-              }`}
-              style={{
-                width: `${
-                  displaySteps.length > 0
-                    ? (displaySteps.filter((s) => s.status === "completed")
-                        .length /
-                        displaySteps.length) *
-                      100
-                    : 0
-                }%`,
-              }}
-            />
-          </div>
+          <ActionableErrorPanel error={latestError} />
 
-          {/* Step cards */}
-          <div className="mt-4 space-y-3">
-            {displaySteps.map((step) => (
-              <StepCard key={step.step} result={step} />
-            ))}
+          <div className="grid gap-4 xl:grid-cols-3">
+            <div className="xl:col-span-2">
+              <PipelineTimelinePanel
+                steps={orderedDisplaySteps}
+                timelineEvents={timelineEvents}
+                status={displayStatus}
+              />
+            </div>
+            <div className="space-y-4">
+              <ValidationScorecardCard
+                latestValidateStepData={
+                  (latestValidateStep?.data as Record<string, unknown> | undefined) ?? null
+                }
+              />
+              <TrustMetadataCard
+                latestGenerateStepData={
+                  (latestGenerateStep?.data as Record<string, unknown> | undefined) ?? null
+                }
+                latestValidateStepData={
+                  (latestValidateStep?.data as Record<string, unknown> | undefined) ?? null
+                }
+              />
+            </div>
           </div>
         </div>
       )}

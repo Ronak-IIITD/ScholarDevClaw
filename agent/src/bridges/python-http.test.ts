@@ -122,6 +122,45 @@ describe('PythonHttpBridge', () => {
     );
   });
 
+  it('posts validate payload to /validation/run', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () =>
+        Promise.resolve({
+          passed: false,
+          stage: 'policy',
+          error: 'Docker sandbox requested but unavailable',
+          logs: 'Strict execution mode requires Docker',
+        }),
+    });
+    globalThis.fetch = mockFetch as typeof fetch;
+
+    const patchPayload = {
+      newFiles: [{ path: 'rmsnorm.py', content: 'print("ok")' }],
+      transformations: [],
+      branchName: 'integration/rmsnorm',
+    };
+
+    const result = await bridge.validate(patchPayload, '/tmp/repo');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        passed: false,
+        stage: 'policy',
+      }),
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:8000/validation/run',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ patch: patchPayload, repoPath: '/tmp/repo' }),
+      }),
+    );
+  });
+
   it('rejects non-JSON content type', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,

@@ -449,6 +449,36 @@ class TestRunTrainingTest:
             result = runner._run_training_test(use_variant=False)
         assert result is None
 
+    def test_training_test_uses_docker_runner_when_enabled(self, tmp_path, monkeypatch):
+        runner = ValidationRunner(tmp_path)
+        monkeypatch.setenv("SCHOLARDEVCLAW_VALIDATION_SANDBOX", "docker")
+        monkeypatch.setenv("SCHOLARDEVCLAW_VALIDATION_DOCKER_IMAGE", "python:3.12-slim")
+        fake_data = {
+            "loss": 0.4,
+            "perplexity": 1.5,
+            "tokens_per_second": 1200.0,
+            "memory_mb": 110.0,
+            "runtime_seconds": 1.5,
+        }
+
+        with (
+            patch(
+                "scholardevclaw.validation.runner._run_bench_script_in_docker",
+                return_value=fake_data,
+            ) as docker_run,
+            patch("scholardevclaw.validation.runner._run_bench_script") as host_run,
+        ):
+            result = runner._run_training_test(use_variant=True, use_torch=False)
+
+        assert result is not None
+        assert result.loss == 0.4
+        assert result.tokens_per_second == 1200.0
+        host_run.assert_not_called()
+        docker_run.assert_called_once()
+        call_kwargs = docker_run.call_args.kwargs
+        assert Path(call_kwargs["cwd"]) == tmp_path
+        assert call_kwargs["image"] == "python:3.12-slim"
+
 
 # =========================================================================
 # ValidationRunner.run_simple_benchmark

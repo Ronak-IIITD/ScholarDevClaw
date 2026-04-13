@@ -273,6 +273,7 @@ class MappingResponse(BaseModel):
     targets: list[MappingTargetResponse]
     strategy: str
     confidence: int
+    confidence_breakdown: dict[str, Any] = Field(default_factory=dict)
     research_spec: dict[str, Any] = Field(default_factory=dict)
     researchSpec: dict[str, Any] = Field(default_factory=dict)  # noqa: N815
 
@@ -804,6 +805,7 @@ async def map_architecture(request: MappingRequest):
             ],
             "strategy": result.strategy,
             "confidence": result.confidence,
+            "confidence_breakdown": getattr(result, "confidence_breakdown", {}) or {},
             "research_spec": result.research_spec,
             "researchSpec": request.research_spec,
         }

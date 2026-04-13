@@ -64,6 +64,7 @@ class MappingResult:
     strategy: str
     confidence: int
     research_spec: dict
+    confidence_breakdown: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -192,13 +193,15 @@ class MappingEngine:
         targets = self._find_target_locations()
         validation = self._validate_compatibility(targets)
         strategy = self._select_strategy(targets, validation)
-        confidence = self._calculate_confidence(validation, targets)
+        confidence_breakdown = self._calculate_confidence_breakdown(validation, targets)
+        confidence = int(confidence_breakdown.get("total", 0))
 
         return MappingResult(
             targets=targets,
             strategy=strategy,
             confidence=confidence,
             research_spec=self.research_spec,
+            confidence_breakdown=confidence_breakdown,
         )
 
     # ------------------------------------------------------------------
@@ -731,6 +734,57 @@ class MappingEngine:
     # Confidence scoring
     # ------------------------------------------------------------------
 
+    def _calculate_confidence_breakdown(
+        self, validation: ValidationResult, targets: list[InsertionPoint]
+    ) -> dict[str, Any]:
+        """Compute additive confidence scoring details.
+
+        Numeric scoring semantics intentionally mirror ``_calculate_confidence``'s
+        historic behavior. This helper only exposes a stable additive breakdown.
+        """
+        base = 30
+
+        target_count = len(targets)
+        exact_count = sum(1 for t in targets if t.context.get("match_tier") == "exact")
+        fuzzy_count = sum(1 for t in targets if t.context.get("match_tier", "").startswith("fuzzy"))
+        import_count = sum(1 for t in targets if t.context.get("match_tier") == "import")
+        llm_count = sum(1 for t in targets if t.context.get("match_tier") == "llm_semantic")
+        error_count = sum(1 for i in validation.issues if i.severity == "error")
+
+        awards = {
+            "has_targets": 20 if target_count > 0 else 0,
+            "exact_match_points": min(exact_count * 10, 30),
+            "fuzzy_bonus": 10 if fuzzy_count > 0 else 0,
+            "import_bonus": 5 if import_count > 0 else 0,
+            "llm_semantic_bonus": 5 if llm_count > 0 else 0,
+            "validation_pass_bonus": 10 if validation.passed else 0,
+            "code_template_bonus": 10
+            if self.research_spec.get("implementation", {}).get("code_template")
+            else 0,
+        }
+        penalties = {
+            "validation_error_points": 0 if validation.passed else error_count * 10,
+        }
+
+        raw_total = base + sum(awards.values()) - penalties["validation_error_points"]
+        total = max(0, min(raw_total, 100))
+
+        return {
+            "version": "1",
+            "total": int(total),
+            "base": int(base),
+            "awards": {k: int(v) for k, v in awards.items()},
+            "penalties": {k: int(v) for k, v in penalties.items()},
+            "counts": {
+                "targets": int(target_count),
+                "exact": int(exact_count),
+                "fuzzy": int(fuzzy_count),
+                "import": int(import_count),
+                "llm_semantic": int(llm_count),
+                "validation_errors": int(error_count),
+            },
+        }
+
     def _calculate_confidence(
         self, validation: ValidationResult, targets: list[InsertionPoint]
     ) -> int:
@@ -746,36 +800,8 @@ class MappingEngine:
         - +10 if spec has a code template
         - -10 per validation error
         """
-        confidence = 30
-
-        if targets:
-            confidence += 20
-
-            exact_count = sum(1 for t in targets if t.context.get("match_tier") == "exact")
-            fuzzy_count = sum(
-                1 for t in targets if t.context.get("match_tier", "").startswith("fuzzy")
-            )
-            import_count = sum(1 for t in targets if t.context.get("match_tier") == "import")
-            llm_count = sum(1 for t in targets if t.context.get("match_tier") == "llm_semantic")
-
-            confidence += min(exact_count * 10, 30)
-            if fuzzy_count > 0:
-                confidence += 10
-            if import_count > 0:
-                confidence += 5
-            if llm_count > 0:
-                confidence += 5
-
-        if validation.passed:
-            confidence += 10
-        else:
-            error_count = sum(1 for i in validation.issues if i.severity == "error")
-            confidence -= error_count * 10
-
-        if self.research_spec.get("implementation", {}).get("code_template"):
-            confidence += 10
-
-        return max(0, min(confidence, 100))
+        breakdown = self._calculate_confidence_breakdown(validation, targets)
+        return int(breakdown.get("total", 0))
 
 
 # ---------------------------------------------------------------------------

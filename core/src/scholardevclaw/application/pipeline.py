@@ -1075,6 +1075,7 @@ def _build_mapping_result(
         "strategy": mapping.strategy,
         "confidence": mapping.confidence,
         "research_spec": mapping.research_spec,
+        "confidence_breakdown": getattr(mapping, "confidence_breakdown", {}) or {},
     }
 
     return mapping_result, spec
@@ -1109,6 +1110,7 @@ def run_map(
             "algorithm": spec.get("algorithm", {}).get("name", "Unknown"),
             "strategy": mapping_result.get("strategy", "none"),
             "confidence": mapping_result.get("confidence", 0),
+            "confidence_breakdown": mapping_result.get("confidence_breakdown", {}),
             "targets": targets,
             "target_count": len(targets),
             "mapping": mapping_result,

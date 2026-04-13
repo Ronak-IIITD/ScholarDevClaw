@@ -255,6 +255,7 @@ def test_mapping_response_contains_patch_contract_fields(monkeypatch):
                 ],
                 strategy="replace",
                 confidence=88,
+                confidence_breakdown={"version": "1", "total": 88},
                 research_spec=self.research_spec,
             )
 
@@ -287,6 +288,7 @@ def test_mapping_response_contains_patch_contract_fields(monkeypatch):
     assert payload["targets"][0]["context"]["replacement"] == "RMSNorm"
     assert payload["targets"][0]["original"] == "LayerNorm"
     assert payload["targets"][0]["replacement"] == "RMSNorm"
+    assert payload["confidence_breakdown"]["total"] == payload["confidence"]
     assert FakeMappingEngine.seen_llm_assistant is None
 
 
@@ -311,6 +313,7 @@ def test_mapping_to_patch_contract_continuity(monkeypatch, tmp_path):
                 ],
                 strategy="replace",
                 confidence=90,
+                confidence_breakdown={"version": "1", "total": 90},
                 research_spec=self.research_spec,
             )
 
@@ -363,6 +366,7 @@ def test_mapping_to_patch_contract_continuity(monkeypatch, tmp_path):
     assert FakePatchGenerator.received_mapping["research_spec"]["changes"]["target_patterns"] == [
         "LayerNorm"
     ]
+    assert map_resp.json()["confidence_breakdown"]["total"] == map_resp.json()["confidence"]
     assert FakePatchGenerator.received_mapping["targets"][0]["context"]["original"] == "LayerNorm"
     assert FakePatchGenerator.received_mapping["targets"][0]["context"]["replacement"] == "RMSNorm"
 

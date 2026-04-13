@@ -19,7 +19,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -115,6 +115,9 @@ class PipelineRunRequest(BaseModel):
 class PipelineStepResult(BaseModel):
     step: str
     status: str  # "running", "completed", "failed"
+    sequence: int = 0
+    started_at: float = 0.0
+    finished_at: float = 0.0
     duration_seconds: float = 0.0
     data: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
@@ -258,8 +261,10 @@ async def _run_pipeline_async(
     """Execute pipeline steps in a background task, broadcasting progress."""
     global _current_run
     assert _current_run is not None
+    current_run = cast(PipelineRunStatus, _current_run)
 
     loop = asyncio.get_event_loop()
+    step_sequence = 0
 
     def _require_ok(step: str, result: Any) -> dict[str, Any]:
         if result.ok:
@@ -272,15 +277,25 @@ async def _run_pipeline_async(
         duration: float = 0.0,
         data: dict | None = None,
         error: str | None = None,
+        started_at: float | None = None,
+        finished_at: float | None = None,
     ) -> PipelineStepResult:
+        nonlocal step_sequence
+        step_sequence += 1
+        started = started_at if started_at is not None else time.time()
+        finished = finished_at if finished_at is not None else started
+        measured_duration = duration if duration > 0 else max(0.0, finished - started)
         result = PipelineStepResult(
             step=step,
             status=status,
-            duration_seconds=round(duration, 3),
+            sequence=step_sequence,
+            started_at=started,
+            finished_at=finished,
+            duration_seconds=round(measured_duration, 3),
             data=data or {},
             error=error,
         )
-        _current_run.steps.append(result)  # type: ignore[union-attr]
+        current_run.steps.append(result)
         return result
 
     async def _step_broadcast(step: str, status: str, **kwargs: Any) -> None:
@@ -296,7 +311,8 @@ async def _run_pipeline_async(
             return run_analyze(repo_path)
 
         analyze_result = await loop.run_in_executor(None, _do_analyze)
-        dt = time.time() - t0
+        finished_at = time.time()
+        dt = finished_at - t0
         analyze_payload = _require_ok("analyze", analyze_result)
         language_stats = analyze_payload.get("language_stats", [])
 
@@ -310,8 +326,23 @@ async def _run_pipeline_async(
             "test_files": len(analyze_payload.get("test_files", [])),
             "patterns": len(analyze_payload.get("patterns", {})),
         }
-        _add_step("analyze", "completed", dt, analysis_data)
-        await _step_broadcast("analyze", "completed", data=analysis_data, duration=round(dt, 3))
+        analyze_step = _add_step(
+            "analyze",
+            "completed",
+            dt,
+            analysis_data,
+            started_at=t0,
+            finished_at=finished_at,
+        )
+        await _step_broadcast(
+            "analyze",
+            "completed",
+            data=analysis_data,
+            duration=round(dt, 3),
+            sequence=analyze_step.sequence,
+            started_at=analyze_step.started_at,
+            finished_at=analyze_step.finished_at,
+        )
 
         # ---- 2. Suggest -----------------------------------------------
         await _step_broadcast("suggest", "running")
@@ -321,7 +352,8 @@ async def _run_pipeline_async(
             return run_suggest(repo_path)
 
         suggest_result = await loop.run_in_executor(None, _do_suggest)
-        dt = time.time() - t0
+        finished_at = time.time()
+        dt = finished_at - t0
         suggest_payload = _require_ok("suggest", suggest_result)
         suggestions = suggest_payload.get("suggestions", [])
 
@@ -336,8 +368,23 @@ async def _run_pipeline_async(
                 for s in suggestions[:10]
             ],
         }
-        _add_step("suggest", "completed", dt, suggest_data)
-        await _step_broadcast("suggest", "completed", data=suggest_data, duration=round(dt, 3))
+        suggest_step = _add_step(
+            "suggest",
+            "completed",
+            dt,
+            suggest_data,
+            started_at=t0,
+            finished_at=finished_at,
+        )
+        await _step_broadcast(
+            "suggest",
+            "completed",
+            data=suggest_data,
+            duration=round(dt, 3),
+            sequence=suggest_step.sequence,
+            started_at=suggest_step.started_at,
+            finished_at=suggest_step.finished_at,
+        )
 
         # ---- Resolve specs --------------------------------------------
         if not spec_names:
@@ -353,7 +400,7 @@ async def _run_pipeline_async(
                     seen.add(name)
             if not spec_names:
                 spec_names = ["rmsnorm"]
-            _current_run.spec_names = spec_names  # type: ignore[union-attr]
+            current_run.spec_names = spec_names
             await _step_broadcast("specs_resolved", "completed", data={"specs": spec_names})
 
         # ---- Per-spec: Map -> Generate -> Validate --------------------
@@ -366,7 +413,8 @@ async def _run_pipeline_async(
                 return run_map(repo_path, name)
 
             map_result = await loop.run_in_executor(None, _do_map)
-            dt = time.time() - t0
+            finished_at = time.time()
+            dt = finished_at - t0
             map_payload = _require_ok(f"map:{spec_name}", map_result)
             targets = map_payload.get("targets", [])
 
@@ -381,9 +429,22 @@ async def _run_pipeline_async(
                     if isinstance(t, dict)
                 ],
             }
-            _add_step(f"map:{spec_name}", "completed", dt, map_data)
+            map_step = _add_step(
+                f"map:{spec_name}",
+                "completed",
+                dt,
+                map_data,
+                started_at=t0,
+                finished_at=finished_at,
+            )
             await _step_broadcast(
-                f"map:{spec_name}", "completed", data=map_data, duration=round(dt, 3)
+                f"map:{spec_name}",
+                "completed",
+                data=map_data,
+                duration=round(dt, 3),
+                sequence=map_step.sequence,
+                started_at=map_step.started_at,
+                finished_at=map_step.finished_at,
             )
 
             # Generate
@@ -394,10 +455,20 @@ async def _run_pipeline_async(
                 return run_generate(repo_path, name, output_dir=output_dir)
 
             generate_result = await loop.run_in_executor(None, _do_generate)
-            dt = time.time() - t0
+            finished_at = time.time()
+            dt = finished_at - t0
             generate_payload = _require_ok(f"generate:{spec_name}", generate_result)
             new_files = generate_payload.get("new_files", [])
             transformations = generate_payload.get("transformations", [])
+            preview_files = [
+                f.get("path", "") for f in new_files[:10] if isinstance(f, dict) and f.get("path")
+            ]
+            if not preview_files:
+                preview_files = [
+                    t.get("file", "")
+                    for t in transformations[:10]
+                    if isinstance(t, dict) and t.get("file")
+                ]
 
             gen_data = {
                 "spec": spec_name,
@@ -406,12 +477,27 @@ async def _run_pipeline_async(
                 "transformations": len(transformations),
                 "file_names": [f.get("path", "") for f in new_files[:10] if isinstance(f, dict)],
             }
+            if preview_files:
+                gen_data["preview_files"] = preview_files[:6]
             if generate_payload.get("output_dir"):
                 gen_data["output_dir"] = generate_payload["output_dir"]
 
-            _add_step(f"generate:{spec_name}", "completed", dt, gen_data)
+            generate_step = _add_step(
+                f"generate:{spec_name}",
+                "completed",
+                dt,
+                gen_data,
+                started_at=t0,
+                finished_at=finished_at,
+            )
             await _step_broadcast(
-                f"generate:{spec_name}", "completed", data=gen_data, duration=round(dt, 3)
+                f"generate:{spec_name}",
+                "completed",
+                data=gen_data,
+                duration=round(dt, 3),
+                sequence=generate_step.sequence,
+                started_at=generate_step.started_at,
+                finished_at=generate_step.finished_at,
             )
 
             # Validate
@@ -423,46 +509,92 @@ async def _run_pipeline_async(
                     return run_validate(repo_path, payload)
 
                 validate_result = await loop.run_in_executor(None, _do_validate)
-                dt = time.time() - t0
+                finished_at = time.time()
+                dt = finished_at - t0
                 validate_payload = _require_ok(f"validate:{spec_name}", validate_result)
                 scorecard = validate_payload.get("scorecard", {})
+                scorecard_data: dict[str, Any] = {}
+                if isinstance(scorecard, dict):
+                    summary = scorecard.get("summary", "")
+                    if summary:
+                        scorecard_data["summary"] = summary
+                    checks = scorecard.get("checks", [])
+                    if isinstance(checks, list):
+                        scorecard_data["checks"] = checks[:8]
+                    highlights = scorecard.get("highlights", [])
+                    if isinstance(highlights, list):
+                        scorecard_data["highlights"] = highlights[:6]
+                    deltas = scorecard.get("deltas")
+                    if isinstance(deltas, dict):
+                        scorecard_data["deltas"] = deltas
+
+                baseline_metrics = validate_payload.get("baseline_metrics")
+                if baseline_metrics is None and isinstance(scorecard, dict):
+                    baseline_metrics = scorecard.get("baseline_metrics")
+                new_metrics = validate_payload.get("new_metrics")
+                if new_metrics is None and isinstance(scorecard, dict):
+                    new_metrics = scorecard.get("new_metrics")
 
                 val_data = {
                     "spec": spec_name,
                     "passed": validate_payload.get("passed", False),
                     "stage": validate_payload.get("stage", "unknown"),
-                    "summary": scorecard.get("summary", ""),
+                    "summary": scorecard_data.get("summary", ""),
                 }
-                _add_step(f"validate:{spec_name}", "completed", dt, val_data)
+                if scorecard_data:
+                    val_data["scorecard"] = scorecard_data
+                if "checks" in scorecard_data:
+                    val_data["checks"] = scorecard_data["checks"]
+                if "highlights" in scorecard_data:
+                    val_data["highlights"] = scorecard_data["highlights"]
+                if "deltas" in scorecard_data:
+                    val_data["deltas"] = scorecard_data["deltas"]
+                if isinstance(baseline_metrics, dict):
+                    val_data["baseline_metrics"] = baseline_metrics
+                if isinstance(new_metrics, dict):
+                    val_data["new_metrics"] = new_metrics
+
+                validate_step = _add_step(
+                    f"validate:{spec_name}",
+                    "completed",
+                    dt,
+                    val_data,
+                    started_at=t0,
+                    finished_at=finished_at,
+                )
                 await _step_broadcast(
-                    f"validate:{spec_name}", "completed", data=val_data, duration=round(dt, 3)
+                    f"validate:{spec_name}",
+                    "completed",
+                    data=val_data,
+                    duration=round(dt, 3),
+                    sequence=validate_step.sequence,
+                    started_at=validate_step.started_at,
+                    finished_at=validate_step.finished_at,
                 )
 
         # ---- Done -----------------------------------------------------
-        _current_run.status = "completed"  # type: ignore[union-attr]
-        _current_run.finished_at = time.time()  # type: ignore[union-attr]
-        _current_run.total_seconds = round(  # type: ignore[union-attr]
-            _current_run.finished_at - _current_run.started_at,
-            2,  # type: ignore[union-attr]
+        current_run.status = "completed"
+        current_run.finished_at = time.time()
+        current_run.total_seconds = round(
+            current_run.finished_at - current_run.started_at,
+            2,
         )
         await _broadcast(
             {
                 "type": "pipeline_complete",
                 "run_id": run_id,
                 "status": "completed",
-                "total_seconds": _current_run.total_seconds,  # type: ignore[union-attr]
+                "total_seconds": current_run.total_seconds,
             }
         )
 
     except Exception as exc:
         logger.exception("Pipeline run %s failed: %s", run_id, exc)
-        _add_step("error", "failed", error=str(exc))
-        if _current_run:
-            _current_run.status = "failed"
-            _current_run.finished_at = time.time()
-            _current_run.total_seconds = round(
-                _current_run.finished_at - _current_run.started_at, 2
-            )
+        errored_at = time.time()
+        _add_step("error", "failed", error=str(exc), started_at=errored_at, finished_at=errored_at)
+        current_run.status = "failed"
+        current_run.finished_at = time.time()
+        current_run.total_seconds = round(current_run.finished_at - current_run.started_at, 2)
         await _broadcast({"type": "pipeline_error", "run_id": run_id, "error": str(exc)})
 
 
@@ -517,7 +649,10 @@ async def ws_pipeline(websocket: WebSocket):
 
     # Send current state on connect
     if _current_run:
-        await websocket.send_text(_current_run.model_dump_json())
+        snapshot = _current_run.model_dump()
+        await websocket.send_text(json.dumps({"type": "pipeline_snapshot", "run": snapshot}))
+        # Compatibility for older clients that expect raw run payload
+        await websocket.send_text(json.dumps(snapshot))
 
     try:
         while True:
