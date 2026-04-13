@@ -2,7 +2,69 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-11
+**Last updated:** 2026-04-13
+
+### 2026-04-13 (Phase-3 trust loop: hunk-level inspector review + accept/reject/regenerate)
+
+**Summary:** Implemented hunk-level patch review in the TUI inspector for integrate approvals. Approval is now tied to specific code hunks (accept/reject/regenerate), and integration applies only accepted hunks before validation.
+
+**What changed:**
+
+- `core/src/scholardevclaw/application/pipeline.py`
+  - Extended `ApprovalCallback` contract to support structured outcomes (`bool | dict`).
+  - Added helper functions for hunk review flow:
+    - `_extract_patch_hunks(...)`
+    - `_normalize_hunk_decision(...)`
+    - `_normalize_hunk_decisions(...)`
+    - `_apply_hunk_review_decisions(...)`
+    - `_request_approval_outcome(...)`
+  - Updated `run_integrate(...)` to:
+    - derive hunks from generated patch payload,
+    - request patch-application approval with hunk context,
+    - honor hunk decisions from approval callback,
+    - apply only accepted hunks to temp validation copy,
+    - run validation against reviewed payload,
+    - emit additive `hunk_review` metadata in integration payload/provenance.
+
+- `core/src/scholardevclaw/tui/widgets.py`
+  - Upgraded `RunInspector` with dedicated review mode for hunk approvals.
+  - Added hunk decision controls:
+    - selected hunk: `a/x/g` (accept/reject/regenerate)
+    - all hunks: `A/X/G`
+    - submit review: `Enter` / `Space`
+  - Added compact review rendering with counts and per-hunk decision indicators.
+  - Extended `RunInspector.InspectorAction` to carry review payloads.
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Added pending integrate-review coordination state (`threading.Lock` + per-review `threading.Event`).
+  - Enhanced `_build_integrate_approval_callback(...)` to:
+    - detect hunk-aware patch-application approval requests,
+    - publish pending review for inspector interaction,
+    - wait for inspector submission with bounded poll/timeout,
+    - return structured approval payload including `hunk_decisions`.
+  - Extended inspector event routing for `review_update` / `review_submit`.
+  - Added review status/output summaries (accepted/rejected/regenerate/pending counts).
+  - Ensured pending-review cleanup on task completion and app shutdown.
+
+- `core/src/scholardevclaw/tui/screens.py`
+  - Updated help text to include inspector review keybindings.
+
+- Tests:
+  - `core/tests/unit/test_tui_widgets.py`
+    - Added review-mode rendering + keyboard action coverage for hunk decisions and submission.
+  - `core/tests/unit/test_tui_app.py`
+    - Added callback wait/submit flow coverage for hunk review.
+    - Added non-interactive hunk auto-approval payload coverage.
+    - Added inspector review submit routing + status/output coverage.
+  - `core/tests/unit/test_tui_screens.py`
+    - Updated help-text assertions for review controls.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/application/pipeline.py src/scholardevclaw/tui/app.py src/scholardevclaw/tui/widgets.py src/scholardevclaw/tui/screens.py tests/unit/test_tui_app.py tests/unit/test_tui_widgets.py tests/unit/test_tui_screens.py tests/unit/test_pipeline.py`
+- ✅ `cd core && pytest tests/unit/test_tui_widgets.py tests/unit/test_tui_app.py tests/unit/test_tui_screens.py -q` (`96 passed`)
+- ✅ `cd core && pytest tests/unit/test_pipeline.py -q` (`86 passed, 1 skipped`)
+- ⚠️ LSP diagnostics: pyright diagnostics requests timed out in this environment.
 
 ### 2026-04-11 (Phase-2 trust loop: patched-copy validation + evidence + TUI approvals)
 

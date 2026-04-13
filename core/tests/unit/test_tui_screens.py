@@ -48,4 +48,5 @@ def test_help_and_palette_include_inspect_command():
 
 def test_help_text_mentions_inspector_focus_and_key_actions():
     assert "Ctrl+I focus inspector" in HELP_TEXT
-    assert "Inspector: j/k move, Enter/Space events, r rerun, s show, e events" in HELP_TEXT
+    assert "Inspector: j/k move; Enter/Space events; r rerun; s show; e events" in HELP_TEXT
+    assert "Review mode: a/x/g set hunk, A/X/G set all, Enter/Space submit" in HELP_TEXT

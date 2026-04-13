@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -215,3 +216,59 @@ def test_run_inspector_keyboard_navigation_and_action_messages():
     assert posted[1] == ("rerun", 9, 2)
     assert posted[2] == ("show", 9, 2)
     assert posted[3] == ("events", 9, 2)
+
+
+def test_run_inspector_review_mode_renders_compact_hunk_lines_and_counts():
+    inspector = RunInspector()
+    inspector.set_review(
+        token=12,
+        stage="patch_application",
+        hunks=[
+            {"id": "h1", "file": "src/a.py", "header": "@@ -1,4 +1,5 @@"},
+            {"id": "h2", "file": "src/b.py", "header": "@@ -10,3 +11,7 @@"},
+        ],
+        decisions={"h1": "accept", "h2": "pending"},
+        run_id=12,
+    )
+
+    rendered = str(inspector.render())
+    assert "Review pending (patch_application)" in rendered
+    assert "A:1 X:0 G:0 P:1" in rendered
+    assert "src/a.py #h1" in rendered
+    assert "src/b.py #h2" in rendered
+
+
+def test_run_inspector_review_mode_keyboard_updates_and_submit_payload():
+    inspector = RunInspector()
+    inspector.set_review(
+        token=22,
+        stage="patch_application",
+        hunks=[
+            {"id": "1", "file": "src/a.py", "header": "@@"},
+            {"id": "2", "file": "src/b.py", "header": "@@"},
+        ],
+        decisions={"1": "pending", "2": "pending"},
+        run_id=22,
+    )
+
+    posted: list[tuple[str, dict[str, Any]]] = []
+
+    def _post_message(message):
+        posted.append((message.action, dict(getattr(message, "payload", {}) or {})))
+        return True
+
+    object.__setattr__(inspector, "post_message", _post_message)
+
+    inspector.on_key(SimpleNamespace(key="a", stop=lambda: None))  # type: ignore[arg-type]
+    inspector.on_key(SimpleNamespace(key="down", stop=lambda: None))  # type: ignore[arg-type]
+    inspector.on_key(SimpleNamespace(key="g", stop=lambda: None))  # type: ignore[arg-type]
+    inspector.on_key(SimpleNamespace(key="enter", stop=lambda: None))  # type: ignore[arg-type]
+
+    assert posted[0][0] == "review_update"
+    assert posted[0][1]["hunk_decisions"]["1"] == "accept"
+    assert posted[1][0] == "review_update"
+    assert posted[1][1]["hunk_decisions"]["2"] == "regenerate"
+    assert posted[2][0] == "review_submit"
+    assert posted[2][1]["approved"] is True
+    assert posted[2][1]["hunk_decisions"]["1"] == "accept"
+    assert posted[2][1]["hunk_decisions"]["2"] == "regenerate"

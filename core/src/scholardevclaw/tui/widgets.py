@@ -411,11 +411,18 @@ class RunInspector(Static):
     can_focus = True
 
     class InspectorAction(Message):
-        def __init__(self, action: str, run_id: int | None, seq: int | None = None):
+        def __init__(
+            self,
+            action: str,
+            run_id: int | None,
+            seq: int | None = None,
+            payload: dict[str, Any] | None = None,
+        ):
             super().__init__()
             self.action = action
             self.run_id = run_id
             self.seq = seq
+            self.payload = payload or {}
 
     DEFAULT_CSS = """
     RunInspector {
@@ -437,7 +444,102 @@ class RunInspector(Static):
         self._lines: list[str] = []
         self._event_line_indices: list[int] = []
         self._selected_event_index = 0
+        self._review_mode = False
+        self._review_token: int | None = None
+        self._review_stage = ""
+        self._review_hunks: list[dict[str, str]] = []
+        self._review_decisions: dict[str, str] = {}
+        self._selected_hunk_index = 0
         self.set_placeholder("Run Inspector: no runs yet")
+
+    @staticmethod
+    def _decision_icon(decision: str) -> str:
+        return {
+            "accept": "✓",
+            "reject": "✗",
+            "regenerate": "↻",
+            "pending": "·",
+        }.get(str(decision or "pending"), "·")
+
+    @staticmethod
+    def _normalize_decision(value: str) -> str:
+        decision = str(value or "").strip().lower()
+        if decision in {"accept", "reject", "regenerate"}:
+            return decision
+        return "pending"
+
+    @classmethod
+    def _normalize_hunk_summary(cls, hunk: dict[str, Any], index: int) -> dict[str, str]:
+        hunk_id = str(
+            hunk.get("id")
+            or hunk.get("hunk_id")
+            or hunk.get("key")
+            or hunk.get("index")
+            or (index + 1)
+        ).strip()
+        if not hunk_id:
+            hunk_id = str(index + 1)
+        key = hunk_id
+        file_path = cls._trim(
+            str(hunk.get("file") or hunk.get("file_path") or hunk.get("path") or "?"),
+            36,
+        )
+        header = cls._trim(str(hunk.get("header") or hunk.get("summary") or ""), 56)
+        return {
+            "key": key,
+            "id": hunk_id,
+            "file": file_path,
+            "header": header,
+        }
+
+    @classmethod
+    def render_review_lines(
+        cls,
+        *,
+        stage: str,
+        hunks: list[dict[str, str]],
+        decisions: dict[str, str],
+        selected_index: int = 0,
+        max_lines: int = 10,
+    ) -> list[str]:
+        clean_hunks = [
+            cls._normalize_hunk_summary(item, index)
+            for index, item in enumerate(hunks)
+            if isinstance(item, dict)
+        ]
+        if not clean_hunks:
+            return [f"Review pending ({stage})", "No hunks available for review"]
+
+        accepted = sum(1 for value in decisions.values() if value == "accept")
+        rejected = sum(1 for value in decisions.values() if value == "reject")
+        regenerated = sum(1 for value in decisions.values() if value == "regenerate")
+        pending = max(0, len(clean_hunks) - accepted - rejected - regenerated)
+
+        lines: list[str] = [
+            f"Review pending ({stage}) | {len(clean_hunks)} hunks",
+            f"A:{accepted} X:{rejected} G:{regenerated} P:{pending}",
+            "Keys: j/k move a/x/g set A/X/G all Enter submit",
+        ]
+
+        visible_slots = max(1, max_lines - len(lines))
+        selected = max(0, min(selected_index, len(clean_hunks) - 1))
+        start = max(0, selected - visible_slots + 1)
+        end = min(len(clean_hunks), start + visible_slots)
+        start = max(0, end - visible_slots)
+
+        for index in range(start, end):
+            hunk = clean_hunks[index]
+            key = hunk.get("key", str(index + 1))
+            decision = cls._normalize_decision(decisions.get(key, "pending"))
+            icon = cls._decision_icon(decision)
+            marker = "▶" if index == selected else " "
+            header = hunk.get("header", "")
+            suffix = f" | {header}" if header else ""
+            lines.append(
+                f"{marker} [{icon}] {hunk.get('file', '?')} #{hunk.get('id', key)}{suffix}"
+            )
+
+        return lines[:max_lines]
 
     @staticmethod
     def _trim(text: str, limit: int) -> str:
@@ -515,6 +617,12 @@ class RunInspector(Static):
 
     def set_placeholder(self, message: str) -> None:
         self._run_id = None
+        self._review_mode = False
+        self._review_token = None
+        self._review_stage = ""
+        self._review_hunks = []
+        self._review_decisions = {}
+        self._selected_hunk_index = 0
         self._lines = [message]
         self._event_line_indices = []
         self._selected_event_index = 0
@@ -532,7 +640,60 @@ class RunInspector(Static):
         line_index = self._event_line_indices[self._selected_event_index]
         return self._extract_event_seq(self._lines[line_index])
 
+    def _selected_hunk_key(self) -> str | None:
+        if not self._review_hunks:
+            return None
+        hunk = self._review_hunks[self._selected_hunk_index]
+        return str(hunk.get("key") or "") or None
+
+    def _set_selected_hunk_decision(self, decision: str) -> None:
+        key = self._selected_hunk_key()
+        if key is None:
+            return
+        self._review_decisions[key] = self._normalize_decision(decision)
+        self._render_with_selection()
+        self._emit_action(
+            "review_update",
+            payload={
+                "token": self._review_token,
+                "stage": self._review_stage,
+                "hunk_decisions": dict(self._review_decisions),
+            },
+        )
+
+    def _set_all_hunk_decisions(self, decision: str) -> None:
+        normalized = self._normalize_decision(decision)
+        for hunk in self._review_hunks:
+            key = str(hunk.get("key") or "").strip()
+            if key:
+                self._review_decisions[key] = normalized
+        self._render_with_selection()
+        self._emit_action(
+            "review_update",
+            payload={
+                "token": self._review_token,
+                "stage": self._review_stage,
+                "hunk_decisions": dict(self._review_decisions),
+            },
+        )
+
     def _render_with_selection(self) -> None:
+        if self._review_mode:
+            self._selected_hunk_index = max(
+                0,
+                min(self._selected_hunk_index, max(0, len(self._review_hunks) - 1)),
+            )
+            self.update(
+                "\n".join(
+                    self.render_review_lines(
+                        stage=self._review_stage,
+                        hunks=self._review_hunks,
+                        decisions=self._review_decisions,
+                        selected_index=self._selected_hunk_index,
+                    )
+                )
+            )
+            return
         if not self._lines:
             self.update("Run Inspector: no runs yet")
             return
@@ -543,6 +704,14 @@ class RunInspector(Static):
         self.update("\n".join(lines))
 
     def _move_selection(self, delta: int) -> None:
+        if self._review_mode:
+            if not self._review_hunks:
+                return
+            self._selected_hunk_index = (self._selected_hunk_index + delta) % len(
+                self._review_hunks
+            )
+            self._render_with_selection()
+            return
         if not self._event_line_indices:
             return
         self._selected_event_index = (self._selected_event_index + delta) % len(
@@ -550,16 +719,63 @@ class RunInspector(Static):
         )
         self._render_with_selection()
 
-    def _emit_action(self, action: str) -> None:
+    def _emit_action(self, action: str, payload: dict[str, Any] | None = None) -> None:
         self.post_message(
             self.InspectorAction(
                 action=action,
                 run_id=self._run_id,
-                seq=self._selected_event_seq(),
+                seq=None if self._review_mode else self._selected_event_seq(),
+                payload=payload,
             )
         )
 
     def on_key(self, event: events.Key) -> None:
+        if self._review_mode:
+            if event.key in {"up", "k"}:
+                self._move_selection(-1)
+                event.stop()
+                return
+            if event.key in {"down", "j"}:
+                self._move_selection(1)
+                event.stop()
+                return
+            if event.key in {"a"}:
+                self._set_selected_hunk_decision("accept")
+                event.stop()
+                return
+            if event.key in {"x"}:
+                self._set_selected_hunk_decision("reject")
+                event.stop()
+                return
+            if event.key in {"g"}:
+                self._set_selected_hunk_decision("regenerate")
+                event.stop()
+                return
+            if event.key in {"A"}:
+                self._set_all_hunk_decisions("accept")
+                event.stop()
+                return
+            if event.key in {"X"}:
+                self._set_all_hunk_decisions("reject")
+                event.stop()
+                return
+            if event.key in {"G"}:
+                self._set_all_hunk_decisions("regenerate")
+                event.stop()
+                return
+            if event.key in {"enter", "space"}:
+                self._emit_action(
+                    "review_submit",
+                    payload={
+                        "token": self._review_token,
+                        "stage": self._review_stage,
+                        "approved": True,
+                        "hunk_decisions": dict(self._review_decisions),
+                    },
+                )
+                event.stop()
+                return
+
         if event.key in {"up", "k"}:
             self._move_selection(-1)
             event.stop()
@@ -590,6 +806,13 @@ class RunInspector(Static):
             self.set_placeholder("Run Inspector: no runs yet")
             return
 
+        self._review_mode = False
+        self._review_token = None
+        self._review_stage = ""
+        self._review_hunks = []
+        self._review_decisions = {}
+        self._selected_hunk_index = 0
+
         selected_seq = self._selected_event_seq()
         self._run_id = run_id
         self._lines = clean
@@ -613,6 +836,68 @@ class RunInspector(Static):
                 self._selected_event_index, len(self._event_line_indices) - 1
             )
 
+        self._render_with_selection()
+
+    def set_review(
+        self,
+        *,
+        token: int,
+        stage: str,
+        hunks: list[dict[str, Any]],
+        decisions: dict[str, str] | None = None,
+        run_id: int | None = None,
+    ) -> None:
+        selected_key = self._selected_hunk_key() if self._review_mode else None
+        clean_hunks = [
+            self._normalize_hunk_summary(item, index)
+            for index, item in enumerate(hunks)
+            if isinstance(item, dict)
+        ]
+        if not clean_hunks:
+            self.set_lines(
+                [f"Review pending [{stage}]", "No hunks available for review"], run_id=run_id
+            )
+            return
+
+        merged_decisions: dict[str, str] = {}
+        provided = decisions or {}
+        for hunk in clean_hunks:
+            key = str(hunk.get("key") or "").strip()
+            if not key:
+                continue
+            merged_decisions[key] = self._normalize_decision(provided.get(key, "pending"))
+
+        self._review_mode = True
+        self._review_token = token
+        self._review_stage = stage
+        self._review_hunks = clean_hunks
+        self._review_decisions = merged_decisions
+        self._run_id = run_id if run_id is not None else token
+        self._event_line_indices = []
+        self._selected_event_index = 0
+
+        if selected_key is not None:
+            for idx, hunk in enumerate(self._review_hunks):
+                if hunk.get("key") == selected_key:
+                    self._selected_hunk_index = idx
+                    break
+            else:
+                self._selected_hunk_index = min(
+                    self._selected_hunk_index,
+                    max(0, len(self._review_hunks) - 1),
+                )
+        else:
+            self._selected_hunk_index = min(
+                self._selected_hunk_index,
+                max(0, len(self._review_hunks) - 1),
+            )
+
+        self._lines = self.render_review_lines(
+            stage=stage,
+            hunks=self._review_hunks,
+            decisions=self._review_decisions,
+            selected_index=self._selected_hunk_index,
+        )
         self._render_with_selection()
 
     def set_snapshot(

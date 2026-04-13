@@ -408,6 +408,156 @@ def test_build_integrate_approval_callback_noninteractive_auto_approves(monkeypa
     assert any("auto-approved (non-interactive terminal)" in line for line in emitted)
 
 
+def test_build_integrate_approval_callback_patch_review_waits_for_submit(monkeypatch):
+    app = _minimal_app_for_unit()
+    monkeypatch.setenv("SCHOLARDEVCLAW_TUI_APPROVAL_GATES", "true")
+    monkeypatch.delenv("SCHOLARDEVCLAW_TUI_APPROVAL_DEFAULT", raising=False)
+    monkeypatch.delenv("SCHOLARDEVCLAW_TUI_APPROVAL_PATCH_APPLICATION", raising=False)
+
+    emitted: list[str] = []
+    app.call_from_thread = lambda fn, *args, **kwargs: fn(*args, **kwargs)  # type: ignore[assignment]
+    app.post_message = lambda msg: emitted.append(getattr(msg, "line", ""))  # type: ignore[assignment]
+    app._refresh_run_inspector = lambda: ["review"]
+    app._set_status = lambda *_a, **_k: None
+
+    monkeypatch.setattr("scholardevclaw.tui.app.sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("scholardevclaw.tui.app.sys.stdout.isatty", lambda: True)
+
+    callback = app._build_integrate_approval_callback(44, input_reader=lambda _prompt: "n")
+    assert callback is not None
+
+    import threading
+
+    result_box: dict[str, object] = {}
+
+    def _invoke():
+        result_box["value"] = callback(
+            "patch_application",
+            {
+                "hunks": [
+                    {"id": "h1", "file": "a.py", "header": "@@"},
+                    {"id": "h2", "file": "b.py", "header": "@@"},
+                ]
+            },
+        )
+
+    thread = threading.Thread(target=_invoke)
+    thread.start()
+
+    for _ in range(50):
+        review = app._get_pending_integrate_review(44, "patch_application")
+        if review is not None:
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("pending review was not registered")
+
+    submit_ok = app._submit_pending_review(
+        token=44,
+        stage="patch_application",
+        approved=True,
+        hunk_decisions={"h1": "accept", "h2": "reject"},
+    )
+    assert submit_ok is True
+
+    thread.join(timeout=2.0)
+    assert not thread.is_alive()
+
+    decision = result_box.get("value")
+    assert isinstance(decision, dict)
+    assert decision["approved"] is True
+    assert decision["hunk_decisions"]["h1"] == "accept"
+    assert decision["hunk_decisions"]["h2"] == "reject"
+    assert any("waiting for inspector review" in line for line in emitted)
+
+
+def test_build_integrate_approval_callback_patch_review_noninteractive_returns_hunk_payload(
+    monkeypatch,
+):
+    app = _minimal_app_for_unit()
+    monkeypatch.setenv("SCHOLARDEVCLAW_TUI_APPROVAL_GATES", "true")
+    monkeypatch.delenv("SCHOLARDEVCLAW_TUI_APPROVAL_PATCH_APPLICATION", raising=False)
+    monkeypatch.setattr("scholardevclaw.tui.app.sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("scholardevclaw.tui.app.sys.stdout.isatty", lambda: False)
+
+    app.call_from_thread = lambda fn, *args, **kwargs: fn(*args, **kwargs)  # type: ignore[assignment]
+    app.post_message = lambda _msg: True  # type: ignore[assignment]
+    app._refresh_run_inspector = lambda: ["review"]
+    app._set_status = lambda *_a, **_k: None
+
+    callback = app._build_integrate_approval_callback(55)
+    assert callback is not None
+
+    decision = callback(
+        "patch_application",
+        {
+            "hunks": [
+                {"id": "h1", "file": "a.py", "header": "@@"},
+                {"id": "h2", "file": "b.py", "header": "@@"},
+            ]
+        },
+    )
+
+    assert isinstance(decision, dict)
+    assert decision["approved"] is True
+    assert decision["hunk_decisions"]["h1"] == "accept"
+    assert decision["hunk_decisions"]["h2"] == "accept"
+
+
+def test_on_inspector_action_review_submit_routes_and_updates_status():
+    app = _minimal_app_for_unit()
+    app._set_pending_integrate_review(
+        token=71,
+        stage="patch_application",
+        hunks=[
+            {"key": "h1", "id": "h1", "file": "a.py", "header": "@@"},
+            {"key": "h2", "id": "h2", "file": "b.py", "header": "@@"},
+        ],
+    )
+
+    output: list[tuple[str, str]] = []
+    statuses: list[tuple[str, str]] = []
+
+    class _DummyPrompt:
+        def focus(self):
+            return None
+
+    def _query_one(selector, *_args, **_kwargs):
+        if selector == "#prompt-input":
+            return _DummyPrompt()
+        raise AssertionError(f"unexpected selector: {selector}")
+
+    app.query_one = _query_one  # type: ignore[assignment]
+    app._append_output = lambda line, level="auto": output.append((level, line))
+    app._set_status = lambda message, level="info": statuses.append((level, message))
+    app._refresh_run_inspector = lambda: ["review"]
+
+    app.on_inspector_action(
+        RunInspector.InspectorAction(
+            "review_submit",
+            71,
+            None,
+            payload={
+                "token": 71,
+                "stage": "patch_application",
+                "approved": True,
+                "hunk_decisions": {"h1": "accept", "h2": "regenerate"},
+            },
+        )
+    )
+
+    review = app._get_pending_integrate_review(71, "patch_application")
+    assert review is not None
+    submitted = dict(review.get("submitted") or {})
+    assert submitted.get("approved") is True
+    assert submitted.get("hunk_decisions", {}).get("h1") == "accept"
+    assert submitted.get("hunk_decisions", {}).get("h2") == "regenerate"
+    assert output
+    assert "Review submitted" in output[-1][1]
+    assert statuses
+    assert "Review [patch_application] submitted" in statuses[-1][1]
+
+
 def test_compute_suggestions_prioritizes_best_match():
     app = _minimal_app_for_unit()
 

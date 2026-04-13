@@ -193,6 +193,8 @@ RUN_EVENT_RUN_LIMIT = 20
 NATURAL_ACTION_ROUTING_ENV = "SCHOLARDEVCLAW_TUI_ENABLE_NATURAL_ACTION_ROUTING"
 AUTO_MODEL_FALLBACK_ENV = "SCHOLARDEVCLAW_TUI_AUTO_MODEL_FALLBACK"
 TUI_APPROVAL_GATES_ENV = "SCHOLARDEVCLAW_TUI_APPROVAL_GATES"
+APPROVAL_REVIEW_POLL_SECONDS = 0.2
+APPROVAL_REVIEW_TIMEOUT_SECONDS = 300.0
 CHAT_SYSTEM_PROMPTS = {
     "analyze": (
         "You are ScholarDevClaw, a terse coding assistant inside a terminal UI. "
@@ -417,6 +419,8 @@ class ScholarDevClawApp(App[None]):
         self._inspector_run_id: int | None = None
         self._inspector_lines: list[str] = []
         self._models_by_provider: dict[str, str] = {}
+        self._approval_lock = threading.Lock()
+        self._pending_integrate_reviews: dict[str, dict[str, Any]] = {}
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
             self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
@@ -1651,6 +1655,32 @@ class ScholarDevClawApp(App[None]):
         }
 
     def _refresh_run_inspector(self) -> list[str]:
+        review = self._pending_review_for_display()
+        if review is not None:
+            token = int(review.get("token", 0) or 0)
+            stage = str(review.get("stage") or "patch_application")
+            hunks = list(review.get("hunks") or [])
+            decisions = {
+                str(key): self._normalize_hunk_decision(str(value))
+                for key, value in dict(review.get("decisions") or {}).items()
+            }
+            self._inspector_run_id = token if token > 0 else None
+            self._inspector_lines = RunInspector.render_review_lines(
+                stage=stage,
+                hunks=hunks,
+                decisions=decisions,
+            )
+            with contextlib.suppress(Exception):
+                inspector = self.query_one("#run-inspector", RunInspector)
+                inspector.set_review(
+                    token=token,
+                    stage=stage,
+                    hunks=hunks,
+                    decisions=decisions,
+                    run_id=self._inspector_run_id,
+                )
+            return list(self._inspector_lines)
+
         snapshot = self._build_run_inspector_snapshot()
         if snapshot is None:
             self._inspector_run_id = None
@@ -1724,13 +1754,202 @@ class ScholarDevClawApp(App[None]):
             return "Accept post-validation impact and finalize integration?"
         return f"Approve stage '{stage}'?"
 
+    @staticmethod
+    def _normalize_hunk_decision(value: str) -> str:
+        decision = str(value or "").strip().lower()
+        if decision in {"accept", "reject", "regenerate"}:
+            return decision
+        return "pending"
+
+    @classmethod
+    def _compact_hunk_summary(cls, hunk: dict[str, Any], index: int) -> dict[str, str]:
+        hunk_id = str(
+            hunk.get("id")
+            or hunk.get("hunk_id")
+            or hunk.get("key")
+            or hunk.get("index")
+            or (index + 1)
+        ).strip()
+        if not hunk_id:
+            hunk_id = str(index + 1)
+        return {
+            "key": hunk_id,
+            "id": hunk_id,
+            "file": RunInspector._trim(
+                str(hunk.get("file") or hunk.get("file_path") or hunk.get("path") or "?"),
+                40,
+            ),
+            "header": RunInspector._trim(
+                str(hunk.get("header") or hunk.get("summary") or ""),
+                80,
+            ),
+        }
+
+    @classmethod
+    def _compact_hunk_summaries(cls, hunks: list[Any]) -> list[dict[str, str]]:
+        summaries: list[dict[str, str]] = []
+        for index, hunk in enumerate(hunks):
+            if not isinstance(hunk, dict):
+                continue
+            summaries.append(cls._compact_hunk_summary(hunk, index))
+        return summaries
+
+    @staticmethod
+    def _review_key(token: int, stage: str) -> str:
+        return f"{int(token)}:{str(stage).strip()}"
+
+    @staticmethod
+    def _review_decision_counts(*, total: int, decisions: dict[str, str]) -> dict[str, int]:
+        accepted = sum(1 for value in decisions.values() if value == "accept")
+        rejected = sum(1 for value in decisions.values() if value == "reject")
+        regenerated = sum(1 for value in decisions.values() if value == "regenerate")
+        pending = max(0, total - accepted - rejected - regenerated)
+        return {
+            "accepted": accepted,
+            "rejected": rejected,
+            "regenerated": regenerated,
+            "pending": pending,
+        }
+
+    def _set_pending_integrate_review(
+        self,
+        *,
+        token: int,
+        stage: str,
+        hunks: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        key = self._review_key(token, stage)
+        with self._approval_lock:
+            event = threading.Event()
+            decisions = {hunk["key"]: "pending" for hunk in hunks if hunk.get("key")}
+            entry = {
+                "token": int(token),
+                "stage": str(stage),
+                "hunks": list(hunks),
+                "decisions": decisions,
+                "event": event,
+                "submitted": None,
+                "created_at": time.monotonic(),
+            }
+            self._pending_integrate_reviews[key] = entry
+            return entry
+
+    def _get_pending_integrate_review(self, token: int, stage: str) -> dict[str, Any] | None:
+        key = self._review_key(token, stage)
+        with self._approval_lock:
+            entry = self._pending_integrate_reviews.get(key)
+            if entry is None:
+                return None
+            return dict(entry)
+
+    def _pending_review_for_display(self) -> dict[str, Any] | None:
+        with self._approval_lock:
+            candidates = [
+                dict(item)
+                for item in self._pending_integrate_reviews.values()
+                if isinstance(item, dict)
+            ]
+        if not candidates:
+            return None
+        active_candidates = [
+            item for item in candidates if int(item.get("token", 0) or 0) == self._active_token
+        ]
+        target = active_candidates or candidates
+        target.sort(key=lambda item: float(item.get("created_at", 0.0) or 0.0), reverse=True)
+        return target[0]
+
+    def _update_pending_review_decisions(
+        self,
+        *,
+        token: int,
+        stage: str,
+        decisions: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        key = self._review_key(token, stage)
+        with self._approval_lock:
+            entry = self._pending_integrate_reviews.get(key)
+            if not isinstance(entry, dict):
+                return None
+            merged = dict(entry.get("decisions") or {})
+            for hunk_key, raw_decision in decisions.items():
+                candidate = str(hunk_key or "").strip()
+                if not candidate:
+                    continue
+                merged[candidate] = self._normalize_hunk_decision(str(raw_decision))
+            entry["decisions"] = merged
+            return dict(entry)
+
+    def _submit_pending_review(
+        self,
+        *,
+        token: int,
+        stage: str,
+        approved: bool,
+        hunk_decisions: dict[str, Any],
+    ) -> bool:
+        key = self._review_key(token, stage)
+        with self._approval_lock:
+            entry = self._pending_integrate_reviews.get(key)
+            if not isinstance(entry, dict):
+                return False
+            merged = dict(entry.get("decisions") or {})
+            for hunk_key, raw_decision in hunk_decisions.items():
+                candidate = str(hunk_key or "").strip()
+                if not candidate:
+                    continue
+                merged[candidate] = self._normalize_hunk_decision(str(raw_decision))
+            entry["decisions"] = merged
+            entry["submitted"] = {
+                "approved": bool(approved),
+                "hunk_decisions": dict(merged),
+            }
+            event = entry.get("event")
+            if isinstance(event, threading.Event):
+                event.set()
+            return True
+
+    def _clear_pending_review(self, *, token: int, stage: str) -> None:
+        key = self._review_key(token, stage)
+        with self._approval_lock:
+            self._pending_integrate_reviews.pop(key, None)
+
+    def _clear_pending_reviews_for_token(self, token: int) -> None:
+        with self._approval_lock:
+            stale = [
+                key
+                for key, value in self._pending_integrate_reviews.items()
+                if int((value or {}).get("token", 0) or 0) == int(token)
+            ]
+            for key in stale:
+                self._pending_integrate_reviews.pop(key, None)
+
+    def _emit_review_counts_status(
+        self, review: dict[str, Any], *, submitted: bool = False
+    ) -> None:
+        hunks = list(review.get("hunks") or [])
+        decisions = {
+            str(key): self._normalize_hunk_decision(str(value))
+            for key, value in dict(review.get("decisions") or {}).items()
+        }
+        counts = self._review_decision_counts(total=len(hunks), decisions=decisions)
+        stage = str(review.get("stage") or "patch_application")
+        label = "submitted" if submitted else "pending"
+        self._set_status(
+            (
+                f"Review [{stage}] {label} "
+                f"A:{counts['accepted']} X:{counts['rejected']} "
+                f"G:{counts['regenerated']} P:{counts['pending']}"
+            ),
+            "accent" if not submitted else "success",
+        )
+
     def _build_integrate_approval_callback(
         self, token: int, *, input_reader: Callable[[str], str] = input
-    ) -> Callable[[str, dict[str, Any]], bool] | None:
+    ) -> Callable[[str, dict[str, Any]], bool | dict[str, Any]] | None:
         if not self._approval_gates_enabled():
             return None
 
-        def _callback(stage: str, context: dict[str, Any]) -> bool:
+        def _callback(stage: str, context: dict[str, Any]) -> bool | dict[str, Any]:
             prompt = self._approval_stage_message(stage)
             self.call_from_thread(
                 self.post_message,
@@ -1750,6 +1969,118 @@ class ScholarDevClawApp(App[None]):
                     ),
                 )
                 return env_decision
+
+            raw_hunks = list(context.get("hunks") or []) if isinstance(context, dict) else []
+            has_hunks = stage == "patch_application" and bool(raw_hunks)
+            if has_hunks:
+                hunks = self._compact_hunk_summaries(raw_hunks)
+                if hunks:
+                    review = self._set_pending_integrate_review(
+                        token=token, stage=stage, hunks=hunks
+                    )
+                    self.call_from_thread(self._emit_review_counts_status, review)
+                    self.call_from_thread(self._refresh_run_inspector)
+                    self.call_from_thread(
+                        self.post_message,
+                        TaskLog(
+                            token,
+                            (
+                                f"Approval [{stage}] waiting for inspector review "
+                                f"({len(hunks)} hunks)"
+                            ),
+                        ),
+                    )
+
+                    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+                        self.call_from_thread(
+                            self.post_message,
+                            TaskLog(
+                                token,
+                                (f"Approval [{stage}] auto-approved (non-interactive terminal)"),
+                            ),
+                        )
+                        self.call_from_thread(
+                            self._submit_pending_review,
+                            token=token,
+                            stage=stage,
+                            approved=True,
+                            hunk_decisions={hunk["key"]: "accept" for hunk in hunks},
+                        )
+
+                    start = time.monotonic()
+                    while True:
+                        if self._is_task_cancelled(token):
+                            self.call_from_thread(
+                                self.post_message,
+                                TaskLog(token, f"Approval [{stage}] rejected (task cancelled)"),
+                            )
+                            self.call_from_thread(
+                                self._clear_pending_review, token=token, stage=stage
+                            )
+                            self.call_from_thread(self._refresh_run_inspector)
+                            return False
+
+                        with self._approval_lock:
+                            key = self._review_key(token, stage)
+                            live = self._pending_integrate_reviews.get(key)
+                            if isinstance(live, dict):
+                                submitted = dict(live.get("submitted") or {})
+                                decisions = dict(live.get("decisions") or {})
+                                wait_event = live.get("event")
+                            else:
+                                submitted = {}
+                                decisions = {}
+                                wait_event = None
+
+                        if submitted:
+                            approved = bool(submitted.get("approved", False))
+                            clean_decisions: dict[str, str] = {}
+                            for hunk in hunks:
+                                hunk_key = str(hunk.get("key") or "").strip()
+                                if not hunk_key:
+                                    continue
+                                normalized = self._normalize_hunk_decision(
+                                    str(decisions.get(hunk_key, "pending"))
+                                )
+                                if normalized == "pending":
+                                    normalized = "accept"
+                                clean_decisions[hunk_key] = normalized
+
+                            self.call_from_thread(
+                                self.post_message,
+                                TaskLog(
+                                    token,
+                                    (
+                                        f"Approval [{stage}] "
+                                        f"{'approved' if approved else 'rejected'} "
+                                        "from inspector"
+                                    ),
+                                ),
+                            )
+                            self.call_from_thread(
+                                self._clear_pending_review, token=token, stage=stage
+                            )
+                            self.call_from_thread(self._refresh_run_inspector)
+                            return {
+                                "approved": approved,
+                                "hunk_decisions": clean_decisions,
+                            }
+
+                        if wait_event is not None and isinstance(wait_event, threading.Event):
+                            wait_event.wait(timeout=APPROVAL_REVIEW_POLL_SECONDS)
+                        else:
+                            time.sleep(APPROVAL_REVIEW_POLL_SECONDS)
+
+                        if (time.monotonic() - start) >= APPROVAL_REVIEW_TIMEOUT_SECONDS:
+                            self.call_from_thread(
+                                self.post_message,
+                                TaskLog(token, f"Approval [{stage}] rejected (review timeout)"),
+                            )
+                            self.call_from_thread(
+                                self._clear_pending_review, token=token, stage=stage
+                            )
+                            self.call_from_thread(self._refresh_run_inspector)
+                            return False
 
             if not (sys.stdin.isatty() and sys.stdout.isatty()):
                 self.call_from_thread(
@@ -2951,6 +3282,56 @@ class ScholarDevClawApp(App[None]):
 
     @on(RunInspector.InspectorAction)
     def on_inspector_action(self, message: RunInspector.InspectorAction) -> None:
+        if message.action in {"review_update", "review_submit"}:
+            payload = dict(getattr(message, "payload", {}) or {})
+            token = int(payload.get("token", self._active_token) or 0)
+            stage = str(payload.get("stage", "patch_application") or "patch_application")
+            decisions = dict(payload.get("hunk_decisions") or {})
+
+            review = self._update_pending_review_decisions(
+                token=token,
+                stage=stage,
+                decisions=decisions,
+            )
+            if review is None:
+                self._append_output("Warning: no pending review request", "warning")
+                self._set_status("No pending review", "warning")
+                with contextlib.suppress(Exception):
+                    self.query_one("#prompt-input", PromptInput).focus()
+                return
+
+            if message.action == "review_submit":
+                approved = bool(payload.get("approved", True))
+                self._submit_pending_review(
+                    token=token,
+                    stage=stage,
+                    approved=approved,
+                    hunk_decisions=decisions,
+                )
+                latest = self._get_pending_integrate_review(token, stage)
+                if latest is not None:
+                    self._emit_review_counts_status(latest, submitted=True)
+                    counts = self._review_decision_counts(
+                        total=len(list(latest.get("hunks") or [])),
+                        decisions=dict(latest.get("decisions") or {}),
+                    )
+                    self._append_output(
+                        (
+                            f"Review submitted [{stage}] "
+                            f"A:{counts['accepted']} X:{counts['rejected']} "
+                            f"G:{counts['regenerated']} P:{counts['pending']}"
+                        ),
+                        "success",
+                    )
+            else:
+                self._emit_review_counts_status(review)
+
+            self._refresh_run_inspector()
+            if message.action == "review_submit":
+                with contextlib.suppress(Exception):
+                    self.query_one("#prompt-input", PromptInput).focus()
+            return
+
         run_id = int(message.run_id or 0)
         if run_id <= 0:
             self._append_output("Warning: no run selected in inspector", "warning")
@@ -3249,6 +3630,7 @@ class ScholarDevClawApp(App[None]):
             self._context_hints = []
 
         self._update_command_meta()
+        self._clear_pending_reviews_for_token(message.token)
         self._save_runtime_state()
         self._refresh_run_inspector()
         self.query_one("#prompt-input", PromptInput).focus()
@@ -3318,6 +3700,12 @@ class ScholarDevClawApp(App[None]):
         # Cancel any still-running tasks before dropping state.
         for event in self._cancel_events.values():
             event.set()
+        with self._approval_lock:
+            for value in self._pending_integrate_reviews.values():
+                maybe_event = (value or {}).get("event") if isinstance(value, dict) else None
+                if isinstance(maybe_event, threading.Event):
+                    maybe_event.set()
+            self._pending_integrate_reviews.clear()
         self._running_action = None
         self._active_request = None
         self._run_state = RunLifecycleState.IDLE

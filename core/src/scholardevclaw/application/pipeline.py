@@ -50,7 +50,7 @@ class PipelineResult:
 
 
 LogCallback = Callable[[str], None]
-ApprovalCallback = Callable[[str, dict[str, Any]], bool]
+ApprovalCallback = Callable[[str, dict[str, Any]], bool | dict[str, Any]]
 PIPELINE_SCHEMA_VERSION = SCHEMA_VERSION
 QUALITY_GATES = {
     "mapping_confidence_min": 70.0,
@@ -163,6 +163,225 @@ def _build_diff_evidence(patch_payload: dict[str, Any] | None) -> dict[str, Any]
     }
 
 
+def _extract_patch_hunks(patch_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    payload = patch_payload if isinstance(patch_payload, dict) else {}
+    new_files = payload.get("new_files", [])
+    transformations = payload.get("transformations", [])
+
+    hunks: list[dict[str, Any]] = []
+
+    for new_index, new_file in enumerate(new_files if isinstance(new_files, list) else []):
+        if not isinstance(new_file, dict):
+            continue
+        file_path = str(new_file.get("path", "")).strip()
+        if not file_path:
+            continue
+        content = str(new_file.get("content", ""))
+        preview_lines = [f"+{line}" for line in content.splitlines()[:8]]
+        if not preview_lines:
+            preview_lines = ["+(empty file)"]
+        hunks.append(
+            {
+                "id": f"new:{new_index}",
+                "kind": "new_file",
+                "file": file_path,
+                "new_file_index": new_index,
+                "header": f"@@ -0,0 +1,{len(content.splitlines())} @@",
+                "summary": "\n".join(preview_lines),
+            }
+        )
+
+    for transform_index, transformation in enumerate(
+        transformations if isinstance(transformations, list) else []
+    ):
+        if not isinstance(transformation, dict):
+            continue
+        file_path = str(transformation.get("file", "")).strip()
+        if not file_path:
+            continue
+
+        original = str(transformation.get("original", ""))
+        modified = str(transformation.get("modified", ""))
+        original_lines = original.splitlines(keepends=True)
+        modified_lines = modified.splitlines(keepends=True)
+        matcher = difflib.SequenceMatcher(a=original_lines, b=modified_lines, autojunk=False)
+
+        hunk_index = 0
+        for tag, a0, a1, b0, b1 in matcher.get_opcodes():
+            if tag == "equal":
+                continue
+            hunk_index += 1
+            removed = [line.rstrip("\r\n") for line in original_lines[a0:a1]]
+            added = [line.rstrip("\r\n") for line in modified_lines[b0:b1]]
+            preview = [f"-{line}" for line in removed[:4]] + [f"+{line}" for line in added[:4]]
+            if not preview:
+                preview = ["(empty hunk)"]
+            hunks.append(
+                {
+                    "id": f"mod:{transform_index}:{hunk_index}",
+                    "kind": "modified",
+                    "file": file_path,
+                    "transform_index": transform_index,
+                    "hunk_index": hunk_index,
+                    "op": tag,
+                    "header": f"@@ -{a0 + 1},{a1 - a0} +{b0 + 1},{b1 - b0} @@",
+                    "summary": "\n".join(preview[:8]),
+                }
+            )
+
+    return hunks
+
+
+def _normalize_hunk_decision(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"accepted", "accept", "approve", "approved", "allow", "yes", "y", "1"}:
+        return "accepted"
+    if normalized in {"rejected", "reject", "denied", "deny", "no", "n", "0"}:
+        return "rejected"
+    if normalized in {"regenerate", "regen", "retry"}:
+        return "regenerate"
+    return "accepted"
+
+
+def _normalize_hunk_decisions(
+    hunks: list[dict[str, Any]], decisions: dict[str, Any] | None
+) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    provided = decisions if isinstance(decisions, dict) else {}
+
+    for hunk in hunks:
+        hunk_id = str(hunk.get("id", "")).strip()
+        if not hunk_id:
+            continue
+        decision = provided.get(hunk_id, "accepted")
+        normalized[hunk_id] = _normalize_hunk_decision(decision)
+
+    return normalized
+
+
+def _apply_hunk_review_decisions(
+    patch_payload: dict[str, Any] | None,
+    *,
+    hunks: list[dict[str, Any]],
+    decisions: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    payload = patch_payload if isinstance(patch_payload, dict) else {}
+    reviewed_payload = dict(payload)
+    new_files = payload.get("new_files", [])
+    transformations = payload.get("transformations", [])
+
+    normalized_hunks = list(hunks)
+    normalized_decisions = _normalize_hunk_decisions(normalized_hunks, decisions)
+
+    accepted_hunk_ids: list[str] = []
+    rejected_hunk_ids: list[str] = []
+    regenerate_hunk_ids: list[str] = []
+
+    for hunk in normalized_hunks:
+        hunk_id = str(hunk.get("id", "")).strip()
+        if not hunk_id:
+            continue
+        decision = normalized_decisions.get(hunk_id, "accepted")
+        if decision == "accepted":
+            accepted_hunk_ids.append(hunk_id)
+        elif decision == "regenerate":
+            regenerate_hunk_ids.append(hunk_id)
+        else:
+            rejected_hunk_ids.append(hunk_id)
+
+    new_hunk_lookup: dict[int, str] = {}
+    transform_hunk_lookup: dict[int, dict[int, str]] = {}
+    for hunk in normalized_hunks:
+        kind = str(hunk.get("kind", "")).strip()
+        hunk_id = str(hunk.get("id", "")).strip()
+        if not hunk_id:
+            continue
+        if kind == "new_file":
+            idx = hunk.get("new_file_index")
+            if isinstance(idx, int):
+                new_hunk_lookup[idx] = hunk_id
+            continue
+        if kind != "modified":
+            continue
+        transform_index = hunk.get("transform_index")
+        hunk_index = hunk.get("hunk_index")
+        if not isinstance(transform_index, int) or not isinstance(hunk_index, int):
+            continue
+        transform_hunk_lookup.setdefault(transform_index, {})[hunk_index] = hunk_id
+
+    selected_new_files: list[dict[str, Any]] = []
+    for new_index, new_file in enumerate(new_files if isinstance(new_files, list) else []):
+        if not isinstance(new_file, dict):
+            continue
+        hunk_id = new_hunk_lookup.get(new_index)
+        decision = normalized_decisions.get(hunk_id, "accepted") if hunk_id else "accepted"
+        if decision == "accepted":
+            selected_new_files.append(dict(new_file))
+
+    selected_transformations: list[dict[str, Any]] = []
+    for transform_index, transformation in enumerate(
+        transformations if isinstance(transformations, list) else []
+    ):
+        if not isinstance(transformation, dict):
+            continue
+
+        original = str(transformation.get("original", ""))
+        modified = str(transformation.get("modified", ""))
+        original_lines = original.splitlines(keepends=True)
+        modified_lines = modified.splitlines(keepends=True)
+        matcher = difflib.SequenceMatcher(a=original_lines, b=modified_lines, autojunk=False)
+
+        rebuilt: list[str] = []
+        hunk_index = 0
+        for tag, a0, a1, b0, b1 in matcher.get_opcodes():
+            if tag == "equal":
+                rebuilt.extend(original_lines[a0:a1])
+                continue
+
+            hunk_index += 1
+            hunk_id = transform_hunk_lookup.get(transform_index, {}).get(
+                hunk_index, f"mod:{transform_index}:{hunk_index}"
+            )
+            decision = normalized_decisions.get(hunk_id, "accepted")
+            if decision == "accepted":
+                rebuilt.extend(modified_lines[b0:b1])
+            else:
+                rebuilt.extend(original_lines[a0:a1])
+
+        rebuilt_modified = "".join(rebuilt)
+        if rebuilt_modified == original:
+            continue
+
+        next_transformation = dict(transformation)
+        next_transformation["modified"] = rebuilt_modified
+        selected_transformations.append(next_transformation)
+
+    reviewed_payload["new_files"] = selected_new_files
+    reviewed_payload["transformations"] = selected_transformations
+
+    review_summary = {
+        "total_hunks": len(normalized_hunks),
+        "accepted_hunks": len(accepted_hunk_ids),
+        "rejected_hunks": len(rejected_hunk_ids),
+        "regenerate_hunks": len(regenerate_hunk_ids),
+        "accepted_hunk_ids": accepted_hunk_ids,
+        "rejected_hunk_ids": rejected_hunk_ids,
+        "regenerate_hunk_ids": regenerate_hunk_ids,
+        "decisions": normalized_decisions,
+        "selected_new_files": [
+            str(file_entry.get("path", "")).strip()
+            for file_entry in selected_new_files
+            if isinstance(file_entry, dict)
+        ],
+        "selected_transformations": [
+            str(file_entry.get("file", "")).strip()
+            for file_entry in selected_transformations
+            if isinstance(file_entry, dict)
+        ],
+    }
+    return reviewed_payload, review_summary
+
+
 def _create_validation_copy(repo_path: Path) -> tuple[Path, Path]:
     temp_root = Path(tempfile.mkdtemp(prefix="scholardevclaw-integrate-")).resolve()
     copied_repo = temp_root / "repo"
@@ -221,16 +440,68 @@ def _request_approval(
     logs: list[str],
     log_callback: LogCallback | None,
 ) -> bool:
+    outcome = _request_approval_outcome(
+        stage=stage,
+        context=context,
+        approval_callback=approval_callback,
+        logs=logs,
+        log_callback=log_callback,
+    )
+    return bool(outcome.get("approved", False))
+
+
+def _request_approval_outcome(
+    *,
+    stage: str,
+    context: dict[str, Any],
+    approval_callback: ApprovalCallback | None,
+    logs: list[str],
+    log_callback: LogCallback | None,
+) -> dict[str, Any]:
     if approval_callback is None:
-        return True
+        return {
+            "approved": True,
+            "stage": stage,
+            "context": context,
+            "hunk_decisions": {},
+        }
+
     try:
-        approved = bool(approval_callback(stage, context))
+        raw_outcome: Any = approval_callback(stage, context)
     except Exception as exc:
         _log(logs, f"Approval gate [{stage}] callback failed: {exc}", log_callback)
-        return False
+        return {
+            "approved": False,
+            "stage": stage,
+            "context": context,
+            "hunk_decisions": {},
+            "error": str(exc),
+        }
+
+    approved = False
+    hunk_decisions: dict[str, Any] = {}
+    details: dict[str, Any] = {}
+    if isinstance(raw_outcome, dict):
+        approved = bool(raw_outcome.get("approved", True))
+        candidate = raw_outcome.get("hunk_decisions")
+        if isinstance(candidate, dict):
+            hunk_decisions = dict(candidate)
+        details = {
+            key: value
+            for key, value in raw_outcome.items()
+            if key not in {"approved", "hunk_decisions"}
+        }
+    else:
+        approved = bool(raw_outcome)
 
     _log(logs, f"Approval gate [{stage}]: {'approved' if approved else 'rejected'}", log_callback)
-    return approved
+    return {
+        "approved": approved,
+        "stage": stage,
+        "context": context,
+        "hunk_decisions": hunk_decisions,
+        "details": details,
+    }
 
 
 def _evaluate_quality_gates(
@@ -1300,24 +1571,53 @@ def run_integrate(
                 error=generate_result.error,
             )
 
-        diff_evidence = _build_diff_evidence(generate_result.payload)
-        validation_provenance: dict[str, Any] = {
-            "validated_on": "original",
-            "validation_repo_path": str(path),
-            "patch_application_succeeded": False,
+        generation_payload = (
+            dict(generate_result.payload) if isinstance(generate_result.payload, dict) else {}
+        )
+        initial_diff_evidence = _build_diff_evidence(generation_payload)
+        patch_hunks = _extract_patch_hunks(generation_payload)
+        default_hunk_decisions = {
+            str(hunk.get("id", "")).strip(): "accepted"
+            for hunk in patch_hunks
+            if str(hunk.get("id", "")).strip()
+        }
+        patch_review_summary: dict[str, Any] = {
+            "total_hunks": len(patch_hunks),
+            "accepted_hunks": len(patch_hunks),
+            "rejected_hunks": 0,
+            "regenerate_hunks": 0,
+            "accepted_hunk_ids": list(default_hunk_decisions.keys()),
+            "rejected_hunk_ids": [],
+            "regenerate_hunk_ids": [],
+            "decisions": default_hunk_decisions,
+            "selected_new_files": [
+                str(entry.get("path", "")).strip()
+                for entry in list(generation_payload.get("new_files") or [])
+                if isinstance(entry, dict) and str(entry.get("path", "")).strip()
+            ],
+            "selected_transformations": [
+                str(entry.get("file", "")).strip()
+                for entry in list(generation_payload.get("transformations") or [])
+                if isinstance(entry, dict) and str(entry.get("file", "")).strip()
+            ],
         }
 
-        if not _request_approval(
+        patch_application_approval_context = {
+            "spec": selected_spec_name,
+            "repo_path": str(path),
+            "diff_evidence": initial_diff_evidence,
+            "hunks": patch_hunks,
+            "hunk_ids": list(default_hunk_decisions.keys()),
+        }
+        patch_application_approval = _request_approval_outcome(
             stage="patch_application",
-            context={
-                "spec": selected_spec_name,
-                "repo_path": str(path),
-                "diff_evidence": diff_evidence,
-            },
+            context=patch_application_approval_context,
             approval_callback=approval_callback,
             logs=logs,
             log_callback=log_callback,
-        ):
+        )
+
+        if not bool(patch_application_approval.get("approved", False)):
             return PipelineResult(
                 ok=False,
                 title="Integration",
@@ -1326,9 +1626,18 @@ def run_integrate(
                         "step": "approval_gate",
                         "gate_stage": "patch_application",
                         "spec": selected_spec_name,
-                        "generation": generate_result.payload,
-                        "diff_evidence": diff_evidence,
-                        "validation_provenance": validation_provenance,
+                        "generation": generation_payload,
+                        "diff_evidence": initial_diff_evidence,
+                        "hunk_review": {
+                            "hunks": patch_hunks,
+                            "summary": patch_review_summary,
+                            "patch_application_approval": patch_application_approval,
+                        },
+                        "validation_provenance": {
+                            "validated_on": "original",
+                            "validation_repo_path": str(path),
+                            "patch_application_succeeded": False,
+                        },
                         "rollback_snapshot_id": rollback_snapshot_id,
                     },
                     "integration",
@@ -1337,17 +1646,50 @@ def run_integrate(
                 error="Patch application stage was not approved",
             )
 
+        reviewed_generation_payload, patch_review_summary = _apply_hunk_review_decisions(
+            generation_payload,
+            hunks=patch_hunks,
+            decisions=patch_application_approval.get("hunk_decisions"),
+        )
+        diff_evidence = _build_diff_evidence(reviewed_generation_payload)
+
+        if patch_review_summary.get("regenerate_hunks", 0) > 0:
+            _log(
+                logs,
+                "Hunk review requested regeneration for one or more hunks; excluded from patch apply",
+                log_callback,
+            )
+        if (
+            patch_review_summary.get("total_hunks", 0) > 0
+            and patch_review_summary.get("accepted_hunks", 0) == 0
+        ):
+            _log(
+                logs,
+                "Hunk review accepted 0 hunks; validation will run without applying generated changes",
+                log_callback,
+            )
+
+        validation_provenance: dict[str, Any] = {
+            "validated_on": "original",
+            "validation_repo_path": str(path),
+            "patch_application_succeeded": False,
+            "hunk_review": patch_review_summary,
+            "patch_application_approval": patch_application_approval,
+        }
+
         temp_copy_root: Path | None = None
         apply_metadata: dict[str, Any] = {}
         try:
             temp_copy_root, temp_repo_path = _create_validation_copy(path)
             _log(logs, f"Created validation temp copy: {temp_repo_path}", log_callback)
-            apply_metadata = _apply_patch_to_copy(temp_repo_path, generate_result.payload)
+            apply_metadata = _apply_patch_to_copy(temp_repo_path, reviewed_generation_payload)
             validation_provenance = {
                 "validated_on": "patched_copy",
                 "validation_repo_path": str(temp_repo_path),
                 "patch_application_succeeded": True,
                 "patch_application": apply_metadata,
+                "hunk_review": patch_review_summary,
+                "patch_application_approval": patch_application_approval,
             }
             _log(
                 logs,
@@ -1357,7 +1699,7 @@ def run_integrate(
 
             validate_result = run_validate(
                 str(temp_repo_path),
-                generate_result.payload,
+                reviewed_generation_payload,
                 log_callback=log_callback,
             )
             logs.extend(validate_result.logs)
@@ -1370,9 +1712,14 @@ def run_integrate(
                     {
                         "step": "patch_apply",
                         "spec": selected_spec_name,
-                        "generation": generate_result.payload,
+                        "generation": reviewed_generation_payload,
                         "diff_evidence": diff_evidence,
                         "validation_provenance": validation_provenance,
+                        "hunk_review": {
+                            "hunks": patch_hunks,
+                            "summary": patch_review_summary,
+                            "patch_application_approval": patch_application_approval,
+                        },
                         "patch_application_error": str(exc),
                         "rollback_snapshot_id": rollback_snapshot_id,
                     },
@@ -1403,6 +1750,10 @@ def run_integrate(
                 "validation": validation_payload,
                 "quality_gates": final_quality_gates,
                 "diff_evidence": diff_evidence,
+                "hunk_review": {
+                    "hunks": patch_hunks,
+                    "summary": patch_review_summary,
+                },
             },
             approval_callback=approval_callback,
             logs=logs,
@@ -1416,11 +1767,16 @@ def run_integrate(
                         "step": "approval_gate",
                         "gate_stage": "impact_acceptance",
                         "spec": selected_spec_name,
-                        "generation": generate_result.payload,
+                        "generation": reviewed_generation_payload,
                         "validation": validation_payload,
                         "quality_gates": final_quality_gates,
                         "diff_evidence": diff_evidence,
                         "validation_provenance": validation_provenance,
+                        "hunk_review": {
+                            "hunks": patch_hunks,
+                            "summary": patch_review_summary,
+                            "patch_application_approval": patch_application_approval,
+                        },
                         "rollback_snapshot_id": rollback_snapshot_id,
                     },
                     "integration",
@@ -1442,10 +1798,15 @@ def run_integrate(
                 "preflight": preflight.payload,
                 "mapping": mapping_result,
                 "quality_gates": final_quality_gates,
-                "generation": generate_result.payload,
+                "generation": reviewed_generation_payload,
                 "validation": validation_payload,
                 "diff_evidence": diff_evidence,
                 "validation_provenance": validation_provenance,
+                "hunk_review": {
+                    "hunks": patch_hunks,
+                    "summary": patch_review_summary,
+                    "patch_application_approval": patch_application_approval,
+                },
                 "rollback_snapshot_id": rollback_snapshot_id,
             },
             "integration",
