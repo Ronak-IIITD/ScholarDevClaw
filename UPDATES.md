@@ -2,7 +2,81 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-13
+**Last updated:** 2026-04-14
+
+### 2026-04-14 (UPGRADE v3 Phase-1: PDF ingestion pipeline)
+
+**Summary:** Implemented Phase 1 from `UPGRADE.md` end-to-end: structured ingestion models, PDF parser, fetcher/ingester flow, CLI `ingest` command, dependency groups, and dedicated ingestion tests.
+
+**What changed:**
+
+- `core/src/scholardevclaw/ingestion/__init__.py` (new)
+  - Added Phase-1 package entrypoint and re-exports for `PaperDocument` and `PaperIngester`.
+
+- `core/src/scholardevclaw/ingestion/models.py` (new)
+  - Added dataclasses for `Equation`, `Algorithm`, `Figure`, `Section`, and `PaperDocument`.
+  - Added explicit `to_dict()` / `from_dict()` serialization for lossless JSON round-trips (including `Path` handling).
+
+- `core/src/scholardevclaw/ingestion/pdf_parser.py` (new)
+  - Added `PDFParser` with methods:
+    - `parse(...)`
+    - `_extract_text_by_section(...)`
+    - `_extract_equations(...)`
+    - `_extract_algorithms(...)`
+    - `_extract_figures(...)`
+    - `_detect_domain(...)`
+  - Uses PyMuPDF (`fitz`) as primary parser.
+  - Added `pdfplumber` table-fallback extraction.
+  - Added inferred algorithm fallback for papers lacking explicit `Algorithm N` headers.
+
+- `core/src/scholardevclaw/ingestion/paper_fetcher.py` (new)
+  - Added `PaperFetcher` and `PaperIngester`.
+  - Added source resolvers:
+    - `fetch_by_arxiv_id(...)`
+    - `fetch_by_doi(...)` via Semantic Scholar Graph API
+    - `fetch_by_url(...)` with HTML PDF discovery (`citation_pdf_url` / `.pdf` links)
+    - `fetch_auto(...)` for local PDF / DOI / arXiv / URL auto-detection
+  - Added helpful ingestion errors:
+    - `PaperFetchError`
+    - `PaperNotAccessibleError`
+    - `PaperSourceResolutionError`
+  - Added bounded retry policy, URL normalization, and non-public host blocking.
+
+- `core/src/scholardevclaw/cli.py`
+  - Added new command: `scholardevclaw ingest <source> [--output-dir DIR]`.
+  - Added command parser wiring + dispatch mapping for `ingest`.
+  - Added user-facing output + write path: `<output-dir>/paper_document.json`.
+  - Included `ingest` examples in CLI module doc/help text.
+  - Fixed security command import path (`scholardevclaw.security.scanner`).
+
+- `core/pyproject.toml`
+  - Added optional dependency groups from UPGRADE spec:
+    - `ingestion`, `understanding`, `execution`, `knowledge`, `product`
+  - Extended `all` extra to include all new groups.
+  - Added pytest marker registration for `integration`.
+
+- Tests:
+  - `core/tests/test_ingestion.py` (new)
+    - Round-trip serialization test for `PaperDocument`.
+    - PDF parser extraction test (algorithms + equations).
+    - DOI access failure behavior test.
+    - Local PDF auto-detection test.
+    - URL HTML→PDF discovery path test.
+    - `PaperIngester` delegation test.
+    - Integration-gated arXiv fixture test using `2005.14165`.
+  - `core/tests/unit/test_cli.py`
+    - Added ingest dispatch coverage.
+    - Added ingest parser coverage (`--output-dir`).
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/ingestion src/scholardevclaw/cli.py tests/test_ingestion.py tests/unit/test_cli.py`
+- ✅ `cd core && python -m mypy src/scholardevclaw/ingestion`
+- ✅ `cd core && pytest tests/test_ingestion.py -q` (`6 passed, 1 skipped`)
+- ✅ `cd core && pytest tests/unit/test_cli.py -q` (`38 passed`)
+- ✅ Smoke check: `scholardevclaw ingest arxiv:1706.03762 --output-dir /tmp/sdc_ingest_smoke`
+  - Produced `/tmp/sdc_ingest_smoke/paper_document.json`
+  - `algorithms: 5`, `equations: 18`
 
 ### 2026-04-13 (Track-5 milestone-1: plugin auto-bootstrap in pipeline hooks)
 

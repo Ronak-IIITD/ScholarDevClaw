@@ -81,6 +81,38 @@ ml = ["torch>=2.0.0", "transformers>=4.35.0", "datasets>=2.14.0"]
 tui = ["textual>=0.82.0"]
 security = ["bandit>=1.7.0", "semgrep>=1.0.0"]
 crypto = ["cryptography>=42.0.0"]
+ingestion = [
+    "pymupdf>=1.24.0",
+    "pdfplumber>=0.11.0",
+    "arxiv>=2.1.0",
+    "semanticscholar>=0.8.0",
+    "pillow>=10.0.0",
+    "camelot-py[cv]>=0.11.0",
+]
+understanding = [
+    "anthropic>=0.25.0",
+    "openai>=1.30.0",
+    "tiktoken>=0.7.0",
+    "networkx>=3.3",
+]
+execution = [
+    "docker>=7.0.0",
+    "psutil>=5.9.0",
+    "pytest>=8.0.0",
+    "coverage>=7.5.0",
+]
+knowledge = [
+    "chromadb>=0.5.0",
+    "sentence-transformers>=3.0.0",
+    "qdrant-client>=1.9.0",
+]
+product = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "gradio>=4.36.0",
+    "jinja2>=3.1.0",
+    "tomlkit>=0.13.0",
+]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
@@ -91,7 +123,7 @@ dev = [
     "cryptography>=42.0.0",
 ]
 all = [
-    "scholardevclaw[arxiv,ml,tui,crypto]",
+    "scholardevclaw[arxiv,ml,tui,crypto,ingestion,understanding,execution,knowledge,product]",
 ]
 
 [project.urls]
@@ -129,3 +161,6 @@ disallow_untyped_defs = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "integration: marks integration tests that use external APIs and are skipped by default",
+]

@@ -8,6 +8,7 @@ and automatically implements improvements. Supports any programming language.
 Commands:
   analyze     - Analyze repository structure (multi-language)
   search      - Search for research papers and implementations
+  ingest      - Ingest a paper (PDF/DOI/arXiv/URL) into structured JSON
   suggest     - Get AI-powered improvement suggestions
   integrate   - Full integration workflow
     tui         - Interactive terminal UI workflow
@@ -17,6 +18,7 @@ Commands:
 Examples:
   scholardevclaw analyze ./my-project
   scholardevclaw search "normalization" --arxiv --web
+  scholardevclaw ingest arxiv:1706.03762 --output-dir ./artifacts
   scholardevclaw suggest ./my-project
   scholardevclaw integrate ./my-project rmsnorm
 
@@ -214,6 +216,54 @@ def cmd_search(args):
                     print(f"  - {paper.title}")
         except Exception as e:
             print(f"Web search error: {e}")
+
+
+def cmd_ingest(args):
+    """Ingest a paper source into a structured PaperDocument JSON artifact."""
+    from scholardevclaw.ingestion.paper_fetcher import (
+        PaperFetchError,
+        PaperIngester,
+        PaperSourceResolutionError,
+    )
+
+    source = args.source.strip()
+    if not source:
+        print("Error: paper source must not be empty", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir = (
+        Path(args.output_dir).expanduser().resolve() if args.output_dir else Path.cwd().resolve()
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "paper_document.json"
+
+    print(f"Ingesting paper source: {source}")
+    print(f"Output directory: {output_dir}")
+    print("-" * 50)
+
+    ingester = PaperIngester()
+    try:
+        document = ingester.ingest(source, output_dir)
+    except PaperSourceResolutionError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except PaperFetchError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (FileNotFoundError, PermissionError, OSError, ValueError) as exc:
+        print(f"Error: failed to ingest source '{source}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    output_path.write_text(json.dumps(document.to_dict(), indent=2), encoding="utf-8")
+
+    print(f"Saved: {output_path}")
+    print(f"Title: {document.title or 'Unknown'}")
+    print(f"Algorithms: {len(document.algorithms)}")
+    print(f"Equations: {len(document.equations)}")
+    print(f"Domain: {document.domain}")
 
 
 def cmd_suggest(args):
@@ -1549,7 +1599,7 @@ def cmd_github_app(args):
 
 def cmd_security(args):
     """Run security scans on repository"""
-    from scholardevclaw.security import SecurityScanner
+    from scholardevclaw.security.scanner import SecurityScanner
 
     print(f"Running security scan on: {args.repo_path}")
     print("=" * 50)
@@ -2079,6 +2129,9 @@ Examples:
   # Search for research papers and implementations
   scholardevclaw search "layer normalization" --arxiv --web
 
+  # Ingest paper into structured document JSON
+  scholardevclaw ingest arxiv:1706.03762 --output-dir ./artifacts
+
   # Get AI-powered improvement suggestions
   scholardevclaw suggest ./my-project
 
@@ -2088,7 +2141,7 @@ Examples:
   # List available paper specifications
   scholardevclaw specs --list
 
-    # Launch interactive terminal UI
+  # Launch interactive terminal UI
     scholardevclaw tui
 
   # Run demo with nanoGPT
@@ -2112,6 +2165,17 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_search.add_argument("--web", action="store_true", help="Search web sources (GitHub, etc.)")
     p_search.add_argument("--language", default="python", help="Programming language filter")
     p_search.add_argument("--max-results", type=int, default=10, help="Maximum results")
+
+    # ingest
+    p_ingest = subparsers.add_parser(
+        "ingest",
+        help="Ingest paper source (PDF path, DOI, arXiv ID, or URL)",
+    )
+    p_ingest.add_argument("source", help="Paper source: local PDF path, DOI, arXiv ID, or URL")
+    p_ingest.add_argument(
+        "--output-dir",
+        help="Directory to store ingestion artifacts (paper_document.json)",
+    )
 
     # suggest
     p_suggest = subparsers.add_parser("suggest", help="Get improvement suggestions")
@@ -2385,6 +2449,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     commands = {
         "analyze": cmd_analyze,
         "search": cmd_search,
+        "ingest": cmd_ingest,
         "suggest": cmd_suggest,
         "map": cmd_map,
         "generate": cmd_generate,

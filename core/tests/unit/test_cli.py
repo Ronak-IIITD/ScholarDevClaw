@@ -14,6 +14,7 @@ import scholardevclaw.cli as cli
     [
         ("analyze", ["scholardevclaw", "analyze", "/tmp/repo"], "cmd_analyze"),
         ("search", ["scholardevclaw", "search", "rmsnorm"], "cmd_search"),
+        ("ingest", ["scholardevclaw", "ingest", "arxiv:1706.03762"], "cmd_ingest"),
         ("suggest", ["scholardevclaw", "suggest", "/tmp/repo"], "cmd_suggest"),
         ("integrate", ["scholardevclaw", "integrate", "/tmp/repo"], "cmd_integrate"),
         ("map", ["scholardevclaw", "map", "/tmp/repo", "rmsnorm"], "cmd_map"),
@@ -268,6 +269,25 @@ def test_workspace_parser_analyze_single_repo(monkeypatch):
     cli.main()
 
     assert called == {"action": "analyze", "all": False, "repo": "my-repo"}
+
+
+def test_ingest_parser_with_output_dir(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["source"] = args.source
+        called["output_dir"] = args.output_dir
+
+    monkeypatch.setattr(cli, "cmd_ingest", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["scholardevclaw", "ingest", "10.1000/xyz123", "--output-dir", "/tmp/out"],
+    )
+
+    cli.main()
+
+    assert called == {"source": "10.1000/xyz123", "output_dir": "/tmp/out"}
 
 
 def test_cmd_deploy_check_json_success(tmp_path, capsys):
