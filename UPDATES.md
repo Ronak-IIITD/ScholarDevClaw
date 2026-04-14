@@ -168,6 +168,67 @@
   - `python -m scholardevclaw.cli understand /tmp/sdc_ingest_smoke/paper_document.json --output-dir /tmp/sdc_understanding_smoke`
   - exits with: `ANTHROPIC_API_KEY is required for understand command`
 
+### 2026-04-14 (UPGRADE v3 Phase-3: dynamic implementation planner)
+
+**Summary:** Implemented Phase 3 dynamic planner: new `planning` package models/planner, new `plan` CLI workflow, topology validation, and backward-compat `--use-specs` flags on legacy commands.
+
+**What changed:**
+
+- `core/src/scholardevclaw/planning/__init__.py` (new)
+  - Re-exports `ImplementationPlan` and `ImplementationPlanner`.
+
+- `core/src/scholardevclaw/planning/models.py` (new)
+  - Added dataclasses:
+    - `CodeModule`
+    - `ImplementationPlan`
+  - Added `to_dict()` / `from_dict()` with nested module conversion and safe coercion helpers.
+
+- `core/src/scholardevclaw/planning/planner.py` (new)
+  - Added `ImplementationPlanner` with:
+    - `_select_tech_stack(...)` rule-based selection (`jax`, `numpy-only`, `pytorch`)
+    - `_llm_plan(...)` prompt/Anthropic flow for JSON plan generation
+    - robust `_parse_json_response(...)` (fence stripping + first-object extraction)
+  - Added public `plan(..., forced_stack: str | None = None)` so CLI can force stack without calling private methods.
+  - Added runtime topological-order validation on generated plans (dependency priorities must be valid).
+
+- `core/src/scholardevclaw/cli.py`
+  - Added new command handler: `cmd_plan`
+    - `scholardevclaw plan <understanding.json> [--stack ...] [--output-dir DIR]`
+    - loads `PaperUnderstanding`, derives minimal `PaperDocument` context, runs planner, writes `implementation_plan.json`
+    - requires `ANTHROPIC_API_KEY` with actionable error path
+  - Added parser + dispatch for `plan`.
+  - Added `plan` command/docs in top docstring and argparse epilog examples.
+  - Added Phase-3 backward compatibility flags to legacy commands:
+    - `suggest --use-specs`
+    - `map --use-specs`
+    - `generate --use-specs`
+    - `integrate --use-specs`
+
+- Tests:
+  - `core/tests/test_planning.py` (new)
+    - `ImplementationPlan` roundtrip serialization
+    - `_select_tech_stack` rules
+    - planner JSON parsing (fenced + embedded JSON)
+    - topological-order helper validity test
+    - planner runtime rejection of invalid topological ordering
+    - planner `forced_stack` path test
+  - `core/tests/unit/test_cli.py`
+    - added dispatch coverage for `plan`
+    - added parser tests for `plan --stack --output-dir`
+    - added parser coverage for `--stack numpy` alias
+    - added legacy command parser coverage for `--use-specs` flags
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/planning src/scholardevclaw/cli.py tests/test_planning.py tests/unit/test_cli.py`
+- ✅ `cd core && python -m mypy src/scholardevclaw/planning src/scholardevclaw/cli.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+- ✅ `cd core && pytest tests/test_planning.py -q` (`9 passed`)
+- ✅ `cd core && pytest tests/unit/test_cli.py -q -k "plan or planner or understand or ingest or use_specs"` (`9 passed, 35 deselected`)
+- ✅ `cd core && pytest tests/unit/test_cli.py -q` (`44 passed`)
+- ✅ Smoke check (expected error path):
+  - `python -m scholardevclaw.cli plan /tmp/sdc_phase3_smoke/understanding.json --output-dir /tmp/sdc_phase3_smoke/out`
+  - exits with: `ANTHROPIC_API_KEY is required for plan command`
+
 ### 2026-04-13 (Track-5 milestone-1: plugin auto-bootstrap in pipeline hooks)
 
 **Summary:** Added safe, lazy plugin hook auto-bootstrap in the pipeline so normal stage flows (`analyze/suggest/map/generate/validate/integrate`) automatically activate plugin hooks without requiring manual CLI plugin commands.

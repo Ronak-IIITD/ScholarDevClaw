@@ -20,6 +20,7 @@ import scholardevclaw.cli as cli
             ["scholardevclaw", "understand", "/tmp/paper_document.json"],
             "cmd_understand",
         ),
+        ("plan", ["scholardevclaw", "plan", "/tmp/understanding.json"], "cmd_plan"),
         ("suggest", ["scholardevclaw", "suggest", "/tmp/repo"], "cmd_suggest"),
         ("integrate", ["scholardevclaw", "integrate", "/tmp/repo"], "cmd_integrate"),
         ("map", ["scholardevclaw", "map", "/tmp/repo", "rmsnorm"], "cmd_map"),
@@ -324,6 +325,95 @@ def test_understand_parser_with_model_and_output_dir(monkeypatch):
         "paper_document_json": "/tmp/paper_document.json",
         "model": "claude-opus-4-5",
         "output_dir": "/tmp/out",
+    }
+
+
+def test_plan_parser_with_stack_and_output_dir(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["understanding_json"] = args.understanding_json
+        called["stack"] = args.stack
+        called["output_dir"] = args.output_dir
+
+    monkeypatch.setattr(cli, "cmd_plan", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "plan",
+            "/tmp/understanding.json",
+            "--stack",
+            "numpy-only",
+            "--output-dir",
+            "/tmp/plan-out",
+        ],
+    )
+
+    cli.main()
+
+    assert called == {
+        "understanding_json": "/tmp/understanding.json",
+        "stack": "numpy-only",
+        "output_dir": "/tmp/plan-out",
+    }
+
+
+def test_plan_parser_accepts_numpy_alias(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["stack"] = args.stack
+
+    monkeypatch.setattr(cli, "cmd_plan", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "plan",
+            "/tmp/understanding.json",
+            "--stack",
+            "numpy",
+        ],
+    )
+
+    cli.main()
+
+    assert called == {"stack": "numpy"}
+
+
+def test_legacy_commands_accept_use_specs_flag(monkeypatch):
+    observed: dict[str, bool] = {}
+
+    def _record(command_name: str):
+        def _handler(args):
+            observed[command_name] = bool(getattr(args, "use_specs", False))
+
+        return _handler
+
+    monkeypatch.setattr(cli, "cmd_suggest", _record("suggest"))
+    monkeypatch.setattr(cli, "cmd_map", _record("map"))
+    monkeypatch.setattr(cli, "cmd_generate", _record("generate"))
+    monkeypatch.setattr(cli, "cmd_integrate", _record("integrate"))
+
+    command_argv = [
+        ["scholardevclaw", "suggest", "/tmp/repo", "--use-specs"],
+        ["scholardevclaw", "map", "/tmp/repo", "rmsnorm", "--use-specs"],
+        ["scholardevclaw", "generate", "/tmp/repo", "rmsnorm", "--use-specs"],
+        ["scholardevclaw", "integrate", "/tmp/repo", "rmsnorm", "--use-specs"],
+    ]
+
+    for argv in command_argv:
+        monkeypatch.setattr(cli.sys, "argv", argv)
+        cli.main()
+
+    assert observed == {
+        "suggest": True,
+        "map": True,
+        "generate": True,
+        "integrate": True,
     }
 
 

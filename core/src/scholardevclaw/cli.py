@@ -10,9 +10,10 @@ Commands:
   search      - Search for research papers and implementations
   ingest      - Ingest a paper (PDF/DOI/arXiv/URL) into structured JSON
   understand  - Extract structured paper understanding via LLM
+  plan        - Plan implementation from understanding JSON
   suggest     - Get AI-powered improvement suggestions
   integrate   - Full integration workflow
-    tui         - Interactive terminal UI workflow
+  tui         - Interactive terminal UI workflow
   specs       - List available paper specifications
   demo        - Run demo with nanoGPT
 
@@ -21,6 +22,7 @@ Examples:
   scholardevclaw search "normalization" --arxiv --web
   scholardevclaw ingest arxiv:1706.03762 --output-dir ./artifacts
   scholardevclaw understand ./paper_document.json --output-dir ./artifacts
+  scholardevclaw plan ./understanding.json --output-dir ./plan_output
   scholardevclaw suggest ./my-project
   scholardevclaw integrate ./my-project rmsnorm
 
@@ -343,8 +345,126 @@ def cmd_understand(args):
     print(f"Concept edges: {len(understanding.concept_edges)}")
 
 
+def cmd_plan(args):
+    """Generate implementation plan from understanding.json artifact."""
+    input_path = Path(args.understanding_json).expanduser().resolve()
+    if not input_path.exists() or not input_path.is_file():
+        print(f"Error: understanding JSON not found: {input_path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        payload = json.loads(input_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"Error: invalid JSON in '{input_path}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not isinstance(payload, dict):
+        print(
+            f"Error: expected top-level JSON object in '{input_path}'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    output_dir = (
+        Path(args.output_dir).expanduser().resolve()
+        if args.output_dir
+        else input_path.parent.resolve()
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "implementation_plan.json"
+
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY is required for plan command", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Planning implementation from: {input_path}")
+    print(f"Output directory: {output_dir}")
+    print("-" * 50)
+
+    try:
+        from scholardevclaw.ingestion.models import PaperDocument
+        from scholardevclaw.planning import ImplementationPlanner
+        from scholardevclaw.understanding.models import PaperUnderstanding
+
+        understanding = PaperUnderstanding.from_dict(payload)
+        year = payload.get("year")
+        if year is not None:
+            try:
+                year = int(year)
+            except (TypeError, ValueError):
+                year = None
+
+        domain = str(payload.get("domain", "")).strip().casefold()
+        if domain not in {"cv", "nlp", "rl", "systems", "theory"}:
+            domain_text = " ".join(
+                [
+                    understanding.paper_title,
+                    understanding.problem_statement,
+                    understanding.key_insight,
+                    understanding.core_algorithm_description,
+                    " ".join(req.name for req in understanding.requirements),
+                ]
+            ).casefold()
+            if any(token in domain_text for token in ["transformer", "bert", "gpt", "attention"]):
+                domain = "nlp"
+            elif any(
+                token in domain_text
+                for token in ["convolution", "resnet", "yolo", "segmentation", "vision"]
+            ):
+                domain = "cv"
+            elif any(token in domain_text for token in ["reward", "policy", "q-learning", "environment"]):
+                domain = "rl"
+            elif any(token in domain_text for token in ["kernel", "mutex", "scheduler", "memory"]):
+                domain = "systems"
+            else:
+                domain = "theory"
+
+        doc = PaperDocument(
+            title=understanding.paper_title or str(payload.get("paper_title", "Untitled Paper")),
+            authors=[str(author) for author in payload.get("authors", [])],
+            arxiv_id=str(payload["arxiv_id"]) if payload.get("arxiv_id") is not None else None,
+            doi=str(payload["doi"]) if payload.get("doi") is not None else None,
+            year=year,
+            abstract=str(payload.get("abstract", ""))
+            or understanding.one_line_summary
+            or understanding.problem_statement,
+            sections=[],
+            equations=[],
+            algorithms=[],
+            figures=[],
+            full_text=understanding.core_algorithm_description,
+            pdf_path=None,
+            references=[str(item) for item in payload.get("references", [])],
+            keywords=[str(item) for item in payload.get("keywords", [])],
+            domain=domain,
+        )
+
+        forced_stack = "numpy-only" if args.stack == "numpy" else args.stack
+        planner = ImplementationPlanner(api_key=api_key, model="claude-opus-4-5")
+        plan = planner.plan(understanding, doc, forced_stack=forced_stack)
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (ValueError, RuntimeError) as exc:
+        print(f"Error: failed to plan implementation: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    output_path.write_text(json.dumps(plan.to_dict(), indent=2), encoding="utf-8")
+
+    stack_name = plan.tech_stack or ("numpy-only" if args.stack == "numpy" else args.stack) or "unknown"
+    print(f"Saved: {output_path}")
+    print(
+        f"Project: {plan.project_name or 'unknown'} | "
+        f"Stack: {stack_name} | Modules: {len(plan.modules)}"
+    )
+
+
 def cmd_suggest(args):
     """Get improvement suggestions based on code patterns"""
+    if getattr(args, "use_specs", False):
+        print("Using legacy specs-based workflow for suggest.")
+
     path = Path(args.repo_path)
     if not path.exists():
         print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
@@ -377,6 +497,9 @@ def cmd_suggest(args):
 
 def cmd_map(args):
     """Map a research specification to repository locations"""
+    if getattr(args, "use_specs", False):
+        print("Using legacy specs-based workflow for map.")
+
     path = Path(args.repo_path)
     if not path.exists():
         print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
@@ -406,6 +529,9 @@ def cmd_map(args):
 
 def cmd_generate(args):
     """Generate patch artifacts for a research specification"""
+    if getattr(args, "use_specs", False):
+        print("Using legacy specs-based workflow for generate.")
+
     path = Path(args.repo_path)
     if not path.exists():
         print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
@@ -507,6 +633,9 @@ def cmd_validate(args):
 
 def cmd_integrate(args):
     """Full integration workflow"""
+    if getattr(args, "use_specs", False):
+        print("Using legacy specs-based workflow for integrate.")
+
     from scholardevclaw.application.pipeline import run_integrate
 
     def _print_log(line: str) -> None:
@@ -2212,6 +2341,9 @@ Examples:
   # Understand ingested paper and build concept graph
   scholardevclaw understand ./paper_document.json --output-dir ./artifacts
 
+  # Plan implementation from understanding artifact
+  scholardevclaw plan ./understanding.json --stack pytorch --output-dir ./artifacts
+
   # Get AI-powered improvement suggestions
   scholardevclaw suggest ./my-project
 
@@ -2276,9 +2408,33 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         help="Directory to store understanding.json and concept_graph.json",
     )
 
+    # plan
+    p_plan = subparsers.add_parser(
+        "plan",
+        help="Plan implementation from understanding.json",
+    )
+    p_plan.add_argument(
+        "understanding_json",
+        help="Path to understanding.json produced by understand",
+    )
+    p_plan.add_argument(
+        "--stack",
+        choices=["pytorch", "jax", "numpy", "numpy-only"],
+        help="Force tech stack selection (pytorch|jax|numpy|numpy-only)",
+    )
+    p_plan.add_argument(
+        "--output-dir",
+        help="Directory to store implementation_plan.json",
+    )
+
     # suggest
     p_suggest = subparsers.add_parser("suggest", help="Get improvement suggestions")
     p_suggest.add_argument("repo_path", help="Path to repository")
+    p_suggest.add_argument(
+        "--use-specs",
+        action="store_true",
+        help="Use legacy specs-based workflow",
+    )
 
     # integrate
     p_integrate = subparsers.add_parser("integrate", help="Full integration workflow")
@@ -2298,12 +2454,22 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         help="Fail integration when git working tree has uncommitted changes",
     )
     p_integrate.add_argument("--output-json", action="store_true", help="Output JSON")
+    p_integrate.add_argument(
+        "--use-specs",
+        action="store_true",
+        help="Use legacy specs-based workflow",
+    )
 
     # map
     p_map = subparsers.add_parser("map", help="Map a paper specification to repository locations")
     p_map.add_argument("repo_path", help="Path to repository")
     p_map.add_argument("spec", help="Paper specification name (e.g., rmsnorm)")
     p_map.add_argument("--output-json", action="store_true", help="Output JSON")
+    p_map.add_argument(
+        "--use-specs",
+        action="store_true",
+        help="Use legacy specs-based workflow",
+    )
 
     # generate
     p_generate = subparsers.add_parser("generate", help="Generate patch artifacts")
@@ -2311,6 +2477,11 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_generate.add_argument("spec", help="Paper specification name (e.g., rmsnorm)")
     p_generate.add_argument("--output-dir", help="Output directory for generated files")
     p_generate.add_argument("--output-json", action="store_true", help="Output JSON")
+    p_generate.add_argument(
+        "--use-specs",
+        action="store_true",
+        help="Use legacy specs-based workflow",
+    )
 
     # validate
     p_validate = subparsers.add_parser("validate", help="Validate tests and benchmark")
@@ -2550,6 +2721,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "search": cmd_search,
         "ingest": cmd_ingest,
         "understand": cmd_understand,
+        "plan": cmd_plan,
         "suggest": cmd_suggest,
         "map": cmd_map,
         "generate": cmd_generate,
