@@ -99,6 +99,75 @@
 - ✅ `cd core && python -m mypy src/scholardevclaw/cli.py src/scholardevclaw/api/server.py src/scholardevclaw/application/pipeline.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
 - ✅ `cd core && pytest tests/unit/test_multi_repo.py -q` (`82 passed`)
 
+### 2026-04-14 (UPGRADE v3 Phase-2: paper understanding agent)
+
+**Summary:** Implemented Phase 2 from `UPGRADE.md`: structured paper-understanding schema, LLM understanding agent, concept graph export, `understand` CLI command, and dedicated tests.
+
+**What changed:**
+
+- `core/src/scholardevclaw/understanding/__init__.py` (new)
+  - Re-exports `PaperUnderstanding` and `UnderstandingAgent`.
+
+- `core/src/scholardevclaw/understanding/models.py` (new)
+  - Added dataclasses:
+    - `Contribution`
+    - `Requirement`
+    - `ConceptNode`
+    - `ConceptEdge`
+    - `PaperUnderstanding`
+  - Added `to_dict()` / `from_dict()` across all models.
+  - Added normalization guardrails in `PaperUnderstanding`:
+    - `complexity` constrained to `low|medium|high|research-only`
+    - `estimated_impl_hours >= 0`
+    - `confidence` clamped to `[0.0, 1.0]`
+
+- `core/src/scholardevclaw/understanding/agent.py` (new)
+  - Added `SYSTEM_PROMPT` and `UnderstandingAgent`.
+  - Implemented:
+    - `understand(doc: PaperDocument) -> PaperUnderstanding`
+    - `_build_prompt(doc)`
+    - `_parse_json_response(raw)`
+  - Prompt now includes title/authors/abstract + algorithms + top equations + conclusion.
+  - Added deterministic prompt-budget truncation that preserves abstract and conclusion while truncating algorithms/equations when needed.
+  - Added robust JSON parsing fallback (markdown-fence stripping + first-object extraction).
+
+- `core/src/scholardevclaw/understanding/graph.py` (new)
+  - Added `build_concept_graph(understanding) -> nx.DiGraph`
+  - Added `export_graph_json(G) -> dict`
+
+- `core/src/scholardevclaw/cli.py`
+  - Added command handler `cmd_understand`.
+  - Added parser + dispatch wiring:
+    - `scholardevclaw understand <paper_document.json> [--model MODEL] [--output-dir DIR]`
+  - Output artifacts:
+    - `understanding.json`
+    - `concept_graph.json`
+  - Added explicit `ANTHROPIC_API_KEY` requirement check and actionable errors.
+  - Updated CLI top docstring and epilog examples.
+
+- Tests:
+  - `core/tests/test_understanding.py` (new)
+    - model roundtrip serialization
+    - value normalization bounds
+    - fenced JSON and embedded JSON parsing
+    - invalid JSON error path
+    - prompt truncation behavior preserving abstract/conclusion
+    - concept graph build/export
+    - mocked Anthropic understanding flow to `PaperUnderstanding`
+  - `core/tests/unit/test_cli.py`
+    - added `understand` command dispatch coverage
+    - added parser test for `understand --model --output-dir`
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/understanding src/scholardevclaw/cli.py tests/test_understanding.py tests/unit/test_cli.py`
+- ✅ `cd core && python -m mypy src/scholardevclaw/understanding src/scholardevclaw/cli.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+- ✅ `cd core && pytest tests/test_understanding.py -q` (`7 passed, 1 skipped`)
+- ✅ `cd core && pytest tests/unit/test_cli.py -q -k "understand or ingest"` (`4 passed`)
+- ✅ Smoke check (expected error path):
+  - `python -m scholardevclaw.cli understand /tmp/sdc_ingest_smoke/paper_document.json --output-dir /tmp/sdc_understanding_smoke`
+  - exits with: `ANTHROPIC_API_KEY is required for understand command`
+
 ### 2026-04-13 (Track-5 milestone-1: plugin auto-bootstrap in pipeline hooks)
 
 **Summary:** Added safe, lazy plugin hook auto-bootstrap in the pipeline so normal stage flows (`analyze/suggest/map/generate/validate/integrate`) automatically activate plugin hooks without requiring manual CLI plugin commands.

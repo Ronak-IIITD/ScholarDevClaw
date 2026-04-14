@@ -15,6 +15,11 @@ import scholardevclaw.cli as cli
         ("analyze", ["scholardevclaw", "analyze", "/tmp/repo"], "cmd_analyze"),
         ("search", ["scholardevclaw", "search", "rmsnorm"], "cmd_search"),
         ("ingest", ["scholardevclaw", "ingest", "arxiv:1706.03762"], "cmd_ingest"),
+        (
+            "understand",
+            ["scholardevclaw", "understand", "/tmp/paper_document.json"],
+            "cmd_understand",
+        ),
         ("suggest", ["scholardevclaw", "suggest", "/tmp/repo"], "cmd_suggest"),
         ("integrate", ["scholardevclaw", "integrate", "/tmp/repo"], "cmd_integrate"),
         ("map", ["scholardevclaw", "map", "/tmp/repo", "rmsnorm"], "cmd_map"),
@@ -288,6 +293,38 @@ def test_ingest_parser_with_output_dir(monkeypatch):
     cli.main()
 
     assert called == {"source": "10.1000/xyz123", "output_dir": "/tmp/out"}
+
+
+def test_understand_parser_with_model_and_output_dir(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["paper_document_json"] = args.paper_document_json
+        called["model"] = args.model
+        called["output_dir"] = args.output_dir
+
+    monkeypatch.setattr(cli, "cmd_understand", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "understand",
+            "/tmp/paper_document.json",
+            "--model",
+            "claude-opus-4-5",
+            "--output-dir",
+            "/tmp/out",
+        ],
+    )
+
+    cli.main()
+
+    assert called == {
+        "paper_document_json": "/tmp/paper_document.json",
+        "model": "claude-opus-4-5",
+        "output_dir": "/tmp/out",
+    }
 
 
 def test_cmd_deploy_check_json_success(tmp_path, capsys):

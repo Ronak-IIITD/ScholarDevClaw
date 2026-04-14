@@ -9,6 +9,7 @@ Commands:
   analyze     - Analyze repository structure (multi-language)
   search      - Search for research papers and implementations
   ingest      - Ingest a paper (PDF/DOI/arXiv/URL) into structured JSON
+  understand  - Extract structured paper understanding via LLM
   suggest     - Get AI-powered improvement suggestions
   integrate   - Full integration workflow
     tui         - Interactive terminal UI workflow
@@ -19,6 +20,7 @@ Examples:
   scholardevclaw analyze ./my-project
   scholardevclaw search "normalization" --arxiv --web
   scholardevclaw ingest arxiv:1706.03762 --output-dir ./artifacts
+  scholardevclaw understand ./paper_document.json --output-dir ./artifacts
   scholardevclaw suggest ./my-project
   scholardevclaw integrate ./my-project rmsnorm
 
@@ -27,6 +29,7 @@ Version: 2.0
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -264,6 +267,80 @@ def cmd_ingest(args):
     print(f"Algorithms: {len(document.algorithms)}")
     print(f"Equations: {len(document.equations)}")
     print(f"Domain: {document.domain}")
+
+
+def cmd_understand(args):
+    """Run paper understanding agent over a paper_document JSON artifact."""
+    input_path = Path(args.paper_document_json).expanduser().resolve()
+    if not input_path.exists() or not input_path.is_file():
+        print(f"Error: paper document JSON not found: {input_path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        payload = json.loads(input_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"Error: invalid JSON in '{input_path}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not isinstance(payload, dict):
+        print(
+            f"Error: expected top-level JSON object in '{input_path}'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    output_dir = (
+        Path(args.output_dir).expanduser().resolve()
+        if args.output_dir
+        else input_path.parent.resolve()
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    understanding_path = output_dir / "understanding.json"
+    graph_path = output_dir / "concept_graph.json"
+
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        print(
+            "Error: ANTHROPIC_API_KEY is required for understand command",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"Understanding paper document: {input_path}")
+    print(f"Output directory: {output_dir}")
+    print("-" * 50)
+
+    try:
+        from scholardevclaw.ingestion.models import PaperDocument
+        from scholardevclaw.understanding.agent import UnderstandingAgent
+        from scholardevclaw.understanding.graph import build_concept_graph, export_graph_json
+
+        document = PaperDocument.from_dict(payload)
+        agent = UnderstandingAgent(api_key=api_key, model=args.model)
+        understanding = agent.understand(document)
+        concept_graph = build_concept_graph(understanding)
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (ValueError, RuntimeError) as exc:
+        print(f"Error: failed to understand paper: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    understanding_path.write_text(
+        json.dumps(understanding.to_dict(), indent=2),
+        encoding="utf-8",
+    )
+    graph_path.write_text(
+        json.dumps(export_graph_json(concept_graph), indent=2),
+        encoding="utf-8",
+    )
+
+    print(f"Saved: {understanding_path}")
+    print(f"Saved: {graph_path}")
+    print(f"Complexity: {understanding.complexity}")
+    print(f"Requirements: {len(understanding.requirements)}")
+    print(f"Concept nodes: {len(understanding.concept_nodes)}")
+    print(f"Concept edges: {len(understanding.concept_edges)}")
 
 
 def cmd_suggest(args):
@@ -2132,6 +2209,9 @@ Examples:
   # Ingest paper into structured document JSON
   scholardevclaw ingest arxiv:1706.03762 --output-dir ./artifacts
 
+  # Understand ingested paper and build concept graph
+  scholardevclaw understand ./paper_document.json --output-dir ./artifacts
+
   # Get AI-powered improvement suggestions
   scholardevclaw suggest ./my-project
 
@@ -2175,6 +2255,25 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_ingest.add_argument(
         "--output-dir",
         help="Directory to store ingestion artifacts (paper_document.json)",
+    )
+
+    # understand
+    p_understand = subparsers.add_parser(
+        "understand",
+        help="Understand a paper_document.json and build concept graph",
+    )
+    p_understand.add_argument(
+        "paper_document_json",
+        help="Path to paper_document.json produced by ingest",
+    )
+    p_understand.add_argument(
+        "--model",
+        default="claude-opus-4-5",
+        help="LLM model name for understanding extraction",
+    )
+    p_understand.add_argument(
+        "--output-dir",
+        help="Directory to store understanding.json and concept_graph.json",
     )
 
     # suggest
@@ -2450,6 +2549,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "analyze": cmd_analyze,
         "search": cmd_search,
         "ingest": cmd_ingest,
+        "understand": cmd_understand,
         "suggest": cmd_suggest,
         "map": cmd_map,
         "generate": cmd_generate,
