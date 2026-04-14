@@ -78,6 +78,27 @@
   - Produced `/tmp/sdc_ingest_smoke/paper_document.json`
   - `algorithms: 5`, `equations: 18`
 
+### 2026-04-14 (CI stabilization: Ruff import order + mypy narrowing)
+
+**Summary:** Fixed two CI failures introduced by recent changes: Ruff import sorting in a multi-repo unit test and a mypy type-narrowing issue in pipeline hunk review logic.
+
+**What changed:**
+
+- `core/tests/unit/test_multi_repo.py`
+  - Removed local `sys.path` mutation bootstrap and let the test rely on configured test import path.
+  - Reordered imports to satisfy Ruff `I001` import block formatting.
+
+- `core/src/scholardevclaw/application/pipeline.py`
+  - Replaced ambiguous optional lookup variable in `_apply_hunk_review_decisions(...)`:
+    - `hunk_id` → `selected_hunk_id`
+  - Kept explicit `None` branch before dictionary lookup so mypy no longer infers `str | None` at the `normalized_decisions.get(...)` callsite.
+
+**Verification:**
+
+- ✅ `cd core && ruff check tests/unit/test_multi_repo.py`
+- ✅ `cd core && python -m mypy src/scholardevclaw/cli.py src/scholardevclaw/api/server.py src/scholardevclaw/application/pipeline.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+- ✅ `cd core && pytest tests/unit/test_multi_repo.py -q` (`82 passed`)
+
 ### 2026-04-13 (Track-5 milestone-1: plugin auto-bootstrap in pipeline hooks)
 
 **Summary:** Added safe, lazy plugin hook auto-bootstrap in the pipeline so normal stage flows (`analyze/suggest/map/generate/validate/integrate`) automatically activate plugin hooks without requiring manual CLI plugin commands.

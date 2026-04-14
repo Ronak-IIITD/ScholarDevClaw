@@ -318,8 +318,11 @@ def _apply_hunk_review_decisions(
     for new_index, new_file in enumerate(new_files if isinstance(new_files, list) else []):
         if not isinstance(new_file, dict):
             continue
-        hunk_id = new_hunk_lookup.get(new_index)
-        decision = normalized_decisions.get(hunk_id, "accepted") if hunk_id else "accepted"
+        selected_hunk_id = new_hunk_lookup.get(new_index)
+        if selected_hunk_id is None:
+            decision = "accepted"
+        else:
+            decision = normalized_decisions.get(selected_hunk_id, "accepted")
         if decision == "accepted":
             selected_new_files.append(dict(new_file))
 
