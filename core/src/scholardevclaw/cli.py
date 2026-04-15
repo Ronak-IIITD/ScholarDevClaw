@@ -13,6 +13,7 @@ Commands:
   plan        - Plan implementation from understanding JSON
   generate    - Generate implementation code from plan + understanding
   execute     - Run generated project tests in sandbox + score reproducibility
+  scaffold    - Generate product shipping scaffold artifacts
   suggest     - Get AI-powered improvement suggestions
   integrate   - Full integration workflow
   tui         - Interactive terminal UI workflow
@@ -27,6 +28,7 @@ Examples:
   scholardevclaw plan ./understanding.json --output-dir ./plan_output
   scholardevclaw generate ./implementation_plan.json ./understanding.json --output-dir ./generated
   scholardevclaw execute ./generated --heal --timeout 300
+  scholardevclaw scaffold ./generated ./implementation_plan.json ./understanding.json ./reproducibility_report.json
   scholardevclaw suggest ./my-project
   scholardevclaw integrate ./my-project rmsnorm
 
@@ -891,6 +893,137 @@ def cmd_execute(args):
 
     if not bool(getattr(final_execution_report, "success", False)):
         sys.exit(1)
+
+
+def cmd_scaffold(args):
+    """Generate FastAPI/demo/docs scaffold from plan, understanding, and reproducibility report."""
+    project_dir = Path(args.project_dir).expanduser().resolve()
+    if not project_dir.exists() or not project_dir.is_dir():
+        print(f"Error: project directory not found: {project_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    plan_path = Path(args.plan_json).expanduser().resolve()
+    understanding_path = Path(args.understanding_json).expanduser().resolve()
+    reproducibility_path = Path(args.reproducibility_report_json).expanduser().resolve()
+
+    def _validate_json_file(path: Path, label: str) -> dict[str, Any]:
+        if not path.exists() or not path.is_file():
+            raise ValueError(f"{label} JSON not found: {path}")
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid JSON in '{path}': {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"expected top-level JSON object in '{path}'")
+        return payload
+
+    try:
+        plan_payload = _validate_json_file(plan_path, "implementation plan")
+        understanding_payload = _validate_json_file(understanding_path, "understanding")
+        reproducibility_payload = _validate_json_file(
+            reproducibility_path, "reproducibility report"
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        from scholardevclaw.execution.scorer import ReproducibilityReport
+        from scholardevclaw.planning.models import ImplementationPlan
+        from scholardevclaw.product import ProductScaffolder
+        from scholardevclaw.understanding.models import PaperUnderstanding
+
+        plan = ImplementationPlan.from_dict(plan_payload)
+        understanding = PaperUnderstanding.from_dict(understanding_payload)
+
+        def _to_float(value: Any, default: float = 0.0) -> float:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        def _metric_map(raw: Any) -> dict[str, float]:
+            if not isinstance(raw, dict):
+                return {}
+            normalized: dict[str, float] = {}
+            for key, value in raw.items():
+                if not isinstance(key, (str, int, float)):
+                    continue
+                normalized[str(key)] = _to_float(value, default=0.0)
+            return normalized
+
+        claimed_metrics = _metric_map(reproducibility_payload.get("claimed_metrics"))
+        achieved_metrics = _metric_map(reproducibility_payload.get("achieved_metrics"))
+        raw_delta = reproducibility_payload.get("delta")
+        if isinstance(raw_delta, dict):
+            delta = _metric_map(raw_delta)
+        else:
+            delta = {
+                metric: achieved_metrics.get(metric, 0.0) - claimed
+                for metric, claimed in claimed_metrics.items()
+            }
+
+        score = min(
+            max(_to_float(reproducibility_payload.get("score", 0.0), default=0.0), 0.0), 1.0
+        )
+        verdict = str(reproducibility_payload.get("verdict", "")).strip().casefold()
+        if verdict not in {"reproduced", "partial", "failed"}:
+            verdict = "reproduced" if score > 0.9 else "partial" if score > 0.5 else "failed"
+
+        reproducibility_report = ReproducibilityReport(
+            paper_title=str(
+                reproducibility_payload.get(
+                    "paper_title",
+                    understanding.paper_title or plan.project_name or project_dir.name,
+                )
+            ),
+            claimed_metrics=claimed_metrics,
+            achieved_metrics=achieved_metrics,
+            delta=delta,
+            score=score,
+            verdict=verdict,
+        )
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (TypeError, ValueError) as exc:
+        print(f"Error: failed to load scaffold inputs: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else project_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Scaffolding project from: {project_dir}")
+    print(f"Output directory: {output_dir}")
+    print("-" * 50)
+
+    generated_paths = [
+        output_dir / "api" / "main.py",
+        output_dir / "demo.py",
+        output_dir / "pyproject.toml",
+        output_dir / "Dockerfile",
+        output_dir / "README.md",
+        output_dir / ".github" / "workflows" / "ci.yml",
+    ]
+
+    try:
+        ProductScaffolder().scaffold(
+            output_dir,
+            plan,
+            understanding,
+            reproducibility_report,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"Error: scaffold generation failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print("Generated artifacts:")
+    for path in generated_paths:
+        try:
+            shown = path.relative_to(output_dir)
+        except ValueError:
+            shown = path
+        print(f"  - {shown}")
 
 
 def cmd_validate(args):
@@ -2652,6 +2785,9 @@ Examples:
   # Execute generated project tests in sandbox and score reproducibility
   scholardevclaw execute ./generated --heal --timeout 300
 
+  # Scaffold API, demo, Dockerfile, and README from generated artifacts
+  scholardevclaw scaffold ./generated ./implementation_plan.json ./understanding.json ./reproducibility_report.json --output-dir ./release
+
   # Get AI-powered improvement suggestions
   scholardevclaw suggest ./my-project
 
@@ -2831,6 +2967,32 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_execute.add_argument(
         "--output-dir",
         help="Directory to store execution_report.json and reproducibility_report.json",
+    )
+
+    # scaffold
+    p_scaffold = subparsers.add_parser(
+        "scaffold",
+        help="Generate product scaffold (API, demo, docs, CI) from plan + understanding + reproducibility",
+    )
+    p_scaffold.add_argument(
+        "project_dir",
+        help="Path to generated project directory",
+    )
+    p_scaffold.add_argument(
+        "plan_json",
+        help="Path to implementation_plan.json",
+    )
+    p_scaffold.add_argument(
+        "understanding_json",
+        help="Path to understanding.json",
+    )
+    p_scaffold.add_argument(
+        "reproducibility_report_json",
+        help="Path to reproducibility_report.json",
+    )
+    p_scaffold.add_argument(
+        "--output-dir",
+        help="Output directory for scaffold artifacts (defaults to project_dir)",
     )
 
     # validate
@@ -3076,6 +3238,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "map": cmd_map,
         "generate": cmd_generate,
         "execute": cmd_execute,
+        "scaffold": cmd_scaffold,
         "validate": cmd_validate,
         "integrate": cmd_integrate,
         "tui": cmd_tui,

@@ -1,0 +1,25 @@
+"""Gradio demo for {{ project_name }}
+{{ summary }}
+"""
+
+import gradio as gr
+
+
+def run_inference(input_text: str) -> str:
+    from src.{{ entry_module }} import run
+
+    result = run({"text": input_text})
+    return str(result)
+
+
+demo = gr.Interface(
+    fn=run_inference,
+    inputs=gr.Textbox(label="Input"),
+    outputs=gr.Textbox(label="Output"),
+    title="{{ project_name }}",
+    description="{{ summary }}",
+)
+
+
+if __name__ == "__main__":
+    demo.launch()

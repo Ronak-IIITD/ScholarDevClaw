@@ -139,7 +139,7 @@ scholardevclaw = "scholardevclaw.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-scholardevclaw = ["py.typed"]
+scholardevclaw = ["py.typed", "product/templates/*.j2"]
 
 [tool.ruff]
 line-length = 100

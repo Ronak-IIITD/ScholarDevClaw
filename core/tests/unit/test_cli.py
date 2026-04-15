@@ -27,6 +27,18 @@ import scholardevclaw.cli as cli
         ("map", ["scholardevclaw", "map", "/tmp/repo", "rmsnorm"], "cmd_map"),
         ("generate", ["scholardevclaw", "generate", "/tmp/repo", "rmsnorm"], "cmd_generate"),
         ("execute", ["scholardevclaw", "execute", "/tmp/repo"], "cmd_execute"),
+        (
+            "scaffold",
+            [
+                "scholardevclaw",
+                "scaffold",
+                "/tmp/repo",
+                "/tmp/implementation_plan.json",
+                "/tmp/understanding.json",
+                "/tmp/reproducibility_report.json",
+            ],
+            "cmd_scaffold",
+        ),
         ("validate", ["scholardevclaw", "validate", "/tmp/repo"], "cmd_validate"),
         ("specs", ["scholardevclaw", "specs"], "cmd_specs"),
         ("planner", ["scholardevclaw", "planner", "/tmp/repo"], "cmd_planner"),
@@ -493,6 +505,43 @@ def test_execute_parser_with_heal_timeout_and_output_dir(monkeypatch):
     }
 
 
+def test_scaffold_parser_with_output_dir(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["project_dir"] = args.project_dir
+        called["plan_json"] = args.plan_json
+        called["understanding_json"] = args.understanding_json
+        called["reproducibility_report_json"] = args.reproducibility_report_json
+        called["output_dir"] = args.output_dir
+
+    monkeypatch.setattr(cli, "cmd_scaffold", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "scaffold",
+            "/tmp/project",
+            "/tmp/plan.json",
+            "/tmp/understanding.json",
+            "/tmp/reproducibility_report.json",
+            "--output-dir",
+            "/tmp/scaffold-out",
+        ],
+    )
+
+    cli.main()
+
+    assert called == {
+        "project_dir": "/tmp/project",
+        "plan_json": "/tmp/plan.json",
+        "understanding_json": "/tmp/understanding.json",
+        "reproducibility_report_json": "/tmp/reproducibility_report.json",
+        "output_dir": "/tmp/scaffold-out",
+    }
+
+
 def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_path):
     import scholardevclaw.generation as generation
 
@@ -586,6 +635,77 @@ def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_pat
         "output_dir": str(output_dir.resolve()),
         "max_parallel": 2,
     }
+
+
+def test_cmd_scaffold_writes_artifacts_to_output_dir(tmp_path):
+    project_dir = tmp_path / "project"
+    output_dir = tmp_path / "release"
+    project_dir.mkdir()
+
+    plan_path = tmp_path / "implementation_plan.json"
+    understanding_path = tmp_path / "understanding.json"
+    reproducibility_path = tmp_path / "reproducibility_report.json"
+
+    plan_path.write_text(
+        json.dumps(
+            {
+                "project_name": "demo-product",
+                "target_language": "python",
+                "tech_stack": "pytorch",
+                "modules": [],
+                "environment": {"fastapi": ">=0.111.0"},
+                "entry_points": ["src/main.py"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    understanding_path.write_text(
+        json.dumps(
+            {
+                "paper_title": "Demo Paper",
+                "one_line_summary": "Summary",
+                "problem_statement": "Problem",
+                "key_insight": "Insight",
+                "input_output_spec": "Input to output",
+                "evaluation_protocol": "Accuracy: 0.95",
+                "requirements": [{"name": "Python", "type": "runtime", "is_optional": False}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    reproducibility_path.write_text(
+        json.dumps(
+            {
+                "paper_title": "Demo Paper",
+                "claimed_metrics": {"accuracy": 0.95},
+                "achieved_metrics": {"accuracy": 0.94},
+                "score": 0.98,
+                "verdict": "reproduced",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = SimpleNamespace(
+        project_dir=str(project_dir),
+        plan_json=str(plan_path),
+        understanding_json=str(understanding_path),
+        reproducibility_report_json=str(reproducibility_path),
+        output_dir=str(output_dir),
+    )
+
+    cli.cmd_scaffold(args)
+
+    expected_paths = [
+        output_dir / "api" / "main.py",
+        output_dir / "demo.py",
+        output_dir / "pyproject.toml",
+        output_dir / "Dockerfile",
+        output_dir / "README.md",
+        output_dir / ".github" / "workflows" / "ci.yml",
+    ]
+    for path in expected_paths:
+        assert path.exists()
 
 
 def test_cmd_execute_writes_execution_and_reproducibility_reports(monkeypatch, tmp_path):

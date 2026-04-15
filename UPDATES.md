@@ -4,6 +4,75 @@
 
 **Last updated:** 2026-04-15
 
+### 2026-04-15 (UPGRADE v3 Phase-6: product scaffold generator + CLI scaffold)
+
+**Summary:** Implemented Phase 6 end-to-end: new `product` package with Jinja2-based scaffold generation, CLI `scaffold` command wiring, package-data updates for template shipping, and high-confidence tests for generated API/demo/README/artifacts.
+
+**What changed:**
+
+- `core/src/scholardevclaw/product/__init__.py` (new)
+  - Re-exported `ProductScaffolder`.
+
+- `core/src/scholardevclaw/product/scaffolder.py` (new)
+  - Added `ProductScaffolder` with:
+    - `__init__(templates_dir: Path | None = None)` using Jinja2 `FileSystemLoader`.
+    - `scaffold(project_dir, plan, understanding, reproducibility_report)` orchestration.
+    - `_generate_api`, `_generate_gradio_demo`, `_generate_pyproject`, `_generate_dockerfile`, `_generate_readme`, `_generate_github_actions`.
+  - Added deterministic UTF-8 writes for all generated artifacts.
+  - Added robust entry-module normalization from plan entry points (supports `src/foo.py`, `src.foo`, `python -m src.foo`).
+  - Added optional `tomlkit` fallback path for `pyproject.toml` generation when `tomlkit` is unavailable.
+
+- `core/src/scholardevclaw/product/templates/api_main.py.j2` (new)
+  - FastAPI app template with `/predict` and `/health`.
+  - Uses `from src.{{ entry_module }} import run`.
+
+- `core/src/scholardevclaw/product/templates/gradio_demo.py.j2` (new)
+  - Gradio demo template.
+  - Uses `from src.{{ entry_module }} import run`.
+
+- `core/src/scholardevclaw/product/templates/README.md.j2` (new)
+  - Project README scaffold including reproducibility metric table and quickstart.
+
+- `core/src/scholardevclaw/product/templates/Dockerfile.j2` (new)
+  - Minimal runtime Dockerfile for generated app serving.
+
+- `core/src/scholardevclaw/cli.py`
+  - Added top-level docs/examples for `scaffold`.
+  - Added `cmd_scaffold(args)` implementing:
+    - strict path + JSON object validation,
+    - `ImplementationPlan.from_dict` and `PaperUnderstanding.from_dict` loading,
+    - robust `ReproducibilityReport` construction from JSON payload,
+    - `--output-dir` fallback to `project_dir`,
+    - `ProductScaffolder().scaffold(...)` invocation,
+    - generated artifact summary output,
+    - non-zero exits for invalid input and scaffold failure paths.
+  - Added parser wiring:
+    - `scholardevclaw scaffold <project_dir> <plan.json> <understanding.json> <reproducibility_report.json> [--output-dir DIR]`
+  - Added dispatch mapping for `"scaffold": cmd_scaffold`.
+
+- `core/pyproject.toml`
+  - Updated setuptools package-data to include product templates:
+    - `scholardevclaw = ["py.typed", "product/templates/*.j2"]`
+
+- `core/tests/test_product.py` (new)
+  - Added tests for `ProductScaffolder`:
+    - required scaffold files are created,
+    - generated FastAPI app imports and serves `/health` (plus `/predict` sanity call),
+    - generated README has non-empty reproducibility metric row,
+    - generated demo imports and runs inference with stubbed `src.<entry_module>`.
+
+- `core/tests/unit/test_cli.py`
+  - Added `scaffold` command to main dispatch coverage parametrization.
+  - Added parser test for scaffold positional args + `--output-dir`.
+  - Added `cmd_scaffold` behavior test verifying artifact generation into explicit output directory.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/product src/scholardevclaw/cli.py tests/test_product.py tests/unit/test_cli.py`
+- ✅ `cd core && python -m mypy src/scholardevclaw/product src/scholardevclaw/cli.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return` (`Success: no issues found in 3 source files`)
+- ✅ `cd core && pytest tests/test_product.py -q` (`4 passed`)
+- ✅ `cd core && pytest tests/unit/test_cli.py -q` (`54 passed`)
+
 ### 2026-04-15 (UPGRADE v3 Phase-5 tests: execution package + CLI execute flow)
 
 **Summary:** Added deterministic test coverage for the new execution package and `execute` CLI flow, including sandbox behavior, reproducibility scoring, self-healing targeting, parser wiring, artifact writing, and healing metadata updates.
