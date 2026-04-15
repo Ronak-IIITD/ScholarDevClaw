@@ -26,6 +26,7 @@ import scholardevclaw.cli as cli
         ("integrate", ["scholardevclaw", "integrate", "/tmp/repo"], "cmd_integrate"),
         ("map", ["scholardevclaw", "map", "/tmp/repo", "rmsnorm"], "cmd_map"),
         ("generate", ["scholardevclaw", "generate", "/tmp/repo", "rmsnorm"], "cmd_generate"),
+        ("execute", ["scholardevclaw", "execute", "/tmp/repo"], "cmd_execute"),
         ("validate", ["scholardevclaw", "validate", "/tmp/repo"], "cmd_validate"),
         ("specs", ["scholardevclaw", "specs"], "cmd_specs"),
         ("planner", ["scholardevclaw", "planner", "/tmp/repo"], "cmd_planner"),
@@ -457,6 +458,41 @@ def test_generate_parser_dynamic_mode_arguments(monkeypatch):
     }
 
 
+def test_execute_parser_with_heal_timeout_and_output_dir(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["project_dir"] = args.project_dir
+        called["heal"] = args.heal
+        called["timeout"] = args.timeout
+        called["output_dir"] = args.output_dir
+
+    monkeypatch.setattr(cli, "cmd_execute", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "execute",
+            "/tmp/project",
+            "--heal",
+            "--timeout",
+            "120",
+            "--output-dir",
+            "/tmp/out",
+        ],
+    )
+
+    cli.main()
+
+    assert called == {
+        "project_dir": "/tmp/project",
+        "heal": True,
+        "timeout": 120,
+        "output_dir": "/tmp/out",
+    }
+
+
 def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_path):
     import scholardevclaw.generation as generation
 
@@ -550,6 +586,309 @@ def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_pat
         "output_dir": str(output_dir.resolve()),
         "max_parallel": 2,
     }
+
+
+def test_cmd_execute_writes_execution_and_reproducibility_reports(monkeypatch, tmp_path):
+    import scholardevclaw.execution as execution
+
+    class FakeRunner:
+        def __init__(self, *, timeout_seconds: int = 0, memory_limit_mb: int = 4096) -> None:
+            del memory_limit_mb
+            self.timeout_seconds = timeout_seconds
+
+        def run_tests(self, _project_dir: Path):
+            return SimpleNamespace(
+                tests_passed=3,
+                tests_failed=0,
+                tests_errors=0,
+                to_dict=lambda: {
+                    "exit_code": 0,
+                    "stdout": "ok",
+                    "stderr": "",
+                    "duration_seconds": 0.01,
+                    "peak_memory_mb": 16.0,
+                    "tests_passed": 3,
+                    "tests_failed": 0,
+                    "tests_errors": 0,
+                    "success": True,
+                },
+                success=True,
+            )
+
+    class FakeScorer:
+        def __init__(self, *, api_key=None, model: str = "claude-sonnet-4-5") -> None:
+            del api_key, model
+
+        def score(self, understanding, execution_report):
+            del understanding, execution_report
+            return SimpleNamespace(
+                score=1.0,
+                verdict="reproduced",
+                to_dict=lambda: {
+                    "paper_title": "Demo",
+                    "claimed_metrics": {},
+                    "achieved_metrics": {},
+                    "delta": {},
+                    "score": 1.0,
+                    "verdict": "reproduced",
+                },
+            )
+
+    monkeypatch.setattr(execution, "SandboxRunner", FakeRunner)
+    monkeypatch.setattr(execution, "ReproducibilityScorer", FakeScorer)
+
+    project_dir = tmp_path / "project"
+    output_dir = tmp_path / "out"
+    project_dir.mkdir()
+
+    args = SimpleNamespace(
+        project_dir=str(project_dir),
+        heal=False,
+        timeout=120,
+        output_dir=str(output_dir),
+    )
+    cli.cmd_execute(args)
+
+    assert (output_dir / "execution_report.json").exists()
+    assert (output_dir / "reproducibility_report.json").exists()
+
+
+def test_cmd_execute_with_heal_updates_generation_report_metadata(monkeypatch, tmp_path):
+    import scholardevclaw.execution as execution
+    import scholardevclaw.generation as generation
+    from scholardevclaw.generation.models import GenerationResult, ModuleResult
+    from scholardevclaw.planning.models import CodeModule, ImplementationPlan
+
+    class FakeRunner:
+        def __init__(self, *, timeout_seconds: int = 0, memory_limit_mb: int = 4096) -> None:
+            del timeout_seconds, memory_limit_mb
+            self._reports = [
+                SimpleNamespace(
+                    tests_passed=2,
+                    tests_failed=2,
+                    tests_errors=0,
+                    success=False,
+                    to_dict=lambda: {
+                        "exit_code": 1,
+                        "stdout": "",
+                        "stderr": "FAILED tests/test_module_a.py::test_a",
+                        "duration_seconds": 0.01,
+                        "peak_memory_mb": 32.0,
+                        "tests_passed": 2,
+                        "tests_failed": 2,
+                        "tests_errors": 0,
+                        "success": False,
+                    },
+                ),
+                SimpleNamespace(
+                    tests_passed=4,
+                    tests_failed=0,
+                    tests_errors=0,
+                    success=True,
+                    to_dict=lambda: {
+                        "exit_code": 0,
+                        "stdout": "all good",
+                        "stderr": "",
+                        "duration_seconds": 0.01,
+                        "peak_memory_mb": 32.0,
+                        "tests_passed": 4,
+                        "tests_failed": 0,
+                        "tests_errors": 0,
+                        "success": True,
+                    },
+                ),
+            ]
+            self._idx = 0
+
+        def run_tests(self, _project_dir: Path):
+            report = self._reports[min(self._idx, len(self._reports) - 1)]
+            self._idx += 1
+            return report
+
+    class FakeScorer:
+        def __init__(self, *, api_key=None, model: str = "claude-sonnet-4-5") -> None:
+            del api_key, model
+
+        def score(self, understanding, execution_report):
+            del understanding, execution_report
+            return SimpleNamespace(
+                score=0.6,
+                verdict="partial",
+                to_dict=lambda: {
+                    "paper_title": "Demo",
+                    "claimed_metrics": {},
+                    "achieved_metrics": {},
+                    "delta": {},
+                    "score": 0.6,
+                    "verdict": "partial",
+                },
+            )
+
+    class FakeOrchestrator:
+        def __init__(self, api_key: str, model: str) -> None:
+            self.api_key = api_key
+            self.model = model
+
+    class FakeHealer:
+        def __init__(self, orchestrator, runner):
+            self.orchestrator = orchestrator
+            self.runner = runner
+            self.round_reports = [
+                {
+                    "round": 1,
+                    "tests_passed": 2,
+                    "tests_failed": 2,
+                    "tests_errors": 0,
+                    "success": False,
+                    "failing_modules": ["module_a"],
+                }
+            ]
+
+        def heal(self, generation_result, plan, understanding):
+            del generation_result, understanding
+            return GenerationResult(
+                plan=plan,
+                module_results=[
+                    ModuleResult(
+                        module_id="module_a",
+                        file_path="src/module_a.py",
+                        test_file_path="tests/test_module_a.py",
+                        code="def module_a():\n    return 1\n",
+                        test_code="def test_module_a():\n    assert True\n",
+                        generation_attempts=2,
+                        final_errors=[],
+                        tokens_used=4,
+                    )
+                ],
+                output_dir=tmp_path / "project",
+                success_rate=1.0,
+                total_tokens_used=9,
+                duration_seconds=0.2,
+            )
+
+    monkeypatch.setattr(execution, "SandboxRunner", FakeRunner)
+    monkeypatch.setattr(execution, "ReproducibilityScorer", FakeScorer)
+    monkeypatch.setattr(execution, "SelfHealingLoop", FakeHealer)
+    monkeypatch.setattr(generation, "CodeOrchestrator", FakeOrchestrator)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-test-key")
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    plan_payload = ImplementationPlan(
+        project_name="demo",
+        target_language="python",
+        tech_stack="python",
+        modules=[
+            CodeModule(
+                id="module_a",
+                name="Module A",
+                description="",
+                file_path="src/module_a.py",
+                depends_on=[],
+                priority=1,
+                estimated_lines=10,
+                test_file_path="tests/test_module_a.py",
+                tech_stack="python",
+            )
+        ],
+    ).to_dict()
+
+    generation_report_path = project_dir / "generation_report.json"
+    generation_report_path.write_text(
+        json.dumps(
+            {
+                "plan": plan_payload,
+                "module_results": [
+                    {
+                        "module_id": "module_a",
+                        "file_path": "src/module_a.py",
+                        "test_file_path": "tests/test_module_a.py",
+                        "code": "def module_a():\n    return 0\n",
+                        "test_code": "def test_module_a():\n    assert False\n",
+                        "generation_attempts": 1,
+                        "final_errors": ["initial"],
+                        "tokens_used": 5,
+                    }
+                ],
+                "output_dir": str(project_dir),
+                "success_rate": 0.0,
+                "total_tokens_used": 5,
+                "duration_seconds": 0.1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = SimpleNamespace(project_dir=str(project_dir), heal=True, timeout=120, output_dir=None)
+    cli.cmd_execute(args)
+
+    updated_generation = json.loads(generation_report_path.read_text(encoding="utf-8"))
+    healing = updated_generation.get("healing", {})
+
+    assert healing.get("initial_failed_tests", 0) > healing.get("final_failed_tests", 0)
+    assert isinstance(healing.get("round_count"), int)
+    assert healing["round_count"] >= 1
+
+
+def test_cmd_execute_exits_nonzero_when_final_execution_fails(monkeypatch, tmp_path):
+    import scholardevclaw.execution as execution
+
+    class FakeRunner:
+        def __init__(self, *, timeout_seconds: int = 0, memory_limit_mb: int = 4096) -> None:
+            del timeout_seconds, memory_limit_mb
+
+        def run_tests(self, _project_dir: Path):
+            return SimpleNamespace(
+                tests_passed=1,
+                tests_failed=1,
+                tests_errors=0,
+                success=False,
+                to_dict=lambda: {
+                    "exit_code": 1,
+                    "stdout": "",
+                    "stderr": "FAILED tests/test_module.py::test_x",
+                    "duration_seconds": 0.01,
+                    "peak_memory_mb": 32.0,
+                    "tests_passed": 1,
+                    "tests_failed": 1,
+                    "tests_errors": 0,
+                    "success": False,
+                },
+            )
+
+    class FakeScorer:
+        def __init__(self, *, api_key=None, model: str = "claude-sonnet-4-5") -> None:
+            del api_key, model
+
+        def score(self, understanding, execution_report):
+            del understanding, execution_report
+            return SimpleNamespace(
+                score=0.3,
+                verdict="failed",
+                to_dict=lambda: {
+                    "paper_title": "Demo",
+                    "claimed_metrics": {},
+                    "achieved_metrics": {},
+                    "delta": {},
+                    "score": 0.3,
+                    "verdict": "failed",
+                },
+            )
+
+    monkeypatch.setattr(execution, "SandboxRunner", FakeRunner)
+    monkeypatch.setattr(execution, "ReproducibilityScorer", FakeScorer)
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    args = SimpleNamespace(project_dir=str(project_dir), heal=False, timeout=120, output_dir=None)
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_execute(args)
+
+    assert exc.value.code == 1
+    assert (project_dir / "execution_report.json").exists()
+    assert (project_dir / "reproducibility_report.json").exists()
 
 
 def test_cmd_deploy_check_json_success(tmp_path, capsys):

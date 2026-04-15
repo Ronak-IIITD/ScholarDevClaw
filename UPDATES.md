@@ -4,6 +4,114 @@
 
 **Last updated:** 2026-04-15
 
+### 2026-04-15 (UPGRADE v3 Phase-5 tests: execution package + CLI execute flow)
+
+**Summary:** Added deterministic test coverage for the new execution package and `execute` CLI flow, including sandbox behavior, reproducibility scoring, self-healing targeting, parser wiring, artifact writing, and healing metadata updates.
+
+**What changed:**
+
+- `core/tests/test_execution.py` (new)
+  - Added sandbox success-path test with mocked Docker client/container to verify:
+    - JSON summary parsing (`tests_passed`, `tests_failed`, `tests_errors`)
+    - success computation path
+    - hardened container args (`network_disabled=True`, memory limit string)
+  - Added unavailable-Docker test coverage for:
+    - SDK missing path
+    - client init failure path
+    - actionable failure stderr returned via `ExecutionReport`
+  - Added reproducibility scorer regex/scoring test for claimed vs achieved metrics, score calculation, and verdict.
+  - Added self-healing loop targeted regeneration test to verify:
+    - failing-module extraction from test failure output
+    - `module_filter` contains only failing module id
+    - merged generation results and improved success rate
+    - `round_reports` capture per-round outcomes.
+
+- `core/tests/unit/test_cli.py`
+  - Added `execute` command to dispatch coverage parametrization.
+  - Added parser test for:
+    - `scholardevclaw execute /tmp/project --heal --timeout 120 --output-dir /tmp/out`
+  - Added `cmd_execute` (no-heal) test with mocked execution scorer/runner and assertions for:
+    - `execution_report.json` write
+    - `reproducibility_report.json` write
+  - Added `cmd_execute --heal` test with mocked runner/scorer/healer/orchestrator and assertions that `generation_report.json` healing metadata includes:
+    - `initial_failed_tests > final_failed_tests`
+    - `round_count` present.
+
+**Verification:**
+
+- ✅ `cd core && ruff check tests/test_execution.py tests/unit/test_cli.py`
+- ✅ `cd core && pytest tests/test_execution.py -q` (`5 passed`)
+- ✅ `cd core && pytest tests/unit/test_cli.py -q` (`50 passed`)
+
+### 2026-04-15 (UPGRADE v3 Phase-5: execution sandbox + reproducibility scoring + healing loop)
+
+**Summary:** Implemented Phase 5 production execution flow: sandboxed pytest runs, reproducibility scoring, self-healing loop, CLI `execute` command, sandbox Dockerfile, and runbook setup support.
+
+**What changed:**
+
+- `core/src/scholardevclaw/execution/__init__.py` (new)
+  - Added execution package exports:
+    - `SandboxRunner`
+    - `ExecutionReport`
+    - `ReproducibilityScorer`
+    - `ReproducibilityReport`
+    - `SelfHealingLoop`
+
+- `core/src/scholardevclaw/execution/sandbox.py` (new)
+  - Added `ExecutionReport` dataclass with `to_dict()`.
+  - Added `SandboxRunner(timeout_seconds=300, memory_limit_mb=4096)`.
+  - Added Docker SDK-backed `run_tests(project_dir)` execution with:
+    - sandbox image from `SCHOLARDEVCLAW_SANDBOX_IMAGE` fallback to `scholardevclaw-sandbox:latest`
+    - pytest JSON report output at `/tmp/report.json`
+    - network disabled + memory limit enforcement
+    - archive extraction + JSON parsing for pass/fail/error counts
+    - robust fallback error handling returning failed `ExecutionReport`.
+
+- `core/src/scholardevclaw/execution/scorer.py` (new)
+  - Added `ReproducibilityReport` dataclass with `to_dict()`.
+  - Added `ReproducibilityScorer(api_key: str | None = None, model: str = ...)`.
+  - Implemented:
+    - `score(understanding, execution_report)`
+    - `_extract_metrics_from_output` (regex-first, LLM fallback)
+    - `_extract_claimed_metrics` (regex-first, LLM fallback)
+    - `_compute_score` using ratio-based per-metric matching semantics from UPGRADE.
+
+- `core/src/scholardevclaw/execution/healer.py` (new)
+  - Added `SelfHealingLoop(orchestrator, runner, max_healing_rounds=3)`.
+  - Added `heal(generation_result, plan, understanding)` with per-round sandbox execution.
+  - Added failing-module detection from stdout/stderr patterns and targeted `module_filter` regeneration.
+  - Added merge logic preserving full generation result while replacing only regenerated modules.
+  - Added persistent per-round metadata via `self.round_reports`.
+
+- `core/src/scholardevclaw/cli.py`
+  - Added `cmd_execute(args)` command handler.
+  - Added parser + dispatch wiring for:
+    - `scholardevclaw execute <project_dir> [--heal] [--timeout 300] [--output-dir DIR]`
+  - Added behavior to:
+    - validate project path
+    - run sandbox tests
+    - load `understanding.json` when present (fallback to minimal `PaperUnderstanding`)
+    - compute reproducibility score
+    - write `execution_report.json` + `reproducibility_report.json`
+    - optional healing flow using `generation_report.json`, targeted regeneration, re-execution, and additive healing metadata updates.
+
+- `docker/sandbox.Dockerfile` (new)
+  - Added dedicated sandbox image with pytest + `pytest-json-report` and CPU-friendly common ML/runtime deps.
+
+- `scripts/runbook.sh`
+  - Added `dev setup` in usage/help/examples.
+  - Added `dev_setup()` action to build sandbox image:
+    - `docker build -f docker/sandbox.Dockerfile -t scholardevclaw-sandbox:latest .`
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/execution src/scholardevclaw/cli.py`
+- ✅ `cd core && python -m mypy src/scholardevclaw/execution src/scholardevclaw/cli.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+- ✅ Post-review hardening:
+  - improved `SelfHealingLoop` failing-module resolution for nested `tests/**/test_*.py` paths and `src/**` references
+  - `execute` now exits non-zero when final execution report indicates failure
+  - sandbox project mount switched to read-only (`ro`) for safer isolation
+
 ### 2026-04-15 (Frontend: Apply new design prototype)
 
 **Summary:** Applied a new design prototype to the frontend landing page.

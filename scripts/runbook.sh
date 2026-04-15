@@ -21,11 +21,12 @@ usage() {
 ScholarDevClaw operator runbook
 
 Usage:
-  bash scripts/runbook.sh dev  <preflight|up|down|ps|logs|health> [service]
+  bash scripts/runbook.sh dev  <preflight|setup|up|down|ps|logs|health> [service]
   bash scripts/runbook.sh prod <preflight|up|down|ps|logs|health> [service]
   bash scripts/runbook.sh help
 
 Examples:
+  bash scripts/runbook.sh dev setup
   bash scripts/runbook.sh dev up
   bash scripts/runbook.sh dev health
   bash scripts/runbook.sh prod preflight
@@ -123,6 +124,15 @@ dev_preflight() {
   log "Dev preflight passed."
 }
 
+dev_setup() {
+  require_docker
+  ensure_env_file
+  dev_preflight
+  log "Building sandbox image..."
+  docker build -f docker/sandbox.Dockerfile -t scholardevclaw-sandbox:latest .
+  log "Dev setup complete."
+}
+
 probe_host_http() {
   local url="$1"
   python - "$url" <<'PY'
@@ -183,6 +193,9 @@ esac
 case "$MODE:$ACTION" in
   dev:preflight)
     dev_preflight
+    ;;
+  dev:setup)
+    dev_setup
     ;;
   dev:up)
     dev_preflight

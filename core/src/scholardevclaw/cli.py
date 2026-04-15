@@ -12,6 +12,7 @@ Commands:
   understand  - Extract structured paper understanding via LLM
   plan        - Plan implementation from understanding JSON
   generate    - Generate implementation code from plan + understanding
+  execute     - Run generated project tests in sandbox + score reproducibility
   suggest     - Get AI-powered improvement suggestions
   integrate   - Full integration workflow
   tui         - Interactive terminal UI workflow
@@ -25,6 +26,7 @@ Examples:
   scholardevclaw understand ./paper_document.json --output-dir ./artifacts
   scholardevclaw plan ./understanding.json --output-dir ./plan_output
   scholardevclaw generate ./implementation_plan.json ./understanding.json --output-dir ./generated
+  scholardevclaw execute ./generated --heal --timeout 300
   scholardevclaw suggest ./my-project
   scholardevclaw integrate ./my-project rmsnorm
 
@@ -36,6 +38,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
 from scholardevclaw.auth.cli import cmd_auth
@@ -688,6 +691,206 @@ def cmd_generate(args):
 
     if args.output_json:
         print(json.dumps(report_payload, indent=2))
+
+
+def cmd_execute(args):
+    """Run generated project tests in sandbox and compute reproducibility report."""
+    project_dir = Path(args.project_dir).expanduser().resolve()
+    if not project_dir.exists() or not project_dir.is_dir():
+        print(f"Error: project directory not found: {project_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else project_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    execution_path = output_dir / "execution_report.json"
+    reproducibility_path = output_dir / "reproducibility_report.json"
+
+    try:
+        from scholardevclaw.execution import (
+            ReproducibilityScorer,
+            SandboxRunner,
+            SelfHealingLoop,
+        )
+        from scholardevclaw.generation import CodeOrchestrator
+        from scholardevclaw.generation.models import GenerationResult, ModuleResult
+        from scholardevclaw.planning.models import ImplementationPlan
+        from scholardevclaw.understanding.models import PaperUnderstanding
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Executing project in sandbox: {project_dir}")
+    print(f"Output directory: {output_dir}")
+    print("-" * 50)
+
+    understanding_path = project_dir / "understanding.json"
+    understanding = PaperUnderstanding(
+        paper_title=project_dir.name,
+        one_line_summary="Generated project execution",
+        problem_statement="",
+        key_insight="",
+        core_algorithm_description="",
+        input_output_spec="",
+        evaluation_protocol="",
+        complexity="research-only",
+        estimated_impl_hours=0,
+        confidence=0.0,
+    )
+
+    if understanding_path.exists() and understanding_path.is_file():
+        try:
+            loaded = json.loads(understanding_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                understanding = PaperUnderstanding.from_dict(loaded)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Warning: failed to load understanding context: {exc}", file=sys.stderr)
+
+    runner = SandboxRunner(timeout_seconds=args.timeout)
+    initial_execution_report = runner.run_tests(project_dir)
+    final_execution_report = initial_execution_report
+
+    scorer = ReproducibilityScorer(api_key=os.getenv("ANTHROPIC_API_KEY", "").strip() or None)
+    reproducibility_report = scorer.score(understanding, final_execution_report)
+
+    if args.heal:
+        generation_report_path = project_dir / "generation_report.json"
+        if not generation_report_path.exists() or not generation_report_path.is_file():
+            print(
+                "Warning: --heal requested but generation_report.json not found; skipping healing",
+                file=sys.stderr,
+            )
+        else:
+            api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+            if not api_key:
+                print(
+                    "Warning: ANTHROPIC_API_KEY missing; skipping healing",
+                    file=sys.stderr,
+                )
+            else:
+                try:
+                    report_payload = json.loads(generation_report_path.read_text(encoding="utf-8"))
+                    if not isinstance(report_payload, dict):
+                        raise ValueError("generation_report.json must contain a JSON object")
+
+                    plan_payload = report_payload.get("plan")
+                    if not isinstance(plan_payload, dict):
+                        raise ValueError("generation_report.json is missing 'plan' object")
+                    plan = ImplementationPlan.from_dict(plan_payload)
+
+                    def _coerce_float(value: Any, default: float = 0.0) -> float:
+                        try:
+                            return float(value)
+                        except (TypeError, ValueError):
+                            return default
+
+                    def _coerce_int(value: Any, default: int = 0) -> int:
+                        try:
+                            return int(value)
+                        except (TypeError, ValueError):
+                            return default
+
+                    raw_module_results = report_payload.get("module_results", [])
+                    module_results: list[ModuleResult] = []
+                    if isinstance(raw_module_results, list):
+                        for item in raw_module_results:
+                            if not isinstance(item, dict):
+                                continue
+                            module_results.append(
+                                ModuleResult(
+                                    module_id=str(item.get("module_id", "")),
+                                    file_path=str(item.get("file_path", "")),
+                                    test_file_path=str(item.get("test_file_path", "")),
+                                    code=str(item.get("code", "")),
+                                    test_code=str(item.get("test_code", "")),
+                                    generation_attempts=_coerce_int(
+                                        item.get("generation_attempts", 0), 0
+                                    ),
+                                    final_errors=[
+                                        str(err)
+                                        for err in item.get("final_errors", [])
+                                        if isinstance(err, (str, int, float))
+                                    ],
+                                    tokens_used=_coerce_int(item.get("tokens_used", 0), 0),
+                                )
+                            )
+
+                    generation_result = GenerationResult(
+                        plan=plan,
+                        module_results=module_results,
+                        output_dir=project_dir,
+                        success_rate=_coerce_float(report_payload.get("success_rate", 0.0), 0.0),
+                        total_tokens_used=_coerce_int(
+                            report_payload.get("total_tokens_used", 0), 0
+                        ),
+                        duration_seconds=_coerce_float(
+                            report_payload.get("duration_seconds", 0.0), 0.0
+                        ),
+                    )
+
+                    orchestrator = CodeOrchestrator(api_key=api_key, model="claude-sonnet-4-5")
+                    healer = SelfHealingLoop(orchestrator, runner)
+                    healed_result = healer.heal(generation_result, plan, understanding)
+
+                    final_execution_report = runner.run_tests(project_dir)
+                    reproducibility_report = scorer.score(understanding, final_execution_report)
+
+                    updated_report = dict(report_payload)
+                    updated_report.update(healed_result.to_dict())
+
+                    healing_payload = updated_report.get("healing")
+                    healing_info = (
+                        dict(healing_payload) if isinstance(healing_payload, dict) else {}
+                    )
+                    healing_info.update(
+                        {
+                            "round_count": len(healer.round_reports),
+                            "round_reports": healer.round_reports,
+                            "initial_failed_tests": initial_execution_report.tests_failed,
+                            "final_failed_tests": final_execution_report.tests_failed,
+                            "initial_error_tests": initial_execution_report.tests_errors,
+                            "final_error_tests": final_execution_report.tests_errors,
+                        }
+                    )
+                    updated_report["healing"] = healing_info
+                    generation_report_path.write_text(
+                        json.dumps(updated_report, indent=2),
+                        encoding="utf-8",
+                    )
+                    print(f"Updated: {generation_report_path}")
+                except (
+                    ImportError,
+                    OSError,
+                    ValueError,
+                    RuntimeError,
+                    json.JSONDecodeError,
+                ) as exc:
+                    print(f"Warning: healing skipped due to error: {exc}", file=sys.stderr)
+
+    try:
+        execution_path.write_text(
+            json.dumps(final_execution_report.to_dict(), indent=2), encoding="utf-8"
+        )
+        reproducibility_path.write_text(
+            json.dumps(reproducibility_report.to_dict(), indent=2),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(f"Error: failed to write execution artifacts: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Saved: {execution_path}")
+    print(f"Saved: {reproducibility_path}")
+    print(
+        "Tests: "
+        f"passed={final_execution_report.tests_passed}, "
+        f"failed={final_execution_report.tests_failed}, "
+        f"errors={final_execution_report.tests_errors}"
+    )
+    print(f"Reproducibility: {reproducibility_report.score:.0%} ({reproducibility_report.verdict})")
+
+    if not bool(getattr(final_execution_report, "success", False)):
+        sys.exit(1)
 
 
 def cmd_validate(args):
@@ -2446,6 +2649,9 @@ Examples:
   # Generate project code from implementation plan + understanding
   scholardevclaw generate ./implementation_plan.json ./understanding.json --output-dir ./generated
 
+  # Execute generated project tests in sandbox and score reproducibility
+  scholardevclaw execute ./generated --heal --timeout 300
+
   # Get AI-powered improvement suggestions
   scholardevclaw suggest ./my-project
 
@@ -2603,6 +2809,28 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "--use-specs",
         action="store_true",
         help="Use legacy specs-based workflow (arg1=repo_path arg2=spec)",
+    )
+
+    # execute
+    p_execute = subparsers.add_parser(
+        "execute",
+        help="Execute generated project tests in sandbox and score reproducibility",
+    )
+    p_execute.add_argument("project_dir", help="Path to generated project directory")
+    p_execute.add_argument(
+        "--heal",
+        action="store_true",
+        help="Run self-healing loop when generation_report.json is available",
+    )
+    p_execute.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Sandbox test timeout in seconds",
+    )
+    p_execute.add_argument(
+        "--output-dir",
+        help="Directory to store execution_report.json and reproducibility_report.json",
     )
 
     # validate
@@ -2847,6 +3075,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "suggest": cmd_suggest,
         "map": cmd_map,
         "generate": cmd_generate,
+        "execute": cmd_execute,
         "validate": cmd_validate,
         "integrate": cmd_integrate,
         "tui": cmd_tui,
