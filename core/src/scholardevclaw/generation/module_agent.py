@@ -45,9 +45,16 @@ def _extract_tokens_used(response: Any) -> int:
 
 
 class ModuleAgent:
-    def __init__(self, client: Any, model: str) -> None:
+    def __init__(
+        self,
+        client: Any,
+        model: str,
+        *,
+        knowledge_base: Any | None = None,
+    ) -> None:
         self.client = client
         self.model = model
+        self.knowledge_base = knowledge_base
 
     async def generate(
         self,
@@ -144,6 +151,30 @@ class ModuleAgent:
             if dep_id in context_modules:
                 context_parts.append(f"# Already implemented: {dep_id}")
                 context_parts.append(context_modules[dep_id][:2000])
+
+        if self.knowledge_base is not None:
+            similar_snippets: list[str] = []
+            try:
+                similar = self.knowledge_base.retrieve_similar_implementations(
+                    module.description or module.name,
+                    plan.tech_stack,
+                    n=2,
+                )
+                if isinstance(similar, list):
+                    similar_snippets = [
+                        snippet
+                        for snippet in similar
+                        if isinstance(snippet, str) and snippet.strip()
+                    ]
+            except Exception:
+                similar_snippets = []
+
+            if similar_snippets:
+                context_parts.append("")
+                context_parts.append("# Similar implementations from knowledge base:")
+                for snippet in similar_snippets:
+                    context_parts.append(snippet[:1000])
+                    context_parts.append("---")
 
         error_block = ""
         if prior_errors:

@@ -15,6 +15,7 @@ import scholardevclaw.cli as cli
     [
         ("analyze", ["scholardevclaw", "analyze", "/tmp/repo"], "cmd_analyze"),
         ("search", ["scholardevclaw", "search", "rmsnorm"], "cmd_search"),
+        ("kb", ["scholardevclaw", "kb", "stats"], "cmd_kb"),
         ("ingest", ["scholardevclaw", "ingest", "arxiv:1706.03762"], "cmd_ingest"),
         (
             "understand",
@@ -310,6 +311,144 @@ def test_ingest_parser_with_output_dir(monkeypatch):
     assert called == {"source": "10.1000/xyz123", "output_dir": "/tmp/out"}
 
 
+def test_kb_parser_stats(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["kb_action"] = args.kb_action
+
+    monkeypatch.setattr(cli, "cmd_kb", fake_cmd)
+    monkeypatch.setattr(cli.sys, "argv", ["scholardevclaw", "kb", "stats"])
+
+    cli.main()
+
+    assert called == {"kb_action": "stats"}
+
+
+def test_kb_parser_search_with_limit_and_domain(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["kb_action"] = args.kb_action
+        called["query"] = args.query
+        called["limit"] = args.limit
+        called["domain"] = args.domain
+
+    monkeypatch.setattr(cli, "cmd_kb", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "kb",
+            "search",
+            "attention mechanism",
+            "--limit",
+            "7",
+            "--domain",
+            "nlp",
+        ],
+    )
+
+    cli.main()
+
+    assert called == {
+        "kb_action": "search",
+        "query": "attention mechanism",
+        "limit": 7,
+        "domain": "nlp",
+    }
+
+
+def test_kb_parser_clear(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["kb_action"] = args.kb_action
+
+    monkeypatch.setattr(cli, "cmd_kb", fake_cmd)
+    monkeypatch.setattr(cli.sys, "argv", ["scholardevclaw", "kb", "clear"])
+
+    cli.main()
+
+    assert called == {"kb_action": "clear"}
+
+
+def test_cmd_kb_stats_with_mocked_knowledge_base(monkeypatch, capsys):
+    class FakeKnowledgeBase:
+        def stats(self):
+            return {
+                "persist_dir": "/tmp/fake-kb",
+                "papers": 2,
+                "implementations": 4,
+                "patterns": 0,
+            }
+
+    monkeypatch.setattr(cli, "_initialize_knowledge_base", lambda *, strict: FakeKnowledgeBase())
+
+    cli.cmd_kb(SimpleNamespace(kb_action="stats"))
+
+    captured = capsys.readouterr()
+    assert "Knowledge base statistics" in captured.out
+    assert "Papers: 2" in captured.out
+    assert "Implementations: 4" in captured.out
+
+
+def test_cmd_kb_search_with_mocked_knowledge_base(monkeypatch, capsys):
+    observed: dict[str, object] = {}
+
+    class FakeKnowledgeBase:
+        def retrieve_similar_papers(self, query: str, n: int, domain_filter: str | None):
+            observed["query"] = query
+            observed["n"] = n
+            observed["domain_filter"] = domain_filter
+            return [
+                {
+                    "text": "Attention and layer normalization details",
+                    "metadata": {
+                        "title": "Transformer Paper",
+                        "domain": "nlp",
+                        "complexity": "medium",
+                    },
+                }
+            ]
+
+    monkeypatch.setattr(cli, "_initialize_knowledge_base", lambda *, strict: FakeKnowledgeBase())
+
+    cli.cmd_kb(
+        SimpleNamespace(
+            kb_action="search",
+            query="attention",
+            limit=3,
+            domain="nlp",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert observed == {"query": "attention", "n": 3, "domain_filter": "nlp"}
+    assert "Transformer Paper" in captured.out
+    assert "domain=nlp" in captured.out
+
+
+def test_cmd_kb_clear_with_mocked_knowledge_base(monkeypatch, capsys):
+    observed = {"cleared": False}
+
+    class FakeKnowledgeBase:
+        def clear(self):
+            observed["cleared"] = True
+
+        def stats(self):
+            return {"papers": 0, "implementations": 0, "patterns": 0}
+
+    monkeypatch.setattr(cli, "_initialize_knowledge_base", lambda *, strict: FakeKnowledgeBase())
+
+    cli.cmd_kb(SimpleNamespace(kb_action="clear"))
+
+    captured = capsys.readouterr()
+    assert observed["cleared"] is True
+    assert "Knowledge base cleared." in captured.out
+
+
 def test_understand_parser_with_model_and_output_dir(monkeypatch):
     called = {}
 
@@ -565,11 +704,19 @@ def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_pat
             }
 
     observed: dict[str, object] = {}
+    fake_kb = object()
 
     class FakeOrchestrator:
-        def __init__(self, api_key: str, model: str) -> None:
+        def __init__(
+            self,
+            api_key: str,
+            model: str,
+            *,
+            knowledge_base=None,
+        ) -> None:
             observed["api_key"] = api_key
             observed["model"] = model
+            observed["knowledge_base"] = knowledge_base
 
         def generate_sync(self, *, plan, understanding, output_dir: Path, max_parallel: int):
             observed["plan_project_name"] = plan.project_name
@@ -580,6 +727,7 @@ def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_pat
 
     monkeypatch.setattr(generation, "CodeOrchestrator", FakeOrchestrator)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-test-key")
+    monkeypatch.setattr(cli, "_initialize_knowledge_base", lambda *, strict: fake_kb)
 
     plan_path = tmp_path / "implementation_plan.json"
     understanding_path = tmp_path / "understanding.json"
@@ -630,6 +778,7 @@ def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_pat
     assert observed == {
         "api_key": "fake-test-key",
         "model": "claude-sonnet-4-5",
+        "knowledge_base": fake_kb,
         "plan_project_name": "demo-project",
         "understanding_title": "Demo Paper",
         "output_dir": str(output_dir.resolve()),
@@ -845,9 +994,16 @@ def test_cmd_execute_with_heal_updates_generation_report_metadata(monkeypatch, t
             )
 
     class FakeOrchestrator:
-        def __init__(self, api_key: str, model: str) -> None:
+        def __init__(
+            self,
+            api_key: str,
+            model: str,
+            *,
+            knowledge_base=None,
+        ) -> None:
             self.api_key = api_key
             self.model = model
+            self.knowledge_base = knowledge_base
 
     class FakeHealer:
         def __init__(self, orchestrator, runner):

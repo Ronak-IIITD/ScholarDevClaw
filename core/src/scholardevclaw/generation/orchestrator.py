@@ -34,8 +34,10 @@ class CodeOrchestrator:
         model: str = "claude-sonnet-4-5",
         *,
         client: Any | None = None,
+        knowledge_base: Any | None = None,
     ) -> None:
         self.model = model
+        self.knowledge_base = knowledge_base
         if client is not None:
             self.client = client
             return
@@ -119,7 +121,7 @@ class CodeOrchestrator:
         error_context: str | None,
     ) -> list[ModuleResult]:
         semaphore = asyncio.Semaphore(max_parallel)
-        agent = ModuleAgent(self.client, self.model)
+        agent = ModuleAgent(self.client, self.model, knowledge_base=self.knowledge_base)
 
         async def _bounded_generate(module: CodeModule) -> ModuleResult:
             async with semaphore:

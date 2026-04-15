@@ -2,7 +2,88 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-15
+**Last updated:** 2026-04-16
+
+### 2026-04-16 (UPGRADE v3 Phase-7: knowledge base + generation/CLI wiring)
+
+**Summary:** Implemented Phase 7 Knowledge Base with optional dependency-safe loading, generation context enrichment, CLI `kb` command surface (`stats/search/clear`), and integration points in `understand`, `generate`, and `execute --heal` flows.
+
+**What changed:**
+
+- `core/src/scholardevclaw/knowledge/__init__.py` (new)
+  - Re-exports `KnowledgeBase`.
+
+- `core/src/scholardevclaw/knowledge/store.py` (new)
+  - Added `KnowledgeBase` with required API:
+    - `__init__(persist_dir=~/.scholardevclaw/kb)`
+    - `store_paper(doc, understanding)`
+    - `store_implementation(module, code, understanding)`
+    - `retrieve_similar_papers(query, n=5, domain_filter=None)`
+    - `retrieve_similar_implementations(module_description, tech_stack, n=3)`
+  - Added practical CLI helpers:
+    - `stats()`
+    - `clear()`
+  - Added robust optional dependency loading:
+    - lazily imports `chromadb`, `chromadb.config`, and `sentence_transformers`
+    - raises actionable `ImportError` only when KB is initialized/used
+    - install hint: `pip install -e '.[knowledge]'`
+
+- `core/src/scholardevclaw/generation/module_agent.py`
+  - `ModuleAgent.__init__` now accepts optional `knowledge_base`.
+  - `_build_module_prompt(...)` now appends a "Similar implementations from knowledge base" section when KB retrieval returns snippets.
+  - Retrieval failures are non-fatal and safely ignored to preserve generation stability.
+
+- `core/src/scholardevclaw/generation/orchestrator.py`
+  - `CodeOrchestrator.__init__` now accepts optional `knowledge_base` and stores it.
+  - Passes KB through to `ModuleAgent`.
+  - Backward compatible for existing callsites/tests (`knowledge_base` is optional and keyword-only).
+
+- `core/src/scholardevclaw/cli.py`
+  - Added KB command docs/examples in module header and argparse epilog.
+  - Added `_initialize_knowledge_base(strict: bool)` helper with actionable error handling.
+  - Added `cmd_kb(args)` supporting:
+    - `scholardevclaw kb stats`
+    - `scholardevclaw kb search "query" [--limit N] [--domain DOMAIN]`
+    - `scholardevclaw kb clear`
+  - Added argparse/parser + dispatch wiring for `kb` command and subcommands.
+  - Added non-zero exits for invalid KB usage/dependency/init failures.
+  - `cmd_generate` now:
+    - best-effort initializes KB,
+    - passes KB to `CodeOrchestrator`,
+    - stores successful generated module implementations into KB.
+  - `cmd_understand` now best-effort stores `(PaperDocument, PaperUnderstanding)` into KB without hard-failing command execution.
+  - `cmd_execute --heal` now best-effort initializes KB and passes it to `CodeOrchestrator` for healing-time generation context.
+
+- Tests:
+  - `core/tests/test_knowledge.py` (new)
+    - Added fake `chromadb` + fake embedder unit tests (no external dependencies):
+      - store/retrieve paper behavior,
+      - store/retrieve implementation behavior,
+      - domain/tech-stack filtering,
+      - `stats` and `clear`.
+    - Added prompt enrichment test verifying ModuleAgent includes:
+      - "Similar implementations from knowledge base".
+  - `core/tests/unit/test_cli.py`
+    - Added `kb` to command dispatch matrix coverage.
+    - Added parser tests for:
+      - `kb stats`
+      - `kb search ... --limit ... --domain ...`
+      - `kb clear`
+    - Added `cmd_kb` behavior tests with mocked `KnowledgeBase` (`stats/search/clear`).
+    - Updated fake orchestrator test doubles to accept optional `knowledge_base` keyword argument.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/knowledge src/scholardevclaw/generation src/scholardevclaw/cli.py tests/test_knowledge.py tests/unit/test_cli.py tests/generation/test_orchestrator.py`
+  - `All checks passed!`
+- ✅ `cd core && python -m mypy src/scholardevclaw/knowledge src/scholardevclaw/generation src/scholardevclaw/cli.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+  - `Success: no issues found in 7 source files`
+- ✅ `cd core && pytest tests/test_knowledge.py -q`
+  - `3 passed in 0.68s`
+- ✅ `cd core && pytest tests/unit/test_cli.py -q`
+  - `61 passed in 1.43s`
+- ✅ `cd core && pytest tests/generation/test_orchestrator.py -q`
+  - `2 passed in 1.33s`
 
 ### 2026-04-15 (UPGRADE v3 Phase-6: product scaffold generator + CLI scaffold)
 

@@ -8,6 +8,7 @@ and automatically implements improvements. Supports any programming language.
 Commands:
   analyze     - Analyze repository structure (multi-language)
   search      - Search for research papers and implementations
+  kb          - Query and manage local knowledge base
   ingest      - Ingest a paper (PDF/DOI/arXiv/URL) into structured JSON
   understand  - Extract structured paper understanding via LLM
   plan        - Plan implementation from understanding JSON
@@ -26,6 +27,8 @@ Examples:
   scholardevclaw ingest arxiv:1706.03762 --output-dir ./artifacts
   scholardevclaw understand ./paper_document.json --output-dir ./artifacts
   scholardevclaw plan ./understanding.json --output-dir ./plan_output
+  scholardevclaw kb stats
+  scholardevclaw kb search "attention" --limit 5 --domain nlp
   scholardevclaw generate ./implementation_plan.json ./understanding.json --output-dir ./generated
   scholardevclaw execute ./generated --heal --timeout 300
   scholardevclaw scaffold ./generated ./implementation_plan.json ./understanding.json ./reproducibility_report.json
@@ -105,6 +108,25 @@ def _resolve_confined_destination(base_dir: Path, relative_path: str) -> Path | 
     except ValueError:
         return None
     return destination
+
+
+def _initialize_knowledge_base(*, strict: bool) -> Any | None:
+    try:
+        from scholardevclaw.knowledge import KnowledgeBase
+
+        return KnowledgeBase()
+    except ImportError as exc:
+        if strict:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Warning: knowledge base unavailable: {exc}", file=sys.stderr)
+        return None
+    except (OSError, RuntimeError, ValueError) as exc:
+        if strict:
+            print(f"Error: failed to initialize knowledge base: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Warning: knowledge base initialization skipped: {exc}", file=sys.stderr)
+        return None
 
 
 def cmd_analyze(args):
@@ -230,6 +252,104 @@ def cmd_search(args):
             print(f"Web search error: {e}")
 
 
+def cmd_kb(args):
+    """Inspect and manage the local vector knowledge base."""
+    action = str(getattr(args, "kb_action", "")).strip()
+    if not action:
+        print("Error: kb action is required (stats|search|clear)", file=sys.stderr)
+        sys.exit(1)
+
+    knowledge_base = _initialize_knowledge_base(strict=True)
+    if knowledge_base is None:
+        print("Error: knowledge base is unavailable", file=sys.stderr)
+        sys.exit(1)
+
+    if action == "stats":
+        try:
+            stats = knowledge_base.stats()
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Error: failed to read knowledge base stats: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        print("Knowledge base statistics")
+        print("-" * 50)
+        print(f"Persist directory: {stats.get('persist_dir', 'unknown')}")
+        print(f"Papers: {stats.get('papers', 0)}")
+        print(f"Implementations: {stats.get('implementations', 0)}")
+        print(f"Patterns: {stats.get('patterns', 0)}")
+        return
+
+    if action == "search":
+        query = str(getattr(args, "query", "") or "").strip()
+        if not query:
+            print("Error: kb search requires a non-empty query", file=sys.stderr)
+            sys.exit(1)
+
+        limit = int(getattr(args, "limit", 5) or 5)
+        if limit < 1:
+            print("Error: --limit must be >= 1", file=sys.stderr)
+            sys.exit(1)
+
+        domain = getattr(args, "domain", None)
+        if isinstance(domain, str):
+            domain = domain.strip() or None
+
+        try:
+            results = knowledge_base.retrieve_similar_papers(
+                query=query,
+                n=limit,
+                domain_filter=domain,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Error: kb search failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Knowledge base search results for: {query!r}")
+        if domain:
+            print(f"Domain filter: {domain}")
+        print("-" * 50)
+
+        if not results:
+            print("No matching papers found.")
+            return
+
+        for index, item in enumerate(results, start=1):
+            metadata = item.get("metadata") if isinstance(item, dict) else {}
+            metadata = metadata if isinstance(metadata, dict) else {}
+
+            title = str(metadata.get("title", "") or "Untitled")
+            item_domain = str(metadata.get("domain", "") or "unknown")
+            complexity = str(metadata.get("complexity", "") or "unknown")
+            text = str(item.get("text", "") if isinstance(item, dict) else "")
+            snippet = " ".join(text.split())[:220]
+
+            print(f"{index}. {title}")
+            print(f"   domain={item_domain} complexity={complexity}")
+            if snippet:
+                print(f"   {snippet}")
+        return
+
+    if action == "clear":
+        try:
+            knowledge_base.clear()
+            stats = knowledge_base.stats()
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Error: failed to clear knowledge base: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        print("Knowledge base cleared.")
+        print(
+            "Remaining entries: "
+            f"papers={stats.get('papers', 0)}, "
+            f"implementations={stats.get('implementations', 0)}, "
+            f"patterns={stats.get('patterns', 0)}"
+        )
+        return
+
+    print(f"Error: unknown kb action '{action}'", file=sys.stderr)
+    sys.exit(1)
+
+
 def cmd_ingest(args):
     """Ingest a paper source into a structured PaperDocument JSON artifact."""
     from scholardevclaw.ingestion.paper_fetcher import (
@@ -350,6 +470,16 @@ def cmd_understand(args):
     print(f"Requirements: {len(understanding.requirements)}")
     print(f"Concept nodes: {len(understanding.concept_nodes)}")
     print(f"Concept edges: {len(understanding.concept_edges)}")
+
+    knowledge_base = _initialize_knowledge_base(strict=False)
+    if knowledge_base is not None:
+        try:
+            knowledge_base.store_paper(document, understanding)
+            print("Knowledge base: paper understanding stored")
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(
+                f"Warning: failed to store understanding in knowledge base: {exc}", file=sys.stderr
+            )
 
 
 def cmd_plan(args):
@@ -663,13 +793,19 @@ def cmd_generate(args):
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / "generation_report.json"
 
+    knowledge_base = _initialize_knowledge_base(strict=False)
+
     print(f"Generating implementation from: {plan_path}")
     print(f"Understanding source: {understanding_path}")
     print(f"Output directory: {output_dir}")
     print("-" * 50)
 
     try:
-        orchestrator = CodeOrchestrator(api_key=api_key, model=args.model)
+        orchestrator = CodeOrchestrator(
+            api_key=api_key,
+            model=args.model,
+            knowledge_base=knowledge_base,
+        )
         result = orchestrator.generate_sync(
             plan=plan,
             understanding=understanding,
@@ -690,6 +826,32 @@ def cmd_generate(args):
         f"Modules: {len(result.module_results)} | "
         f"Duration: {result.duration_seconds:.2f}s"
     )
+
+    if knowledge_base is not None:
+        stored_count = 0
+        modules_by_id = {module.id: module for module in plan.modules}
+        for module_result in result.module_results:
+            result_errors = getattr(module_result, "final_errors", [])
+            if isinstance(result_errors, list) and result_errors:
+                continue
+
+            module_id = str(getattr(module_result, "module_id", ""))
+            module = modules_by_id.get(module_id)
+            if module is None:
+                continue
+
+            code_text = str(getattr(module_result, "code", ""))
+            try:
+                knowledge_base.store_implementation(module, code_text, understanding)
+                stored_count += 1
+            except (OSError, RuntimeError, ValueError) as exc:
+                print(
+                    "Warning: failed to store generated implementation "
+                    f"'{module_id}' in knowledge base: {exc}",
+                    file=sys.stderr,
+                )
+        if stored_count:
+            print(f"Knowledge base: stored {stored_count} generated implementations")
 
     if args.output_json:
         print(json.dumps(report_payload, indent=2))
@@ -770,6 +932,7 @@ def cmd_execute(args):
                     file=sys.stderr,
                 )
             else:
+                knowledge_base = _initialize_knowledge_base(strict=False)
                 try:
                     report_payload = json.loads(generation_report_path.read_text(encoding="utf-8"))
                     if not isinstance(report_payload, dict):
@@ -830,7 +993,11 @@ def cmd_execute(args):
                         ),
                     )
 
-                    orchestrator = CodeOrchestrator(api_key=api_key, model="claude-sonnet-4-5")
+                    orchestrator = CodeOrchestrator(
+                        api_key=api_key,
+                        model="claude-sonnet-4-5",
+                        knowledge_base=knowledge_base,
+                    )
                     healer = SelfHealingLoop(orchestrator, runner)
                     healed_result = healer.heal(generation_result, plan, understanding)
 
@@ -2779,6 +2946,10 @@ Examples:
   # Plan implementation from understanding artifact
   scholardevclaw plan ./understanding.json --stack pytorch --output-dir ./artifacts
 
+  # Inspect local knowledge base
+  scholardevclaw kb stats
+  scholardevclaw kb search "layer normalization" --limit 5 --domain nlp
+
   # Generate project code from implementation plan + understanding
   scholardevclaw generate ./implementation_plan.json ./understanding.json --output-dir ./generated
 
@@ -2870,6 +3041,22 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "--output-dir",
         help="Directory to store implementation_plan.json",
     )
+
+    # kb
+    p_kb = subparsers.add_parser("kb", help="Query and manage local knowledge base")
+    kb_subparsers = p_kb.add_subparsers(dest="kb_action")
+
+    kb_stats = kb_subparsers.add_parser("stats", help="Show knowledge base counts")
+    kb_stats.set_defaults(kb_action="stats")
+
+    kb_search = kb_subparsers.add_parser("search", help="Search similar papers in knowledge base")
+    kb_search.add_argument("query", help="Search query string")
+    kb_search.add_argument("--limit", type=int, default=5, help="Maximum number of results")
+    kb_search.add_argument("--domain", help="Optional domain filter (e.g., nlp, cv, rl)")
+    kb_search.set_defaults(kb_action="search")
+
+    kb_clear = kb_subparsers.add_parser("clear", help="Clear all local knowledge base entries")
+    kb_clear.set_defaults(kb_action="clear")
 
     # suggest
     p_suggest = subparsers.add_parser("suggest", help="Get improvement suggestions")
@@ -3231,6 +3418,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     commands = {
         "analyze": cmd_analyze,
         "search": cmd_search,
+        "kb": cmd_kb,
         "ingest": cmd_ingest,
         "understand": cmd_understand,
         "plan": cmd_plan,
