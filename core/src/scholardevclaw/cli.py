@@ -11,6 +11,7 @@ Commands:
   ingest      - Ingest a paper (PDF/DOI/arXiv/URL) into structured JSON
   understand  - Extract structured paper understanding via LLM
   plan        - Plan implementation from understanding JSON
+  generate    - Generate implementation code from plan + understanding
   suggest     - Get AI-powered improvement suggestions
   integrate   - Full integration workflow
   tui         - Interactive terminal UI workflow
@@ -23,6 +24,7 @@ Examples:
   scholardevclaw ingest arxiv:1706.03762 --output-dir ./artifacts
   scholardevclaw understand ./paper_document.json --output-dir ./artifacts
   scholardevclaw plan ./understanding.json --output-dir ./plan_output
+  scholardevclaw generate ./implementation_plan.json ./understanding.json --output-dir ./generated
   scholardevclaw suggest ./my-project
   scholardevclaw integrate ./my-project rmsnorm
 
@@ -413,7 +415,9 @@ def cmd_plan(args):
                 for token in ["convolution", "resnet", "yolo", "segmentation", "vision"]
             ):
                 domain = "cv"
-            elif any(token in domain_text for token in ["reward", "policy", "q-learning", "environment"]):
+            elif any(
+                token in domain_text for token in ["reward", "policy", "q-learning", "environment"]
+            ):
                 domain = "rl"
             elif any(token in domain_text for token in ["kernel", "mutex", "scheduler", "memory"]):
                 domain = "systems"
@@ -452,7 +456,9 @@ def cmd_plan(args):
 
     output_path.write_text(json.dumps(plan.to_dict(), indent=2), encoding="utf-8")
 
-    stack_name = plan.tech_stack or ("numpy-only" if args.stack == "numpy" else args.stack) or "unknown"
+    stack_name = (
+        plan.tech_stack or ("numpy-only" if args.stack == "numpy" else args.stack) or "unknown"
+    )
     print(f"Saved: {output_path}")
     print(
         f"Project: {plan.project_name or 'unknown'} | "
@@ -527,21 +533,19 @@ def cmd_map(args):
         print(json.dumps(mapping_result, indent=2))
 
 
-def cmd_generate(args):
-    """Generate patch artifacts for a research specification"""
-    if getattr(args, "use_specs", False):
-        print("Using legacy specs-based workflow for generate.")
+def _cmd_generate_legacy_specs(args) -> None:
+    path = Path(args.arg1)
+    spec_name = str(args.arg2)
 
-    path = Path(args.repo_path)
     if not path.exists():
-        print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
+        print(f"Error: Repository not found: {args.arg1}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Generating patch for spec '{args.spec}' in: {path}")
+    print(f"Generating patch for spec '{spec_name}' in: {path}")
     print("-" * 50)
 
     try:
-        mapping_result, _ = _build_mapping_result(path, args.spec)
+        mapping_result, _ = _build_mapping_result(path, spec_name)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -589,6 +593,101 @@ def cmd_generate(args):
             "output_dir": str(output_dir),
         }
         print(json.dumps(output, indent=2))
+
+
+def cmd_generate(args):
+    """Generate implementation artifacts from plan+understanding, or legacy spec patches."""
+    if getattr(args, "use_specs", False):
+        print("Using legacy specs-based workflow for generate.")
+        _cmd_generate_legacy_specs(args)
+        return
+
+    plan_path = Path(args.arg1).expanduser().resolve()
+    understanding_path = Path(args.arg2).expanduser().resolve()
+
+    if not plan_path.exists() or not plan_path.is_file():
+        print(f"Error: implementation plan JSON not found: {plan_path}", file=sys.stderr)
+        sys.exit(1)
+    if not understanding_path.exists() or not understanding_path.is_file():
+        print(f"Error: understanding JSON not found: {understanding_path}", file=sys.stderr)
+        sys.exit(1)
+    if args.max_parallel < 1:
+        print("Error: --max-parallel must be >= 1", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"Error: invalid JSON in '{plan_path}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        understanding_payload = json.loads(understanding_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"Error: invalid JSON in '{understanding_path}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not isinstance(plan_payload, dict):
+        print(f"Error: expected top-level JSON object in '{plan_path}'", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(understanding_payload, dict):
+        print(f"Error: expected top-level JSON object in '{understanding_path}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        from scholardevclaw.generation import CodeOrchestrator
+        from scholardevclaw.planning.models import ImplementationPlan
+        from scholardevclaw.understanding.models import PaperUnderstanding
+
+        plan = ImplementationPlan.from_dict(plan_payload)
+        understanding = PaperUnderstanding.from_dict(understanding_payload)
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY is required for generate command", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir = (
+        Path(args.output_dir).expanduser().resolve()
+        if args.output_dir
+        else (plan_path.parent / (plan.project_name or "generated_project")).resolve()
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_path = output_dir / "generation_report.json"
+
+    print(f"Generating implementation from: {plan_path}")
+    print(f"Understanding source: {understanding_path}")
+    print(f"Output directory: {output_dir}")
+    print("-" * 50)
+
+    try:
+        orchestrator = CodeOrchestrator(api_key=api_key, model=args.model)
+        result = orchestrator.generate_sync(
+            plan=plan,
+            understanding=understanding,
+            output_dir=output_dir,
+            max_parallel=args.max_parallel,
+        )
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
+        print(f"Error: failed to generate implementation: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    report_payload = result.to_dict()
+    report_path.write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+
+    print(f"Saved: {report_path}")
+    print(
+        "Success rate: "
+        f"{result.success_rate:.0%} | "
+        f"Modules: {len(result.module_results)} | "
+        f"Duration: {result.duration_seconds:.2f}s"
+    )
+
+    if args.output_json:
+        print(json.dumps(report_payload, indent=2))
 
 
 def cmd_validate(args):
@@ -2344,6 +2443,9 @@ Examples:
   # Plan implementation from understanding artifact
   scholardevclaw plan ./understanding.json --stack pytorch --output-dir ./artifacts
 
+  # Generate project code from implementation plan + understanding
+  scholardevclaw generate ./implementation_plan.json ./understanding.json --output-dir ./generated
+
   # Get AI-powered improvement suggestions
   scholardevclaw suggest ./my-project
 
@@ -2472,15 +2574,35 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     )
 
     # generate
-    p_generate = subparsers.add_parser("generate", help="Generate patch artifacts")
-    p_generate.add_argument("repo_path", help="Path to repository")
-    p_generate.add_argument("spec", help="Paper specification name (e.g., rmsnorm)")
-    p_generate.add_argument("--output-dir", help="Output directory for generated files")
+    p_generate = subparsers.add_parser(
+        "generate",
+        help="Generate implementation code from implementation_plan.json and understanding.json",
+    )
+    p_generate.add_argument(
+        "arg1",
+        help=("Path to implementation_plan.json (or repo path when using --use-specs legacy mode)"),
+    )
+    p_generate.add_argument(
+        "arg2",
+        help=("Path to understanding.json (or spec name when using --use-specs legacy mode)"),
+    )
+    p_generate.add_argument("--output-dir", help="Output directory for generated project/report")
+    p_generate.add_argument(
+        "--max-parallel",
+        type=int,
+        default=4,
+        help="Maximum number of modules to generate in parallel",
+    )
+    p_generate.add_argument(
+        "--model",
+        default="claude-sonnet-4-5",
+        help="LLM model name for code generation",
+    )
     p_generate.add_argument("--output-json", action="store_true", help="Output JSON")
     p_generate.add_argument(
         "--use-specs",
         action="store_true",
-        help="Use legacy specs-based workflow",
+        help="Use legacy specs-based workflow (arg1=repo_path arg2=spec)",
     )
 
     # validate

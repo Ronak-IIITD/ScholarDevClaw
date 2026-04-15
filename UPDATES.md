@@ -2,7 +2,74 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-14
+**Last updated:** 2026-04-15
+
+### 2026-04-15 (UPGRADE v3 Phase-4: multi-agent code generator)
+
+**Summary:** Implemented Phase 4 from `UPGRADE.md`: a new `generation` package with async parallel module generation, self-healing validation loops, project file writing, dynamic `generate` CLI workflow, and deterministic test coverage for orchestration and CLI behavior.
+
+**What changed:**
+
+- `core/src/scholardevclaw/generation/__init__.py` (new)
+  - Re-exports `CodeOrchestrator` and `GenerationResult`.
+
+- `core/src/scholardevclaw/generation/models.py` (new)
+  - Added dataclasses:
+    - `ModuleResult`
+    - `GenerationResult`
+  - Added `to_dict()` serialization for report output (`generation_report.json`).
+
+- `core/src/scholardevclaw/generation/module_agent.py` (new)
+  - Added `ModuleAgent` async module generator with retry loop.
+  - Added module-generation self-healing validations:
+    - syntax (`ast.parse`),
+    - local `src.*` import consistency against known plan modules,
+    - public top-level function type-hint sanity (missing arg/return annotations).
+  - Added bounded retry loop for test generation syntax errors.
+  - Added token accounting for module + test generation calls.
+
+- `core/src/scholardevclaw/generation/orchestrator.py` (new)
+  - Added `CodeOrchestrator` with async priority-group execution and `max_parallel` semaphore control.
+  - Added synchronous wrapper `generate_sync(...)` for CLI.
+  - Added safe output writing for module + test files with path confinement checks.
+  - Added plan integrity validation before generation:
+    - non-empty/unique module ids,
+    - non-empty module/test file paths,
+    - dependency ids must reference known modules.
+  - Added `max_parallel >= 1` guard and filesystem-write error capture into per-module `final_errors`.
+
+- `core/src/scholardevclaw/cli.py`
+  - Updated `generate` command to dynamic workflow:
+    - `scholardevclaw generate <implementation_plan.json> <understanding.json> [--output-dir DIR] [--max-parallel N] [--model MODEL]`
+  - Added dynamic generate execution path:
+    - loads and validates both JSON artifacts,
+    - constructs `ImplementationPlan` + `PaperUnderstanding`,
+    - invokes `CodeOrchestrator.generate_sync(...)`,
+    - writes `generation_report.json`.
+  - Kept backward compatibility via `--use-specs` flag:
+    - legacy mode interprets `arg1=repo_path`, `arg2=spec`, and runs old patch-generation flow.
+  - Hardened error handling for generation path (`ImportError`, `OSError`, `RuntimeError`, `ValueError`).
+  - Updated CLI top docstring and argparse epilog examples for new generate usage.
+
+- Tests:
+  - `core/tests/generation/test_orchestrator.py` (new)
+    - deterministic fake async Anthropic client stubs (no network),
+    - verifies module + test file writing,
+    - verifies syntax validity of all generated files,
+    - verifies report fields (`success_rate`, `duration_seconds`, per-module attempts),
+    - verifies `--max-parallel 4` is measurably faster than serial on a 6-module plan.
+  - `core/tests/unit/test_cli.py`
+    - added dynamic parser coverage for `generate <plan> <understanding> --max-parallel --model --output-dir`,
+    - added `cmd_generate` dynamic-path unit test with fake orchestrator and report-write assertion,
+    - retained legacy `--use-specs` parser compatibility coverage.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/generation src/scholardevclaw/cli.py tests/generation/test_orchestrator.py tests/unit/test_cli.py`
+- ✅ `cd core && python -m mypy src/scholardevclaw/generation src/scholardevclaw/cli.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+- ✅ `cd core && pytest tests/generation/test_orchestrator.py -q` (`2 passed`)
+- ✅ `cd core && pytest tests/unit/test_cli.py -q` (`46 passed`)
+- ⚠️ LSP diagnostics: pyright diagnostics requests timed out in this environment.
 
 ### 2026-04-14 (UPGRADE v3 Phase-1: PDF ingestion pipeline)
 

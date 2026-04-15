@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -414,6 +415,140 @@ def test_legacy_commands_accept_use_specs_flag(monkeypatch):
         "map": True,
         "generate": True,
         "integrate": True,
+    }
+
+
+def test_generate_parser_dynamic_mode_arguments(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["arg1"] = args.arg1
+        called["arg2"] = args.arg2
+        called["max_parallel"] = args.max_parallel
+        called["model"] = args.model
+        called["output_dir"] = args.output_dir
+
+    monkeypatch.setattr(cli, "cmd_generate", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "generate",
+            "/tmp/implementation_plan.json",
+            "/tmp/understanding.json",
+            "--max-parallel",
+            "3",
+            "--model",
+            "claude-opus-4-5",
+            "--output-dir",
+            "/tmp/generated",
+        ],
+    )
+
+    cli.main()
+
+    assert called == {
+        "arg1": "/tmp/implementation_plan.json",
+        "arg2": "/tmp/understanding.json",
+        "max_parallel": 3,
+        "model": "claude-opus-4-5",
+        "output_dir": "/tmp/generated",
+    }
+
+
+def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_path):
+    import scholardevclaw.generation as generation
+
+    class FakeResult:
+        success_rate = 1.0
+        module_results = [SimpleNamespace(module_id="module_0")]
+        duration_seconds = 0.12
+
+        @staticmethod
+        def to_dict() -> dict[str, object]:
+            return {
+                "success_rate": 1.0,
+                "duration_seconds": 0.12,
+                "module_results": [
+                    {
+                        "module_id": "module_0",
+                        "generation_attempts": 1,
+                    }
+                ],
+                "total_tokens_used": 20,
+            }
+
+    observed: dict[str, object] = {}
+
+    class FakeOrchestrator:
+        def __init__(self, api_key: str, model: str) -> None:
+            observed["api_key"] = api_key
+            observed["model"] = model
+
+        def generate_sync(self, *, plan, understanding, output_dir: Path, max_parallel: int):
+            observed["plan_project_name"] = plan.project_name
+            observed["understanding_title"] = understanding.paper_title
+            observed["output_dir"] = str(output_dir)
+            observed["max_parallel"] = max_parallel
+            return FakeResult()
+
+    monkeypatch.setattr(generation, "CodeOrchestrator", FakeOrchestrator)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-test-key")
+
+    plan_path = tmp_path / "implementation_plan.json"
+    understanding_path = tmp_path / "understanding.json"
+    output_dir = tmp_path / "generated"
+
+    plan_path.write_text(
+        json.dumps(
+            {
+                "project_name": "demo-project",
+                "target_language": "python",
+                "tech_stack": "python",
+                "modules": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    understanding_path.write_text(
+        json.dumps(
+            {
+                "paper_title": "Demo Paper",
+                "core_algorithm_description": "Demo algorithm",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = SimpleNamespace(
+        arg1=str(plan_path),
+        arg2=str(understanding_path),
+        output_dir=str(output_dir),
+        max_parallel=2,
+        model="claude-sonnet-4-5",
+        output_json=False,
+        use_specs=False,
+    )
+
+    cli.cmd_generate(args)
+
+    report_path = output_dir / "generation_report.json"
+    assert report_path.exists()
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert set(report_payload) >= {
+        "success_rate",
+        "duration_seconds",
+        "module_results",
+        "total_tokens_used",
+    }
+    assert observed == {
+        "api_key": "fake-test-key",
+        "model": "claude-sonnet-4-5",
+        "plan_project_name": "demo-project",
+        "understanding_title": "Demo Paper",
+        "output_dir": str(output_dir.resolve()),
+        "max_parallel": 2,
     }
 
 
