@@ -4,6 +4,20 @@
 
 **Last updated:** 2026-04-15
 
+### 2026-04-15 (Frontend: Apply new design prototype)
+
+**Summary:** Applied a new design prototype to the frontend landing page.
+
+**What changed:**
+
+- `landing/index.html`
+  - Replaced the previous landing page HTML with a newly provided design prototype featuring a split-pane pipeline visual, bento-box feature grid, installation tabs, and an updated aesthetic using DM Serif Display and DM Mono fonts.
+
+**Verification:**
+
+- ✅ Wrote updated HTML to `landing/index.html`.
+- ✅ Displaying the new prototype styling and structure correctly.
+
 ### 2026-04-15 (UPGRADE v3 Phase-4: multi-agent code generator)
 
 **Summary:** Implemented Phase 4 from `UPGRADE.md`: a new `generation` package with async parallel module generation, self-healing validation loops, project file writing, dynamic `generate` CLI workflow, and deterministic test coverage for orchestration and CLI behavior.
