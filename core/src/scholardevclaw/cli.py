@@ -15,6 +15,7 @@ Commands:
   generate    - Generate implementation code from plan + understanding
   execute     - Run generated project tests in sandbox + score reproducibility
   scaffold    - Generate product shipping scaffold artifacts
+  from-paper  - Run end-to-end paper-to-product workflow
   suggest     - Get AI-powered improvement suggestions
   integrate   - Full integration workflow
   tui         - Interactive terminal UI workflow
@@ -32,6 +33,7 @@ Examples:
   scholardevclaw generate ./implementation_plan.json ./understanding.json --output-dir ./generated
   scholardevclaw execute ./generated --heal --timeout 300
   scholardevclaw scaffold ./generated ./implementation_plan.json ./understanding.json ./reproducibility_report.json
+  scholardevclaw from-paper arxiv:2003.00744 --output-dir ./test_outputs --heal --scaffold
   scholardevclaw suggest ./my-project
   scholardevclaw integrate ./my-project rmsnorm
 
@@ -41,6 +43,7 @@ Version: 2.0
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -1191,6 +1194,294 @@ def cmd_scaffold(args):
         except ValueError:
             shown = path
         print(f"  - {shown}")
+
+
+def cmd_from_paper(args):
+    """Run full paper-to-product pipeline: ingest -> understand -> plan -> generate -> execute -> scaffold."""
+    source = str(getattr(args, "source", "") or "").strip()
+    if not source:
+        print("Error: paper source must not be empty", file=sys.stderr)
+        sys.exit(1)
+
+    if int(getattr(args, "max_parallel", 4) or 4) < 1:
+        print("Error: --max-parallel must be >= 1", file=sys.stderr)
+        sys.exit(1)
+
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY is required for from-paper command", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir_arg = str(getattr(args, "output_dir", "") or "").strip()
+    output_root = Path(output_dir_arg).expanduser().resolve() if output_dir_arg else None
+
+    initial_work_dir = (
+        (output_root / "work")
+        if output_root is not None
+        else (Path.cwd().resolve() / ".scholardevclaw_from_paper_work")
+    )
+    initial_work_dir.mkdir(parents=True, exist_ok=True)
+
+    knowledge_base = None
+    if not bool(getattr(args, "no_kb", False)):
+        knowledge_base = _initialize_knowledge_base(strict=False)
+
+    print(f"Running from-paper pipeline for source: {source}")
+    print("-" * 50)
+
+    try:
+        from scholardevclaw.ingestion.paper_fetcher import (
+            PaperFetcher,
+            PaperFetchError,
+            PaperSourceResolutionError,
+        )
+        from scholardevclaw.understanding.agent import UnderstandingAgent
+        from scholardevclaw.understanding.graph import (
+            build_concept_graph,
+            export_graph_json,
+        )
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print("[1/6] Ingesting paper...")
+    try:
+        fetcher = PaperFetcher()
+        document = fetcher.fetch_auto(source, initial_work_dir / "paper")
+    except PaperSourceResolutionError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except PaperFetchError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"Error: failed to ingest source '{source}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print("[2/6] Understanding paper...")
+    try:
+        understanding_agent = UnderstandingAgent(api_key=api_key, model=args.model)
+        understanding = understanding_agent.understand(document)
+        concept_graph = build_concept_graph(understanding)
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (RuntimeError, ValueError) as exc:
+        print(f"Error: failed to understand paper: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print("[3/6] Planning implementation...")
+    try:
+        from scholardevclaw.planning import ImplementationPlanner
+
+        planner = ImplementationPlanner(api_key=api_key, model=args.model)
+        plan = planner.plan(understanding, document)
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (RuntimeError, ValueError) as exc:
+        print(f"Error: failed to plan implementation: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    project_name = plan.project_name.strip() or "generated_project"
+    project_dir = (
+        (output_root / project_name)
+        if output_root is not None
+        else (Path.cwd().resolve() / project_name)
+    )
+    work_dir = (output_root / "work") if output_root is not None else (project_dir / "work")
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    if work_dir != initial_work_dir:
+        source_paper_dir = initial_work_dir / "paper"
+        target_paper_dir = work_dir / "paper"
+        if source_paper_dir.exists() and source_paper_dir.is_dir():
+            try:
+                shutil.copytree(source_paper_dir, target_paper_dir, dirs_exist_ok=True)
+                if document.pdf_path is not None:
+                    try:
+                        relative_pdf = document.pdf_path.resolve().relative_to(
+                            source_paper_dir.resolve()
+                        )
+                    except ValueError:
+                        relative_pdf = None
+                    if relative_pdf is not None:
+                        document.pdf_path = target_paper_dir / relative_pdf
+            except OSError as exc:
+                print(
+                    f"Warning: failed to copy paper artifacts into work directory: {exc}",
+                    file=sys.stderr,
+                )
+
+    paper_document_path = work_dir / "paper_document.json"
+    understanding_path = work_dir / "understanding.json"
+    concept_graph_path = work_dir / "concept_graph.json"
+    plan_path = work_dir / "implementation_plan.json"
+
+    try:
+        paper_document_path.write_text(json.dumps(document.to_dict(), indent=2), encoding="utf-8")
+        understanding_path.write_text(
+            json.dumps(understanding.to_dict(), indent=2), encoding="utf-8"
+        )
+        concept_graph_path.write_text(
+            json.dumps(export_graph_json(concept_graph), indent=2),
+            encoding="utf-8",
+        )
+        plan_path.write_text(json.dumps(plan.to_dict(), indent=2), encoding="utf-8")
+    except OSError as exc:
+        print(f"Error: failed to write pipeline artifacts: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if bool(getattr(args, "dry_run", False)):
+        print(f"\nDry run complete. Plan saved to {plan_path}")
+        print(f"Project name: {project_name}")
+        print(f"Modules: {len(plan.modules)}")
+        print(f"Stack: {plan.tech_stack or 'unknown'}")
+        print(f"Work artifacts: {work_dir}")
+        return
+
+    try:
+        from scholardevclaw.execution import ReproducibilityScorer, SandboxRunner, SelfHealingLoop
+        from scholardevclaw.generation import CodeOrchestrator
+        from scholardevclaw.product import ProductScaffolder
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"[4/6] Generating {len(plan.modules)} modules...")
+    try:
+        orchestrator = CodeOrchestrator(
+            api_key=api_key,
+            model=args.model,
+            knowledge_base=knowledge_base,
+        )
+        generation_result = orchestrator.generate_sync(
+            plan=plan,
+            understanding=understanding,
+            output_dir=project_dir,
+            max_parallel=args.max_parallel,
+        )
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
+        print(f"Error: failed to generate implementation: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"    Success rate: {generation_result.success_rate:.0%}")
+
+    generation_report_path = project_dir / "generation_report.json"
+    execution_report_path = work_dir / "execution_report.json"
+    reproducibility_report_path = work_dir / "reproducibility_report.json"
+
+    runner = SandboxRunner()
+    initial_execution_report = runner.run_tests(project_dir)
+    final_execution_report = initial_execution_report
+    healing_payload: dict[str, Any] | None = None
+
+    if bool(getattr(args, "heal", False)):
+        print("[5/6] Running tests + self-healing...")
+        healer = SelfHealingLoop(orchestrator, runner)
+        generation_result = healer.heal(generation_result, plan, understanding)
+        final_execution_report = runner.run_tests(project_dir)
+        healing_payload = {
+            "round_count": len(healer.round_reports),
+            "round_reports": healer.round_reports,
+            "initial_failed_tests": initial_execution_report.tests_failed,
+            "final_failed_tests": final_execution_report.tests_failed,
+            "initial_error_tests": initial_execution_report.tests_errors,
+            "final_error_tests": final_execution_report.tests_errors,
+        }
+    else:
+        print("[5/6] Running tests...")
+
+    reproducibility_scorer = ReproducibilityScorer(api_key=api_key)
+    reproducibility_report = reproducibility_scorer.score(understanding, final_execution_report)
+    print(
+        f"    Reproducibility: {reproducibility_report.score:.0%} ({reproducibility_report.verdict})"
+    )
+
+    generation_payload = generation_result.to_dict()
+    if healing_payload is not None:
+        generation_payload["healing"] = healing_payload
+
+    try:
+        generation_report_path.write_text(
+            json.dumps(generation_payload, indent=2), encoding="utf-8"
+        )
+        execution_report_path.write_text(
+            json.dumps(final_execution_report.to_dict(), indent=2),
+            encoding="utf-8",
+        )
+        reproducibility_report_path.write_text(
+            json.dumps(reproducibility_report.to_dict(), indent=2),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(f"Error: failed to write execution artifacts: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if bool(getattr(args, "scaffold", False)):
+        print("[6/6] Generating product scaffold...")
+        try:
+            ProductScaffolder().scaffold(
+                project_dir=project_dir,
+                plan=plan,
+                understanding=understanding,
+                reproducibility_report=reproducibility_report,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Error: scaffold generation failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print("[6/6] Scaffold skipped (use --scaffold to enable)")
+
+    if knowledge_base is not None:
+        try:
+            knowledge_base.store_paper(document, understanding)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Warning: failed to store paper in knowledge base: {exc}", file=sys.stderr)
+
+        stored_count = 0
+        modules_by_id = {module.id: module for module in plan.modules}
+        for module_result in generation_result.module_results:
+            result_errors = getattr(module_result, "final_errors", [])
+            if isinstance(result_errors, list) and result_errors:
+                continue
+
+            module_id = str(getattr(module_result, "module_id", ""))
+            module = modules_by_id.get(module_id)
+            if module is None:
+                continue
+
+            code_text = str(getattr(module_result, "code", ""))
+            try:
+                knowledge_base.store_implementation(module, code_text, understanding)
+                stored_count += 1
+            except (OSError, RuntimeError, ValueError) as exc:
+                print(
+                    "Warning: failed to store generated implementation "
+                    f"'{module_id}' in knowledge base: {exc}",
+                    file=sys.stderr,
+                )
+
+        if stored_count:
+            print(f"Knowledge base: stored {stored_count} generated implementations")
+
+    print(f"\nDone. Project at: {project_dir}")
+    print(f"Work artifacts: {work_dir}")
+    print(f"Modules: {len(plan.modules)}")
+    print(f"Tests passed: {final_execution_report.tests_passed}")
+    print(f"Reproducibility: {reproducibility_report.score:.0%}")
+    if bool(getattr(args, "scaffold", False)):
+        print(f"API: {project_dir / 'api' / 'main.py'}")
+        print(f"Demo: {project_dir / 'demo.py'}")
+        print(f"Docs: {project_dir / 'README.md'}")
+
+    if not bool(getattr(final_execution_report, "success", False)):
+        sys.exit(1)
 
 
 def cmd_validate(args):
@@ -2959,6 +3250,9 @@ Examples:
   # Scaffold API, demo, Dockerfile, and README from generated artifacts
   scholardevclaw scaffold ./generated ./implementation_plan.json ./understanding.json ./reproducibility_report.json --output-dir ./release
 
+  # Run the full paper-to-product pipeline in one command
+  scholardevclaw from-paper arxiv:2005.14165 --output-dir ./outputs --heal --scaffold
+
   # Get AI-powered improvement suggestions
   scholardevclaw suggest ./my-project
 
@@ -3180,6 +3474,51 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_scaffold.add_argument(
         "--output-dir",
         help="Output directory for scaffold artifacts (defaults to project_dir)",
+    )
+
+    # from-paper
+    p_from_paper = subparsers.add_parser(
+        "from-paper",
+        help="Run end-to-end paper-to-product workflow",
+    )
+    p_from_paper.add_argument(
+        "source",
+        help="Paper source: local PDF path, DOI, arXiv ID (or arxiv:<id>), or URL",
+    )
+    p_from_paper.add_argument(
+        "--output-dir",
+        help="Output root directory (writes <output-dir>/<project_name> and <output-dir>/work)",
+    )
+    p_from_paper.add_argument(
+        "--heal",
+        action="store_true",
+        help="Enable self-healing regeneration loop after initial test execution",
+    )
+    p_from_paper.add_argument(
+        "--scaffold",
+        action="store_true",
+        help="Generate product scaffold artifacts (API/demo/README/Docker/CI)",
+    )
+    p_from_paper.add_argument(
+        "--max-parallel",
+        type=int,
+        default=4,
+        help="Maximum number of modules to generate in parallel",
+    )
+    p_from_paper.add_argument(
+        "--model",
+        default="claude-opus-4-5",
+        help="LLM model used for understanding, planning, and generation",
+    )
+    p_from_paper.add_argument(
+        "--no-kb",
+        action="store_true",
+        help="Disable knowledge-base retrieval/storage during pipeline execution",
+    )
+    p_from_paper.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run ingest/understand/plan only and stop before generation",
     )
 
     # validate
@@ -3427,6 +3766,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "generate": cmd_generate,
         "execute": cmd_execute,
         "scaffold": cmd_scaffold,
+        "from-paper": cmd_from_paper,
         "validate": cmd_validate,
         "integrate": cmd_integrate,
         "tui": cmd_tui,

@@ -4,6 +4,65 @@
 
 **Last updated:** 2026-04-16
 
+### 2026-04-16 (UPGRADE v3 Phase-8: unified `from-paper` command)
+
+**Summary:** Implemented Phase 8 unified `from-paper` CLI workflow that orchestrates the full paper-to-product pipeline in one command with dry-run, healing, scaffolding, model/max-parallel controls, and optional knowledge-base integration.
+
+**What changed:**
+
+- `core/src/scholardevclaw/cli.py`
+  - Added new command docs/examples for `from-paper` in module header and argparse epilog.
+  - Added `cmd_from_paper(args)` orchestrating end-to-end flow:
+    1. ingest (`PaperFetcher.fetch_auto`)
+    2. understand (`UnderstandingAgent` + concept graph export)
+    3. plan (`ImplementationPlanner`)
+    4. generate (`CodeOrchestrator`)
+    5. execute (+ optional `SelfHealingLoop`) and reproducibility scoring
+    6. optional scaffold (`ProductScaffolder`)
+  - Added parser + dispatch wiring for:
+    - `scholardevclaw from-paper <source> [--output-dir DIR] [--heal] [--scaffold] [--max-parallel N] [--model MODEL] [--no-kb] [--dry-run]`
+  - Implemented artifact writing for unified flow:
+    - work artifacts:
+      - `<output-dir>/work/paper_document.json`
+      - `<output-dir>/work/understanding.json`
+      - `<output-dir>/work/concept_graph.json`
+      - `<output-dir>/work/implementation_plan.json`
+      - `<output-dir>/work/execution_report.json`
+      - `<output-dir>/work/reproducibility_report.json`
+    - project artifacts:
+      - `<output-dir>/<project_name>/generation_report.json`
+      - generated module/test files
+      - scaffold outputs when `--scaffold` is set
+  - Added dry-run behavior: command exits after planning and writes only phase 1-3 artifacts.
+  - Added optional KB behavior:
+    - skip init entirely when `--no-kb` is passed,
+    - otherwise best-effort initialize and use for generation context + post-run storage.
+  - Added healing metadata writeback under `generation_report.json["healing"]` when `--heal` is enabled.
+  - Added non-zero exit when final execution reports failure (CI-compatible semantics).
+
+- `core/tests/unit/test_cli.py`
+  - Added dispatch coverage for new `from-paper` command in the command matrix.
+  - Added parser coverage test for all `from-paper` flags.
+  - Added `cmd_from_paper` dry-run behavior test validating:
+    - phase 1-3 artifacts are written under `work/`,
+    - generation artifacts are not created,
+    - KB is not initialized when `--no-kb` is set.
+  - Added full-flow mocked `cmd_from_paper` test validating:
+    - generation/execution/reproducibility artifacts are written,
+    - healing metadata is present,
+    - scaffold artifacts are created,
+    - KB paper + implementation storage calls are executed.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/cli.py tests/unit/test_cli.py`
+  - `All checks passed!`
+- ✅ `cd core && python -m mypy src/scholardevclaw/cli.py tests/unit/test_cli.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+  - `Success: no issues found in 2 source files`
+- ✅ `cd core && pytest tests/unit/test_cli.py -q`
+  - `65 passed`
+- ⚠️ LSP diagnostics (`lsp_diagnostics`) timed out in this environment.
+
 ### 2026-04-16 (UPGRADE v3 Phase-7: knowledge base + generation/CLI wiring)
 
 **Summary:** Implemented Phase 7 Knowledge Base with optional dependency-safe loading, generation context enrichment, CLI `kb` command surface (`stats/search/clear`), and integration points in `understand`, `generate`, and `execute --heal` flows.

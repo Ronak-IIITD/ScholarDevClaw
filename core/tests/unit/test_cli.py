@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import builtins
 import json
+import sys
+import types
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -39,6 +41,11 @@ import scholardevclaw.cli as cli
                 "/tmp/reproducibility_report.json",
             ],
             "cmd_scaffold",
+        ),
+        (
+            "from-paper",
+            ["scholardevclaw", "from-paper", "arxiv:1706.03762"],
+            "cmd_from_paper",
         ),
         ("validate", ["scholardevclaw", "validate", "/tmp/repo"], "cmd_validate"),
         ("specs", ["scholardevclaw", "specs"], "cmd_specs"),
@@ -678,6 +685,475 @@ def test_scaffold_parser_with_output_dir(monkeypatch):
         "understanding_json": "/tmp/understanding.json",
         "reproducibility_report_json": "/tmp/reproducibility_report.json",
         "output_dir": "/tmp/scaffold-out",
+    }
+
+
+def test_from_paper_parser_with_all_flags(monkeypatch):
+    called = {}
+
+    def fake_cmd(args):
+        called["source"] = args.source
+        called["output_dir"] = args.output_dir
+        called["heal"] = args.heal
+        called["scaffold"] = args.scaffold
+        called["max_parallel"] = args.max_parallel
+        called["model"] = args.model
+        called["no_kb"] = args.no_kb
+        called["dry_run"] = args.dry_run
+
+    monkeypatch.setattr(cli, "cmd_from_paper", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "from-paper",
+            "arxiv:2005.14165",
+            "--output-dir",
+            "/tmp/from-paper",
+            "--heal",
+            "--scaffold",
+            "--max-parallel",
+            "8",
+            "--model",
+            "claude-opus-4-5",
+            "--no-kb",
+            "--dry-run",
+        ],
+    )
+
+    cli.main()
+
+    assert called == {
+        "source": "arxiv:2005.14165",
+        "output_dir": "/tmp/from-paper",
+        "heal": True,
+        "scaffold": True,
+        "max_parallel": 8,
+        "model": "claude-opus-4-5",
+        "no_kb": True,
+        "dry_run": True,
+    }
+
+
+def test_cmd_from_paper_dry_run_writes_phase_artifacts(monkeypatch, tmp_path):
+    import scholardevclaw.ingestion.paper_fetcher as paper_fetcher
+    import scholardevclaw.planning as planning
+    import scholardevclaw.understanding.agent as understanding_agent
+    from scholardevclaw.ingestion.models import PaperDocument
+    from scholardevclaw.planning.models import CodeModule, ImplementationPlan
+    from scholardevclaw.understanding.models import PaperUnderstanding
+
+    fake_graph_module = types.ModuleType("scholardevclaw.understanding.graph")
+    fake_graph_module.build_concept_graph = lambda _u: object()  # type: ignore[attr-defined]
+    fake_graph_module.export_graph_json = lambda _g: {"nodes": [], "links": []}  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "scholardevclaw.understanding.graph", fake_graph_module)
+
+    class FakeFetcher:
+        def fetch_auto(self, source: str, dest_dir: Path):
+            del source
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path = dest_dir / "paper.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4\n")
+            return PaperDocument(
+                title="Dry Run Paper",
+                authors=["Author"],
+                arxiv_id="2003.00744",
+                doi=None,
+                year=2020,
+                abstract="Abstract",
+                sections=[],
+                equations=[],
+                algorithms=[],
+                figures=[],
+                full_text="text",
+                pdf_path=pdf_path,
+                references=[],
+                keywords=[],
+                domain="cv",
+            )
+
+    class FakeUnderstandingAgent:
+        def __init__(self, api_key: str, model: str) -> None:
+            del api_key, model
+
+        def understand(self, document: PaperDocument) -> PaperUnderstanding:
+            del document
+            return PaperUnderstanding(
+                paper_title="Dry Run Paper",
+                one_line_summary="summary",
+                problem_statement="problem",
+                key_insight="insight",
+                core_algorithm_description="algorithm",
+                input_output_spec="input->output",
+                evaluation_protocol="accuracy",
+                complexity="medium",
+                estimated_impl_hours=6,
+                confidence=0.8,
+            )
+
+    class FakePlanner:
+        def __init__(self, api_key: str, model: str) -> None:
+            del api_key, model
+
+        def plan(
+            self, understanding: PaperUnderstanding, document: PaperDocument
+        ) -> ImplementationPlan:
+            del understanding, document
+            return ImplementationPlan(
+                project_name="dry_run_project",
+                target_language="python",
+                tech_stack="pytorch",
+                modules=[
+                    CodeModule(
+                        id="module_a",
+                        name="Module A",
+                        description="demo",
+                        file_path="src/module_a.py",
+                        depends_on=[],
+                        priority=1,
+                        estimated_lines=20,
+                        test_file_path="tests/test_module_a.py",
+                        tech_stack="pytorch",
+                    )
+                ],
+                directory_structure={"src": {}, "tests": {}},
+                environment={"numpy": ">=1.26.0"},
+                entry_points=["module_a"],
+                estimated_total_lines=20,
+            )
+
+    monkeypatch.setattr(paper_fetcher, "PaperFetcher", FakeFetcher)
+    monkeypatch.setattr(understanding_agent, "UnderstandingAgent", FakeUnderstandingAgent)
+    monkeypatch.setattr(planning, "ImplementationPlanner", FakePlanner)
+
+    kb_init_calls = {"count": 0}
+
+    def fake_init_kb(*, strict: bool):
+        del strict
+        kb_init_calls["count"] += 1
+        return object()
+
+    monkeypatch.setattr(cli, "_initialize_knowledge_base", fake_init_kb)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-test-key")
+
+    output_root = tmp_path / "from-paper-dry-run"
+    args = SimpleNamespace(
+        source="arxiv:2003.00744",
+        output_dir=str(output_root),
+        heal=True,
+        scaffold=True,
+        max_parallel=4,
+        model="claude-opus-4-5",
+        no_kb=True,
+        dry_run=True,
+    )
+
+    cli.cmd_from_paper(args)
+
+    work_dir = output_root / "work"
+    assert (work_dir / "paper_document.json").exists()
+    assert (work_dir / "understanding.json").exists()
+    assert (work_dir / "concept_graph.json").exists()
+    assert (work_dir / "implementation_plan.json").exists()
+
+    project_dir = output_root / "dry_run_project"
+    assert project_dir.exists()
+    assert not (project_dir / "generation_report.json").exists()
+    assert kb_init_calls == {"count": 0}
+
+
+def test_cmd_from_paper_full_pipeline_with_heal_and_scaffold(monkeypatch, tmp_path):
+    import scholardevclaw.execution as execution
+    import scholardevclaw.generation as generation
+    import scholardevclaw.ingestion.paper_fetcher as paper_fetcher
+    import scholardevclaw.planning as planning
+    import scholardevclaw.product as product
+    import scholardevclaw.understanding.agent as understanding_agent
+    from scholardevclaw.generation.models import GenerationResult, ModuleResult
+    from scholardevclaw.ingestion.models import PaperDocument
+    from scholardevclaw.planning.models import CodeModule, ImplementationPlan
+    from scholardevclaw.understanding.models import PaperUnderstanding
+
+    fake_graph_module = types.ModuleType("scholardevclaw.understanding.graph")
+    fake_graph_module.build_concept_graph = lambda _u: object()  # type: ignore[attr-defined]
+    fake_graph_module.export_graph_json = lambda _g: {"nodes": [], "links": []}  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "scholardevclaw.understanding.graph", fake_graph_module)
+
+    class FakeKnowledgeBase:
+        def __init__(self) -> None:
+            self.papers_stored = 0
+            self.implementations_stored = 0
+
+        def store_paper(self, document: PaperDocument, understanding: PaperUnderstanding) -> None:
+            del document, understanding
+            self.papers_stored += 1
+
+        def store_implementation(
+            self,
+            module: CodeModule,
+            code: str,
+            understanding: PaperUnderstanding,
+        ) -> None:
+            del module, code, understanding
+            self.implementations_stored += 1
+
+    class FakeFetcher:
+        def fetch_auto(self, source: str, dest_dir: Path):
+            del source
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path = dest_dir / "paper.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4\n")
+            return PaperDocument(
+                title="Full Flow Paper",
+                authors=["Author"],
+                arxiv_id="2005.14165",
+                doi=None,
+                year=2020,
+                abstract="Abstract",
+                sections=[],
+                equations=[],
+                algorithms=[],
+                figures=[],
+                full_text="text",
+                pdf_path=pdf_path,
+                references=[],
+                keywords=[],
+                domain="nlp",
+            )
+
+    class FakeUnderstandingAgent:
+        def __init__(self, api_key: str, model: str) -> None:
+            del api_key, model
+
+        def understand(self, document: PaperDocument) -> PaperUnderstanding:
+            del document
+            return PaperUnderstanding(
+                paper_title="Full Flow Paper",
+                one_line_summary="summary",
+                problem_statement="problem",
+                key_insight="insight",
+                core_algorithm_description="algorithm",
+                input_output_spec="input->output",
+                evaluation_protocol="accuracy: 0.90",
+                complexity="medium",
+                estimated_impl_hours=12,
+                confidence=0.9,
+            )
+
+    class FakePlanner:
+        def __init__(self, api_key: str, model: str) -> None:
+            del api_key, model
+
+        def plan(
+            self, understanding: PaperUnderstanding, document: PaperDocument
+        ) -> ImplementationPlan:
+            del understanding, document
+            return ImplementationPlan(
+                project_name="phase8_project",
+                target_language="python",
+                tech_stack="pytorch",
+                modules=[
+                    CodeModule(
+                        id="module_a",
+                        name="Module A",
+                        description="demo",
+                        file_path="src/module_a.py",
+                        depends_on=[],
+                        priority=1,
+                        estimated_lines=20,
+                        test_file_path="tests/test_module_a.py",
+                        tech_stack="pytorch",
+                    )
+                ],
+                directory_structure={"src": {}, "tests": {}},
+                environment={"numpy": ">=1.26.0"},
+                entry_points=["module_a"],
+                estimated_total_lines=20,
+            )
+
+    observed: dict[str, object] = {}
+
+    class FakeOrchestrator:
+        def __init__(
+            self,
+            api_key: str,
+            model: str,
+            *,
+            knowledge_base=None,
+        ) -> None:
+            observed["orchestrator_api_key"] = api_key
+            observed["orchestrator_model"] = model
+            observed["orchestrator_kb"] = knowledge_base
+
+        def generate_sync(self, *, plan, understanding, output_dir: Path, max_parallel: int):
+            observed["generate_project_name"] = plan.project_name
+            observed["generate_understanding"] = understanding.paper_title
+            observed["generate_output_dir"] = str(output_dir)
+            observed["generate_max_parallel"] = max_parallel
+            return GenerationResult(
+                plan=plan,
+                module_results=[
+                    ModuleResult(
+                        module_id="module_a",
+                        file_path="src/module_a.py",
+                        test_file_path="tests/test_module_a.py",
+                        code="def module_a() -> int:\n    return 1\n",
+                        test_code="def test_module_a() -> None:\n    assert True\n",
+                        generation_attempts=1,
+                        final_errors=[],
+                        tokens_used=5,
+                    )
+                ],
+                output_dir=output_dir,
+                success_rate=1.0,
+                total_tokens_used=5,
+                duration_seconds=0.25,
+            )
+
+    class FakeRunner:
+        def __init__(self, timeout_seconds: int = 300, memory_limit_mb: int = 4096) -> None:
+            del timeout_seconds, memory_limit_mb
+            self._index = 0
+
+        def run_tests(self, project_dir: Path):
+            del project_dir
+            self._index += 1
+            success = self._index >= 2
+            failed = 0 if success else 1
+            return SimpleNamespace(
+                tests_passed=3 if success else 2,
+                tests_failed=failed,
+                tests_errors=0,
+                success=success,
+                to_dict=lambda: {
+                    "exit_code": 0 if success else 1,
+                    "stdout": "ok" if success else "",
+                    "stderr": "" if success else "FAILED tests/test_module_a.py::test_x",
+                    "duration_seconds": 0.01,
+                    "peak_memory_mb": 8.0,
+                    "tests_passed": 3 if success else 2,
+                    "tests_failed": failed,
+                    "tests_errors": 0,
+                    "success": success,
+                },
+            )
+
+    class FakeHealer:
+        def __init__(self, orchestrator, runner) -> None:
+            del orchestrator, runner
+            self.round_reports = [
+                {
+                    "round": 1,
+                    "tests_passed": 2,
+                    "tests_failed": 1,
+                    "tests_errors": 0,
+                    "success": False,
+                    "failing_modules": ["module_a"],
+                }
+            ]
+
+        def heal(
+            self,
+            generation_result: GenerationResult,
+            plan: ImplementationPlan,
+            understanding: PaperUnderstanding,
+        ) -> GenerationResult:
+            del plan, understanding
+            return generation_result
+
+    class FakeScorer:
+        def __init__(self, api_key: str | None = None, model: str = "claude-sonnet-4-5") -> None:
+            observed["scorer_api_key"] = api_key
+            observed["scorer_model"] = model
+
+        def score(self, understanding: PaperUnderstanding, execution_report):
+            del understanding, execution_report
+            return SimpleNamespace(
+                score=0.82,
+                verdict="partial",
+                to_dict=lambda: {
+                    "paper_title": "Full Flow Paper",
+                    "claimed_metrics": {"accuracy": 0.9},
+                    "achieved_metrics": {"accuracy": 0.82},
+                    "delta": {"accuracy": -0.08},
+                    "score": 0.82,
+                    "verdict": "partial",
+                },
+            )
+
+    class FakeScaffolder:
+        def scaffold(self, project_dir: Path, plan, understanding, reproducibility_report) -> None:
+            del plan, understanding, reproducibility_report
+            (project_dir / "api").mkdir(parents=True, exist_ok=True)
+            (project_dir / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+            (project_dir / "api" / "main.py").write_text("# api\n", encoding="utf-8")
+            (project_dir / "demo.py").write_text("# demo\n", encoding="utf-8")
+            (project_dir / "README.md").write_text("# readme\n", encoding="utf-8")
+            (project_dir / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+            (project_dir / "pyproject.toml").write_text(
+                "[project]\nname='demo'\n", encoding="utf-8"
+            )
+            (project_dir / ".github" / "workflows" / "ci.yml").write_text(
+                "name: CI\n",
+                encoding="utf-8",
+            )
+
+    fake_kb = FakeKnowledgeBase()
+
+    monkeypatch.setattr(paper_fetcher, "PaperFetcher", FakeFetcher)
+    monkeypatch.setattr(understanding_agent, "UnderstandingAgent", FakeUnderstandingAgent)
+    monkeypatch.setattr(planning, "ImplementationPlanner", FakePlanner)
+    monkeypatch.setattr(generation, "CodeOrchestrator", FakeOrchestrator)
+    monkeypatch.setattr(execution, "SandboxRunner", FakeRunner)
+    monkeypatch.setattr(execution, "SelfHealingLoop", FakeHealer)
+    monkeypatch.setattr(execution, "ReproducibilityScorer", FakeScorer)
+    monkeypatch.setattr(product, "ProductScaffolder", FakeScaffolder)
+    monkeypatch.setattr(cli, "_initialize_knowledge_base", lambda *, strict: fake_kb)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-test-key")
+
+    output_root = tmp_path / "from-paper-full"
+    args = SimpleNamespace(
+        source="arxiv:2005.14165",
+        output_dir=str(output_root),
+        heal=True,
+        scaffold=True,
+        max_parallel=2,
+        model="claude-opus-4-5",
+        no_kb=False,
+        dry_run=False,
+    )
+
+    cli.cmd_from_paper(args)
+
+    project_dir = output_root / "phase8_project"
+    work_dir = output_root / "work"
+
+    assert (project_dir / "generation_report.json").exists()
+    assert (work_dir / "execution_report.json").exists()
+    assert (work_dir / "reproducibility_report.json").exists()
+    assert (project_dir / "api" / "main.py").exists()
+    assert (project_dir / "demo.py").exists()
+    assert (project_dir / "README.md").exists()
+
+    generation_payload = json.loads(
+        (project_dir / "generation_report.json").read_text(encoding="utf-8")
+    )
+    assert generation_payload["success_rate"] == 1.0
+    assert generation_payload["healing"]["round_count"] == 1
+    assert fake_kb.papers_stored == 1
+    assert fake_kb.implementations_stored == 1
+
+    assert observed == {
+        "orchestrator_api_key": "fake-test-key",
+        "orchestrator_model": "claude-opus-4-5",
+        "orchestrator_kb": fake_kb,
+        "generate_project_name": "phase8_project",
+        "generate_understanding": "Full Flow Paper",
+        "generate_output_dir": str(project_dir.resolve()),
+        "generate_max_parallel": 2,
+        "scorer_api_key": "fake-test-key",
+        "scorer_model": "claude-sonnet-4-5",
     }
 
 
