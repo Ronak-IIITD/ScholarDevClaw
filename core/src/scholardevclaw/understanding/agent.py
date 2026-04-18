@@ -1,22 +1,38 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
-from typing import Any
+from typing import Any, Optional
 
-from scholardevclaw.ingestion.models import PaperDocument
+from scholardevclaw.exceptions import UnderstandingError
+from scholardevclaw.ingestion.models import PaperDocument, Section
 from scholardevclaw.understanding.models import PaperUnderstanding
 
 try:
     import anthropic  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - exercised only without optional dependency
+except ImportError:  # pragma: no cover
     anthropic = None  # type: ignore[assignment]
 
-SYSTEM_PROMPT = """You are an expert ML researcher and senior software engineer.
-You read research papers with precision and extract structured information
-that allows a developer to implement the paper from scratch.
-Always respond with valid JSON matching the exact schema provided.
-Never hallucinate citations or results. If unsure, lower confidence.
+LOGGER = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = """You are a world-class AI researcher and senior software engineer with deep
+expertise across machine learning, computer science, and scientific writing.
+You read research papers with surgical precision and extract structured
+information that allows a developer to implement the paper completely from
+scratch — without reading the paper themselves.
+
+Your job is ANALYSIS, not summarization. You are not writing an abstract.
+You are reverse-engineering the paper into an implementation blueprint.
+
+Critical rules:
+1. Never hallucinate results, citations, or metrics not stated in the paper.
+2. If you are unsure about something, say so explicitly in confidence_notes.
+3. The core_algorithm_description must be step-by-step, implementation-ready,
+   and understandable by someone who has never read the paper.
+4. Requirements must be exhaustive — missing a required dataset or library
+   wastes the user's time.
+5. Respond with valid JSON only. No markdown. No explanation outside the JSON.
 """
 
 
@@ -24,8 +40,8 @@ class UnderstandingAgent:
     """LLM-backed paper understanding agent producing ``PaperUnderstanding``."""
 
     _MAX_PROMPT_CHARS: int = 120_000
-    _MIN_EQUATION_CHARS: int = 1_000
-    _MIN_ALGORITHM_CHARS: int = 2_000
+    _MAX_SECTION_CHARS: int = 35_000
+    _MAX_RESPONSE_TOKENS: int = 4096
 
     def __init__(self, api_key: str, model: str = "claude-opus-4-5") -> None:
         if anthropic is None:
@@ -41,213 +57,215 @@ class UnderstandingAgent:
 
     def understand(self, doc: PaperDocument) -> PaperUnderstanding:
         prompt = self._build_prompt(doc)
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        if len(prompt) <= self._MAX_PROMPT_CHARS:
+            return self._single_pass_understanding(prompt)
+
+        architecture_prompt, experiments_prompt = self._build_split_prompts(doc)
+        architecture_understanding = self._single_pass_understanding(architecture_prompt)
+        experiments_understanding = self._single_pass_understanding(experiments_prompt)
+        return self._merge_understandings(architecture_understanding, experiments_understanding)
+
+    def _single_pass_understanding(self, prompt: str) -> PaperUnderstanding:
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=self._MAX_RESPONSE_TOKENS,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as exc:  # pragma: no cover - SDK/runtime dependent
+            raise UnderstandingError(f"Understanding model call failed: {exc}") from exc
 
         if not response.content:
-            raise ValueError("Anthropic response had no content blocks.")
+            raise UnderstandingError("Anthropic response had no content blocks")
 
-        first_block = response.content[0]
-        raw = getattr(first_block, "text", None)
+        raw = getattr(response.content[0], "text", None)
         if not isinstance(raw, str) or not raw.strip():
-            raise ValueError("Anthropic response did not contain text in the first content block.")
+            raise UnderstandingError("Anthropic response did not contain text in the first content block")
 
         data = self._parse_json_response(raw)
         return PaperUnderstanding.from_dict(data)
 
     def _build_prompt(self, doc: PaperDocument) -> str:
-        authors = ", ".join(doc.authors)
+        method_text = self._select_section_text(doc.sections, {"method", "model", "architecture", "approach"})
+        experiments_text = self._select_section_text(doc.sections, {"experiments", "results", "evaluation"})
+        conclusion_text = self._select_section_text(doc.sections, {"conclusion", "discussion", "future work"})
 
-        algorithm_blocks = [
-            f"=== {algorithm.name} (p.{algorithm.page}) ===\n{algorithm.pseudocode}"
-            for algorithm in doc.algorithms
-        ]
-        equation_blocks = [
-            f"[Eq p.{equation.page}] {equation.latex} ({equation.description})"
-            for equation in doc.equations[:20]
-        ]
+        algorithms_text = self._join_algorithm_blocks(doc)
+        equations_text = self._join_equation_blocks(doc)
 
-        conclusion_candidates = [
-            section.content for section in doc.sections if "conclusion" in section.title.casefold()
-        ]
-        conclusion = "\n\n".join(conclusion_candidates)[:3000]
-
-        static_prompt = self._render_prompt(
-            title=doc.title,
-            authors=authors,
-            abstract=doc.abstract,
-            algo_text="",
-            eq_text="",
-            conclusion=conclusion,
+        prompt = self._render_prompt(
+            doc=doc,
+            method_text=method_text,
+            experiments_text=experiments_text,
+            conclusion_text=conclusion_text,
+            algorithms_text=algorithms_text,
+            equations_text=equations_text,
+            pass_label="full paper analysis",
         )
-        static_len = len(static_prompt)
+        return self._truncate_prompt(prompt)
 
-        remaining_budget = max(self._MAX_PROMPT_CHARS - static_len, 0)
-        eq_budget = 0
-        algo_budget = remaining_budget
-
-        if equation_blocks and algorithm_blocks:
-            eq_budget = min(max(self._MIN_EQUATION_CHARS, remaining_budget // 4), remaining_budget)
-            algo_budget = max(remaining_budget - eq_budget, 0)
-            if algo_budget < self._MIN_ALGORITHM_CHARS:
-                deficit = self._MIN_ALGORITHM_CHARS - algo_budget
-                transfer = min(deficit, eq_budget)
-                eq_budget -= transfer
-                algo_budget += transfer
-        elif equation_blocks:
-            eq_budget = remaining_budget
-            algo_budget = 0
-
-        algo_text = self._join_blocks_with_budget(algorithm_blocks, algo_budget) or "(none)"
-        eq_text = self._join_blocks_with_budget(equation_blocks, eq_budget) or "(none)"
-
-        return self._render_prompt(
-            title=doc.title,
-            authors=authors,
-            abstract=doc.abstract,
-            algo_text=algo_text,
-            eq_text=eq_text,
-            conclusion=conclusion,
+    def _build_split_prompts(self, doc: PaperDocument) -> tuple[str, str]:
+        architecture_prompt = self._render_prompt(
+            doc=doc,
+            method_text=self._select_section_text(doc.sections, {"method", "model", "architecture", "approach"}),
+            experiments_text="(omitted for architecture pass)",
+            conclusion_text=self._select_section_text(doc.sections, {"conclusion", "discussion"}),
+            algorithms_text=self._join_algorithm_blocks(doc),
+            equations_text=self._join_equation_blocks(doc),
+            pass_label="architecture pass",
         )
-
-    def _parse_json_response(self, raw: str) -> dict[str, Any]:
-        cleaned = self._strip_markdown_fences(raw.strip())
-
-        try:
-            parsed = json.loads(cleaned)
-        except json.JSONDecodeError:
-            object_block = self._extract_first_json_object_block(cleaned)
-            if object_block is None:
-                preview = cleaned[:200].replace("\n", " ")
-                raise ValueError(
-                    "Failed to parse UnderstandingAgent response as JSON. "
-                    "Ensure the model returns a JSON object only. "
-                    f"Response preview: {preview!r}"
-                )
-            try:
-                parsed = json.loads(object_block)
-            except json.JSONDecodeError as exc:
-                preview = object_block[:200].replace("\n", " ")
-                raise ValueError(
-                    "Failed to parse extracted JSON object from UnderstandingAgent response. "
-                    "Ensure field names and quotes are valid JSON. "
-                    f"Extracted preview: {preview!r}"
-                ) from exc
-
-        if not isinstance(parsed, dict):
-            raise ValueError("UnderstandingAgent response must be a JSON object at top level.")
-        return parsed
+        experiments_prompt = self._render_prompt(
+            doc=doc,
+            method_text="(method already analyzed in architecture pass)",
+            experiments_text=self._select_section_text(doc.sections, {"experiments", "results", "evaluation"}),
+            conclusion_text=self._select_section_text(doc.sections, {"conclusion", "discussion"}),
+            algorithms_text="(algorithm blocks already analyzed in architecture pass)",
+            equations_text="(equations already analyzed in architecture pass)",
+            pass_label="experiments pass",
+        )
+        return self._truncate_prompt(architecture_prompt), self._truncate_prompt(experiments_prompt)
 
     def _render_prompt(
         self,
         *,
-        title: str,
-        authors: str,
-        abstract: str,
-        algo_text: str,
-        eq_text: str,
-        conclusion: str,
+        doc: PaperDocument,
+        method_text: str,
+        experiments_text: str,
+        conclusion_text: str,
+        algorithms_text: str,
+        equations_text: str,
+        pass_label: str,
     ) -> str:
-        return f"""Paper: {title}
-Authors: {authors}
-Abstract: {abstract}
+        return f"""Pass: {pass_label}
+Title: {doc.title}
+Authors: {", ".join(doc.authors)}
+Abstract:
+{doc.abstract}
 
-Algorithms:
-{algo_text}
+Method / Model Sections:
+{method_text}
 
-Key Equations (max 20):
-{eq_text}
+Experiments / Evaluation Sections:
+{experiments_text}
+
+Algorithm Blocks:
+{algorithms_text}
+
+Top Equations With Context:
+{equations_text}
 
 Conclusion:
-{conclusion}
+{conclusion_text}
 
----
-Analyze this paper and return a JSON object with exactly these fields:
+Return a JSON object with these fields:
 {{
   "paper_title": str,
   "one_line_summary": str,
   "problem_statement": str,
+  "prior_state_of_art": str,
   "key_insight": str,
+  "why_it_works": str,
   "contributions": [
-    {{"claim": str, "novelty": str, "is_implementable": bool}}
+    {{"claim": str, "novelty": str, "is_implementable": bool, "implementation_notes": str}}
   ],
   "requirements": [
-    {{"name": str, "type": "dataset|library|hardware|baseline", "is_optional": bool, "notes": str}}
+    {{"name": str, "requirement_type": "dataset|library|hardware|baseline|pretrained_model", "is_optional": bool, "version_constraint": str | null, "acquisition_url": str | null, "notes": str}}
   ],
   "concept_nodes": [
-    {{"id": str, "label": str, "type": "model|operation|loss|dataset|metric", "description": str}}
+    {{"id": str, "label": str, "concept_type": "model|operation|loss|dataset|metric|technique", "description": str, "paper_section": str}}
   ],
   "concept_edges": [
-    {{"source_id": str, "target_id": str, "relation": "uses|produces|compared_against|trained_on"}}
+    {{"source_id": str, "target_id": str, "relation": "uses|produces|replaces|compared_against|trained_on|evaluated_on", "weight": float}}
   ],
   "core_algorithm_description": str,
   "input_output_spec": str,
+  "hyperparameters": dict,
   "evaluation_protocol": str,
-  "complexity": "low|medium|high|research-only",
+  "known_limitations": str,
+  "complexity": "trivial|low|medium|high|frontier-only",
   "estimated_impl_hours": int,
-  "confidence": float
+  "can_reproduce_without_compute": bool,
+  "confidence": float,
+  "confidence_notes": str
 }}
-Return only the JSON object. No markdown fences. No preamble.
+Return only JSON.
 """
 
-    def _join_blocks_with_budget(self, blocks: list[str], budget: int) -> str:
-        if not blocks:
-            return ""
+    def _truncate_prompt(self, prompt: str) -> str:
+        if len(prompt) <= self._MAX_PROMPT_CHARS:
+            return prompt
+        truncated = prompt[: self._MAX_PROMPT_CHARS - len("\n[truncated due to prompt budget]")]
+        return f"{truncated}\n[truncated due to prompt budget]"
 
-        if budget <= 0:
-            return "...[truncated due to prompt budget]"
-
-        separator = "\n\n"
-        suffix = "\n...[truncated due to prompt budget]"
-
-        chunks: list[str] = []
-        used = 0
-
-        for block in blocks:
-            block_with_separator_len = len(block)
-            if chunks:
-                block_with_separator_len += len(separator)
-
-            if used + block_with_separator_len <= budget:
-                chunks.append(block)
-                used += block_with_separator_len
-                continue
-
-            remaining = budget - used
-            if chunks:
-                remaining -= len(separator)
-
-            if remaining <= 0:
-                break
-
-            if len(suffix) >= remaining:
-                truncated_chunk = suffix[:remaining]
-            else:
-                truncated_chunk = block[: remaining - len(suffix)] + suffix
-            chunks.append(truncated_chunk)
-            break
-
-        return separator.join(chunks)
-
-    def _strip_markdown_fences(self, text: str) -> str:
-        fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, flags=re.DOTALL)
-        if fenced:
-            return fenced.group(1).strip()
+    def _select_section_text(self, sections: list[Section], kinds: set[str]) -> str:
+        selected: list[str] = []
+        for section in sections:
+            section_key = (section.section_type or "").casefold()
+            title_key = section.title.casefold()
+            if section_key in kinds or any(kind in title_key for kind in kinds):
+                selected.append(f"## {section.title}\n{section.content}")
+        if not selected:
+            return "(none)"
+        text = "\n\n".join(selected)
+        if len(text) > self._MAX_SECTION_CHARS:
+            return text[: self._MAX_SECTION_CHARS] + "\n[truncated due to prompt budget]"
         return text
 
-    def _extract_first_json_object_block(self, text: str) -> str | None:
+    def _join_algorithm_blocks(self, doc: PaperDocument) -> str:
+        blocks = []
+        for algorithm in doc.algorithms:
+            blocks.append(
+                f"=== {algorithm.name} (p.{algorithm.page}) ===\n{algorithm.pseudocode}"
+            )
+        return "\n\n".join(blocks) if blocks else "(none)"
+
+    def _join_equation_blocks(self, doc: PaperDocument) -> str:
+        blocks = []
+        for equation in doc.equations[:20]:
+            blocks.append(
+                f"[Eq p.{equation.page}] {equation.latex}\nContext: {equation.description}"
+            )
+        return "\n\n".join(blocks) if blocks else "(none)"
+
+    def _parse_json_response(self, raw: str) -> dict[str, Any]:
+        try:
+            return self.clean_json_response(raw)
+        except json.JSONDecodeError as exc:
+            preview = raw[:200].replace("\n", " ")
+            raise UnderstandingError(
+                "Failed to parse UnderstandingAgent response as JSON. "
+                f"Response preview: {preview!r}"
+            ) from exc
+
+    @staticmethod
+    def clean_json_response(raw: str) -> dict[str, Any]:
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            fence_parts = cleaned.split("```")
+            if len(fence_parts) >= 2:
+                cleaned = fence_parts[1]
+                if cleaned.startswith("json"):
+                    cleaned = cleaned[4:]
+        try:
+            parsed = json.loads(cleaned.strip())
+        except json.JSONDecodeError:
+            extracted = UnderstandingAgent._extract_first_json_object_block(cleaned)
+            if extracted is None:
+                raise
+            parsed = json.loads(extracted)
+        if not isinstance(parsed, dict):
+            raise json.JSONDecodeError("Top-level JSON value is not an object", cleaned, 0)
+        return parsed
+
+    @staticmethod
+    def _extract_first_json_object_block(text: str) -> Optional[str]:
         start = text.find("{")
         if start == -1:
             return None
-
         depth = 0
         in_string = False
         escaped = False
-
         for index, char in enumerate(text[start:], start=start):
             if in_string:
                 if escaped:
@@ -259,16 +277,82 @@ Return only the JSON object. No markdown fences. No preamble.
                 if char == '"':
                     in_string = False
                 continue
-
             if char == '"':
                 in_string = True
                 continue
             if char == "{":
                 depth += 1
-                continue
-            if char == "}":
+            elif char == "}":
                 depth -= 1
                 if depth == 0:
                     return text[start : index + 1]
-
         return None
+
+    def _merge_understandings(
+        self,
+        architecture: PaperUnderstanding,
+        experiments: PaperUnderstanding,
+    ) -> PaperUnderstanding:
+        merged = architecture.to_dict()
+        experiment_data = experiments.to_dict()
+
+        for scalar_field in [
+            "evaluation_protocol",
+            "known_limitations",
+            "confidence_notes",
+            "prior_state_of_art",
+            "why_it_works",
+        ]:
+            if experiment_data.get(scalar_field):
+                merged[scalar_field] = experiment_data[scalar_field]
+
+        merged["requirements"] = self._merge_list_dicts(
+            architecture.requirements, experiments.requirements, key_attr="name"
+        )
+        merged["contributions"] = self._merge_list_dicts(
+            architecture.contributions, experiments.contributions, key_attr="claim"
+        )
+        merged["concept_nodes"] = self._merge_list_dicts(
+            architecture.concept_nodes, experiments.concept_nodes, key_attr="id"
+        )
+        merged["concept_edges"] = self._merge_edge_dicts(architecture, experiments)
+        merged["hyperparameters"] = {
+            **architecture.hyperparameters,
+            **experiments.hyperparameters,
+        }
+        merged["confidence"] = max(architecture.confidence, experiments.confidence)
+        merged["can_reproduce_without_compute"] = (
+            architecture.can_reproduce_without_compute or experiments.can_reproduce_without_compute
+        )
+        return PaperUnderstanding.from_dict(merged)
+
+    def _merge_list_dicts(
+        self,
+        primary: list[Any],
+        secondary: list[Any],
+        *,
+        key_attr: str,
+    ) -> list[dict[str, Any]]:
+        merged: dict[str, dict[str, Any]] = {}
+        for item in list(primary) + list(secondary):
+            key = str(getattr(item, key_attr, "")).strip()
+            if not key:
+                continue
+            merged[key] = item.to_dict()
+        return list(merged.values())
+
+    def _merge_edge_dicts(
+        self,
+        architecture: PaperUnderstanding,
+        experiments: PaperUnderstanding,
+    ) -> list[dict[str, Any]]:
+        merged: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for edge in architecture.concept_edges + experiments.concept_edges:
+            key = (edge.source_id, edge.target_id, edge.relation)
+            payload = edge.to_dict()
+            existing = merged.get(key)
+            if existing is None or float(payload.get("weight", 0.0)) > float(
+                existing.get("weight", 0.0)
+            ):
+                merged[key] = payload
+        return list(merged.values())

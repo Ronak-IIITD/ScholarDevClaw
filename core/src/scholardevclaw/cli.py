@@ -449,6 +449,7 @@ def cmd_understand(args):
     print("-" * 50)
 
     try:
+        from scholardevclaw.exceptions import UnderstandingError
         from scholardevclaw.ingestion.models import PaperDocument
         from scholardevclaw.understanding.agent import UnderstandingAgent
         from scholardevclaw.understanding.graph import build_concept_graph, export_graph_json
@@ -459,6 +460,9 @@ def cmd_understand(args):
         concept_graph = build_concept_graph(understanding)
     except ImportError as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except UnderstandingError as exc:
+        print(f"Error: failed to understand paper: {exc}", file=sys.stderr)
         sys.exit(1)
     except (ValueError, RuntimeError) as exc:
         print(f"Error: failed to understand paper: {exc}", file=sys.stderr)

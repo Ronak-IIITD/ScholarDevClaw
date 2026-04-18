@@ -4,6 +4,82 @@
 
 **Last updated:** 2026-04-18
 
+### 2026-04-18 (UPGRADE v4 Phase-2: understanding contract expansion)
+
+**Summary:** Upgraded the paper-understanding layer toward the `AGENT_NEW.md` Phase 2 contract by expanding the understanding schema, replacing the analysis prompt/JSON handling flow, and exporting graph metrics alongside the concept graph.
+
+**What changed:**
+
+- `core/src/scholardevclaw/understanding/models.py`
+  - Expanded `Contribution` with `implementation_notes`.
+  - Expanded `Requirement` with:
+    - `requirement_type`
+    - `version_constraint`
+    - `acquisition_url`
+  - Added backward-compatible `.type` alias on `Requirement`.
+  - Expanded `ConceptNode` with:
+    - `concept_type`
+    - `paper_section`
+  - Added backward-compatible `.type` alias on `ConceptNode`.
+  - Expanded `ConceptEdge` with `weight`.
+  - Expanded `PaperUnderstanding` with:
+    - `prior_state_of_art`
+    - `why_it_works`
+    - `hyperparameters`
+    - `known_limitations`
+    - `can_reproduce_without_compute`
+    - `confidence_notes`
+  - Added compatibility normalization for legacy `"research-only"` complexity values into `"frontier-only"`.
+
+- `core/src/scholardevclaw/understanding/agent.py`
+  - Replaced the lightweight prompt with the stricter analysis-oriented system prompt from the new build contract.
+  - Added prompt construction that prioritizes:
+    - method/model sections
+    - experiments/evaluation sections
+    - algorithm blocks
+    - top equations with context
+    - conclusion
+  - Added budget-aware truncation with explicit truncation marker.
+  - Added split-pass support for oversized papers:
+    - architecture pass
+    - experiments pass
+    - merged final understanding
+  - Added reusable `clean_json_response(...)`.
+  - Raised `UnderstandingError` on model-call / JSON-parse failures.
+
+- `core/src/scholardevclaw/understanding/graph.py`
+  - Added node export fields:
+    - `concept_type`
+    - `paper_section`
+  - Added edge `weight`.
+  - Added graph metrics export:
+    - `density`
+    - `key_hubs`
+    - `longest_path`
+
+- `core/src/scholardevclaw/cli.py`
+  - `understand` command now catches `UnderstandingError` explicitly and reports it as an actionable command failure.
+
+- Tests
+  - `core/tests/test_understanding.py`
+    - Reworked understanding model roundtrip coverage for the richer schema.
+    - Added legacy alias coverage for `Requirement.type` / `ConceptNode.type`.
+    - Added prompt contract assertions for:
+      - required analysis sections
+      - `confidence_notes`
+      - truncation behavior
+    - Added merge-pass coverage for architecture + experiments understanding.
+    - Added graph metrics export assertions.
+    - Kept mocked Anthropic-client integration coverage for end-to-end understanding generation.
+
+**Verification:**
+
+- ✅ `python3 -m py_compile core/src/scholardevclaw/understanding/models.py core/src/scholardevclaw/understanding/agent.py core/src/scholardevclaw/understanding/graph.py core/src/scholardevclaw/cli.py core/tests/test_understanding.py`
+- ✅ `cd core && python3 -m mypy src/scholardevclaw/understanding/models.py src/scholardevclaw/understanding/agent.py src/scholardevclaw/understanding/graph.py tests/test_understanding.py tests/unit/test_cli.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+  - `Success: no issues found in 5 source files`
+- ✅ `cd core && python3 -m pytest tests/test_understanding.py tests/unit/test_cli.py -q`
+  - `75 passed, 1 skipped`
+
 ### 2026-04-18 (UPGRADE v4 Phase-1: ingestion contract expansion)
 
 **Summary:** Upgraded the ingestion stack toward the `AGENT_NEW.md` Phase 1 contract by expanding the paper schema, enriching PDF extraction/classification, adding cache-aware fetch resolution with title search fallback, and wiring the CLI ingest surface to the new behavior.
