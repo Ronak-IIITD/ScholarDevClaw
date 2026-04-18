@@ -1,0 +1,66 @@
+{
+  "title": "Attention Is All You Need",
+  "authors": ["Ashish Vaswani", "Noam Shazeer", "Niki Parmar"],
+  "arxiv_id": "1706.03762",
+  "doi": null,
+  "year": 2017,
+  "abstract": "The Transformer replaces recurrence with stacked self-attention and feed-forward layers for sequence transduction.",
+  "sections": [
+    {
+      "title": "Introduction",
+      "level": 1,
+      "content": "Sequence transduction models are commonly based on recurrent or convolutional neural networks.",
+      "page_start": 1
+    },
+    {
+      "title": "Model Architecture",
+      "level": 1,
+      "content": "The Transformer follows an encoder-decoder architecture built entirely from attention and point-wise feed-forward layers.",
+      "page_start": 3
+    },
+    {
+      "title": "Results",
+      "level": 1,
+      "content": "The model reaches state-of-the-art BLEU on English-to-German and English-to-French translation.",
+      "page_start": 7
+    }
+  ],
+  "equations": [
+    {"latex": "Attention(Q, K, V) = softmax(QK^T / sqrt(d_k))V", "description": "Scaled dot-product attention", "page": 4},
+    {"latex": "MultiHead(Q, K, V) = Concat(head_1, ..., head_h)W^O", "description": "Multi-head attention", "page": 4},
+    {"latex": "head_i = Attention(QW_i^Q, KW_i^K, VW_i^V)", "description": "Per-head attention", "page": 4},
+    {"latex": "FFN(x) = max(0, xW_1 + b_1)W_2 + b_2", "description": "Position-wise feed-forward network", "page": 5},
+    {"latex": "PE(pos, 2i) = sin(pos / 10000^{2i/d_model})", "description": "Sinusoidal positional encoding", "page": 5},
+    {"latex": "PE(pos, 2i+1) = cos(pos / 10000^{2i/d_model})", "description": "Sinusoidal positional encoding", "page": 5},
+    {"latex": "LabelSmoothing = (1 - epsilon) * y + epsilon / K", "description": "Label smoothing", "page": 6},
+    {"latex": "lrate = d_model^{-0.5} * min(step^{-0.5}, step * warmup^{-1.5})", "description": "Learning rate schedule", "page": 6},
+    {"latex": "BLEU = BP * exp(sum_n w_n log p_n)", "description": "BLEU metric", "page": 8},
+    {"latex": "P(y_t | y_<t, x) = Decoder(y_<t, Encoder(x))", "description": "Autoregressive decoding", "page": 5}
+  ],
+  "algorithms": [
+    {
+      "name": "Algorithm 1: Training Loop",
+      "pseudocode": "for batch in train_loader:\n    logits = model(batch.src, batch.tgt)\n    loss = criterion(logits, batch.labels)\n    loss.backward()\n    optimizer.step()",
+      "page": 6,
+      "language_hint": "python-like"
+    },
+    {
+      "name": "Algorithm 2: Greedy Decoding",
+      "pseudocode": "tokens = [bos]\nwhile len(tokens) < max_len:\n    logits = model.decode(tokens, memory)\n    tokens.append(argmax(logits[-1]))",
+      "page": 7,
+      "language_hint": "python-like"
+    }
+  ],
+  "figures": [
+    {
+      "caption": "The Transformer model architecture with encoder and decoder stacks.",
+      "page": 3,
+      "image_path": null
+    }
+  ],
+  "full_text": "Attention Is All You Need full text excerpt.",
+  "pdf_path": null,
+  "references": ["Bahdanau et al. (2014)", "Sutskever et al. (2014)"],
+  "keywords": ["transformer", "attention", "translation"],
+  "domain": "nlp"
+}

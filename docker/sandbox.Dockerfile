@@ -9,18 +9,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
-    pytest \
-    pytest-json-report \
+    pytest pytest-json-report pytest-cov \
     torch --index-url https://download.pytorch.org/whl/cpu \
-    numpy \
     "jax[cpu]" \
-    transformers \
-    datasets \
-    scikit-learn \
-    fastapi \
-    uvicorn \
-    gradio
+    flax optax \
+    numpy scipy scikit-learn pandas \
+    transformers datasets tokenizers \
+    fastapi uvicorn gradio \
+    networkx matplotlib seaborn
 
 WORKDIR /workspace
+ENV PYTHONPATH=/workspace/src
 
-CMD ["pytest", "tests/", "-v"]
+CMD ["pytest", "tests/", "-v", "--json-report", "--json-report-file=/tmp/report.json"]

@@ -1,0 +1,59 @@
+{
+  "project_name": "attention_demo",
+  "target_language": "python",
+  "tech_stack": "pytorch",
+  "modules": [
+    {
+      "id": "data_loader",
+      "name": "Data Loader",
+      "description": "Loads tokenized translation pairs.",
+      "file_path": "src/data_loader.py",
+      "depends_on": [],
+      "priority": 1,
+      "estimated_lines": 80,
+      "test_file_path": "tests/test_data_loader.py",
+      "tech_stack": "pytorch"
+    },
+    {
+      "id": "transformer_model",
+      "name": "Transformer Model",
+      "description": "Implements encoder, decoder, and attention blocks.",
+      "file_path": "src/transformer_model.py",
+      "depends_on": ["data_loader"],
+      "priority": 2,
+      "estimated_lines": 220,
+      "test_file_path": "tests/test_transformer_model.py",
+      "tech_stack": "pytorch"
+    },
+    {
+      "id": "train_loop",
+      "name": "Training Loop",
+      "description": "Optimizes the model and reports metrics.",
+      "file_path": "src/train_loop.py",
+      "depends_on": ["data_loader", "transformer_model"],
+      "priority": 3,
+      "estimated_lines": 140,
+      "test_file_path": "tests/test_train_loop.py",
+      "tech_stack": "pytorch"
+    }
+  ],
+  "directory_structure": {
+    "src": {
+      "__init__.py": null,
+      "data_loader.py": null,
+      "transformer_model.py": null,
+      "train_loop.py": null
+    },
+    "tests": {
+      "test_data_loader.py": null,
+      "test_transformer_model.py": null,
+      "test_train_loop.py": null
+    }
+  },
+  "environment": {
+    "torch": ">=2.0.0",
+    "numpy": ">=1.24.0"
+  },
+  "entry_points": ["train_loop"],
+  "estimated_total_lines": 440
+}

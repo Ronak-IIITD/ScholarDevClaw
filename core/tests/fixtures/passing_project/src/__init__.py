@@ -1,0 +1,1 @@
+"""Passing sandbox fixture package."""

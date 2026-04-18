@@ -1,0 +1,53 @@
+{
+  "paper_title": "Attention Is All You Need",
+  "one_line_summary": "Transformer replaces recurrence with self-attention.",
+  "problem_statement": "Sequence transduction systems were limited by recurrent computation and poor parallelism.",
+  "key_insight": "Stacked multi-head self-attention plus positional encoding captures long-range dependencies while enabling efficient parallel training.",
+  "contributions": [
+    {
+      "claim": "Introduces the Transformer architecture.",
+      "novelty": "Eliminates recurrence and convolutions in the core sequence model.",
+      "is_implementable": true
+    },
+    {
+      "claim": "Uses multi-head attention to model different representation subspaces.",
+      "novelty": "Splits attention into several learned heads with a final projection.",
+      "is_implementable": true
+    }
+  ],
+  "requirements": [
+    {
+      "name": "PyTorch",
+      "type": "library",
+      "is_optional": false,
+      "notes": "Recommended framework for the reference implementation."
+    },
+    {
+      "name": "WMT14 En-De",
+      "type": "dataset",
+      "is_optional": false,
+      "notes": "Primary translation benchmark used in the paper."
+    }
+  ],
+  "concept_nodes": [
+    {"id": "encoder", "label": "Encoder", "type": "model", "description": "Stack of self-attention and feed-forward blocks."},
+    {"id": "decoder", "label": "Decoder", "type": "model", "description": "Autoregressive stack with masked self-attention and encoder-decoder attention."},
+    {"id": "multi_head_attention", "label": "Multi-Head Attention", "type": "operation", "description": "Parallel attention heads over projected inputs."},
+    {"id": "positional_encoding", "label": "Positional Encoding", "type": "operation", "description": "Injects token position information into embeddings."},
+    {"id": "label_smoothing", "label": "Label Smoothing", "type": "loss", "description": "Regularizes the target distribution."},
+    {"id": "wmt14", "label": "WMT14", "type": "dataset", "description": "Machine translation benchmark used for evaluation."}
+  ],
+  "concept_edges": [
+    {"source_id": "encoder", "target_id": "multi_head_attention", "relation": "uses"},
+    {"source_id": "decoder", "target_id": "multi_head_attention", "relation": "uses"},
+    {"source_id": "encoder", "target_id": "positional_encoding", "relation": "uses"},
+    {"source_id": "decoder", "target_id": "positional_encoding", "relation": "uses"},
+    {"source_id": "decoder", "target_id": "wmt14", "relation": "evaluated_on"}
+  ],
+  "core_algorithm_description": "Embed source and target tokens, add positional encodings, pass them through encoder and decoder stacks with multi-head attention, then project decoder states to vocabulary logits for training and decoding.",
+  "input_output_spec": "Accepts tokenized source and target sequences and returns next-token logits over the target vocabulary.",
+  "evaluation_protocol": "Train on WMT14 translation data and report BLEU on English-to-German and English-to-French benchmarks.",
+  "complexity": "medium",
+  "estimated_impl_hours": 24,
+  "confidence": 0.89
+}

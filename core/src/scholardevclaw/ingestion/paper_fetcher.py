@@ -11,6 +11,11 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from scholardevclaw.exceptions import (
+    PaperFetchError,
+    PaperNotAccessibleError,
+    PaperSourceResolutionError,
+)
 from scholardevclaw.ingestion.models import PaperDocument
 from scholardevclaw.ingestion.pdf_parser import PDFParser
 from scholardevclaw.utils.retry import RetryPolicy
@@ -19,18 +24,13 @@ LOGGER = logging.getLogger(__name__)
 
 _SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/DOI:"
 _SEMANTIC_SCHOLAR_FIELDS = "title,authors,year,abstract,openAccessPdf,externalIds"
-
-
-class PaperFetchError(RuntimeError):
-    """Base class for paper-fetching failures."""
-
-
-class PaperNotAccessibleError(PaperFetchError):
-    """Raised when a paper cannot be downloaded due to access limitations."""
-
-
-class PaperSourceResolutionError(PaperFetchError):
-    """Raised when input source type cannot be resolved."""
+__all__ = [
+    "PaperFetchError",
+    "PaperNotAccessibleError",
+    "PaperSourceResolutionError",
+    "PaperFetcher",
+    "PaperIngester",
+]
 
 
 try:

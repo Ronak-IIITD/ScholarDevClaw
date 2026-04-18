@@ -2,7 +2,90 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-16
+**Last updated:** 2026-04-18
+
+### 2026-04-18 (UPGRADE v4 Phase-0: foundation baseline)
+
+**Summary:** Started the new `AGENT_NEW.md` build track with the Phase 0 foundation pass: shared exception hierarchy, dependency and pre-commit baseline updates, sandbox image alignment, and reusable fixture assets for the paper-to-product pipeline.
+
+**What changed:**
+
+- `core/src/scholardevclaw/exceptions.py` (new)
+  - Added the shared pipeline exception hierarchy:
+    - `ScholarDevClawError`
+    - `IngestionError`
+    - `PaperFetchError`
+    - `PaperNotAccessibleError`
+    - `PaperSourceResolutionError`
+    - `UnderstandingError`
+    - `PlanningError`
+    - `GenerationError`
+    - `ExecutionError`
+    - `SandboxError`
+    - `KnowledgeBaseError`
+
+- `core/src/scholardevclaw/ingestion/paper_fetcher.py`
+  - Replaced local fetch exception definitions with imports from the shared exception module.
+  - Added explicit module exports for fetch-related exceptions and fetcher classes so strict mypy treats the public module surface correctly.
+
+- `core/src/scholardevclaw/__init__.py`
+  - Re-exported `ScholarDevClawError` at package level.
+
+- `core/src/scholardevclaw/execution/sandbox.py`
+  - Updated the default sandbox image name to `sdc-sandbox:latest` to align with the new Phase 0 build contract.
+
+- `core/pyproject.toml`
+  - Added `click>=8.1.0` to core dependencies for the documented unified CLI direction.
+  - Added `pytest-json-report>=1.5.0` to both `execution` and `dev` extras.
+  - Excluded `tests/fixtures/` from mypy scanning so seeded JSON/project fixtures do not pollute typed checks.
+
+- `.pre-commit-config.yaml`
+  - Kept the existing repo hygiene hooks and Ruff hooks.
+  - Added local hooks for:
+    - strict mypy on the new Phase 0 foundation files
+    - focused pytest for the foundation + ingestion + execution test surfaces
+
+- `docker/sandbox.Dockerfile`
+  - Expanded the sandbox image to include the Phase 0 execution stack:
+    - `pytest-json-report`, `pytest-cov`
+    - `jax[cpu]`, `flax`, `optax`
+    - `numpy`, `scipy`, `scikit-learn`, `pandas`
+    - `transformers`, `datasets`, `tokenizers`
+    - `networkx`, `matplotlib`, `seaborn`
+  - Added `PYTHONPATH=/workspace/src`.
+  - Updated the default container command to emit `/tmp/report.json`.
+
+- `scripts/runbook.sh`
+  - Updated `dev setup` to build `sdc-sandbox:latest`.
+
+- `core/tests/fixtures/` (new seed assets)
+  - Added:
+    - `attention_paper_document.json`
+    - `attention_understanding.json`
+    - `simple_plan.json`
+    - `broken_module.py`
+    - `passing_project/src/__init__.py`
+    - `passing_project/src/demo.py`
+    - `passing_project/tests/test_demo.py`
+
+- `core/tests/unit/test_phase0_foundation.py` (new)
+  - Added coverage for:
+    - shared exception hierarchy wiring
+    - `paper_fetcher` exception re-exports
+    - seeded fixture roundtrips through current dataclass models
+    - intentionally broken syntax fixture
+    - passing project fixture layout
+    - sandbox default image constant
+
+**Verification:**
+
+- ✅ `python3 -m py_compile core/src/scholardevclaw/exceptions.py core/src/scholardevclaw/ingestion/paper_fetcher.py core/src/scholardevclaw/execution/sandbox.py core/src/scholardevclaw/__init__.py core/tests/unit/test_phase0_foundation.py`
+- ✅ `cd core && python3 -m mypy --strict src/scholardevclaw/exceptions.py tests/unit/test_phase0_foundation.py`
+  - `Success: no issues found in 2 source files`
+- ✅ `cd core && python3 -m pytest tests/unit/test_phase0_foundation.py tests/test_ingestion.py tests/test_execution.py -q`
+  - `18 passed, 2 skipped`
+- ⚠️ `docker build -f docker/sandbox.Dockerfile -t sdc-sandbox:latest .`
+  - Blocked in this environment because `docker` is not installed (`zsh:1: command not found: docker`)
 
 ### 2026-04-16 (UPGRADE v3 Phase-8: unified `from-paper` command)
 

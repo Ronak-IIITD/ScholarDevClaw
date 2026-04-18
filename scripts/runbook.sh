@@ -129,7 +129,7 @@ dev_setup() {
   ensure_env_file
   dev_preflight
   log "Building sandbox image..."
-  docker build -f docker/sandbox.Dockerfile -t scholardevclaw-sandbox:latest .
+  docker build -f docker/sandbox.Dockerfile -t sdc-sandbox:latest .
   log "Dev setup complete."
 }
 

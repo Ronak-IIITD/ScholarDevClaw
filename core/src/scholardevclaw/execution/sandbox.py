@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - optional dependency path
 logger = logging.getLogger(__name__)
 
 SANDBOX_IMAGE_ENV_VAR = "SCHOLARDEVCLAW_SANDBOX_IMAGE"
-DEFAULT_SANDBOX_IMAGE = "scholardevclaw-sandbox:latest"
+DEFAULT_SANDBOX_IMAGE = "sdc-sandbox:latest"
 
 
 @dataclass(slots=True)

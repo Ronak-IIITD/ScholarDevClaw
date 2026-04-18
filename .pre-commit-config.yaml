@@ -20,3 +20,16 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: scholardevclaw-mypy
+        name: scholardevclaw-mypy
+        entry: bash -lc 'cd core && python3 -m mypy --strict src/scholardevclaw/exceptions.py tests/unit/test_phase0_foundation.py'
+        language: system
+        pass_filenames: false
+      - id: scholardevclaw-pytest
+        name: scholardevclaw-pytest
+        entry: bash -lc 'cd core && python3 -m pytest tests/unit/test_phase0_foundation.py tests/test_ingestion.py tests/test_execution.py -q'
+        language: system
+        pass_filenames: false
