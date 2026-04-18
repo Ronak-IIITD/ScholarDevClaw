@@ -355,6 +355,8 @@ def cmd_kb(args):
 
 def cmd_ingest(args):
     """Ingest a paper source into a structured PaperDocument JSON artifact."""
+    import logging
+
     from scholardevclaw.ingestion.paper_fetcher import (
         PaperFetchError,
         PaperIngester,
@@ -372,13 +374,16 @@ def cmd_ingest(args):
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "paper_document.json"
 
+    if getattr(args, "verbose", False):
+        logging.basicConfig(level=logging.INFO)
+
     print(f"Ingesting paper source: {source}")
     print(f"Output directory: {output_dir}")
     print("-" * 50)
 
     ingester = PaperIngester()
     try:
-        document = ingester.ingest(source, output_dir)
+        document = ingester.ingest(source, output_dir, no_cache=getattr(args, "no_cache", False))
     except PaperSourceResolutionError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -399,6 +404,7 @@ def cmd_ingest(args):
     print(f"Algorithms: {len(document.algorithms)}")
     print(f"Equations: {len(document.equations)}")
     print(f"Domain: {document.domain}")
+    print(f"Subdomain: {document.subdomain}")
 
 
 def cmd_understand(args):
@@ -3296,6 +3302,16 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_ingest.add_argument(
         "--output-dir",
         help="Directory to store ingestion artifacts (paper_document.json)",
+    )
+    p_ingest.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable ingestion cache reads and writes for this run",
+    )
+    p_ingest.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable INFO-level ingestion logs",
     )
 
     # understand

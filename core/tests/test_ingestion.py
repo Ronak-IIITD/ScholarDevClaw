@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import types
 from dataclasses import asdict
@@ -30,22 +31,50 @@ def _build_sample_document(pdf_path: Path) -> PaperDocument:
         doi="10.1000/sample",
         year=2024,
         abstract="A short abstract",
-        sections=[Section(title="Intro", level=1, content="Hello", page_start=1)],
-        equations=[Equation(latex="x = y + z", description="Example", page=2)],
+        venue="NeurIPS 2024",
+        sections=[
+            Section(
+                title="Intro",
+                level=1,
+                content="Hello",
+                page_start=1,
+                section_type="introduction",
+            )
+        ],
+        equations=[
+            Equation(
+                latex="x = y + z",
+                description="Example",
+                page=2,
+                equation_type="model",
+            )
+        ],
         algorithms=[
             Algorithm(
                 name="Algorithm 1: Train",
-                pseudocode="for step in steps:\n    update()",
+                pseudocode="Input: batch, labels\nOutput: logits\nfor step in steps:\n    update()",
                 page=3,
                 language_hint="python-like",
+                inputs=["batch", "labels"],
+                outputs=["logits"],
             )
         ],
-        figures=[Figure(caption="Figure caption", page=1, image_path=pdf_path.parent / "f.png")],
+        figures=[
+            Figure(
+                caption="Figure caption",
+                page=1,
+                figure_type="architecture",
+                image_path=pdf_path.parent / "f.png",
+            )
+        ],
+        tables=[{"page": 1, "table_index": 1, "rows": [["a", "b"]]}],
         full_text="Full text",
         pdf_path=pdf_path,
+        source_url="https://example.org/paper.pdf",
         references=["[1] A citation"],
         keywords=["transformer", "attention"],
         domain="nlp",
+        subdomain="language-modeling",
     )
 
 
@@ -70,10 +99,12 @@ def test_pdf_parser_extracts_algorithms_and_equations(tmp_path: Path) -> None:
     page.insert_text((72, 110), "Abstract")
     page.insert_text((72, 130), "We study attention mechanisms in depth.")
     page.insert_text((72, 160), "Algorithm 1: Training Procedure")
-    page.insert_text((72, 180), "for step in range(T):")
-    page.insert_text((72, 200), "  x = x + y")
-    page.insert_text((72, 230), "$a = b + c$")
-    page.insert_text((72, 250), "x = y / z + 1")
+    page.insert_text((72, 170), "Input: tokens, labels")
+    page.insert_text((72, 180), "Output: logits")
+    page.insert_text((72, 200), "for step in range(T):")
+    page.insert_text((72, 220), "  x = x + y")
+    page.insert_text((72, 250), "$a = b + c$")
+    page.insert_text((72, 270), "loss = y / z + 1")
     doc.save(str(pdf_path))
     doc.close()
 
@@ -83,8 +114,13 @@ def test_pdf_parser_extracts_algorithms_and_equations(tmp_path: Path) -> None:
     assert parsed.title
     assert parsed.algorithms
     assert any("Algorithm" in algorithm.name for algorithm in parsed.algorithms)
+    assert parsed.algorithms[0].inputs == ["tokens", "labels"]
+    assert parsed.algorithms[0].outputs == ["logits"]
     assert parsed.equations
     assert any("=" in equation.latex for equation in parsed.equations)
+    assert any(equation.equation_type in {"model", "loss", "unknown"} for equation in parsed.equations)
+    assert parsed.domain == "nlp"
+    assert parsed.subdomain in {"language-modeling", "general"}
 
 
 def test_fetch_by_doi_raises_when_no_open_access_pdf(
@@ -119,7 +155,7 @@ def test_fetch_auto_prefers_local_pdf_path(tmp_path: Path) -> None:
             assert path == pdf_path
             return expected_doc
 
-    fetcher = PaperFetcher(parser=StubParser())
+    fetcher = PaperFetcher(parser=StubParser(), cache_dir=tmp_path / "cache")
 
     result = fetcher.fetch_auto(str(pdf_path), tmp_path / "out")
 
@@ -157,9 +193,11 @@ def test_fetch_by_url_uses_html_pdf_discovery(
 
     monkeypatch.setattr(fetcher, "_download_file", _fake_download)
 
-    result = fetcher.fetch_by_url("https://example.org/page", tmp_path)
+    result = fetcher.fetch_by_url("https://example.org/page", tmp_path, no_cache=True)
 
-    assert result == expected_doc
+    assert result.title == expected_doc.title
+    assert result.abstract == expected_doc.abstract
+    assert result.source_url == "https://example.org/page"
     assert downloaded["url"].name == "paper.pdf"
 
 
@@ -167,15 +205,72 @@ def test_paper_ingester_delegates_to_fetcher(tmp_path: Path) -> None:
     expected = _build_sample_document(tmp_path / "delegated.pdf")
 
     class StubFetcher:
-        def fetch_auto(self, source: str, dest_dir: Path) -> PaperDocument:
+        def fetch_auto(self, source: str, dest_dir: Path, no_cache: bool = False) -> PaperDocument:
             assert source == "arxiv:2005.14165"
             assert dest_dir == tmp_path
+            assert no_cache is False
             return expected
 
     ingester = PaperIngester(fetcher=StubFetcher())
     result = ingester.ingest("arxiv:2005.14165", tmp_path)
 
     assert result == expected
+
+
+def test_fetch_by_arxiv_reads_from_cache_without_network(tmp_path: Path) -> None:
+    expected = _build_sample_document(tmp_path / "cached.pdf")
+    cache_dir = tmp_path / "cache"
+    cache_path = cache_dir / "1706_03762.json"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(expected.to_dict()), encoding="utf-8")
+
+    class FailingParser:
+        def parse(self, _path: Path) -> PaperDocument:
+            raise AssertionError("Parser should not run on cache hit")
+
+    fetcher = PaperFetcher(parser=FailingParser(), cache_dir=cache_dir)
+    result = fetcher.fetch_by_arxiv_id("1706.03762", tmp_path)
+
+    assert result.title == expected.title
+    assert result.source_url == expected.source_url
+
+
+def test_fetch_auto_falls_back_to_title_search(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    expected = _build_sample_document(tmp_path / "title.pdf")
+    fetcher = PaperFetcher()
+
+    monkeypatch.setattr(fetcher, "search_by_title", lambda source, dest_dir, no_cache=False: expected)
+
+    result = fetcher.fetch_auto("Attention Is All You Need", tmp_path)
+
+    assert result == expected
+
+
+def test_search_by_title_prefers_high_confidence_semantic_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    expected = _build_sample_document(tmp_path / "semantic.pdf")
+    fetcher = PaperFetcher()
+
+    monkeypatch.setattr(fetcher, "_search_arxiv_by_title", lambda _title: None)
+    monkeypatch.setattr(
+        fetcher,
+        "_search_semantic_scholar_by_title",
+        lambda _title: {
+            "title": "Attention Is All You Need",
+            "similarity": 0.97,
+            "doi": "10.1000/attention",
+            "pdf_url": "",
+            "venue": "NeurIPS 2017",
+        },
+    )
+    monkeypatch.setattr(fetcher, "fetch_by_doi", lambda doi, dest_dir, no_cache=False: expected)
+
+    result = fetcher.search_by_title("Attention Is All You Need", tmp_path)
+
+    assert result.title == "Attention Is All You Need"
+    assert result.venue == "NeurIPS 2017"
+    assert result.doi == expected.doi
 
 
 def test_fetch_by_arxiv_with_stubbed_client(

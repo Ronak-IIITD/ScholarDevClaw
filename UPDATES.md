@@ -4,6 +4,75 @@
 
 **Last updated:** 2026-04-18
 
+### 2026-04-18 (UPGRADE v4 Phase-1: ingestion contract expansion)
+
+**Summary:** Upgraded the ingestion stack toward the `AGENT_NEW.md` Phase 1 contract by expanding the paper schema, enriching PDF extraction/classification, adding cache-aware fetch resolution with title search fallback, and wiring the CLI ingest surface to the new behavior.
+
+**What changed:**
+
+- `core/src/scholardevclaw/ingestion/models.py`
+  - Expanded `Equation` with `equation_type`.
+  - Expanded `Algorithm` with `inputs` and `outputs`.
+  - Expanded `Figure` with `figure_type`.
+  - Expanded `Section` with `section_type`.
+  - Expanded `PaperDocument` with:
+    - `venue`
+    - `tables`
+    - `source_url`
+    - `subdomain`
+  - Kept defaults/backward-compatible field ordering so existing code paths constructing these models still work.
+
+- `core/src/scholardevclaw/ingestion/pdf_parser.py`
+  - Reworked PDF parsing to emit the richer `PaperDocument`.
+  - Added:
+    - section-type classification
+    - equation-type classification
+    - figure-type classification
+    - domain + subdomain classification
+    - algorithm input/output extraction from `Input:` / `Output:` lines
+    - broader equation detection (`$...$`, `$$...$$`, `equation`, `align`, `gather`, symbolic lines)
+    - broader algorithm detection (`Algorithm N`, `Procedure N`, procedural fallback blocks)
+    - separate `tables` extraction via `pdfplumber`
+  - Updated figure artifact naming to `fig_<page>_<idx>.png`.
+
+- `core/src/scholardevclaw/ingestion/paper_fetcher.py`
+  - Added persistent cache support under `~/.scholardevclaw/cache/`.
+  - Added `no_cache` support through `fetch_auto`, `fetch_by_arxiv_id`, `fetch_by_doi`, `fetch_by_url`, and `PaperIngester.ingest`.
+  - Added title-search fallback via:
+    - arXiv title search
+    - Semantic Scholar title search
+    - `SequenceMatcher` thresholding
+  - Added richer metadata merge for DOI/arXiv fetches (`venue`, `source_url`, `externalIds`).
+  - Ensured cache reads occur before requiring the `arxiv` dependency so cached arXiv documents remain usable offline.
+
+- `core/src/scholardevclaw/cli.py`
+  - Extended `ingest` with:
+    - `--no-cache`
+    - `--verbose`
+  - Passed `no_cache` through to `PaperIngester`.
+  - Added `subdomain` to the ingest summary output.
+
+- Tests
+  - `core/tests/test_ingestion.py`
+    - Expanded roundtrip coverage for richer ingestion schema.
+    - Added parser assertions for:
+      - algorithm inputs/outputs
+      - equation classification
+      - domain/subdomain classification
+    - Added cache-hit coverage for arXiv fetches.
+    - Added title-search fallback coverage.
+    - Added high-confidence Semantic Scholar title-match routing coverage.
+  - `core/tests/unit/test_cli.py`
+    - Extended ingest parser coverage for `--no-cache` and `--verbose`.
+
+**Verification:**
+
+- ✅ `python3 -m py_compile core/src/scholardevclaw/ingestion/models.py core/src/scholardevclaw/ingestion/pdf_parser.py core/src/scholardevclaw/ingestion/paper_fetcher.py core/src/scholardevclaw/cli.py core/tests/test_ingestion.py core/tests/unit/test_cli.py`
+- ✅ `cd core && python3 -m mypy src/scholardevclaw/ingestion/models.py src/scholardevclaw/ingestion/pdf_parser.py src/scholardevclaw/ingestion/paper_fetcher.py tests/test_ingestion.py tests/unit/test_cli.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return`
+  - `Success: no issues found in 5 source files`
+- ✅ `cd core && python3 -m pytest tests/test_ingestion.py tests/unit/test_cli.py -q`
+  - `74 passed, 2 skipped`
+
 ### 2026-04-18 (UPGRADE v4 Phase-0: foundation baseline)
 
 **Summary:** Started the new `AGENT_NEW.md` build track with the Phase 0 foundation pass: shared exception hierarchy, dependency and pre-commit baseline updates, sandbox image alignment, and reusable fixture assets for the paper-to-product pipeline.

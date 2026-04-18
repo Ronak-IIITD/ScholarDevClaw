@@ -1,8 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+
+def _as_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def _as_dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 @dataclass(slots=True)
@@ -12,12 +24,14 @@ class Equation:
     latex: str
     description: str
     page: int
+    equation_type: str = "unknown"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "latex": self.latex,
             "description": self.description,
             "page": self.page,
+            "equation_type": self.equation_type,
         }
 
     @classmethod
@@ -26,6 +40,7 @@ class Equation:
             latex=str(data.get("latex", "")),
             description=str(data.get("description", "")),
             page=int(data.get("page", 0)),
+            equation_type=str(data.get("equation_type", "unknown")),
         )
 
 
@@ -37,6 +52,8 @@ class Algorithm:
     pseudocode: str
     page: int
     language_hint: str
+    inputs: list[str] = field(default_factory=list)
+    outputs: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +61,8 @@ class Algorithm:
             "pseudocode": self.pseudocode,
             "page": self.page,
             "language_hint": self.language_hint,
+            "inputs": list(self.inputs),
+            "outputs": list(self.outputs),
         }
 
     @classmethod
@@ -53,6 +72,8 @@ class Algorithm:
             pseudocode=str(data.get("pseudocode", "")),
             page=int(data.get("page", 0)),
             language_hint=str(data.get("language_hint", "unknown")),
+            inputs=_as_str_list(data.get("inputs", [])),
+            outputs=_as_str_list(data.get("outputs", [])),
         )
 
 
@@ -62,12 +83,14 @@ class Figure:
 
     caption: str
     page: int
-    image_path: Path | None
+    figure_type: str = "diagram"
+    image_path: Optional[Path] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "caption": self.caption,
             "page": self.page,
+            "figure_type": self.figure_type,
             "image_path": str(self.image_path) if self.image_path is not None else None,
         }
 
@@ -77,6 +100,7 @@ class Figure:
         return cls(
             caption=str(data.get("caption", "")),
             page=int(data.get("page", 0)),
+            figure_type=str(data.get("figure_type", "diagram")),
             image_path=Path(raw_path) if isinstance(raw_path, str) and raw_path else None,
         )
 
@@ -89,6 +113,7 @@ class Section:
     level: int
     content: str
     page_start: int
+    section_type: str = "unknown"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -96,6 +121,7 @@ class Section:
             "level": self.level,
             "content": self.content,
             "page_start": self.page_start,
+            "section_type": self.section_type,
         }
 
     @classmethod
@@ -105,6 +131,7 @@ class Section:
             level=int(data.get("level", 1)),
             content=str(data.get("content", "")),
             page_start=int(data.get("page_start", 1)),
+            section_type=str(data.get("section_type", "unknown")),
         )
 
 
@@ -114,22 +141,26 @@ class PaperDocument:
 
     title: str
     authors: list[str]
-    arxiv_id: str | None
-    doi: str | None
-    year: int | None
+    arxiv_id: Optional[str]
+    doi: Optional[str]
+    year: Optional[int]
     abstract: str
 
     sections: list[Section]
     equations: list[Equation]
     algorithms: list[Algorithm]
     figures: list[Figure]
+    tables: list[dict[str, Any]] = field(default_factory=list)
 
-    full_text: str
-    pdf_path: Path | None
+    full_text: str = ""
+    pdf_path: Optional[Path] = None
+    source_url: Optional[str] = None
 
-    references: list[str]
-    keywords: list[str]
+    references: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
     domain: str = "unknown"
+    subdomain: str = "unknown"
+    venue: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize PaperDocument into JSON-safe dictionary."""
@@ -141,15 +172,19 @@ class PaperDocument:
             "doi": self.doi,
             "year": self.year,
             "abstract": self.abstract,
+            "venue": self.venue,
             "sections": [section.to_dict() for section in self.sections],
             "equations": [equation.to_dict() for equation in self.equations],
             "algorithms": [algorithm.to_dict() for algorithm in self.algorithms],
             "figures": [figure.to_dict() for figure in self.figures],
+            "tables": list(self.tables),
             "full_text": self.full_text,
             "pdf_path": str(self.pdf_path) if self.pdf_path is not None else None,
+            "source_url": self.source_url,
             "references": list(self.references),
             "keywords": list(self.keywords),
             "domain": self.domain,
+            "subdomain": self.subdomain,
         }
 
     @classmethod
@@ -159,18 +194,26 @@ class PaperDocument:
         raw_pdf_path = data.get("pdf_path")
         return cls(
             title=str(data.get("title", "")),
-            authors=[str(author) for author in data.get("authors", [])],
+            authors=_as_str_list(data.get("authors", [])),
             arxiv_id=str(data["arxiv_id"]) if data.get("arxiv_id") is not None else None,
             doi=str(data["doi"]) if data.get("doi") is not None else None,
             year=int(data["year"]) if data.get("year") is not None else None,
             abstract=str(data.get("abstract", "")),
-            sections=[Section.from_dict(item) for item in data.get("sections", [])],
-            equations=[Equation.from_dict(item) for item in data.get("equations", [])],
-            algorithms=[Algorithm.from_dict(item) for item in data.get("algorithms", [])],
-            figures=[Figure.from_dict(item) for item in data.get("figures", [])],
+            sections=[Section.from_dict(item) for item in _as_dict_list(data.get("sections", []))],
+            equations=[
+                Equation.from_dict(item) for item in _as_dict_list(data.get("equations", []))
+            ],
+            algorithms=[
+                Algorithm.from_dict(item) for item in _as_dict_list(data.get("algorithms", []))
+            ],
+            figures=[Figure.from_dict(item) for item in _as_dict_list(data.get("figures", []))],
+            tables=_as_dict_list(data.get("tables", [])),
             full_text=str(data.get("full_text", "")),
             pdf_path=Path(raw_pdf_path) if isinstance(raw_pdf_path, str) and raw_pdf_path else None,
-            references=[str(reference) for reference in data.get("references", [])],
-            keywords=[str(keyword) for keyword in data.get("keywords", [])],
+            source_url=str(data["source_url"]) if data.get("source_url") is not None else None,
+            references=_as_str_list(data.get("references", [])),
+            keywords=_as_str_list(data.get("keywords", [])),
             domain=str(data.get("domain", "unknown")),
+            subdomain=str(data.get("subdomain", "unknown")),
+            venue=str(data["venue"]) if data.get("venue") is not None else None,
         )

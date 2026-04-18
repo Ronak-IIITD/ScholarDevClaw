@@ -305,17 +305,32 @@ def test_ingest_parser_with_output_dir(monkeypatch):
     def fake_cmd(args):
         called["source"] = args.source
         called["output_dir"] = args.output_dir
+        called["no_cache"] = args.no_cache
+        called["verbose"] = args.verbose
 
     monkeypatch.setattr(cli, "cmd_ingest", fake_cmd)
     monkeypatch.setattr(
         cli.sys,
         "argv",
-        ["scholardevclaw", "ingest", "10.1000/xyz123", "--output-dir", "/tmp/out"],
+        [
+            "scholardevclaw",
+            "ingest",
+            "10.1000/xyz123",
+            "--output-dir",
+            "/tmp/out",
+            "--no-cache",
+            "--verbose",
+        ],
     )
 
     cli.main()
 
-    assert called == {"source": "10.1000/xyz123", "output_dir": "/tmp/out"}
+    assert called == {
+        "source": "10.1000/xyz123",
+        "output_dir": "/tmp/out",
+        "no_cache": True,
+        "verbose": True,
+    }
 
 
 def test_kb_parser_stats(monkeypatch):
