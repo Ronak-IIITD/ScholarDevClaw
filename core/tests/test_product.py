@@ -39,7 +39,9 @@ def _make_understanding() -> PaperUnderstanding:
         input_output_spec="Input dictionary to output dictionary.",
         evaluation_protocol="Accuracy: 0.95",
         requirements=[
-            Requirement(name="Python 3.11", type="runtime", is_optional=False, notes=""),
+            Requirement(
+                name="Python 3.11", requirement_type="runtime", is_optional=False, notes=""
+            ),
         ],
     )
 

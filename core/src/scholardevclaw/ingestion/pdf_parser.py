@@ -5,7 +5,7 @@ import logging
 import re
 import statistics
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from scholardevclaw.ingestion.models import Algorithm, Equation, Figure, PaperDocument, Section
 
@@ -99,7 +99,7 @@ _DOMAIN_KEYWORDS: list[tuple[str, dict[str, str]]] = [
 class PDFParser:
     """Parse PDF files into a structured :class:`PaperDocument`."""
 
-    def __init__(self, figure_output_root: Optional[Path] = None) -> None:
+    def __init__(self, figure_output_root: Path | None = None) -> None:
         self.figure_output_root = figure_output_root
 
     def parse(self, pdf_path: Path) -> PaperDocument:
@@ -377,7 +377,7 @@ class PDFParser:
             captions = self._extract_figure_captions(page_texts[page_number - 1])
             images = page.get_images(full=True)
             for image_index, image in enumerate(images, start=1):
-                image_path: Optional[Path] = None
+                image_path: Path | None = None
                 try:
                     xref = int(image[0])
                     image_info = document.extract_image(xref)
@@ -485,14 +485,14 @@ class PDFParser:
         parts = re.split(r"[;,]", match.group(1))
         return [self._normalize_whitespace(part) for part in parts if self._normalize_whitespace(part)]
 
-    def _extract_year(self, metadata: dict[str, Any]) -> Optional[int]:
+    def _extract_year(self, metadata: dict[str, Any]) -> int | None:
         for candidate in (str(metadata.get("creationDate") or ""), str(metadata.get("modDate") or "")):
             match = re.search(r"(19|20)\d{2}", candidate)
             if match:
                 return int(match.group(0))
         return None
 
-    def _extract_venue(self, metadata: dict[str, Any], full_text: str) -> Optional[str]:
+    def _extract_venue(self, metadata: dict[str, Any], full_text: str) -> str | None:
         subject = str(metadata.get("subject") or "").strip()
         if subject:
             return subject

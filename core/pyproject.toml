@@ -147,6 +147,7 @@ scholardevclaw = ["py.typed", "product/templates/*.j2"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+exclude = ["tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
@@ -154,6 +155,7 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["E402"]
+"tests/fixtures/**" = ["E402", "F", "E"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -168,3 +170,5 @@ pythonpath = ["src"]
 markers = [
     "integration: marks integration tests that use external APIs and are skipped by default",
 ]
+# Exclude fixture directories from test collection
+addopts = "--ignore=tests/fixtures"

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-from typing import Any, Optional
+from typing import Any
 
 from scholardevclaw.exceptions import UnderstandingError
 from scholardevclaw.ingestion.models import PaperDocument, Section
@@ -259,7 +258,7 @@ Return only JSON.
         return parsed
 
     @staticmethod
-    def _extract_first_json_object_block(text: str) -> Optional[str]:
+    def _extract_first_json_object_block(text: str) -> str | None:
         start = text.find("{")
         if start == -1:
             return None

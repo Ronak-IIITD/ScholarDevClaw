@@ -66,6 +66,9 @@ test_repos/
 .DS_Store
 Thumbs.db
 
+# External scripts (not part of project)
+get-docker.sh
+
 # OpenClaw vendor
 vendor/openclaw/
 

@@ -93,7 +93,9 @@ def test_implementation_plan_roundtrip_with_multiple_modules() -> None:
 def test_select_tech_stack_prefers_jax_when_required() -> None:
     planner = object.__new__(ImplementationPlanner)
     understanding = _mock_understanding(
-        requirements=[Requirement(name="JAX", type="library", is_optional=False, notes="")]
+        requirements=[
+            Requirement(name="JAX", requirement_type="library", is_optional=False, notes="")
+        ]
     )
 
     stack = planner._select_tech_stack(understanding, _mock_doc(domain="ml"))
@@ -105,7 +107,9 @@ def test_select_tech_stack_prefers_numpy_for_systems_without_pytorch() -> None:
     planner = object.__new__(ImplementationPlanner)
     understanding = _mock_understanding(
         requirements=[
-            Requirement(name="SIMD kernels", type="hardware", is_optional=False, notes="")
+            Requirement(
+                name="SIMD kernels", requirement_type="hardware", is_optional=False, notes=""
+            )
         ]
     )
 

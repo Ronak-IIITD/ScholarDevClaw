@@ -21,12 +21,15 @@ from scholardevclaw.execution.sandbox import DEFAULT_SANDBOX_IMAGE
 from scholardevclaw.ingestion.models import PaperDocument
 from scholardevclaw.ingestion.paper_fetcher import (
     PaperFetchError as FetcherPaperFetchError,
+)
+from scholardevclaw.ingestion.paper_fetcher import (
     PaperNotAccessibleError as FetcherPaperNotAccessibleError,
+)
+from scholardevclaw.ingestion.paper_fetcher import (
     PaperSourceResolutionError as FetcherPaperSourceResolutionError,
 )
 from scholardevclaw.planning.models import ImplementationPlan
 from scholardevclaw.understanding.models import PaperUnderstanding
-
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 

@@ -7,7 +7,7 @@ import re
 import socket
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Optional, Protocol, cast
+from typing import Any, Protocol, cast
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -58,9 +58,9 @@ class PaperFetcher:
 
     def __init__(
         self,
-        parser: Optional[ParserLike] = None,
+        parser: ParserLike | None = None,
         timeout_seconds: float = 30.0,
-        cache_dir: Optional[Path] = None,
+        cache_dir: Path | None = None,
     ) -> None:
         self.parser = parser or PDFParser()
         self.timeout_seconds = timeout_seconds
@@ -299,7 +299,7 @@ class PaperFetcher:
         except (httpx.RequestError, ValueError) as exc:
             raise PaperFetchError(f"Failed to query Semantic Scholar for DOI '{doi}': {exc}") from exc
 
-    def _search_semantic_scholar_by_title(self, title: str) -> Optional[dict[str, Any]]:
+    def _search_semantic_scholar_by_title(self, title: str) -> dict[str, Any] | None:
         def _request() -> dict[str, Any]:
             response = httpx.get(
                 _SEMANTIC_SCHOLAR_SEARCH_URL,
@@ -327,7 +327,7 @@ class PaperFetcher:
         if not isinstance(raw_results, list):
             return None
 
-        best: Optional[dict[str, Any]] = None
+        best: dict[str, Any] | None = None
         best_score = 0.0
         for item in raw_results:
             if not isinstance(item, dict):
@@ -349,7 +349,7 @@ class PaperFetcher:
                 }
         return best
 
-    def _search_arxiv_by_title(self, title: str) -> Optional[dict[str, Any]]:
+    def _search_arxiv_by_title(self, title: str) -> dict[str, Any] | None:
         if arxiv is None:
             return None
         search = arxiv.Search(query=f'ti:"{title}"', max_results=5)
@@ -360,7 +360,7 @@ class PaperFetcher:
             LOGGER.warning("arXiv title search failed for '%s': %s", title, exc)
             return None
 
-        best: Optional[dict[str, Any]] = None
+        best: dict[str, Any] | None = None
         best_score = 0.0
         for entry in results:
             candidate_title = str(getattr(entry, "title", "") or "")
@@ -452,7 +452,7 @@ class PaperFetcher:
         except httpx.RequestError as exc:
             raise PaperFetchError(f"Network error fetching URL '{normalized_url}': {exc}") from exc
 
-    def _extract_pdf_url_from_html(self, page_url: str, html: str) -> Optional[str]:
+    def _extract_pdf_url_from_html(self, page_url: str, html: str) -> str | None:
         soup = BeautifulSoup(html, "html.parser")
         for meta in soup.find_all("meta", attrs={"name": "citation_pdf_url"}):
             if hasattr(meta, "get"):
@@ -481,7 +481,7 @@ class PaperFetcher:
     def _cache_path_for_key(self, key: str) -> Path:
         return self.cache_dir / f"{self._safe_filename(key)}.json"
 
-    def _load_cached_document(self, cache_path: Path) -> Optional[PaperDocument]:
+    def _load_cached_document(self, cache_path: Path) -> PaperDocument | None:
         if not cache_path.exists():
             return None
         try:
@@ -566,8 +566,8 @@ class PaperIngester:
 
     def __init__(
         self,
-        fetcher: Optional[FetcherLike] = None,
-        parser: Optional[ParserLike] = None,
+        fetcher: FetcherLike | None = None,
+        parser: ParserLike | None = None,
     ) -> None:
         parser_instance = parser or PDFParser()
         self.fetcher = fetcher or PaperFetcher(parser=parser_instance)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 def _as_str_list(value: Any) -> list[str]:
@@ -84,7 +84,7 @@ class Figure:
     caption: str
     page: int
     figure_type: str = "diagram"
-    image_path: Optional[Path] = None
+    image_path: Path | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -141,9 +141,9 @@ class PaperDocument:
 
     title: str
     authors: list[str]
-    arxiv_id: Optional[str]
-    doi: Optional[str]
-    year: Optional[int]
+    arxiv_id: str | None
+    doi: str | None
+    year: int | None
     abstract: str
 
     sections: list[Section]
@@ -153,14 +153,14 @@ class PaperDocument:
     tables: list[dict[str, Any]] = field(default_factory=list)
 
     full_text: str = ""
-    pdf_path: Optional[Path] = None
-    source_url: Optional[str] = None
+    pdf_path: Path | None = None
+    source_url: str | None = None
 
     references: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
     domain: str = "unknown"
     subdomain: str = "unknown"
-    venue: Optional[str] = None
+    venue: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize PaperDocument into JSON-safe dictionary."""

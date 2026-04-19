@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 _ALLOWED_COMPLEXITY = {"trivial", "low", "medium", "high", "frontier-only"}
 _COMPLEXITY_ALIASES = {"research-only": "frontier-only"}
@@ -72,8 +72,8 @@ class Requirement:
     requirement_type: str
     is_optional: bool
     notes: str
-    version_constraint: Optional[str] = None
-    acquisition_url: Optional[str] = None
+    version_constraint: str | None = None
+    acquisition_url: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
