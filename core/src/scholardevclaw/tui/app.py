@@ -39,7 +39,17 @@ from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.llm.client import DEFAULT_MODELS, LLMAPIError, LLMClient, LLMConfigError
 from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 
-from .screens import CommandPalette, HelpOverlay, ProviderSetupScreen
+from .screens import (
+    CommandPalette,
+    ExecutionScreen,
+    GenerationScreen,
+    HelpOverlay,
+    PaperIngestionScreen,
+    PlanningScreen,
+    ProductScreen,
+    ProviderSetupScreen,
+    UnderstandingScreen,
+)
 from .theme import COLORS as TUI_COLORS
 from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspector, StatusBar
 
@@ -312,6 +322,12 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+i", "focus_inspector", "Inspector"),
         ("ctrl+h", "show_help", "Help"),
         ("escape", "handle_escape", "ESC"),
+        ("ctrl+p", "open_paper_ingestion", "Ingestion"),
+        ("ctrl+u", "open_understanding", "Understanding"),
+        ("ctrl+l", "open_planning", "Planning"),
+        ("ctrl+g", "open_generation", "Generation"),
+        ("ctrl+e", "open_execution", "Execution"),
+        ("ctrl+r", "open_product", "Product"),
     ]
 
     CSS = """
@@ -1104,6 +1120,45 @@ class ScholarDevClawApp(App[None]):
         self._set_status("LLM ready", "success")
         self._sync_status_bar()
         self._update_command_meta()
+
+    def _on_paper_ingestion_result(self, result: dict[str, Any] | None) -> None:
+        if result is None:
+            self._append_output("Paper ingestion dismissed", "warning")
+            return
+        self._append_output(f"Paper ingestion result: {result}")
+
+    def _on_understanding_result(self, result: dict[str, Any] | str | None) -> None:
+        if result is None:
+            self._append_output("Understanding dismissed", "warning")
+            return
+        decision = result if isinstance(result, str) else str(result.get("decision", "unknown"))
+        self._append_output(f"Decision: {decision}")
+
+    def _on_planning_result(self, result: dict[str, Any] | str | None) -> None:
+        if result is None:
+            self._append_output("Planning dismissed", "warning")
+            return
+        decision = result if isinstance(result, str) else str(result.get("decision", "unknown"))
+        self._append_output(f"Decision: {decision}")
+
+    def _on_generation_result(self, result: dict[str, Any] | None) -> None:
+        if result is None:
+            self._append_output("Generation dismissed", "warning")
+            return
+        self._append_output(f"Generation result: {result}")
+
+    def _on_execution_result(self, result: dict[str, Any] | None) -> None:
+        if result is None:
+            self._append_output("Execution dismissed", "warning")
+            return
+        self._append_output(f"Execution result: {result}")
+
+    def _on_product_result(self, result: dict[str, Any] | None) -> None:
+        if result is None:
+            self._append_output("Product dismissed", "warning")
+            return
+        self._append_output("Product ready for review", "success")
+        self._append_output(f"Product result: {result}")
 
     def _save_provider_setup(
         self, provider: str, model: str, api_key: str = ""
@@ -3660,6 +3715,24 @@ class ScholarDevClawApp(App[None]):
 
     def action_open_command_palette(self) -> None:
         self.push_screen(CommandPalette(), self._on_command_palette_result)
+
+    def action_open_paper_ingestion(self) -> None:
+        self.push_screen(PaperIngestionScreen(), self._on_paper_ingestion_result)
+
+    def action_open_understanding(self) -> None:
+        self.push_screen(UnderstandingScreen(), self._on_understanding_result)
+
+    def action_open_planning(self) -> None:
+        self.push_screen(PlanningScreen(), self._on_planning_result)
+
+    def action_open_generation(self) -> None:
+        self.push_screen(GenerationScreen(), self._on_generation_result)
+
+    def action_open_execution(self) -> None:
+        self.push_screen(ExecutionScreen(), self._on_execution_result)
+
+    def action_open_product(self) -> None:
+        self.push_screen(ProductScreen(), self._on_product_result)
 
     def action_focus_inspector(self) -> None:
         try:
