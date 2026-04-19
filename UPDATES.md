@@ -4,6 +4,24 @@
 
 **Last updated:** 2026-04-19
 
+### 2026-04-19 (Phase 10: Polish — error messages, edge cases, timing)
+
+**Summary:** Upgraded all error messages to the what/why/fix format, hardened edge-case handling across ingestion, understanding, planning, generation, and execution, added phase timing instrumentation to the pipeline, and updated a test assertion to match the new error message format.
+
+**What changed:**
+
+- `core/src/scholardevclaw/ingestion/pdf_parser.py` — Improved actionable error messaging; added empty-content and image tuple guards
+- `core/src/scholardevclaw/ingestion/paper_fetcher.py` — Improved what/why/fix error messages; hardened filename sanitization/truncation
+- `core/src/scholardevclaw/understanding/agent.py` — Replaced fragile single-item indexing with safe first-text extraction; improved parse/model errors
+- `core/src/scholardevclaw/planning/planner.py` — Added safe text extraction helper; improved response/JSON/topology error messages
+- `core/src/scholardevclaw/generation/module_agent.py` — Added safe first-text extraction in generation/test-generation flows
+- `core/src/scholardevclaw/generation/orchestrator.py` — Improved actionable errors; added long path-component guard
+- `core/src/scholardevclaw/execution/scorer.py` — Added robust first-text extraction for metric parsing
+- `core/src/scholardevclaw/application/pipeline.py` — Added `_timing` phase profiling support; included timing in integrate payloads
+- `core/src/scholardevclaw/api/server.py` — Upgraded validation and endpoint failure details to what/why/fix style
+- `core/src/scholardevclaw/cli.py` — Improved scaffold/mapping/report-shape error messaging
+- `core/tests/unit/test_api_server.py` — Updated path confinement assertion to match new error message format
+
 ### 2026-04-19 (Phase 9: TUI Extension — 6 new pipeline screens)
 
 **Summary:** Added 6 new Textual ModalScreens to the TUI for the paper-to-product pipeline: PaperIngestionScreen, UnderstandingScreen, PlanningScreen, GenerationScreen, ExecutionScreen, and ProductScreen. All screens are wired into app.py with keyboard bindings and result callbacks.
