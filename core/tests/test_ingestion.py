@@ -118,7 +118,9 @@ def test_pdf_parser_extracts_algorithms_and_equations(tmp_path: Path) -> None:
     assert parsed.algorithms[0].outputs == ["logits"]
     assert parsed.equations
     assert any("=" in equation.latex for equation in parsed.equations)
-    assert any(equation.equation_type in {"model", "loss", "unknown"} for equation in parsed.equations)
+    assert any(
+        equation.equation_type in {"model", "loss", "unknown"} for equation in parsed.equations
+    )
     assert parsed.domain == "nlp"
     assert parsed.subdomain in {"language-modeling", "general"}
 
@@ -235,11 +237,15 @@ def test_fetch_by_arxiv_reads_from_cache_without_network(tmp_path: Path) -> None
     assert result.source_url == expected.source_url
 
 
-def test_fetch_auto_falls_back_to_title_search(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_fetch_auto_falls_back_to_title_search(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     expected = _build_sample_document(tmp_path / "title.pdf")
     fetcher = PaperFetcher()
 
-    monkeypatch.setattr(fetcher, "search_by_title", lambda source, dest_dir, no_cache=False: expected)
+    monkeypatch.setattr(
+        fetcher, "search_by_title", lambda source, dest_dir, no_cache=False: expected
+    )
 
     result = fetcher.fetch_auto("Attention Is All You Need", tmp_path)
 

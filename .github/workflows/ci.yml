@@ -84,7 +84,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: core/pyproject.toml
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,product]"
       - name: Run tests with coverage
         run: |
           python -m pytest tests/ -x -q \

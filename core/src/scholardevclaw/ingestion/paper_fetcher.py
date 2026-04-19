@@ -75,7 +75,9 @@ class PaperFetcher:
         local_path = Path(normalized_source).expanduser()
         if local_path.exists():
             if local_path.is_dir():
-                raise PaperSourceResolutionError(f"Expected a PDF file, got directory: {local_path}")
+                raise PaperSourceResolutionError(
+                    f"Expected a PDF file, got directory: {local_path}"
+                )
             if local_path.suffix.casefold() != ".pdf":
                 raise PaperSourceResolutionError(
                     f"Unsupported local file type '{local_path.suffix}'. Expected a .pdf file."
@@ -116,7 +118,9 @@ class PaperFetcher:
                 return cached
 
         if arxiv is None:
-            raise ImportError("arxiv package is required. Install with: pip install -e '.[ingestion]'")
+            raise ImportError(
+                "arxiv package is required. Install with: pip install -e '.[ingestion]'"
+            )
 
         target_dir = self._prepare_dest_dir(dest_dir)
         LOGGER.info("Fetching arXiv paper: %s", normalized_id)
@@ -145,7 +149,9 @@ class PaperFetcher:
         except PaperFetchError:
             raise
         except (OSError, RuntimeError, TypeError, ValueError, AttributeError) as exc:
-            raise PaperFetchError(f"Failed to download arXiv PDF for '{normalized_id}': {exc}") from exc
+            raise PaperFetchError(
+                f"Failed to download arXiv PDF for '{normalized_id}': {exc}"
+            ) from exc
 
         document = self.parser.parse(pdf_path)
         document.arxiv_id = normalized_id
@@ -249,7 +255,9 @@ class PaperFetcher:
         if semantic_candidate is not None:
             candidates.append(("semantic", semantic_candidate["similarity"], semantic_candidate))
         if not candidates:
-            raise PaperNotAccessibleError(f"No paper search result found for title '{normalized_title}'")
+            raise PaperNotAccessibleError(
+                f"No paper search result found for title '{normalized_title}'"
+            )
 
         source_kind, similarity, candidate = max(candidates, key=lambda item: item[1])
         if similarity < 0.85:
@@ -258,7 +266,9 @@ class PaperFetcher:
             )
 
         if source_kind == "arxiv":
-            document = self.fetch_by_arxiv_id(str(candidate["arxiv_id"]), dest_dir, no_cache=no_cache)
+            document = self.fetch_by_arxiv_id(
+                str(candidate["arxiv_id"]), dest_dir, no_cache=no_cache
+            )
         else:
             doi = str(candidate.get("doi", "") or "")
             if doi:
@@ -271,7 +281,9 @@ class PaperFetcher:
                     )
                 document = self.fetch_by_url(pdf_url, dest_dir, no_cache=no_cache)
             document.title = str(candidate.get("title", document.title))
-            document.venue = str(candidate.get("venue", "") or document.venue or "") or document.venue
+            document.venue = (
+                str(candidate.get("venue", "") or document.venue or "") or document.venue
+            )
 
         self._store_cached_document(cache_path, document)
         return document
@@ -297,7 +309,9 @@ class PaperFetcher:
         except httpx.HTTPStatusError as exc:
             raise PaperFetchError(f"Semantic Scholar lookup failed for DOI '{doi}': {exc}") from exc
         except (httpx.RequestError, ValueError) as exc:
-            raise PaperFetchError(f"Failed to query Semantic Scholar for DOI '{doi}': {exc}") from exc
+            raise PaperFetchError(
+                f"Failed to query Semantic Scholar for DOI '{doi}': {exc}"
+            ) from exc
 
     def _search_semantic_scholar_by_title(self, title: str) -> dict[str, Any] | None:
         def _request() -> dict[str, Any]:
@@ -336,9 +350,15 @@ class PaperFetcher:
             score = SequenceMatcher(None, title.casefold(), candidate_title.casefold()).ratio()
             if score > best_score:
                 open_access_pdf = item.get("openAccessPdf")
-                pdf_url = str(open_access_pdf.get("url", "") or "") if isinstance(open_access_pdf, dict) else ""
+                pdf_url = (
+                    str(open_access_pdf.get("url", "") or "")
+                    if isinstance(open_access_pdf, dict)
+                    else ""
+                )
                 external_ids = item.get("externalIds")
-                doi = str(external_ids.get("DOI", "") or "") if isinstance(external_ids, dict) else ""
+                doi = (
+                    str(external_ids.get("DOI", "") or "") if isinstance(external_ids, dict) else ""
+                )
                 best_score = score
                 best = {
                     "title": candidate_title,
@@ -388,13 +408,18 @@ class PaperFetcher:
         document.venue = str(metadata.get("venue", "") or document.venue or "") or document.venue
         open_access_pdf = metadata.get("openAccessPdf")
         if isinstance(open_access_pdf, dict):
-            document.source_url = str(open_access_pdf.get("url", "") or document.source_url or "") or document.source_url
+            document.source_url = (
+                str(open_access_pdf.get("url", "") or document.source_url or "")
+                or document.source_url
+            )
         year = metadata.get("year")
         if year is not None:
             try:
                 document.year = int(year)
             except (TypeError, ValueError):
-                LOGGER.warning("Could not parse year from Semantic Scholar metadata for DOI %s", doi)
+                LOGGER.warning(
+                    "Could not parse year from Semantic Scholar metadata for DOI %s", doi
+                )
         external_ids = metadata.get("externalIds")
         if isinstance(external_ids, dict):
             arxiv_id = str(external_ids.get("ArXiv", "") or "").strip()
@@ -418,7 +443,9 @@ class PaperFetcher:
         except httpx.HTTPStatusError as exc:
             raise PaperFetchError(f"Failed to download PDF from '{normalized_url}': {exc}") from exc
         except httpx.RequestError as exc:
-            raise PaperFetchError(f"Network error downloading PDF from '{normalized_url}': {exc}") from exc
+            raise PaperFetchError(
+                f"Network error downloading PDF from '{normalized_url}': {exc}"
+            ) from exc
 
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content)
@@ -434,7 +461,9 @@ class PaperFetcher:
             response.raise_for_status()
             return str(response.headers.get("content-type", "")).casefold()
         except httpx.HTTPError as exc:
-            LOGGER.warning("HEAD request failed for %s; falling back to GET logic (%s)", normalized_url, exc)
+            LOGGER.warning(
+                "HEAD request failed for %s; falling back to GET logic (%s)", normalized_url, exc
+            )
             return ""
 
     def _http_get_text(self, url: str) -> str:

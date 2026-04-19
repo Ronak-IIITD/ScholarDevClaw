@@ -45,4 +45,3 @@ class SandboxError(ExecutionError):
 
 class KnowledgeBaseError(ScholarDevClawError):
     """Raised when knowledge-base storage or retrieval fails."""
-

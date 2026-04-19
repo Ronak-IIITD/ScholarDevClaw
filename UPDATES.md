@@ -2,7 +2,34 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-18
+**Last updated:** 2026-04-19
+
+### 2026-04-19 (CI stabilization: formatter drift + product test dependency)
+
+**Summary:** Fixed CI failures caused by pending Ruff formatter changes and missing `jinja2` during the full test run job.
+
+**What changed:**
+
+- `.github/workflows/ci.yml`
+  - Updated Python test job dependency install to include product extras:
+    - `pip install -e ".[dev,product]"`
+  - This ensures `jinja2` is available when importing `scholardevclaw.product` in `tests/test_product.py`.
+
+- Ruff format updates (no behavior changes):
+  - `core/src/scholardevclaw/exceptions.py`
+  - `core/src/scholardevclaw/ingestion/paper_fetcher.py`
+  - `core/src/scholardevclaw/ingestion/pdf_parser.py`
+  - `core/src/scholardevclaw/understanding/agent.py`
+  - `core/src/scholardevclaw/understanding/graph.py`
+  - `core/src/scholardevclaw/understanding/models.py`
+  - `core/tests/test_ingestion.py`
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/ tests/`
+- ✅ `cd core && ruff format --check src/ tests/`
+- ✅ `cd core && python -m pytest tests/ -x -q`
+  - `1589 passed, 4 skipped`
 
 ### 2026-04-18 (UPGRADE v4 Phase-2: understanding contract expansion)
 

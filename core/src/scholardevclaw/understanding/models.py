@@ -237,13 +237,19 @@ class PaperUnderstanding:
             if isinstance(item, dict)
         ]
         requirements = [
-            Requirement.from_dict(item) for item in data.get("requirements", []) if isinstance(item, dict)
+            Requirement.from_dict(item)
+            for item in data.get("requirements", [])
+            if isinstance(item, dict)
         ]
         concept_nodes = [
-            ConceptNode.from_dict(item) for item in data.get("concept_nodes", []) if isinstance(item, dict)
+            ConceptNode.from_dict(item)
+            for item in data.get("concept_nodes", [])
+            if isinstance(item, dict)
         ]
         concept_edges = [
-            ConceptEdge.from_dict(item) for item in data.get("concept_edges", []) if isinstance(item, dict)
+            ConceptEdge.from_dict(item)
+            for item in data.get("concept_edges", [])
+            if isinstance(item, dict)
         ]
 
         return cls(

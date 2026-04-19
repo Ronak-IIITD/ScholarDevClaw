@@ -126,7 +126,9 @@ class PDFParser:
         finally:
             document.close()
 
-        title = str(metadata.get("title") or "").strip() or self._infer_title(full_text, resolved_path)
+        title = str(metadata.get("title") or "").strip() or self._infer_title(
+            full_text, resolved_path
+        )
         abstract = self._extract_abstract(sections, full_text)
         domain, subdomain = self._detect_domain_and_subdomain(full_text)
 
@@ -203,7 +205,11 @@ class PDFParser:
                 continue
             seen_headers.add(key)
             headers.append(
-                (page_number, text, self._estimate_section_level(text, font_size, heading_threshold))
+                (
+                    page_number,
+                    text,
+                    self._estimate_section_level(text, font_size, heading_threshold),
+                )
             )
 
         if not headers:
@@ -267,7 +273,9 @@ class PDFParser:
                     if key in seen:
                         continue
                     seen.add(key)
-                    context = self._build_context_window(normalized_text, match.start(), match.end())
+                    context = self._build_context_window(
+                        normalized_text, match.start(), match.end()
+                    )
                     equations.append(
                         Equation(
                             latex=latex,
@@ -321,9 +329,9 @@ class PDFParser:
                     idx += 1
                     continue
 
-                starts_block = bool(header_pattern.match(normalized)) or self._looks_like_algorithm_line(
-                    normalized
-                )
+                starts_block = bool(
+                    header_pattern.match(normalized)
+                ) or self._looks_like_algorithm_line(normalized)
                 if not starts_block:
                     idx += 1
                     continue
@@ -368,7 +376,9 @@ class PDFParser:
 
         return algorithms
 
-    def _extract_figures(self, document: Any, page_texts: list[str], base_dir: Path) -> list[Figure]:
+    def _extract_figures(
+        self, document: Any, page_texts: list[str], base_dir: Path
+    ) -> list[Figure]:
         figures: list[Figure] = []
         figures_dir = (self.figure_output_root or base_dir) / "figures"
         figures_dir.mkdir(parents=True, exist_ok=True)
@@ -395,7 +405,12 @@ class PDFParser:
                                 extracted.save(target, format="PNG")
                         image_path = target
                 except (OSError, RuntimeError, ValueError) as exc:
-                    LOGGER.warning("Figure extraction failed on page %s image %s: %s", page_number, image_index, exc)
+                    LOGGER.warning(
+                        "Figure extraction failed on page %s image %s: %s",
+                        page_number,
+                        image_index,
+                        exc,
+                    )
 
                 caption = captions[image_index - 1] if image_index - 1 < len(captions) else ""
                 figures.append(
@@ -444,7 +459,9 @@ class PDFParser:
         if not raw_authors.strip():
             return []
         parts = re.split(r"[;,]", raw_authors)
-        return [self._normalize_whitespace(part) for part in parts if self._normalize_whitespace(part)]
+        return [
+            self._normalize_whitespace(part) for part in parts if self._normalize_whitespace(part)
+        ]
 
     def _extract_abstract(self, sections: list[Section], full_text: str) -> str:
         for section in sections:
@@ -465,7 +482,11 @@ class PDFParser:
         for section in sections:
             if "reference" in section.title.casefold():
                 references.extend(
-                    [self._normalize_whitespace(line) for line in section.content.splitlines() if self._normalize_whitespace(line)]
+                    [
+                        self._normalize_whitespace(line)
+                        for line in section.content.splitlines()
+                        if self._normalize_whitespace(line)
+                    ]
                 )
         if references:
             return references
@@ -478,15 +499,24 @@ class PDFParser:
     def _extract_keywords(self, metadata_keywords: str, full_text: str) -> list[str]:
         if metadata_keywords.strip():
             parts = re.split(r"[;,]", metadata_keywords)
-            return [self._normalize_whitespace(part) for part in parts if self._normalize_whitespace(part)]
+            return [
+                self._normalize_whitespace(part)
+                for part in parts
+                if self._normalize_whitespace(part)
+            ]
         match = re.search(r"\bkeywords?\b\s*[:\-]\s*([^\n]{3,300})", full_text, re.IGNORECASE)
         if match is None:
             return []
         parts = re.split(r"[;,]", match.group(1))
-        return [self._normalize_whitespace(part) for part in parts if self._normalize_whitespace(part)]
+        return [
+            self._normalize_whitespace(part) for part in parts if self._normalize_whitespace(part)
+        ]
 
     def _extract_year(self, metadata: dict[str, Any]) -> int | None:
-        for candidate in (str(metadata.get("creationDate") or ""), str(metadata.get("modDate") or "")):
+        for candidate in (
+            str(metadata.get("creationDate") or ""),
+            str(metadata.get("modDate") or ""),
+        ):
             match = re.search(r"(19|20)\d{2}", candidate)
             if match:
                 return int(match.group(0))
@@ -520,11 +550,19 @@ class PDFParser:
 
     def _classify_equation_type(self, latex: str, context: str) -> str:
         combined = f"{latex} {context}".casefold()
-        if any(token in combined for token in ("loss", "objective", "cross entropy", "regularization")):
+        if any(
+            token in combined for token in ("loss", "objective", "cross entropy", "regularization")
+        ):
             return "loss"
-        if any(token in combined for token in ("accuracy", "bleu", "f1", "precision", "recall", "perplexity", "metric")):
+        if any(
+            token in combined
+            for token in ("accuracy", "bleu", "f1", "precision", "recall", "perplexity", "metric")
+        ):
             return "metric"
-        if any(token in combined for token in ("embedding", "attention", "transformer", "decoder", "encoder", "model")):
+        if any(
+            token in combined
+            for token in ("embedding", "attention", "transformer", "decoder", "encoder", "model")
+        ):
             return "model"
         if any(token in combined for token in ("notation", "where", "let", "denote")):
             return "notation"
@@ -554,7 +592,9 @@ class PDFParser:
 
     def _split_io_values(self, value: str) -> list[str]:
         parts = re.split(r"[,;/]", value)
-        cleaned = [self._normalize_whitespace(part) for part in parts if self._normalize_whitespace(part)]
+        cleaned = [
+            self._normalize_whitespace(part) for part in parts if self._normalize_whitespace(part)
+        ]
         return cleaned
 
     def _is_section_header(self, text: str, font_size: float, threshold: float) -> bool:
@@ -624,7 +664,9 @@ class PDFParser:
 
     def _looks_like_algorithm_line(self, line: str) -> bool:
         lowered = line.casefold()
-        return lowered.startswith(("input:", "inputs:", "output:", "outputs:", "for ", "while ", "repeat ", "return "))
+        return lowered.startswith(
+            ("input:", "inputs:", "output:", "outputs:", "for ", "while ", "repeat ", "return ")
+        )
 
     def _detect_algorithm_language_hint(self, pseudocode: str) -> str:
         lowered = pseudocode.casefold()

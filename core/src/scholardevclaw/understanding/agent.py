@@ -80,15 +80,23 @@ class UnderstandingAgent:
 
         raw = getattr(response.content[0], "text", None)
         if not isinstance(raw, str) or not raw.strip():
-            raise UnderstandingError("Anthropic response did not contain text in the first content block")
+            raise UnderstandingError(
+                "Anthropic response did not contain text in the first content block"
+            )
 
         data = self._parse_json_response(raw)
         return PaperUnderstanding.from_dict(data)
 
     def _build_prompt(self, doc: PaperDocument) -> str:
-        method_text = self._select_section_text(doc.sections, {"method", "model", "architecture", "approach"})
-        experiments_text = self._select_section_text(doc.sections, {"experiments", "results", "evaluation"})
-        conclusion_text = self._select_section_text(doc.sections, {"conclusion", "discussion", "future work"})
+        method_text = self._select_section_text(
+            doc.sections, {"method", "model", "architecture", "approach"}
+        )
+        experiments_text = self._select_section_text(
+            doc.sections, {"experiments", "results", "evaluation"}
+        )
+        conclusion_text = self._select_section_text(
+            doc.sections, {"conclusion", "discussion", "future work"}
+        )
 
         algorithms_text = self._join_algorithm_blocks(doc)
         equations_text = self._join_equation_blocks(doc)
@@ -107,7 +115,9 @@ class UnderstandingAgent:
     def _build_split_prompts(self, doc: PaperDocument) -> tuple[str, str]:
         architecture_prompt = self._render_prompt(
             doc=doc,
-            method_text=self._select_section_text(doc.sections, {"method", "model", "architecture", "approach"}),
+            method_text=self._select_section_text(
+                doc.sections, {"method", "model", "architecture", "approach"}
+            ),
             experiments_text="(omitted for architecture pass)",
             conclusion_text=self._select_section_text(doc.sections, {"conclusion", "discussion"}),
             algorithms_text=self._join_algorithm_blocks(doc),
@@ -117,7 +127,9 @@ class UnderstandingAgent:
         experiments_prompt = self._render_prompt(
             doc=doc,
             method_text="(method already analyzed in architecture pass)",
-            experiments_text=self._select_section_text(doc.sections, {"experiments", "results", "evaluation"}),
+            experiments_text=self._select_section_text(
+                doc.sections, {"experiments", "results", "evaluation"}
+            ),
             conclusion_text=self._select_section_text(doc.sections, {"conclusion", "discussion"}),
             algorithms_text="(algorithm blocks already analyzed in architecture pass)",
             equations_text="(equations already analyzed in architecture pass)",
@@ -214,9 +226,7 @@ Return only JSON.
     def _join_algorithm_blocks(self, doc: PaperDocument) -> str:
         blocks = []
         for algorithm in doc.algorithms:
-            blocks.append(
-                f"=== {algorithm.name} (p.{algorithm.page}) ===\n{algorithm.pseudocode}"
-            )
+            blocks.append(f"=== {algorithm.name} (p.{algorithm.page}) ===\n{algorithm.pseudocode}")
         return "\n\n".join(blocks) if blocks else "(none)"
 
     def _join_equation_blocks(self, doc: PaperDocument) -> str:

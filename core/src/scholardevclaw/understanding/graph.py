@@ -36,11 +36,7 @@ def export_graph_json(graph: nx.DiGraph) -> dict[str, Any]:
     if not nx.is_directed_acyclic_graph(dag):
         dag = nx.DiGraph()
         dag.add_nodes_from(graph.nodes(data=True))
-        dag.add_edges_from(
-            (u, v, data)
-            for u, v, data in graph.edges(data=True)
-            if u != v
-        )
+        dag.add_edges_from((u, v, data) for u, v, data in graph.edges(data=True) if u != v)
 
     try:
         longest_path = nx.dag_longest_path(dag) if dag.number_of_edges() else []
