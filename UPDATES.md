@@ -4,6 +4,28 @@
 
 **Last updated:** 2026-04-19
 
+### 2026-04-19 (Phase 9: TUI Extension — 6 new pipeline screens)
+
+**Summary:** Added 6 new Textual ModalScreens to the TUI for the paper-to-product pipeline: PaperIngestionScreen, UnderstandingScreen, PlanningScreen, GenerationScreen, ExecutionScreen, and ProductScreen. All screens are wired into app.py with keyboard bindings and result callbacks.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/screens.py` (+~960 lines)
+  - Added `PaperIngestionScreen` — paper source input, metadata display, detected algorithms/equations preview pane
+  - Added `UnderstandingScreen` — concept graph ASCII art, contributions/requirements sidebar, confidence meter, approve/reject buttons
+  - Added `PlanningScreen` — module dependency tree, per-module estimates, tech stack justification, approval gate
+  - Added `GenerationScreen` — module tabs with live log streaming, per-module progress bars, syntax error alerts, overall progress + token counter, cancel button
+  - Added `ExecutionScreen` — live pytest output pane, per-test pass/fail status, healing round indicator, reproducibility score meter
+  - Added `ProductScreen` — generated file tree browser, file preview pane, open in editor (respects $EDITOR), copy install command to clipboard
+  - Added helper functions `_clamp01`, `_meter` for UI rendering
+  - Updated imports to include `os`, `shlex`, `subprocess`, `Path`, `Button`, clipboard helpers, and pipeline models
+
+- `core/src/scholardevclaw/tui/app.py` (+~30 lines)
+  - Updated `.screens` import to include all 6 new screens
+  - Added 6 keyboard bindings: `ctrl+p` (ingest), `ctrl+u` (understand), `ctrl+l` (plan), `ctrl+g` (generate), `ctrl+e` (execute), `ctrl+r` (product)
+  - Added 6 `action_open_*` methods for each screen
+  - Added 6 result callback methods (stub implementations — actual pipeline integration deferred)
+
 ### 2026-04-19 (CI stabilization: formatter drift + product test dependency)
 
 **Summary:** Fixed CI failures caused by pending Ruff formatter changes and missing `jinja2` during the full test run job.
