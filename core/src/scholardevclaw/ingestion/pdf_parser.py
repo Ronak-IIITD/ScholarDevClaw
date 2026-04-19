@@ -105,18 +105,30 @@ class PDFParser:
     def parse(self, pdf_path: Path) -> PaperDocument:
         if fitz is None:
             raise ImportError(
-                "pymupdf is required for PDF parsing. Install with: pip install -e '.[ingestion]'"
+                "What failed: PDF parsing could not start. "
+                "Why: the optional dependency 'pymupdf' is not installed. "
+                "Fix: install ingestion extras with `pip install -e '.[ingestion]'`."
             )
 
         resolved_path = pdf_path.expanduser().resolve()
         if not resolved_path.exists() or not resolved_path.is_file():
-            raise FileNotFoundError(f"PDF not found: {resolved_path}")
+            raise FileNotFoundError(
+                "What failed: PDF input could not be opened. "
+                f"Why: file was not found or is not a regular file at '{resolved_path}'. "
+                "Fix: provide a valid local .pdf file path."
+            )
 
         LOGGER.info("Parsing PDF: %s", resolved_path)
         document = fitz.open(str(resolved_path))
         try:
             page_texts = self._extract_page_texts(document)
             full_text = "\n".join(page_texts).strip()
+            if not full_text:
+                raise ValueError(
+                    "What failed: PDF content extraction produced no text. "
+                    "Why: the PDF appears empty, image-only, or unreadable by the parser. "
+                    "Fix: provide a text-based PDF or run OCR before ingesting."
+                )
             sections = self._extract_sections(document, page_texts)
             equations = self._extract_equations(page_texts)
             algorithms = self._extract_algorithms(page_texts)
@@ -389,12 +401,22 @@ class PDFParser:
             for image_index, image in enumerate(images, start=1):
                 image_path: Path | None = None
                 try:
+                    if not image:
+                        raise ValueError(
+                            "What failed: figure extraction. "
+                            "Why: PDF image descriptor was empty. "
+                            "Fix: skip malformed image records and continue parsing text content."
+                        )
                     xref = int(image[0])
                     image_info = document.extract_image(xref)
                     payload = image_info.get("image")
                     image_ext = str(image_info.get("ext") or "png").lower()
                     if payload is None:
-                        raise ValueError("Missing image payload")
+                        raise ValueError(
+                            "What failed: figure extraction. "
+                            "Why: extracted image record has no binary payload. "
+                            "Fix: skip this image and continue parsing remaining figures."
+                        )
                     target = figures_dir / f"fig_{page_number}_{image_index}.png"
                     if image_ext == "png":
                         target.write_bytes(payload)

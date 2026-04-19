@@ -45,11 +45,16 @@ class UnderstandingAgent:
     def __init__(self, api_key: str, model: str = "claude-opus-4-5") -> None:
         if anthropic is None:
             raise ImportError(
-                "anthropic SDK is required for UnderstandingAgent. "
-                "Install with: pip install -e '.[understanding]'"
+                "What failed: UnderstandingAgent initialization. "
+                "Why: the optional dependency 'anthropic' is not installed. "
+                "Fix: install understanding extras with `pip install -e '.[understanding]'`."
             )
         if not api_key.strip():
-            raise ValueError("api_key must be non-empty")
+            raise ValueError(
+                "What failed: UnderstandingAgent initialization. "
+                "Why: provided api_key is empty. "
+                "Fix: set ANTHROPIC_API_KEY and pass a non-empty key."
+            )
 
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
@@ -73,15 +78,25 @@ class UnderstandingAgent:
                 messages=[{"role": "user", "content": prompt}],
             )
         except Exception as exc:  # pragma: no cover - SDK/runtime dependent
-            raise UnderstandingError(f"Understanding model call failed: {exc}") from exc
+            raise UnderstandingError(
+                "What failed: understanding model request. "
+                f"Why: provider call raised '{exc}'. "
+                "Fix: verify API key/model/network and retry."
+            ) from exc
 
         if not response.content:
-            raise UnderstandingError("Anthropic response had no content blocks")
+            raise UnderstandingError(
+                "What failed: understanding response parsing. "
+                "Why: model response contained no content blocks. "
+                "Fix: retry with the same input or switch model."
+            )
 
-        raw = getattr(response.content[0], "text", None)
+        raw = self._extract_first_text_block(response.content)
         if not isinstance(raw, str) or not raw.strip():
             raise UnderstandingError(
-                "Anthropic response did not contain text in the first content block"
+                "What failed: understanding response parsing. "
+                "Why: response did not contain a non-empty text content block. "
+                "Fix: retry and ensure the model is configured for text output."
             )
 
         data = self._parse_json_response(raw)
@@ -243,9 +258,20 @@ Return only JSON.
         except json.JSONDecodeError as exc:
             preview = raw[:200].replace("\n", " ")
             raise UnderstandingError(
-                "Failed to parse UnderstandingAgent response as JSON. "
-                f"Response preview: {preview!r}"
+                "What failed: understanding JSON parsing. "
+                "Why: model output was not valid JSON. "
+                f"Fix: retry with stricter JSON output instructions. Response preview: {preview!r}"
             ) from exc
+
+    @staticmethod
+    def _extract_first_text_block(content_blocks: Any) -> str | None:
+        if not isinstance(content_blocks, list):
+            return None
+        for block in content_blocks:
+            text = getattr(block, "text", None)
+            if isinstance(text, str) and text.strip():
+                return text
+        return None
 
     @staticmethod
     def clean_json_response(raw: str) -> dict[str, Any]:

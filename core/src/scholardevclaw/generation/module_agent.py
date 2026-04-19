@@ -90,10 +90,14 @@ class ModuleAgent:
             tokens_used += _extract_tokens_used(response)
 
             if not response.content:
-                errors = ["Empty response content"]
+                errors = [
+                    "What failed: module code generation. "
+                    "Why: model returned an empty response content block. "
+                    "Fix: retry generation with the same module context."
+                ]
                 continue
 
-            block_text = getattr(response.content[0], "text", "")
+            block_text = self._extract_first_text_block(response.content)
             code = block_text.strip() if isinstance(block_text, str) else ""
 
             validation_errors = self._validate_generated_module(module, plan, code)
@@ -380,5 +384,15 @@ Write pytest tests for this module."""
         if not response.content:
             return "", response
 
-        block_text = getattr(response.content[0], "text", "")
+        block_text = self._extract_first_text_block(response.content)
         return (block_text.strip() if isinstance(block_text, str) else "", response)
+
+    @staticmethod
+    def _extract_first_text_block(content_blocks: Any) -> str | None:
+        if not isinstance(content_blocks, list):
+            return None
+        for block in content_blocks:
+            text = getattr(block, "text", None)
+            if isinstance(text, str) and text.strip():
+                return text
+        return None

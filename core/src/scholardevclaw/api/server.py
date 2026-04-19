@@ -150,7 +150,11 @@ class RepoAnalyzeRequest(BaseModel):
     @classmethod
     def validate_repo_path(cls, value: str) -> str:
         if not value or not value.strip():
-            raise ValueError("repoPath cannot be empty")
+            raise ValueError(
+                "What failed: request validation for 'repoPath'. "
+                "Why: repoPath is empty. "
+                "Fix: provide a non-empty repository path string."
+            )
         return value
 
 
@@ -164,7 +168,11 @@ class ResearchExtractRequest(BaseModel):
     @classmethod
     def validate_source(cls, value: str) -> str:
         if not value or not value.strip():
-            raise ValueError("source cannot be empty")
+            raise ValueError(
+                "What failed: request validation for 'source'. "
+                "Why: source is empty. "
+                "Fix: provide a non-empty paper source (arXiv ID, DOI, URL, or PDF path)."
+            )
         return value
 
 
@@ -324,9 +332,23 @@ def _resolve_existing_repo_path(repo_path: str) -> Path:
     """
     path = Path(repo_path).expanduser().resolve()
     if not path.exists():
-        raise HTTPException(status_code=404, detail="Repository path not found")
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "What failed: repository path resolution. "
+                f"Why: repository path '{repo_path}' does not exist. "
+                "Fix: provide an existing repository directory."
+            ),
+        )
     if not path.is_dir():
-        raise HTTPException(status_code=400, detail="Repository path must be a directory")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "What failed: repository path resolution. "
+                f"Why: path '{repo_path}' is not a directory. "
+                "Fix: provide a directory path."
+            ),
+        )
 
     # Path confinement: enforce allowed base dirs if configured
     if _ALLOWED_BASE_DIRS:
@@ -334,7 +356,11 @@ def _resolve_existing_repo_path(repo_path: str) -> Path:
             logger.warning("Path confinement violation: %s", path)
             raise HTTPException(
                 status_code=403,
-                detail="Repository path is outside the allowed directories",
+                detail=(
+                    "What failed: repository path confinement check. "
+                    "Why: resolved path is outside SCHOLARDEVCLAW_ALLOWED_REPO_DIRS. "
+                    "Fix: use a repository within allowed directories or update server configuration."
+                ),
             )
 
     return path
@@ -430,11 +456,25 @@ def _coerce_int(value: Any, *, field_name: str, default: int | None = None) -> i
     if value in (None, ""):
         if default is not None:
             return default
-        raise HTTPException(status_code=422, detail=f"Missing integer field: {field_name}")
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "What failed: integer field validation. "
+                f"Why: required field '{field_name}' is missing. "
+                "Fix: provide this field with an integer value."
+            ),
+        )
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid integer field: {field_name}") from exc
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "What failed: integer field validation. "
+                f"Why: field '{field_name}' is not a valid integer. "
+                "Fix: provide a numeric integer value."
+            ),
+        ) from exc
 
 
 def _resolve_llm_selection() -> tuple[str | None, str | None]:
@@ -719,7 +759,14 @@ async def analyze_repo(request: RepoAnalyzeRequest):
         raise
     except Exception as e:
         logger.exception("analyze_repo failed: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "What failed: repository analysis request. "
+                "Why: an unexpected internal error occurred while analyzing the repository. "
+                "Fix: check server logs using X-Request-ID and retry."
+            ),
+        )
 
 
 @app.post(
@@ -736,7 +783,14 @@ async def extract_research(request: ResearchExtractRequest):
         raw_result = extractor.extract(request.source, request.sourceType)
 
         if not isinstance(raw_result, dict):
-            raise HTTPException(status_code=500, detail="Invalid research extraction result")
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "What failed: research extraction response validation. "
+                    "Why: internal extractor returned a non-object payload. "
+                    "Fix: check extraction logs and retry with a valid source."
+                ),
+            )
 
         return _normalize_research_spec(raw_result)
     except ResearchExtractionError as e:
@@ -745,7 +799,14 @@ async def extract_research(request: ResearchExtractRequest):
         raise
     except Exception as e:
         logger.exception("extract_research failed: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "What failed: research extraction request. "
+                "Why: an unexpected internal error occurred during extraction. "
+                "Fix: check server logs using X-Request-ID and retry."
+            ),
+        )
 
 
 @app.post(
@@ -814,7 +875,14 @@ async def map_architecture(request: MappingRequest):
         raise
     except Exception as e:
         logger.exception("map_architecture failed: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "What failed: mapping request. "
+                "Why: an unexpected internal error occurred while mapping spec to code. "
+                "Fix: check server logs using X-Request-ID and retry."
+            ),
+        )
 
 
 @app.post(
@@ -850,7 +918,14 @@ async def generate_patch(request: PatchGenerateRequest):
         raise
     except Exception as e:
         logger.exception("generate_patch failed: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "What failed: patch generation request. "
+                "Why: an unexpected internal error occurred while generating patch artifacts. "
+                "Fix: check server logs using X-Request-ID and retry."
+            ),
+        )
 
 
 @app.post(
@@ -883,4 +958,11 @@ async def run_validation(request: ValidationRequest):
         raise
     except Exception as e:
         logger.exception("run_validation failed: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "What failed: validation request. "
+                "Why: an unexpected internal error occurred while running validation. "
+                "Fix: check server logs using X-Request-ID and retry."
+            ),
+        )

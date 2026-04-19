@@ -127,7 +127,7 @@ def test_repo_path_confinement_blocks_outside_paths(monkeypatch, tmp_path):
     )
 
     assert resp.status_code == 403
-    assert "outside the allowed directories" in resp.json()["detail"]
+    assert "outside" in resp.json()["detail"] and "allowed" in resp.json()["detail"]
 
 
 def test_repo_path_not_found_and_not_directory(monkeypatch, tmp_path):

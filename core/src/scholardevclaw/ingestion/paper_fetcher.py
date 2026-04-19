@@ -70,17 +70,25 @@ class PaperFetcher:
     def fetch_auto(self, source: str, dest_dir: Path, no_cache: bool = False) -> PaperDocument:
         normalized_source = source.strip()
         if not normalized_source:
-            raise PaperSourceResolutionError("Paper source is empty")
+            raise PaperSourceResolutionError(
+                "What failed: paper source resolution could not start. "
+                "Why: the provided source string is empty. "
+                "Fix: provide an arXiv ID, DOI, URL, title, or local PDF path."
+            )
 
         local_path = Path(normalized_source).expanduser()
         if local_path.exists():
             if local_path.is_dir():
                 raise PaperSourceResolutionError(
-                    f"Expected a PDF file, got directory: {local_path}"
+                    "What failed: local paper source validation. "
+                    f"Why: expected a PDF file path but received a directory '{local_path}'. "
+                    "Fix: pass a concrete .pdf file path."
                 )
             if local_path.suffix.casefold() != ".pdf":
                 raise PaperSourceResolutionError(
-                    f"Unsupported local file type '{local_path.suffix}'. Expected a .pdf file."
+                    "What failed: local paper source validation. "
+                    f"Why: unsupported file type '{local_path.suffix}' for '{local_path}'. "
+                    "Fix: provide a .pdf file."
                 )
             return self.parser.parse(local_path)
 
@@ -109,7 +117,11 @@ class PaperFetcher:
     ) -> PaperDocument:
         normalized_id = arxiv_id.removeprefix("arxiv:").strip()
         if not normalized_id:
-            raise PaperSourceResolutionError("arXiv ID is empty")
+            raise PaperSourceResolutionError(
+                "What failed: arXiv source resolution. "
+                "Why: the arXiv identifier is empty after normalization. "
+                "Fix: provide a valid arXiv ID, for example '1706.03762'."
+            )
 
         cache_path = self._cache_path_for_key(normalized_id)
         if not no_cache:
@@ -119,7 +131,9 @@ class PaperFetcher:
 
         if arxiv is None:
             raise ImportError(
-                "arxiv package is required. Install with: pip install -e '.[ingestion]'"
+                "What failed: arXiv fetch could not run. "
+                "Why: the optional dependency 'arxiv' is not installed. "
+                "Fix: install ingestion extras with `pip install -e '.[ingestion]'`."
             )
 
         target_dir = self._prepare_dest_dir(dest_dir)
@@ -129,7 +143,11 @@ class PaperFetcher:
         client = arxiv.Client(page_size=1, delay_seconds=0, num_retries=3)
         results = list(client.results(search))
         if not results:
-            raise PaperNotAccessibleError(f"No arXiv paper found for ID '{normalized_id}'")
+            raise PaperNotAccessibleError(
+                "What failed: arXiv lookup returned no paper. "
+                f"Why: no record was found for arXiv ID '{normalized_id}'. "
+                "Fix: verify the ID or provide a DOI/direct PDF URL."
+            )
 
         entry = results[0]
         filename = f"{self._safe_filename(normalized_id)}.pdf"
@@ -143,14 +161,18 @@ class PaperFetcher:
                 pdf_url = str(getattr(entry, "pdf_url", "") or "")
                 if not pdf_url:
                     raise PaperNotAccessibleError(
-                        f"arXiv entry '{normalized_id}' does not expose a downloadable PDF URL"
+                        "What failed: arXiv PDF retrieval. "
+                        f"Why: arXiv entry '{normalized_id}' does not expose a downloadable PDF URL. "
+                        "Fix: try the canonical arXiv page in a browser or provide a direct PDF URL."
                     )
                 self._download_file(pdf_url, pdf_path)
         except PaperFetchError:
             raise
         except (OSError, RuntimeError, TypeError, ValueError, AttributeError) as exc:
             raise PaperFetchError(
-                f"Failed to download arXiv PDF for '{normalized_id}': {exc}"
+                "What failed: arXiv PDF download. "
+                f"Why: download/parsing for arXiv ID '{normalized_id}' raised '{exc}'. "
+                "Fix: retry later or provide a direct PDF URL/local PDF file."
             ) from exc
 
         document = self.parser.parse(pdf_path)
@@ -178,7 +200,11 @@ class PaperFetcher:
     def fetch_by_doi(self, doi: str, dest_dir: Path, no_cache: bool = False) -> PaperDocument:
         normalized_doi = self._normalize_doi(doi)
         if not normalized_doi:
-            raise PaperSourceResolutionError("DOI is empty")
+            raise PaperSourceResolutionError(
+                "What failed: DOI source resolution. "
+                "Why: the DOI is empty after normalization. "
+                "Fix: provide a valid DOI such as '10.xxxx/xxxxx'."
+            )
 
         cache_path = self._cache_path_for_key(f"doi_{normalized_doi}")
         if not no_cache:
@@ -194,8 +220,9 @@ class PaperFetcher:
             pdf_url = str(open_access_pdf.get("url", "") or "")
         if not pdf_url:
             raise PaperNotAccessibleError(
-                "Paper is not available as open-access PDF via Semantic Scholar. "
-                "Try providing an arXiv ID or direct PDF URL."
+                "What failed: DOI-to-PDF resolution. "
+                "Why: Semantic Scholar metadata has no open-access PDF URL for this DOI. "
+                "Fix: provide an arXiv ID or a direct PDF URL."
             )
 
         pdf_path = target_dir / f"doi_{self._safe_filename(normalized_doi)}.pdf"
@@ -222,7 +249,9 @@ class PaperFetcher:
             resolved_pdf_url = self._extract_pdf_url_from_html(normalized_url, html)
             if not resolved_pdf_url:
                 raise PaperNotAccessibleError(
-                    "Could not discover a PDF URL on the target page. Provide a direct PDF link if available."
+                    "What failed: URL-to-PDF discovery. "
+                    "Why: no PDF link was discovered on the target HTML page. "
+                    "Fix: provide a direct PDF URL if available."
                 )
             pdf_url = resolved_pdf_url
 
@@ -238,7 +267,11 @@ class PaperFetcher:
     def search_by_title(self, title: str, dest_dir: Path, no_cache: bool = False) -> PaperDocument:
         normalized_title = self._normalize_whitespace(title)
         if not normalized_title:
-            raise PaperSourceResolutionError("Paper title is empty")
+            raise PaperSourceResolutionError(
+                "What failed: title-based source resolution. "
+                "Why: the provided title is empty after normalization. "
+                "Fix: provide a non-empty paper title."
+            )
 
         cache_path = self._cache_path_for_key(f"title_{normalized_title}")
         if not no_cache:
@@ -256,13 +289,17 @@ class PaperFetcher:
             candidates.append(("semantic", semantic_candidate["similarity"], semantic_candidate))
         if not candidates:
             raise PaperNotAccessibleError(
-                f"No paper search result found for title '{normalized_title}'"
+                "What failed: title search did not find candidates. "
+                f"Why: no arXiv/Semantic Scholar result matched '{normalized_title}'. "
+                "Fix: try a more specific title, DOI, arXiv ID, or direct PDF URL."
             )
 
         source_kind, similarity, candidate = max(candidates, key=lambda item: item[1])
         if similarity < 0.85:
             raise PaperNotAccessibleError(
-                f"No title match met confidence threshold for '{normalized_title}' (best={similarity:.2f})"
+                "What failed: title match confidence check. "
+                f"Why: best match for '{normalized_title}' scored {similarity:.2f}, below 0.85. "
+                "Fix: provide exact title, DOI, arXiv ID, or direct PDF URL."
             )
 
         if source_kind == "arxiv":
@@ -277,7 +314,9 @@ class PaperFetcher:
                 pdf_url = str(candidate.get("pdf_url", "") or "")
                 if not pdf_url:
                     raise PaperNotAccessibleError(
-                        f"Semantic Scholar match for '{normalized_title}' has no DOI or open PDF"
+                        "What failed: title candidate materialization. "
+                        f"Why: Semantic Scholar match for '{normalized_title}' has neither DOI nor open PDF URL. "
+                        "Fix: provide a direct PDF URL or an arXiv ID."
                     )
                 document = self.fetch_by_url(pdf_url, dest_dir, no_cache=no_cache)
             document.title = str(candidate.get("title", document.title))
@@ -301,16 +340,22 @@ class PaperFetcher:
             response.raise_for_status()
             payload = response.json()
             if not isinstance(payload, dict):
-                raise ValueError("Unexpected Semantic Scholar response payload")
+                raise ValueError("response payload is not a JSON object")
             return payload
 
         try:
             return cast(dict[str, Any], self._retry_policy.execute(_request))
         except httpx.HTTPStatusError as exc:
-            raise PaperFetchError(f"Semantic Scholar lookup failed for DOI '{doi}': {exc}") from exc
+            raise PaperFetchError(
+                "What failed: Semantic Scholar DOI lookup. "
+                f"Why: HTTP status error for DOI '{doi}': {exc}. "
+                "Fix: retry later or verify the DOI."
+            ) from exc
         except (httpx.RequestError, ValueError) as exc:
             raise PaperFetchError(
-                f"Failed to query Semantic Scholar for DOI '{doi}': {exc}"
+                "What failed: Semantic Scholar DOI query. "
+                f"Why: request/response handling failed for DOI '{doi}': {exc}. "
+                "Fix: check network connectivity and DOI validity, then retry."
             ) from exc
 
     def _search_semantic_scholar_by_title(self, title: str) -> dict[str, Any] | None:
@@ -328,7 +373,7 @@ class PaperFetcher:
             response.raise_for_status()
             payload = response.json()
             if not isinstance(payload, dict):
-                raise ValueError("Unexpected Semantic Scholar search payload")
+                raise ValueError("search payload is not a JSON object")
             return payload
 
         try:
@@ -441,10 +486,16 @@ class PaperFetcher:
         try:
             content = cast(bytes, self._retry_policy.execute(_request))
         except httpx.HTTPStatusError as exc:
-            raise PaperFetchError(f"Failed to download PDF from '{normalized_url}': {exc}") from exc
+            raise PaperFetchError(
+                "What failed: PDF download request. "
+                f"Why: server returned an error for URL '{normalized_url}': {exc}. "
+                "Fix: verify the URL or retry later."
+            ) from exc
         except httpx.RequestError as exc:
             raise PaperFetchError(
-                f"Network error downloading PDF from '{normalized_url}': {exc}"
+                "What failed: PDF download request. "
+                f"Why: network error while downloading '{normalized_url}': {exc}. "
+                "Fix: check connectivity and retry."
             ) from exc
 
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -477,9 +528,17 @@ class PaperFetcher:
             response.raise_for_status()
             return response.text
         except httpx.HTTPStatusError as exc:
-            raise PaperFetchError(f"Failed to fetch URL '{normalized_url}': {exc}") from exc
+            raise PaperFetchError(
+                "What failed: URL fetch request. "
+                f"Why: server returned an error for '{normalized_url}': {exc}. "
+                "Fix: verify URL accessibility and retry."
+            ) from exc
         except httpx.RequestError as exc:
-            raise PaperFetchError(f"Network error fetching URL '{normalized_url}': {exc}") from exc
+            raise PaperFetchError(
+                "What failed: URL fetch request. "
+                f"Why: network error while fetching '{normalized_url}': {exc}. "
+                "Fix: check connectivity and retry."
+            ) from exc
 
     def _extract_pdf_url_from_html(self, page_url: str, html: str) -> str | None:
         soup = BeautifulSoup(html, "html.parser")
@@ -554,23 +613,43 @@ class PaperFetcher:
     def _normalize_http_url(self, url: str) -> str:
         parsed = urlparse(url.strip())
         if parsed.scheme not in {"http", "https"}:
-            raise PaperSourceResolutionError(f"Unsupported URL scheme in '{url}'")
+            raise PaperSourceResolutionError(
+                "What failed: URL normalization. "
+                f"Why: unsupported URL scheme in '{url}'. "
+                "Fix: provide an http:// or https:// URL."
+            )
         host = parsed.hostname
         if not host:
-            raise PaperSourceResolutionError(f"Invalid URL host in '{url}'")
+            raise PaperSourceResolutionError(
+                "What failed: URL normalization. "
+                f"Why: URL '{url}' does not include a valid host. "
+                "Fix: provide a full URL including a valid hostname."
+            )
         self._assert_public_host(host)
         return parsed.geturl()
 
     def _assert_public_host(self, host: str) -> None:
         lowered = host.casefold()
         if lowered in {"localhost", "0.0.0.0"}:
-            raise PaperSourceResolutionError(f"Blocked local host '{host}'")
+            raise PaperSourceResolutionError(
+                "What failed: remote host safety validation. "
+                f"Why: local host '{host}' is blocked to prevent SSRF/local access. "
+                "Fix: use a public host serving the paper."
+            )
         if lowered.endswith(".local"):
-            raise PaperSourceResolutionError(f"Blocked local-domain host '{host}'")
+            raise PaperSourceResolutionError(
+                "What failed: remote host safety validation. "
+                f"Why: local-domain host '{host}' is blocked to prevent SSRF/local access. "
+                "Fix: use a public host serving the paper."
+            )
         try:
             infos = socket.getaddrinfo(host, None)
         except socket.gaierror as exc:
-            raise PaperSourceResolutionError(f"Could not resolve host '{host}'") from exc
+            raise PaperSourceResolutionError(
+                "What failed: remote host resolution. "
+                f"Why: DNS lookup failed for host '{host}'. "
+                "Fix: verify host spelling and network DNS configuration."
+            ) from exc
         for info in infos:
             ip_text = info[4][0]
             ip_addr = ipaddress.ip_address(ip_text)
@@ -581,13 +660,20 @@ class PaperFetcher:
                 or ip_addr.is_multicast
                 or ip_addr.is_reserved
             ):
-                raise PaperSourceResolutionError(f"Blocked non-public host '{host}'")
+                raise PaperSourceResolutionError(
+                    "What failed: remote host safety validation. "
+                    f"Why: host '{host}' resolved to a non-public IP address. "
+                    "Fix: use a publicly routable host."
+                )
 
     def _normalize_whitespace(self, text: str) -> str:
         return " ".join(text.split()).strip()
 
     def _safe_filename(self, value: str) -> str:
-        return "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
+        sanitized = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
+        collapsed = sanitized.strip("._") or "paper"
+        max_len = 120
+        return collapsed[:max_len]
 
 
 class PaperIngester:

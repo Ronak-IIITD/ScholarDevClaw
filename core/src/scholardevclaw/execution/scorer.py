@@ -221,7 +221,7 @@ class ReproducibilityScorer:
             )
             if not response.content:
                 return {}
-            raw = getattr(response.content[0], "text", "")
+            raw = self._extract_first_text_block(response.content)
             if not isinstance(raw, str):
                 return {}
             loaded = json.loads(raw.strip())
@@ -240,6 +240,16 @@ class ReproducibilityScorer:
         except Exception as exc:  # pragma: no cover - runtime-dependent SDK failures
             logger.debug("LLM metric extraction fallback failed: %s", exc)
             return {}
+
+    @staticmethod
+    def _extract_first_text_block(content_blocks: Any) -> str | None:
+        if not isinstance(content_blocks, list):
+            return None
+        for block in content_blocks:
+            text = getattr(block, "text", None)
+            if isinstance(text, str) and text.strip():
+                return text
+        return None
 
     def _compute_score(self, claimed: dict[str, float], achieved: dict[str, float]) -> float:
         if not claimed:

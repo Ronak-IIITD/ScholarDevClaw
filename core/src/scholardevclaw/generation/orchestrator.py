@@ -44,11 +44,16 @@ class CodeOrchestrator:
 
         if anthropic is None:
             raise ImportError(
-                "anthropic SDK is required for CodeOrchestrator. "
-                "Install with: pip install -e '.[understanding,execution]'"
+                "What failed: CodeOrchestrator initialization. "
+                "Why: the optional dependency 'anthropic' is not installed. "
+                "Fix: install extras with `pip install -e '.[understanding,execution]'`."
             )
         if not api_key.strip():
-            raise ValueError("api_key must be non-empty")
+            raise ValueError(
+                "What failed: CodeOrchestrator initialization. "
+                "Why: provided api_key is empty. "
+                "Fix: set ANTHROPIC_API_KEY and pass a non-empty key."
+            )
 
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
 
@@ -63,7 +68,11 @@ class CodeOrchestrator:
         error_context: str | None = None,
     ) -> GenerationResult:
         if max_parallel < 1:
-            raise ValueError("max_parallel must be >= 1")
+            raise ValueError(
+                "What failed: generation concurrency validation. "
+                f"Why: max_parallel was {max_parallel}, but minimum allowed is 1. "
+                "Fix: pass max_parallel >= 1."
+            )
         self._validate_plan_integrity(plan)
 
         start = time.perf_counter()
@@ -162,6 +171,16 @@ class CodeOrchestrator:
             result.final_errors.append(f"Unsafe test output path: {result.test_file_path}")
             return
 
+        for path_label, path_obj in (("module", target), ("test", test_target)):
+            overlong = next((part for part in path_obj.parts if len(part) > 240), None)
+            if overlong is not None:
+                result.final_errors.append(
+                    "What failed: generated file write. "
+                    f"Why: {path_label} path component exceeds filesystem limits (len={len(overlong)}). "
+                    "Fix: shorten module/test file names in the implementation plan."
+                )
+                return
+
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(result.code, encoding="utf-8")
@@ -223,7 +242,11 @@ class CodeOrchestrator:
 
         if errors:
             error_text = "; ".join(errors)
-            raise ValueError(f"Invalid implementation plan for generation: {error_text}")
+            raise ValueError(
+                "What failed: implementation plan validation for generation. "
+                f"Why: {error_text}. "
+                "Fix: correct the plan fields (ids, paths, dependencies) and retry generation."
+            )
 
     def generate_sync(
         self,

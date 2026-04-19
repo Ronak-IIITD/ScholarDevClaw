@@ -32,11 +32,16 @@ class ImplementationPlanner:
     def __init__(self, api_key: str, model: str = "claude-opus-4-5") -> None:
         if anthropic is None:
             raise ImportError(
-                "anthropic SDK is required for ImplementationPlanner. "
-                "Install with: pip install -e '.[understanding,execution]'"
+                "What failed: ImplementationPlanner initialization. "
+                "Why: the optional dependency 'anthropic' is not installed. "
+                "Fix: install extras with `pip install -e '.[understanding,execution]'`."
             )
         if not api_key.strip():
-            raise ValueError("api_key must be non-empty")
+            raise ValueError(
+                "What failed: ImplementationPlanner initialization. "
+                "Why: provided api_key is empty. "
+                "Fix: set ANTHROPIC_API_KEY and pass a non-empty key."
+            )
 
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
@@ -53,8 +58,9 @@ class ImplementationPlanner:
         plan = ImplementationPlan.from_dict(plan_data)
         if not _is_topologically_ordered(plan):
             raise ValueError(
-                "Invalid implementation plan: module priorities are not topologically ordered "
-                "against dependencies."
+                "What failed: implementation plan validation. "
+                "Why: module priorities are not topologically ordered against dependencies. "
+                "Fix: regenerate plan so each dependency has lower priority than dependents."
             )
         return plan
 
@@ -128,12 +134,19 @@ Rules:
         )
 
         if not response.content:
-            raise ValueError("Anthropic response had no content blocks.")
+            raise ValueError(
+                "What failed: planning model response parsing. "
+                "Why: model response had no content blocks. "
+                "Fix: retry planning request or switch model."
+            )
 
-        first_block = response.content[0]
-        raw = getattr(first_block, "text", None)
+        raw = self._extract_first_text_block(response.content)
         if not isinstance(raw, str) or not raw.strip():
-            raise ValueError("Anthropic response did not contain text in the first content block.")
+            raise ValueError(
+                "What failed: planning model response parsing. "
+                "Why: response did not contain a non-empty text block. "
+                "Fix: retry and ensure text output is enabled."
+            )
 
         return self._parse_json_response(raw)
 
@@ -147,23 +160,36 @@ Rules:
             if object_block is None:
                 preview = cleaned[:200].replace("\n", " ")
                 raise ValueError(
-                    "Failed to parse ImplementationPlanner response as JSON. "
-                    "Ensure the model returns a JSON object only. "
-                    f"Response preview: {preview!r}"
+                    "What failed: planner JSON parsing. "
+                    "Why: model response was not valid JSON. "
+                    f"Fix: retry with strict JSON-only response. Response preview: {preview!r}"
                 )
             try:
                 parsed = json.loads(object_block)
             except json.JSONDecodeError as exc:
                 preview = object_block[:200].replace("\n", " ")
                 raise ValueError(
-                    "Failed to parse extracted JSON object from ImplementationPlanner response. "
-                    "Ensure field names and quotes are valid JSON. "
-                    f"Extracted preview: {preview!r}"
+                    "What failed: extracted planner JSON parsing. "
+                    "Why: extracted object is malformed JSON. "
+                    f"Fix: retry and enforce proper JSON quoting. Extracted preview: {preview!r}"
                 ) from exc
 
         if not isinstance(parsed, dict):
-            raise ValueError("ImplementationPlanner response must be a JSON object at top level.")
+            raise ValueError(
+                "What failed: planner response validation. "
+                "Why: top-level value was not a JSON object. "
+                "Fix: return a single JSON object as the root payload."
+            )
         return parsed
+
+    def _extract_first_text_block(self, content_blocks: Any) -> str | None:
+        if not isinstance(content_blocks, list):
+            return None
+        for block in content_blocks:
+            text = getattr(block, "text", None)
+            if isinstance(text, str) and text.strip():
+                return text
+        return None
 
     def _strip_markdown_fences(self, text: str) -> str:
         fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, flags=re.DOTALL)

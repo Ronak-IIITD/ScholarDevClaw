@@ -80,7 +80,11 @@ def _build_mapping_result(repo_path: Path, spec_name: str) -> tuple[dict, dict]:
     extractor = ResearchExtractor()
     spec = extractor.get_spec(spec_name)
     if spec is None:
-        raise ValueError(f"Unknown spec: {spec_name}")
+        raise ValueError(
+            "What failed: mapping spec resolution. "
+            f"Why: Unknown spec '{spec_name}' was not found. "
+            "Fix: run `scholardevclaw specs --list` and pick a valid spec name."
+        )
 
     engine = MappingEngine(analysis.__dict__, spec)
     mapping = engine.map()
@@ -450,6 +454,11 @@ def cmd_understand(args):
 
     try:
         from scholardevclaw.exceptions import UnderstandingError
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
         from scholardevclaw.ingestion.models import PaperDocument
         from scholardevclaw.understanding.agent import UnderstandingAgent
         from scholardevclaw.understanding.graph import build_concept_graph, export_graph_json
@@ -949,11 +958,19 @@ def cmd_execute(args):
                 try:
                     report_payload = json.loads(generation_report_path.read_text(encoding="utf-8"))
                     if not isinstance(report_payload, dict):
-                        raise ValueError("generation_report.json must contain a JSON object")
+                        raise ValueError(
+                            "What failed: healing input validation. "
+                            "Why: generation_report.json must contain a JSON object. "
+                            "Fix: regenerate implementation so generation_report.json is valid JSON."
+                        )
 
                     plan_payload = report_payload.get("plan")
                     if not isinstance(plan_payload, dict):
-                        raise ValueError("generation_report.json is missing 'plan' object")
+                        raise ValueError(
+                            "What failed: healing input validation. "
+                            "Why: generation_report.json is missing required 'plan' object. "
+                            "Fix: regenerate implementation to produce a complete generation report."
+                        )
                     plan = ImplementationPlan.from_dict(plan_payload)
 
                     def _coerce_float(value: Any, default: float = 0.0) -> float:
@@ -1088,13 +1105,31 @@ def cmd_scaffold(args):
 
     def _validate_json_file(path: Path, label: str) -> dict[str, Any]:
         if not path.exists() or not path.is_file():
-            raise ValueError(f"{label} JSON not found: {path}")
+            raise ValueError(
+                "What failed: scaffold input loading. "
+                f"Why: {label} JSON not found at '{path}'. "
+                "Fix: provide an existing JSON file path for this input."
+            )
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise ValueError(
+                "What failed: scaffold input loading. "
+                f"Why: could not read '{path}': {exc}. "
+                "Fix: verify file permissions and retry."
+            ) from exc
         except json.JSONDecodeError as exc:
-            raise ValueError(f"invalid JSON in '{path}': {exc}") from exc
+            raise ValueError(
+                "What failed: scaffold input parsing. "
+                f"Why: invalid JSON in '{path}': {exc}. "
+                "Fix: repair JSON syntax and retry."
+            ) from exc
         if not isinstance(payload, dict):
-            raise ValueError(f"expected top-level JSON object in '{path}'")
+            raise ValueError(
+                "What failed: scaffold input validation. "
+                f"Why: expected top-level JSON object in '{path}'. "
+                "Fix: provide a JSON object as the root payload."
+            )
         return payload
 
     try:

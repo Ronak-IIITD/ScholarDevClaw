@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,8 +77,24 @@ def _resolve_copy_target(copy_root: Path, relative_path: str) -> Path:
     try:
         candidate.relative_to(copy_root.resolve())
     except ValueError as exc:
-        raise ValueError(f"Unsafe patch path outside temp copy: {relative_path}") from exc
+        raise ValueError(
+            "What failed: patch path validation for temp copy application. "
+            f"Why: path '{relative_path}' resolves outside the temporary repository copy. "
+            "Fix: ensure patch file paths are relative and do not traverse with '..'."
+        ) from exc
     return candidate
+
+
+def _timed_phase(
+    timings: dict[str, float],
+    phase_name: str,
+    func: Callable[[], PipelineResult],
+) -> PipelineResult:
+    started = time.perf_counter()
+    result = func()
+    elapsed = time.perf_counter() - started
+    timings[phase_name] = round(float(timings.get(phase_name, 0.0)) + elapsed, 6)
+    return result
 
 
 def _line_count(text: str) -> int:
@@ -430,7 +447,11 @@ def _apply_patch_to_copy(copy_path: Path, patch_payload: dict[str, Any] | None) 
             continue
         destination = _resolve_copy_target(copy_path, file_path)
         if not destination.exists():
-            raise FileNotFoundError(f"Transformation target missing in temp copy: {file_path}")
+            raise FileNotFoundError(
+                "What failed: patch transformation application in validation copy. "
+                f"Why: target file '{file_path}' was not found in the temporary repository copy. "
+                "Fix: regenerate patch against the current repository state and retry."
+            )
         destination.write_text(str(transformation.get("modified", "")))
         applied_transformations.append(file_path)
 
@@ -666,9 +687,17 @@ def _fire_hook(
 def _ensure_repo(repo_path: str) -> Path:
     path = Path(repo_path).expanduser().resolve()
     if not path.exists():
-        raise FileNotFoundError(f"Repository not found: {repo_path}")
+        raise FileNotFoundError(
+            "What failed: repository path resolution. "
+            f"Why: Repository not found at '{repo_path}'. "
+            "Fix: pass an existing repository directory path."
+        )
     if not path.is_dir():
-        raise NotADirectoryError(f"Repository is not a directory: {repo_path}")
+        raise NotADirectoryError(
+            "What failed: repository path resolution. "
+            f"Why: Repository is not a directory at '{repo_path}'. "
+            "Fix: pass a directory containing the target repository."
+        )
     return enforce_allowed_repo_path(path)
 
 
@@ -1097,7 +1126,11 @@ def _build_mapping_result(
         log_callback(f"Resolving specification: {spec_name}")
     spec = extractor.get_spec(spec_name)
     if spec is None:
-        raise ValueError(f"Unknown spec: {spec_name}")
+        raise ValueError(
+            "What failed: mapping spec resolution. "
+            f"Why: Unknown spec '{spec_name}' was not found in available specs. "
+            "Fix: run the specs command to list valid spec names and choose one of them."
+        )
 
     engine = MappingEngine(analysis.__dict__, spec, llm_assistant=llm_assistant)
     if log_callback is not None:
@@ -1454,6 +1487,13 @@ def run_integrate(
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
     logs: list[str] = []
+    timings: dict[str, float] = {
+        "ingestion": 0.0,
+        "understanding": 0.0,
+        "planning": 0.0,
+        "generation": 0.0,
+        "execution": 0.0,
+    }
     rollback_snapshot_id: str | None = None
     _log(logs, f"Starting integration workflow for repository: {repo_path}", log_callback)
     try:
@@ -1511,16 +1551,28 @@ def run_integrate(
         if selected_spec_name:
             selected_spec = extractor.get_spec(selected_spec_name)
             if not selected_spec:
-                raise ValueError(f"Unknown spec: {selected_spec_name}")
+                raise ValueError(
+                    "What failed: integration spec selection. "
+                    f"Why: Unknown spec '{selected_spec_name}' is not available. "
+                    "Fix: run the specs command and choose a valid spec name."
+                )
             _log(logs, f"Research: selected explicit spec '{selected_spec_name}'", log_callback)
         else:
             suggestions = analyzer.suggest_research_papers()
             if not suggestions:
-                raise ValueError("No suitable improvements found for this repository")
+                raise ValueError(
+                    "What failed: automatic spec suggestion. "
+                    "Why: No suitable improvements found for this repository. "
+                    "Fix: provide an explicit spec name or run suggest to inspect candidate improvements."
+                )
             selected_spec_name = suggestions[0]["paper"]["name"]
             selected_spec = extractor.get_spec(selected_spec_name)
             if not selected_spec:
-                raise ValueError(f"Suggested spec is unavailable: {selected_spec_name}")
+                raise ValueError(
+                    "What failed: suggested spec resolution. "
+                    f"Why: auto-suggested spec '{selected_spec_name}' is unavailable in the spec catalog. "
+                    "Fix: rerun suggest or provide a known spec name explicitly."
+                )
             confidence = suggestions[0].get("confidence", 0)
             _log(
                 logs,
@@ -1529,13 +1581,22 @@ def run_integrate(
             )
 
         if selected_spec_name is None:
-            raise ValueError("Failed to resolve integration spec")
+            raise ValueError(
+                "What failed: integration spec resolution. "
+                "Why: no explicit or suggested spec could be resolved. "
+                "Fix: pass a valid spec name to integrate or run suggest first."
+            )
 
+        planning_started = time.perf_counter()
         mapping_result, _ = _build_mapping_result(
             path,
             selected_spec_name,
             llm_assistant=llm_assistant,
             log_callback=log_callback,
+        )
+        timings["planning"] = round(
+            float(timings.get("planning", 0.0)) + (time.perf_counter() - planning_started),
+            6,
         )
         _log(logs, f"Mapping: {len(mapping_result.get('targets', []))} targets", log_callback)
         map_quality_gates = _evaluate_quality_gates(mapping_result=mapping_result)
@@ -1590,6 +1651,7 @@ def run_integrate(
                     "generation": None,
                     "validation": None,
                     "output_dir": output_dir,
+                    "_timing": timings,
                 },
                 "integration",
             )
@@ -1600,11 +1662,15 @@ def run_integrate(
                 logs=logs,
             )
 
-        generate_result = run_generate(
-            str(path),
-            selected_spec_name,
-            output_dir=output_dir,
-            log_callback=log_callback,
+        generate_result = _timed_phase(
+            timings,
+            "generation",
+            lambda: run_generate(
+                str(path),
+                selected_spec_name,
+                output_dir=output_dir,
+                log_callback=log_callback,
+            ),
         )
         logs.extend(generate_result.logs)
         if not generate_result.ok:
@@ -1742,10 +1808,14 @@ def run_integrate(
                 log_callback,
             )
 
-            validate_result = run_validate(
-                str(temp_repo_path),
-                reviewed_generation_payload,
-                log_callback=log_callback,
+            validate_result = _timed_phase(
+                timings,
+                "execution",
+                lambda: run_validate(
+                    str(temp_repo_path),
+                    reviewed_generation_payload,
+                    log_callback=log_callback,
+                ),
             )
             logs.extend(validate_result.logs)
         except Exception as exc:
@@ -1853,6 +1923,7 @@ def run_integrate(
                     "patch_application_approval": patch_application_approval,
                 },
                 "rollback_snapshot_id": rollback_snapshot_id,
+                "_timing": timings,
             },
             "integration",
         )
@@ -1939,6 +2010,13 @@ def run_multi_integrate(
     from .schema_contract import with_meta
 
     logs: list[str] = []
+    timings: dict[str, float] = {
+        "ingestion": 0.0,
+        "understanding": 0.0,
+        "planning": 0.0,
+        "generation": 0.0,
+        "execution": 0.0,
+    }
     _log(
         logs,
         f"Starting multi-spec integration for: {repo_path} with {len(spec_names)} specs",
@@ -2001,11 +2079,16 @@ def run_multi_integrate(
         for i, spec_name in enumerate(spec_names, 1):
             _log(logs, f"\n--- Spec {i}/{len(spec_names)}: {spec_name} ---", log_callback)
 
+            planning_started = time.perf_counter()
             mapping_result, spec = _build_mapping_result(
                 path,
                 spec_name,
                 llm_assistant=llm_assistant,
                 log_callback=log_callback,
+            )
+            timings["planning"] = round(
+                float(timings.get("planning", 0.0)) + (time.perf_counter() - planning_started),
+                6,
             )
             _log(
                 logs,
@@ -2013,11 +2096,15 @@ def run_multi_integrate(
                 log_callback,
             )
 
-            generate_result = run_generate(
-                str(path),
-                spec_name,
-                output_dir=output_dir,
-                log_callback=log_callback,
+            generate_result = _timed_phase(
+                timings,
+                "generation",
+                lambda: run_generate(
+                    str(path),
+                    spec_name,
+                    output_dir=output_dir,
+                    log_callback=log_callback,
+                ),
             )
             logs.extend(generate_result.logs)
 
@@ -2038,10 +2125,14 @@ def run_multi_integrate(
                     log_callback,
                 )
 
-        validate_result = run_validate(
-            str(path),
-            latest_patch_payload,
-            log_callback=log_callback,
+        validate_result = _timed_phase(
+            timings,
+            "execution",
+            lambda: run_validate(
+                str(path),
+                latest_patch_payload,
+                log_callback=log_callback,
+            ),
         )
         logs.extend(validate_result.logs)
 
@@ -2057,6 +2148,7 @@ def run_multi_integrate(
                 "spec_results": results,
                 "validation": validate_result.payload,
                 "output_dir": output_dir,
+                "_timing": timings,
             },
             "multi_integration",
         )
