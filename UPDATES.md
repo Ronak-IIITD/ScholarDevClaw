@@ -2,7 +2,51 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-19
+**Last updated:** 2026-04-20
+
+### 2026-04-20 (Phase 9 follow-up: real TUI paper→product workflow wiring)
+
+**Summary:** Replaced Phase 9 TUI placeholder callbacks with a real end-to-end screen-driven workflow in the Textual app: ingest → understand → planning approval gate → generate → execute/heal → reproducibility score → product browser.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Added a concrete Phase-9 workflow state machine (`Phase9WorkflowState`) and background-thread orchestration.
+  - Wired `PaperIngestionScreen` submission to start real pipeline execution.
+  - Integrated live stage progression:
+    - paper ingestion (`PaperIngester`)
+    - understanding (`UnderstandingAgent`)
+    - planning (`ImplementationPlanner`)
+    - strict approval gate (`PlanningScreen`) that blocks generation when rejected
+    - generation (`CodeOrchestrator`) with live `GenerationScreen` progress/log updates
+    - execution (`SandboxRunner`) + optional healing (`SelfHealingLoop`, env gated)
+    - reproducibility scoring (`ReproducibilityScorer`)
+    - product artifact browsing (`ProductScreen`) with output directory + install command
+  - Added safe cancellation path for active Phase-9 workflow from existing cancel action.
+
+- `core/src/scholardevclaw/tui/screens.py`
+  - Updated screen dismiss payloads to carry structured decisions/results used by app orchestration:
+    - `PaperIngestionScreen` returns submitted source
+    - `UnderstandingScreen` returns proceed/edit decision
+    - `PlanningScreen` returns approve/reject decision payload
+
+- `core/tests/unit/test_tui_app.py`
+  - Added Phase-9 callback and orchestration tests:
+    - safe handling for empty/None ingestion results
+    - workflow start from ingestion source
+    - approval gate blocks generation on reject
+    - helper execution order across full workflow
+    - cancel action cancels active Phase-9 workflow
+
+- `core/tests/unit/test_tui_screens.py`
+  - Added assertions for structured dismiss payload contracts in new Phase-9 screens.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/tui/app.py src/scholardevclaw/tui/screens.py tests/unit/test_tui_app.py tests/unit/test_tui_screens.py`
+- ✅ `cd core && ruff format --check src/scholardevclaw/tui/app.py src/scholardevclaw/tui/screens.py tests/unit/test_tui_app.py tests/unit/test_tui_screens.py`
+- ✅ `cd core && python -m pytest tests/unit/test_tui_app.py tests/unit/test_tui_screens.py -q`
+  - `90 passed`
 
 ### 2026-04-19 (Phase 10: Polish — error messages, edge cases, timing)
 

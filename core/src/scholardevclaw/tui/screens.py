@@ -6,6 +6,7 @@ import os
 import shlex
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from textual import on
 from textual.app import ComposeResult
@@ -403,7 +404,7 @@ class CommandPalette(ModalScreen[str | None]):
             self.mount(Static(command, classes=classes))
 
 
-class PaperIngestionScreen(ModalScreen[None]):
+class PaperIngestionScreen(ModalScreen[dict[str, str] | None]):
     """Phase 9: ingest paper source and preview extracted structures."""
 
     BINDINGS = [("escape", "dismiss", "Dismiss")]
@@ -484,6 +485,7 @@ class PaperIngestionScreen(ModalScreen[None]):
             self.set_status("Paper source is required.")
             return
         self.set_status(f"Parsing paper source: {self._paper_source}")
+        self.dismiss({"source": self._paper_source})
 
     def set_status(self, status: str) -> None:
         self._status = status.strip() or "Working..."
@@ -549,7 +551,7 @@ class PaperIngestionScreen(ModalScreen[None]):
         self.query_one("#paper-preview", Static).update(preview)
 
 
-class UnderstandingScreen(ModalScreen[None]):
+class UnderstandingScreen(ModalScreen[dict[str, str] | None]):
     """Phase 9: inspect parsed understanding and confirm quality."""
 
     BINDINGS = [("escape", "dismiss", "Dismiss")]
@@ -663,14 +665,14 @@ class UnderstandingScreen(ModalScreen[None]):
 
     @on(Button.Pressed, "#understanding-proceed")
     def on_understanding_proceed(self) -> None:
-        self.dismiss(None)
+        self.dismiss({"decision": "proceed"})
 
     @on(Button.Pressed, "#understanding-edit")
     def on_understanding_edit(self) -> None:
-        self.dismiss(None)
+        self.dismiss({"decision": "edit"})
 
 
-class PlanningScreen(ModalScreen[None]):
+class PlanningScreen(ModalScreen[dict[str, Any] | None]):
     """Phase 9: inspect implementation plan and pass approval gate."""
 
     BINDINGS = [("escape", "dismiss", "Dismiss")]
@@ -793,7 +795,7 @@ class PlanningScreen(ModalScreen[None]):
         self.query_one("#planning-gate", Static).update(
             "Approval gate: approved. Generation can proceed."
         )
-        self.dismiss(None)
+        self.dismiss({"approved": True, "decision": "approve"})
 
     @on(Button.Pressed, "#planning-reject")
     def on_reject(self) -> None:
@@ -801,7 +803,7 @@ class PlanningScreen(ModalScreen[None]):
         self.query_one("#planning-gate", Static).update(
             "Approval gate: rejected. Adjust plan before generation."
         )
-        self.dismiss(None)
+        self.dismiss({"approved": False, "decision": "reject"})
 
 
 class GenerationScreen(ModalScreen[None]):

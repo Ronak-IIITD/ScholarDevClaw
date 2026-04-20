@@ -50,3 +50,13 @@ def test_help_text_mentions_inspector_focus_and_key_actions():
     assert "Ctrl+I focus inspector" in HELP_TEXT
     assert "Inspector: j/k move; Enter/Space events; r rerun; s show; e events" in HELP_TEXT
     assert "Review mode: a/x/g set hunk, A/X/G set all, Enter/Space submit" in HELP_TEXT
+
+
+def test_phase9_screens_return_structured_decisions():
+    source = inspect.getsource(__import__("scholardevclaw.tui.screens", fromlist=["*"]))
+
+    assert 'self.dismiss({"source": self._paper_source})' in source
+    assert 'self.dismiss({"decision": "proceed"})' in source
+    assert 'self.dismiss({"decision": "edit"})' in source
+    assert 'self.dismiss({"approved": True, "decision": "approve"})' in source
+    assert 'self.dismiss({"approved": False, "decision": "reject"})' in source

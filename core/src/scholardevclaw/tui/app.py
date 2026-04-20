@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -36,8 +37,16 @@ from scholardevclaw.application.pipeline import (
 )
 from scholardevclaw.auth.store import AuthStore
 from scholardevclaw.auth.types import AuthProvider
+from scholardevclaw.execution import ReproducibilityScorer, SandboxRunner, SelfHealingLoop
+from scholardevclaw.execution.scorer import ReproducibilityReport
+from scholardevclaw.generation import CodeOrchestrator
+from scholardevclaw.generation.models import GenerationResult
+from scholardevclaw.ingestion import PaperIngester
+from scholardevclaw.ingestion.models import PaperDocument
 from scholardevclaw.llm.client import DEFAULT_MODELS, LLMAPIError, LLMClient, LLMConfigError
+from scholardevclaw.planning import ImplementationPlan, ImplementationPlanner
 from scholardevclaw.security.path_policy import enforce_allowed_repo_path
+from scholardevclaw.understanding import PaperUnderstanding, UnderstandingAgent
 
 from .screens import (
     CommandPalette,
@@ -205,6 +214,7 @@ AUTO_MODEL_FALLBACK_ENV = "SCHOLARDEVCLAW_TUI_AUTO_MODEL_FALLBACK"
 TUI_APPROVAL_GATES_ENV = "SCHOLARDEVCLAW_TUI_APPROVAL_GATES"
 APPROVAL_REVIEW_POLL_SECONDS = 0.2
 APPROVAL_REVIEW_TIMEOUT_SECONDS = 300.0
+PHASE9_HEALING_ENV = "SCHOLARDEVCLAW_TUI_PHASE9_ENABLE_HEALING"
 CHAT_SYSTEM_PROMPTS = {
     "analyze": (
         "You are ScholarDevClaw, a terse coding assistant inside a terminal UI. "
@@ -283,6 +293,23 @@ class RunEvent:
     message: str = ""
     level: str = "info"
     payload: dict[str, Any] | None = None
+
+
+@dataclass
+class Phase9WorkflowState:
+    active: bool = False
+    source: str = ""
+    model: str = ""
+    api_key: str = ""
+    work_dir: Path | None = None
+    output_dir: Path | None = None
+    paper_document: PaperDocument | None = None
+    understanding: PaperUnderstanding | None = None
+    plan: ImplementationPlan | None = None
+    generation_result: GenerationResult | None = None
+    reproducibility_report: ReproducibilityReport | None = None
+    generation_orchestrator: CodeOrchestrator | None = None
+    cancel_event: threading.Event | None = None
 
 
 class TaskLog(Message):
@@ -437,6 +464,7 @@ class ScholarDevClawApp(App[None]):
         self._models_by_provider: dict[str, str] = {}
         self._approval_lock = threading.Lock()
         self._pending_integrate_reviews: dict[str, dict[str, Any]] = {}
+        self._phase9_workflow = Phase9WorkflowState()
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
             self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
@@ -1125,7 +1153,13 @@ class ScholarDevClawApp(App[None]):
         if result is None:
             self._append_output("Paper ingestion dismissed", "warning")
             return
-        self._append_output(f"Paper ingestion result: {result}")
+        source = ""
+        if isinstance(result, dict):
+            source = str(result.get("source", "") or "").strip()
+        if not source:
+            self._append_output("Paper ingestion cancelled (no source provided)", "warning")
+            return
+        self._start_phase9_workflow(source)
 
     def _on_understanding_result(self, result: dict[str, Any] | str | None) -> None:
         if result is None:
@@ -1159,6 +1193,464 @@ class ScholarDevClawApp(App[None]):
             return
         self._append_output("Product ready for review", "success")
         self._append_output(f"Product result: {result}")
+
+    # ------------------------------------------------------------------
+    # Phase-9 paper-to-product TUI workflow
+    # ------------------------------------------------------------------
+
+    def _phase9_ui_call(self, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+        try:
+            self.call_from_thread(callback, *args, **kwargs)
+        except Exception:
+            pass
+
+    def _phase9_log(self, line: str, level: str = "info") -> None:
+        self._phase9_ui_call(self._append_output, line, level)
+
+    def _phase9_status(self, message: str, level: str = "info") -> None:
+        self._phase9_ui_call(self._set_status, message, level)
+
+    @staticmethod
+    def _phase9_slugify(source: str) -> str:
+        slug = re.sub(r"[^a-zA-Z0-9]+", "-", source).strip("-").lower()
+        return (slug[:48] or "paper").strip("-") or "paper"
+
+    def _phase9_is_cancelled(self, state: Phase9WorkflowState) -> bool:
+        return bool(state.cancel_event and state.cancel_event.is_set())
+
+    def _phase9_raise_if_cancelled(self, state: Phase9WorkflowState) -> None:
+        if self._phase9_is_cancelled(state):
+            raise TaskCancelledError("Phase-9 workflow cancelled")
+
+    def _phase9_model_and_key(self) -> tuple[str, str]:
+        if self._provider not in SUPPORTED_TUI_PROVIDERS:
+            raise ValueError(
+                "Provider is not configured. Run `setup` and choose a provider/model before "
+                "running the Phase-9 workflow."
+            )
+        model = (
+            self._model.strip()
+            or (os.environ.get("SCHOLARDEVCLAW_API_MODEL") or "").strip()
+            or "claude-sonnet-4-5"
+        )
+        api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip() or (
+            os.environ.get("SCHOLARDEVCLAW_API_KEY") or ""
+        ).strip()
+        if not model:
+            raise ValueError(
+                "Model is missing. Set one with `set model <id>` and retry Phase-9 workflow."
+            )
+        if not api_key:
+            raise ValueError(
+                "API key is missing. Set ANTHROPIC_API_KEY (or SCHOLARDEVCLAW_API_KEY) "
+                "before running the Phase-9 workflow."
+            )
+        return model, api_key
+
+    def _phase9_prepare_dirs(self, source: str) -> tuple[Path, Path]:
+        root = Path(self._directory).expanduser().resolve()
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        workflow_dir = (
+            root / ".scholardevclaw_phase9" / f"{timestamp}-{self._phase9_slugify(source)}"
+        )
+        output_dir = workflow_dir / "generated"
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return workflow_dir, output_dir
+
+    def _phase9_call_screen(self, screen: Any, method_name: str, *args: Any, **kwargs: Any) -> None:
+        def _invoke() -> None:
+            method = getattr(screen, method_name, None)
+            if callable(method):
+                with contextlib.suppress(Exception):
+                    method(*args, **kwargs)
+
+        self._phase9_ui_call(_invoke)
+
+    def _phase9_wait_for_understanding_decision(
+        self,
+        state: Phase9WorkflowState,
+        understanding: PaperUnderstanding,
+    ) -> bool:
+        done = threading.Event()
+        decision: dict[str, bool] = {"proceed": True}
+
+        def _callback(result: dict[str, Any] | str | None) -> None:
+            if result is None:
+                decision["proceed"] = False
+            elif isinstance(result, str):
+                decision["proceed"] = result.strip().lower() in {"proceed", "approve", "approved"}
+            else:
+                value = str(result.get("decision", "")).strip().lower()
+                decision["proceed"] = value in {"proceed", "approve", "approved"}
+            done.set()
+
+        self._phase9_ui_call(
+            self.push_screen,
+            UnderstandingScreen(understanding=understanding),
+            _callback,
+        )
+        self._phase9_log("Understanding ready. Confirm to continue.", "accent")
+
+        while not done.wait(0.1):
+            self._phase9_raise_if_cancelled(state)
+        return bool(decision["proceed"])
+
+    def _phase9_wait_for_planning_approval(
+        self,
+        state: Phase9WorkflowState,
+        plan: ImplementationPlan,
+    ) -> bool:
+        done = threading.Event()
+        decision: dict[str, bool] = {"approved": False}
+
+        def _callback(result: dict[str, Any] | str | None) -> None:
+            if result is None:
+                decision["approved"] = False
+            elif isinstance(result, str):
+                decision["approved"] = result.strip().lower() in {
+                    "approve",
+                    "approved",
+                    "true",
+                    "yes",
+                }
+            else:
+                if "approved" in result:
+                    decision["approved"] = bool(result.get("approved"))
+                else:
+                    value = str(result.get("decision", "")).strip().lower()
+                    decision["approved"] = value in {"approve", "approved", "true", "yes"}
+            done.set()
+
+        self._phase9_ui_call(self.push_screen, PlanningScreen(plan=plan), _callback)
+        self._phase9_log("Approval gate: approve plan to start generation.", "warning")
+
+        while not done.wait(0.1):
+            self._phase9_raise_if_cancelled(state)
+        return bool(decision["approved"])
+
+    def _phase9_ingest_paper(self, state: Phase9WorkflowState) -> PaperDocument:
+        assert state.work_dir is not None
+        self._phase9_status("Phase 9: ingesting paper", "accent")
+        self._phase9_log(f"[1/7] Ingesting paper source: {state.source}", "accent")
+        ingester = PaperIngester()
+        return ingester.ingest(state.source, state.work_dir / "paper")
+
+    def _phase9_understand_paper(self, state: Phase9WorkflowState) -> PaperUnderstanding:
+        assert state.paper_document is not None
+        self._phase9_status("Phase 9: understanding paper", "accent")
+        self._phase9_log("[2/7] Understanding paper...", "accent")
+        agent = UnderstandingAgent(api_key=state.api_key, model=state.model)
+        return agent.understand(state.paper_document)
+
+    def _phase9_plan_implementation(self, state: Phase9WorkflowState) -> ImplementationPlan:
+        assert state.paper_document is not None
+        assert state.understanding is not None
+        self._phase9_status("Phase 9: planning implementation", "accent")
+        self._phase9_log("[3/7] Planning implementation...", "accent")
+        planner = ImplementationPlanner(api_key=state.api_key, model=state.model)
+        return planner.plan(state.understanding, state.paper_document)
+
+    def _phase9_generate_code(self, state: Phase9WorkflowState) -> GenerationResult:
+        plan = state.plan
+        understanding = state.understanding
+        output_dir = state.output_dir
+        if plan is None or understanding is None or output_dir is None:
+            raise RuntimeError("Generation prerequisites are missing")
+
+        module_ids = [module.id for module in plan.modules if module.id.strip()]
+        generation_screen = GenerationScreen(module_ids=module_ids)
+        self._phase9_ui_call(self.push_screen, generation_screen, self._on_generation_result)
+        self._phase9_status("Phase 9: generating code", "accent")
+        self._phase9_log(f"[4/7] Generating {len(module_ids)} modules...", "accent")
+
+        orchestrator = CodeOrchestrator(api_key=state.api_key, model=state.model)
+        state.generation_orchestrator = orchestrator
+
+        done = threading.Event()
+        result_box: dict[str, GenerationResult] = {}
+        error_box: dict[str, Exception] = {}
+        logged_modules: set[str] = set()
+
+        def _generate() -> None:
+            try:
+                result_box["result"] = orchestrator.generate_sync(
+                    plan=plan,
+                    understanding=understanding,
+                    output_dir=output_dir,
+                    max_parallel=4,
+                )
+            except Exception as exc:  # pragma: no cover - runtime dependent
+                error_box["error"] = exc
+            finally:
+                done.set()
+
+        threading.Thread(target=_generate, daemon=True).start()
+        ticker = 0
+        while not done.wait(0.2):
+            self._phase9_raise_if_cancelled(state)
+            ticker += 1
+            for module in plan.modules:
+                module_file = output_dir / module.file_path
+                test_file = output_dir / module.test_file_path
+                progress = 0.0
+                if module_file.exists():
+                    progress = 0.6
+                if module_file.exists() and test_file.exists():
+                    progress = 1.0
+                    if module.id not in logged_modules:
+                        logged_modules.add(module.id)
+                        self._phase9_call_screen(
+                            generation_screen,
+                            "append_module_log",
+                            module.id,
+                            f"Generated artifacts for {module.id}",
+                        )
+                self._phase9_call_screen(
+                    generation_screen,
+                    "set_module_progress",
+                    module.id,
+                    progress,
+                )
+            if module_ids:
+                self._phase9_call_screen(
+                    generation_screen,
+                    "append_module_log",
+                    module_ids[min(len(module_ids) - 1, ticker % len(module_ids))],
+                    f"Generating... tick {ticker}",
+                )
+
+        if "error" in error_box:
+            raise RuntimeError(str(error_box["error"]))
+        result = result_box.get("result")
+        if result is None:
+            raise RuntimeError("Generation did not return a result")
+
+        for row in result.module_results:
+            self._phase9_call_screen(generation_screen, "set_module_progress", row.module_id, 1.0)
+            self._phase9_call_screen(
+                generation_screen,
+                "append_module_log",
+                row.module_id,
+                f"Generated: {row.file_path} / {row.test_file_path}",
+            )
+            if row.final_errors:
+                for error in row.final_errors:
+                    self._phase9_call_screen(
+                        generation_screen,
+                        "add_syntax_error",
+                        row.module_id,
+                        error,
+                    )
+
+        self._phase9_call_screen(generation_screen, "set_generation_result", result)
+        self._phase9_log(f"Generation success rate: {result.success_rate:.0%}", "success")
+        return result
+
+    @staticmethod
+    def _phase9_extract_test_status(stdout: str) -> list[tuple[str, bool]]:
+        statuses: list[tuple[str, bool]] = []
+        for line in stdout.splitlines():
+            stripped = line.strip()
+            if "::" not in stripped:
+                continue
+            if stripped.endswith("PASSED"):
+                statuses.append((stripped.rsplit(" ", 1)[0], True))
+            elif stripped.endswith("FAILED"):
+                statuses.append((stripped.rsplit(" ", 1)[0], False))
+        return statuses
+
+    def _phase9_execute_tests(self, state: Phase9WorkflowState) -> tuple[Any, GenerationResult]:
+        output_dir = state.output_dir
+        generation_result = state.generation_result
+        plan = state.plan
+        understanding = state.understanding
+        if output_dir is None or generation_result is None or plan is None or understanding is None:
+            raise RuntimeError("Execution prerequisites are missing")
+
+        execution_screen = ExecutionScreen()
+        self._phase9_ui_call(self.push_screen, execution_screen, self._on_execution_result)
+        self._phase9_status("Phase 9: executing tests", "accent")
+        self._phase9_log("[5/7] Running sandbox tests...", "accent")
+
+        runner = SandboxRunner()
+        report = runner.run_tests(output_dir)
+        for line in (report.stdout or "").splitlines()[-200:]:
+            self._phase9_call_screen(execution_screen, "append_pytest_output", line)
+        for test_name, passed in self._phase9_extract_test_status(report.stdout or ""):
+            self._phase9_call_screen(
+                execution_screen,
+                "set_test_status",
+                test_name,
+                passed=passed,
+            )
+
+        healing_enabled = self._env_flag_enabled(PHASE9_HEALING_ENV, default=False)
+        if healing_enabled and not report.success:
+            self._phase9_log("Sandbox tests failed; starting self-healing...", "warning")
+            orchestrator = state.generation_orchestrator or CodeOrchestrator(
+                api_key=state.api_key,
+                model=state.model,
+            )
+            healer = SelfHealingLoop(orchestrator, runner)
+            generation_result = healer.heal(generation_result, plan, understanding)
+            for row in healer.round_reports:
+                round_id = int(row.get("round", 0) or 0)
+                total = max(1, len(healer.round_reports))
+                self._phase9_call_screen(
+                    execution_screen,
+                    "set_healing_round",
+                    round_id,
+                    total_rounds=total,
+                )
+                self._phase9_call_screen(
+                    execution_screen,
+                    "append_pytest_output",
+                    (
+                        f"[heal round {round_id}] passed={row.get('tests_passed', 0)} "
+                        f"failed={row.get('tests_failed', 0)} errors={row.get('tests_errors', 0)}"
+                    ),
+                )
+            report = runner.run_tests(output_dir)
+            for line in (report.stdout or "").splitlines()[-120:]:
+                self._phase9_call_screen(execution_screen, "append_pytest_output", line)
+
+        self._phase9_log(
+            (
+                f"Execution complete: passed={report.tests_passed} "
+                f"failed={report.tests_failed} errors={report.tests_errors}"
+            ),
+            "success" if report.success else "warning",
+        )
+        return report, generation_result
+
+    def _phase9_score_reproducibility(
+        self,
+        state: Phase9WorkflowState,
+        execution_report: Any,
+    ) -> ReproducibilityReport:
+        assert state.understanding is not None
+        self._phase9_status("Phase 9: scoring reproducibility", "accent")
+        self._phase9_log("[6/7] Scoring reproducibility...", "accent")
+        scorer = ReproducibilityScorer(api_key=state.api_key)
+        report = scorer.score(state.understanding, execution_report)
+        self._phase9_log(
+            f"Reproducibility: {report.score:.0%} ({report.verdict})",
+            "success" if report.score >= 0.5 else "warning",
+        )
+        return report
+
+    def _phase9_present_product(self, state: Phase9WorkflowState) -> None:
+        assert state.output_dir is not None
+        install_command = f'pip install -e "{state.output_dir}"'
+        self._phase9_ui_call(
+            self.push_screen,
+            ProductScreen(output_dir=state.output_dir, install_command=install_command),
+            self._on_product_result,
+        )
+
+        files = [path for path in sorted(state.output_dir.rglob("*")) if path.is_file()][:12]
+        self._phase9_log("[7/7] Product artifacts ready", "success")
+        self._phase9_log(f"Output directory: {state.output_dir}", "accent")
+        if files:
+            self._phase9_log("File tree preview:", "accent")
+            for path in files:
+                self._phase9_log(f"  - {path.relative_to(state.output_dir)}")
+        self._phase9_log(f"Install command: {install_command}", "accent")
+
+    def _phase9_run_flow(self, state: Phase9WorkflowState) -> None:
+        self._phase9_raise_if_cancelled(state)
+        state.paper_document = self._phase9_ingest_paper(state)
+        self._phase9_raise_if_cancelled(state)
+
+        state.understanding = self._phase9_understand_paper(state)
+        self._phase9_raise_if_cancelled(state)
+        proceed = self._phase9_wait_for_understanding_decision(state, state.understanding)
+        if not proceed:
+            self._phase9_log("Understanding rejected. Workflow stopped before planning.", "warning")
+            return
+
+        state.plan = self._phase9_plan_implementation(state)
+        self._phase9_raise_if_cancelled(state)
+
+        approved = self._phase9_wait_for_planning_approval(state, state.plan)
+        if not approved:
+            self._phase9_log("Planning approval rejected. Generation was not started.", "warning")
+            return
+
+        state.generation_result = self._phase9_generate_code(state)
+        self._phase9_raise_if_cancelled(state)
+
+        execution_report, generation_result = self._phase9_execute_tests(state)
+        state.generation_result = generation_result
+        self._phase9_raise_if_cancelled(state)
+
+        state.reproducibility_report = self._phase9_score_reproducibility(state, execution_report)
+        self._phase9_raise_if_cancelled(state)
+        self._phase9_present_product(state)
+
+    def _run_phase9_workflow_thread(self, state: Phase9WorkflowState) -> None:
+        try:
+            model, api_key = self._phase9_model_and_key()
+            state.model = model
+            state.api_key = api_key
+            self._phase9_log(f"Starting Phase-9 workflow for source: {state.source}", "accent")
+            self._phase9_run_flow(state)
+            if self._phase9_is_cancelled(state):
+                self._phase9_status("Phase 9 workflow cancelled", "warning")
+            else:
+                self._phase9_status("Phase 9 workflow complete", "success")
+        except TaskCancelledError:
+            self._phase9_log("Phase 9 workflow cancelled", "warning")
+            self._phase9_status("Phase 9 workflow cancelled", "warning")
+        except Exception as exc:
+            self._phase9_log(
+                f"Phase 9 workflow failed: {exc}",
+                "error",
+            )
+            self._phase9_status("Phase 9 workflow failed", "error")
+        finally:
+            state.active = False
+            if self._phase9_workflow is state:
+                self._phase9_workflow.active = False
+                self._phase9_workflow.cancel_event = None
+
+    def _start_phase9_workflow(self, source: str) -> None:
+        if self._phase9_workflow.active:
+            self._append_output("Phase 9 workflow already running", "warning")
+            self._set_status("Phase 9 workflow already running", "warning")
+            return
+        if self._running_action is not None:
+            self._append_output(
+                "Finish current command task before starting Phase 9 workflow", "warning"
+            )
+            self._set_status("Command task running", "warning")
+            return
+
+        source_text = str(source or "").strip()
+        if not source_text:
+            self._append_output("Paper source is required", "warning")
+            self._set_status("Phase 9 source missing", "warning")
+            return
+
+        work_dir, output_dir = self._phase9_prepare_dirs(source_text)
+        workflow_state = Phase9WorkflowState(
+            active=True,
+            source=source_text,
+            work_dir=work_dir,
+            output_dir=output_dir,
+            cancel_event=threading.Event(),
+        )
+        self._phase9_workflow = workflow_state
+        self._append_output(f"Phase 9 work directory: {work_dir}", "accent")
+        self._set_status("Phase 9 workflow running", "accent")
+
+        thread = threading.Thread(
+            target=self._run_phase9_workflow_thread,
+            args=(workflow_state,),
+            daemon=True,
+        )
+        thread.start()
 
     def _save_provider_setup(
         self, provider: str, model: str, api_key: str = ""
@@ -3696,6 +4188,11 @@ class ScholarDevClawApp(App[None]):
 
     def action_cancel_task(self) -> None:
         if self._running_action is None:
+            if self._phase9_workflow.active and self._phase9_workflow.cancel_event is not None:
+                self._phase9_workflow.cancel_event.set()
+                self._append_output("Cancel requested (Phase 9 workflow)...", "warning")
+                self._set_status("Phase 9 cancellation requested", "warning")
+                return
             self.exit()
             return
         cancel_event = self._cancel_events.get(self._active_token)

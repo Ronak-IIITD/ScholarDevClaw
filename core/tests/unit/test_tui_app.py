@@ -4,13 +4,19 @@ import inspect
 import json
 import os
 import time
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 pytest.importorskip("textual")
 
+from scholardevclaw.generation.models import GenerationResult
+from scholardevclaw.ingestion.models import PaperDocument
 from scholardevclaw.llm.client import LLMAPIError
+from scholardevclaw.planning.models import ImplementationPlan
 from scholardevclaw.tui.app import (
+    Phase9WorkflowState,
     RunArtifact,
     RunEvent,
     RunLifecycleState,
@@ -18,6 +24,7 @@ from scholardevclaw.tui.app import (
     TaskCompleted,
 )
 from scholardevclaw.tui.widgets import RunInspector
+from scholardevclaw.understanding.models import PaperUnderstanding
 
 
 def _minimal_app_for_unit() -> ScholarDevClawApp:
@@ -32,6 +39,55 @@ def _minimal_app_for_unit() -> ScholarDevClawApp:
     app._validate_spec = lambda spec: (False, "Unknown spec") if spec == "bad" else (True, "")
     app._check_git_status = lambda path: (True, "Repository has uncommitted changes")
     return app
+
+
+def _minimal_paper_document() -> PaperDocument:
+    return PaperDocument.from_dict({"title": "Demo Paper", "authors": ["A"]})
+
+
+def _minimal_understanding() -> PaperUnderstanding:
+    return PaperUnderstanding.from_dict(
+        {
+            "paper_title": "Demo Paper",
+            "one_line_summary": "summary",
+            "core_algorithm_description": "algo",
+        }
+    )
+
+
+def _minimal_plan() -> ImplementationPlan:
+    return ImplementationPlan.from_dict(
+        {
+            "project_name": "demo_project",
+            "target_language": "python",
+            "tech_stack": "pytorch",
+            "modules": [
+                {
+                    "id": "module_one",
+                    "name": "Module One",
+                    "description": "desc",
+                    "file_path": "src/module_one.py",
+                    "depends_on": [],
+                    "priority": 1,
+                    "estimated_lines": 10,
+                    "test_file_path": "tests/test_module_one.py",
+                    "tech_stack": "pytorch",
+                }
+            ],
+            "estimated_total_lines": 10,
+        }
+    )
+
+
+def _minimal_generation_result(plan: ImplementationPlan) -> GenerationResult:
+    return GenerationResult(
+        plan=plan,
+        module_results=[],
+        output_dir=Path("/tmp"),
+        success_rate=1.0,
+        total_tokens_used=0,
+        duration_seconds=0.0,
+    )
 
 
 def test_validate_repo_path_rejects_outside_allowed_roots(monkeypatch, tmp_path):
@@ -1554,3 +1610,144 @@ def test_build_request_supports_runs_show_and_rerun_commands():
     action, req = app._build_request("run rerun 7")
     assert action == "run_rerun"
     assert req == {"run_id": 7}
+
+
+def test_on_paper_ingestion_result_handles_none_and_empty_source_safely():
+    app = _minimal_app_for_unit()
+    output: list[tuple[str, str]] = []
+    started: list[str] = []
+
+    app._append_output = lambda line, level="auto": output.append((level, line))
+    app._start_phase9_workflow = lambda source: started.append(source)
+
+    app._on_paper_ingestion_result(None)
+    app._on_paper_ingestion_result({"source": ""})
+
+    assert started == []
+    assert any("dismissed" in line.lower() for _, line in output)
+    assert any("cancelled" in line.lower() for _, line in output)
+
+
+def test_on_paper_ingestion_result_starts_phase9_workflow_with_source():
+    app = _minimal_app_for_unit()
+    started: list[str] = []
+
+    app._start_phase9_workflow = lambda source: started.append(source)
+
+    app._on_paper_ingestion_result({"source": "2406.12345"})
+
+    assert started == ["2406.12345"]
+
+
+def test_phase9_run_flow_blocks_generation_when_planning_rejected():
+    app = _minimal_app_for_unit()
+    phase9_app = cast(Any, app)
+    state = Phase9WorkflowState(
+        active=True,
+        source="2406.12345",
+        model="claude-sonnet-4-5",
+        api_key="key",
+        output_dir=Path("/tmp"),
+    )
+    paper_document = _minimal_paper_document()
+    understanding = _minimal_understanding()
+    plan = _minimal_plan()
+    logs: list[str] = []
+    generate_calls: list[str] = []
+
+    phase9_app._phase9_raise_if_cancelled = lambda state: None
+    phase9_app._phase9_ingest_paper = lambda state: paper_document
+    phase9_app._phase9_understand_paper = lambda state: understanding
+    phase9_app._phase9_wait_for_understanding_decision = lambda state, understanding: True
+    phase9_app._phase9_plan_implementation = lambda state: plan
+    phase9_app._phase9_wait_for_planning_approval = lambda state, plan: False
+    phase9_app._phase9_generate_code = lambda state: generate_calls.append("generate")
+    phase9_app._phase9_log = lambda line, level="info": logs.append(f"{level}:{line}")
+
+    app._phase9_run_flow(state)
+
+    assert generate_calls == []
+    assert any("generation was not started" in line.lower() for line in logs)
+
+
+def test_phase9_run_flow_invokes_helpers_in_order():
+    app = _minimal_app_for_unit()
+    phase9_app = cast(Any, app)
+    state = Phase9WorkflowState(
+        active=True,
+        source="2406.12345",
+        model="claude-sonnet-4-5",
+        api_key="key",
+        output_dir=Path("/tmp"),
+    )
+    paper_document = _minimal_paper_document()
+    understanding = _minimal_understanding()
+    plan = _minimal_plan()
+    generated = _minimal_generation_result(plan)
+    healed = _minimal_generation_result(plan)
+    call_order: list[str] = []
+
+    def _mark(name: str) -> None:
+        call_order.append(name)
+
+    phase9_app._phase9_raise_if_cancelled = lambda state: None
+    phase9_app._phase9_ingest_paper = lambda state: _mark("ingest") or paper_document
+    phase9_app._phase9_understand_paper = lambda state: _mark("understand") or understanding
+    phase9_app._phase9_wait_for_understanding_decision = lambda state, understanding: (
+        _mark("understanding_decision") or True
+    )
+    phase9_app._phase9_plan_implementation = lambda state: _mark("plan") or plan
+    phase9_app._phase9_wait_for_planning_approval = lambda state, plan: (
+        _mark("planning_approval") or True
+    )
+    phase9_app._phase9_generate_code = lambda state: _mark("generate") or generated
+    phase9_app._phase9_execute_tests = lambda state: _mark("execute") or (object(), healed)
+    phase9_app._phase9_score_reproducibility = lambda state, execution_report: (
+        _mark("score") or cast(Any, object())
+    )
+    phase9_app._phase9_present_product = lambda state: _mark("product")
+
+    app._phase9_run_flow(state)
+
+    assert call_order == [
+        "ingest",
+        "understand",
+        "understanding_decision",
+        "plan",
+        "planning_approval",
+        "generate",
+        "execute",
+        "score",
+        "product",
+    ]
+    assert state.generation_result is healed
+
+
+def test_action_cancel_task_cancels_phase9_workflow_when_active():
+    app = _minimal_app_for_unit()
+    import threading
+
+    phase9_cancel = threading.Event()
+    app._phase9_workflow = Phase9WorkflowState(active=True, cancel_event=phase9_cancel)
+    app._running_action = None
+    output: list[str] = []
+    statuses: list[str] = []
+    exits: list[str] = []
+
+    app._append_output = lambda line, level="auto": output.append(f"{level}:{line}")
+    app._set_status = lambda message, level="info": statuses.append(f"{level}:{message}")
+    app.exit = lambda *args, **kwargs: exits.append("exit")
+
+    app.action_cancel_task()
+
+    assert phase9_cancel.is_set() is True
+    assert exits == []
+    assert any("phase 9" in line.lower() for line in output)
+    assert any("phase 9" in line.lower() for line in statuses)
+
+
+def test_bindings_include_phase9_shortcuts():
+    source = inspect.getsource(ScholarDevClawApp)
+
+    assert '("ctrl+p", "open_paper_ingestion", "Ingestion")' in source
+    assert '("ctrl+l", "open_planning", "Planning")' in source
