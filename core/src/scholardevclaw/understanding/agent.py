@@ -4,8 +4,10 @@ import json
 import logging
 from typing import Any
 
+from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.exceptions import UnderstandingError
 from scholardevclaw.ingestion.models import PaperDocument, Section
+from scholardevclaw.llm.client import LLMClient
 from scholardevclaw.understanding.models import PaperUnderstanding
 
 try:
@@ -42,21 +44,51 @@ class UnderstandingAgent:
     _MAX_SECTION_CHARS: int = 35_000
     _MAX_RESPONSE_TOKENS: int = 4096
 
-    def __init__(self, api_key: str, model: str = "claude-opus-4-5") -> None:
-        if anthropic is None:
-            raise ImportError(
-                "What failed: UnderstandingAgent initialization. "
-                "Why: the optional dependency 'anthropic' is not installed. "
-                "Fix: install understanding extras with `pip install -e '.[understanding]'`."
-            )
-        if not api_key.strip():
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-opus-4-5",
+        provider: str | None = None,
+    ) -> None:
+        provider_name = (provider or AuthProvider.ANTHROPIC.value).strip().lower()
+        try:
+            auth_provider = AuthProvider(provider_name)
+        except ValueError as exc:
             raise ValueError(
                 "What failed: UnderstandingAgent initialization. "
-                "Why: provided api_key is empty. "
-                "Fix: set ANTHROPIC_API_KEY and pass a non-empty key."
-            )
+                f"Why: unsupported provider '{provider_name}'. "
+                "Fix: choose a supported provider and retry."
+            ) from exc
 
-        self.client = anthropic.Anthropic(api_key=api_key)
+        if auth_provider == AuthProvider.ANTHROPIC:
+            if anthropic is None:
+                raise ImportError(
+                    "What failed: UnderstandingAgent initialization. "
+                    "Why: the optional dependency 'anthropic' is not installed. "
+                    "Fix: install understanding extras with `pip install -e '.[understanding]'`."
+                )
+            if not api_key.strip():
+                raise ValueError(
+                    "What failed: UnderstandingAgent initialization. "
+                    "Why: provided api_key is empty. "
+                    "Fix: set ANTHROPIC_API_KEY and pass a non-empty key."
+                )
+            self.client: Any = anthropic.Anthropic(api_key=api_key)
+            self._llm_client: LLMClient | None = None
+        else:
+            normalized_key = api_key.strip()
+            if auth_provider.requires_api_key and not normalized_key:
+                raise ValueError(
+                    "What failed: UnderstandingAgent initialization. "
+                    "Why: provided api_key is empty. "
+                    f"Fix: set {auth_provider.env_var_name} and pass a non-empty key."
+                )
+            self._llm_client = LLMClient.from_provider(
+                auth_provider,
+                api_key=normalized_key,
+                model=model,
+            )
+            self.client = self._llm_client
         self.model = model
 
     def understand(self, doc: PaperDocument) -> PaperUnderstanding:
@@ -70,34 +102,57 @@ class UnderstandingAgent:
         return self._merge_understandings(architecture_understanding, experiments_understanding)
 
     def _single_pass_understanding(self, prompt: str) -> PaperUnderstanding:
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self._MAX_RESPONSE_TOKENS,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}],
-            )
-        except Exception as exc:  # pragma: no cover - SDK/runtime dependent
-            raise UnderstandingError(
-                "What failed: understanding model request. "
-                f"Why: provider call raised '{exc}'. "
-                "Fix: verify API key/model/network and retry."
-            ) from exc
+        if self._llm_client is not None:
+            try:
+                response = self._llm_client.chat(
+                    prompt,
+                    system=SYSTEM_PROMPT,
+                    model=self.model,
+                    max_tokens=self._MAX_RESPONSE_TOKENS,
+                )
+            except Exception as exc:  # pragma: no cover - SDK/runtime dependent
+                raise UnderstandingError(
+                    "What failed: understanding model request. "
+                    f"Why: provider call raised '{exc}'. "
+                    "Fix: verify API key/model/network and retry."
+                ) from exc
 
-        if not response.content:
-            raise UnderstandingError(
-                "What failed: understanding response parsing. "
-                "Why: model response contained no content blocks. "
-                "Fix: retry with the same input or switch model."
-            )
+            raw = response.content if isinstance(response.content, str) else ""
+            if not raw.strip():
+                raise UnderstandingError(
+                    "What failed: understanding response parsing. "
+                    "Why: response did not contain a non-empty text content block. "
+                    "Fix: retry and ensure the model is configured for text output."
+                )
+        else:
+            try:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=self._MAX_RESPONSE_TOKENS,
+                    system=SYSTEM_PROMPT,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+            except Exception as exc:  # pragma: no cover - SDK/runtime dependent
+                raise UnderstandingError(
+                    "What failed: understanding model request. "
+                    f"Why: provider call raised '{exc}'. "
+                    "Fix: verify API key/model/network and retry."
+                ) from exc
 
-        raw = self._extract_first_text_block(response.content)
-        if not isinstance(raw, str) or not raw.strip():
-            raise UnderstandingError(
-                "What failed: understanding response parsing. "
-                "Why: response did not contain a non-empty text content block. "
-                "Fix: retry and ensure the model is configured for text output."
-            )
+            if not response.content:
+                raise UnderstandingError(
+                    "What failed: understanding response parsing. "
+                    "Why: model response contained no content blocks. "
+                    "Fix: retry with the same input or switch model."
+                )
+
+            raw = self._extract_first_text_block(response.content)
+            if not isinstance(raw, str) or not raw.strip():
+                raise UnderstandingError(
+                    "What failed: understanding response parsing. "
+                    "Why: response did not contain a non-empty text content block. "
+                    "Fix: retry and ensure the model is configured for text output."
+                )
 
         data = self._parse_json_response(raw)
         return PaperUnderstanding.from_dict(data)

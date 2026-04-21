@@ -13,7 +13,7 @@ pytest.importorskip("textual")
 
 from scholardevclaw.generation.models import GenerationResult
 from scholardevclaw.ingestion.models import PaperDocument
-from scholardevclaw.llm.client import LLMAPIError
+from scholardevclaw.llm.client import LLMAPIError, LLMConfigError
 from scholardevclaw.planning.models import ImplementationPlan
 from scholardevclaw.tui.app import (
     Phase9WorkflowState,
@@ -949,6 +949,81 @@ def test_set_provider_uses_provider_specific_model_memory(monkeypatch):
     assert app._model == "llama3.1"
 
 
+def test_set_provider_accepts_new_supported_providers():
+    app = _minimal_app_for_unit()
+    app._provider = "openrouter"
+    app._model = "openai/gpt-4.1-mini"
+    app._save_runtime_state = lambda: None
+    app._sync_status_bar = lambda: None
+    app._set_status = lambda *_a, **_k: None
+    app._update_command_meta = lambda: None
+    app._append_output = lambda *_a, **_k: None
+    app._provider_has_credentials = lambda provider=None: True
+
+    for provider in ["anthropic", "grok", "gemini", "moonshot", "glm", "minimax"]:
+        app._execute_action_request("set_provider", {"provider": provider}, command=None)
+        assert app._provider == provider
+        assert app._model
+
+
+def test_set_provider_invalid_message_lists_expanded_providers():
+    app = _minimal_app_for_unit()
+    output: list[tuple[str, str]] = []
+    app._append_output = lambda line, level="auto": output.append((level, line))
+
+    app._execute_action_request("set_provider", {"provider": "unknown"}, command=None)
+
+    assert output
+    assert output[-1][0] == "error"
+    assert "provider must be one of" in output[-1][1]
+    for provider in ["anthropic", "openai", "gemini", "grok", "moonshot", "glm", "minimax"]:
+        assert provider in output[-1][1]
+
+
+def test_providers_command_lists_expanded_providers():
+    app = _minimal_app_for_unit()
+    output: list[str] = []
+    app._append_output = lambda line, level="auto": output.append(line)
+
+    app._execute_action_request("providers", {}, command=None)
+
+    assert output
+    providers_line = output[0]
+    assert providers_line.startswith("Providers: ")
+    for provider in ["anthropic", "openai", "gemini", "grok", "moonshot", "glm", "minimax"]:
+        assert provider in providers_line
+
+
+def test_save_provider_setup_supports_gemini_and_provider_env(monkeypatch, tmp_path):
+    app = _minimal_app_for_unit()
+    app._save_runtime_state = lambda: None
+    monkeypatch.setenv("SCHOLARDEVCLAW_AUTH_DIR", str(tmp_path))
+
+    key = "gemini-key-123456"
+    ok, message = app._save_provider_setup("gemini", "gemini-2.0-flash", key)
+
+    assert ok is True
+    assert message == "OK"
+    assert app._provider == "gemini"
+    assert os.environ.get("GEMINI_API_KEY") == key
+
+
+def test_get_llm_client_missing_key_message_is_provider_agnostic(monkeypatch):
+    app = _minimal_app_for_unit()
+    app._provider = "openai"
+    app._model = "gpt-4o"
+    app._get_saved_key_for_provider = lambda provider: None
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(LLMConfigError) as exc_info:
+        app._get_llm_client()
+
+    message = str(exc_info.value)
+    assert "No OpenAI" in message
+    assert "Run `setup`" in message
+    assert "OpenRouter" not in message
+
+
 def test_format_chat_error_for_bad_model_is_actionable():
     app = _minimal_app_for_unit()
 
@@ -1637,6 +1712,37 @@ def test_on_paper_ingestion_result_starts_phase9_workflow_with_source():
     app._on_paper_ingestion_result({"source": "2406.12345"})
 
     assert started == ["2406.12345"]
+
+
+def test_phase9_model_and_key_uses_selected_provider_env_var(monkeypatch):
+    app = _minimal_app_for_unit()
+    app._provider = "openrouter"
+    app._model = "openai/gpt-4.1-mini"
+    app._get_saved_key_for_provider = lambda provider: None
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-selected-provider")
+
+    provider, model, api_key = app._phase9_model_and_key()
+
+    assert provider == "openrouter"
+    assert model == "openai/gpt-4.1-mini"
+    assert api_key == "sk-or-selected-provider"
+
+
+def test_phase9_model_and_key_allows_ollama_without_api_key(monkeypatch):
+    app = _minimal_app_for_unit()
+    app._provider = "ollama"
+    app._model = ""
+
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+
+    provider, model, api_key = app._phase9_model_and_key()
+
+    assert provider == "ollama"
+    assert model
+    assert api_key == ""
+    assert os.environ.get("OLLAMA_HOST")
 
 
 def test_phase9_run_flow_blocks_generation_when_planning_rejected():

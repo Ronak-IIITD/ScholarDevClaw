@@ -27,6 +27,11 @@ class AuthProvider(str, Enum):
     DEEPSEEK = "deepseek"
     COHERE = "cohere"
     OPENROUTER = "openrouter"
+    GEMINI = "gemini"
+    GROK = "grok"
+    MOONSHOT = "moonshot"
+    GLM = "glm"
+    MINIMAX = "minimax"
     TOGETHER = "together"
     FIREWORKS = "fireworks"
 
@@ -75,6 +80,11 @@ class AuthProvider(str, Enum):
             AuthProvider.DEEPSEEK: "sk-... from platform.deepseek.com",
             AuthProvider.COHERE: "co-... from dashboard.cohere.com",
             AuthProvider.OPENROUTER: "sk-or-... from openrouter.ai",
+            AuthProvider.GEMINI: "API key from Google AI Studio (Gemini)",
+            AuthProvider.GROK: "API key from x.ai console",
+            AuthProvider.MOONSHOT: "API key from moonshot.cn console",
+            AuthProvider.GLM: "API key from bigmodel.cn",
+            AuthProvider.MINIMAX: "API key from minimax.io",
             AuthProvider.TOGETHER: "API key from api.together.xyz",
             AuthProvider.FIREWORKS: "API key from fireworks.ai",
             AuthProvider.CUSTOM: "custom API key format",
@@ -105,6 +115,11 @@ _LLM_PROVIDERS = {
     AuthProvider.DEEPSEEK,
     AuthProvider.COHERE,
     AuthProvider.OPENROUTER,
+    AuthProvider.GEMINI,
+    AuthProvider.GROK,
+    AuthProvider.MOONSHOT,
+    AuthProvider.GLM,
+    AuthProvider.MINIMAX,
     AuthProvider.TOGETHER,
     AuthProvider.FIREWORKS,
 }
@@ -118,6 +133,11 @@ _DEFAULT_BASE_URLS: dict[AuthProvider, str] = {
     AuthProvider.DEEPSEEK: "https://api.deepseek.com",
     AuthProvider.COHERE: "https://api.cohere.com/v2",
     AuthProvider.OPENROUTER: "https://openrouter.ai/api/v1",
+    AuthProvider.GEMINI: "https://generativelanguage.googleapis.com/v1beta/openai",
+    AuthProvider.GROK: "https://api.x.ai/v1",
+    AuthProvider.MOONSHOT: "https://api.moonshot.cn/v1",
+    AuthProvider.GLM: "https://open.bigmodel.cn/api/paas/v4",
+    AuthProvider.MINIMAX: "https://api.minimax.io/v1",
     AuthProvider.TOGETHER: "https://api.together.xyz/v1",
     AuthProvider.FIREWORKS: "https://api.fireworks.ai/inference/v1",
 }
@@ -135,6 +155,11 @@ _ENV_VAR_NAMES: dict[AuthProvider, str] = {
     AuthProvider.DEEPSEEK: "DEEPSEEK_API_KEY",
     AuthProvider.COHERE: "COHERE_API_KEY",
     AuthProvider.OPENROUTER: "OPENROUTER_API_KEY",
+    AuthProvider.GEMINI: "GEMINI_API_KEY",
+    AuthProvider.GROK: "XAI_API_KEY",
+    AuthProvider.MOONSHOT: "MOONSHOT_API_KEY",
+    AuthProvider.GLM: "GLM_API_KEY",
+    AuthProvider.MINIMAX: "MINIMAX_API_KEY",
     AuthProvider.TOGETHER: "TOGETHER_API_KEY",
     AuthProvider.FIREWORKS: "FIREWORKS_API_KEY",
 }
@@ -153,6 +178,11 @@ _DISPLAY_NAMES: dict[AuthProvider, str] = {
     AuthProvider.DEEPSEEK: "DeepSeek",
     AuthProvider.COHERE: "Cohere",
     AuthProvider.OPENROUTER: "OpenRouter",
+    AuthProvider.GEMINI: "Google Gemini",
+    AuthProvider.GROK: "xAI Grok",
+    AuthProvider.MOONSHOT: "Moonshot AI",
+    AuthProvider.GLM: "Zhipu GLM",
+    AuthProvider.MINIMAX: "MiniMax",
     AuthProvider.TOGETHER: "Together AI",
     AuthProvider.FIREWORKS: "Fireworks AI",
     AuthProvider.CUSTOM: "Custom Provider",
@@ -325,8 +355,8 @@ class APIKey:
             if not key.startswith("sk-or-"):
                 return False, "OpenRouter keys should start with 'sk-or-'"
 
-        # For Azure, Mistral, DeepSeek, Together, Fireworks — no strict prefix,
-        # just length check above is sufficient
+        # For Azure, Mistral, DeepSeek, Together, Fireworks, Gemini, Grok,
+        # Moonshot, GLM, MiniMax — no strict prefix, just length check above.
 
         return True, "Valid"
 

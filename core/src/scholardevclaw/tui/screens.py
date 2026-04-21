@@ -25,6 +25,23 @@ from scholardevclaw.understanding.models import PaperUnderstanding
 from .clipboard import copy_to_clipboard
 
 DEFAULT_OPENROUTER_MODEL = DEFAULT_MODELS[AuthProvider.OPENROUTER]
+DEFAULT_TUI_PROVIDER_CHOICES: dict[str, AuthProvider] = {
+    "anthropic": AuthProvider.ANTHROPIC,
+    "openai": AuthProvider.OPENAI,
+    "gemini": AuthProvider.GEMINI,
+    "grok": AuthProvider.GROK,
+    "moonshot": AuthProvider.MOONSHOT,
+    "glm": AuthProvider.GLM,
+    "minimax": AuthProvider.MINIMAX,
+    "openrouter": AuthProvider.OPENROUTER,
+    "ollama": AuthProvider.OLLAMA,
+    "groq": AuthProvider.GROQ,
+    "mistral": AuthProvider.MISTRAL,
+    "deepseek": AuthProvider.DEEPSEEK,
+    "cohere": AuthProvider.COHERE,
+    "together": AuthProvider.TOGETHER,
+    "fireworks": AuthProvider.FIREWORKS,
+}
 
 
 def _clamp01(value: float) -> float:
@@ -65,8 +82,7 @@ HELP_TEXT = (
     "Esc dismiss suggestions\n\n"
     "Setup\n"
     "setup\n"
-    "set provider openrouter\n"
-    "set provider ollama\n"
+    "set provider anthropic|openai|gemini|grok|moonshot|glm|minimax|openrouter|ollama\n"
     f"set model {DEFAULT_OPENROUTER_MODEL}\n\n"
     "Commands\n"
     "/ask <question>\n"
@@ -182,11 +198,29 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         provider: str = "openrouter",
         model: str = "",
         has_saved_key: bool = False,
+        supported_providers: dict[str, AuthProvider] | None = None,
+        has_saved_key_by_provider: dict[str, bool] | None = None,
     ) -> None:
         super().__init__()
-        self._provider = provider or "openrouter"
+        self._supported_providers = dict(supported_providers or DEFAULT_TUI_PROVIDER_CHOICES)
+        self._provider = (provider or "openrouter").strip().lower()
+        if self._provider not in self._supported_providers:
+            self._provider = next(iter(self._supported_providers), "openrouter")
         self._model = model
         self._has_saved_key = has_saved_key
+        self._has_saved_key_by_provider = {
+            str(key).strip().lower(): bool(value)
+            for key, value in (has_saved_key_by_provider or {}).items()
+        }
+
+    def _provider_choices_text(self) -> str:
+        return ", ".join(self._supported_providers)
+
+    def _selected_provider(self) -> AuthProvider | None:
+        return self._supported_providers.get(self._provider)
+
+    def _selected_has_saved_key(self) -> bool:
+        return self._has_saved_key_by_provider.get(self._provider, self._has_saved_key)
 
     def compose(self) -> ComposeResult:
         with Vertical():
@@ -194,11 +228,11 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
             yield Static("", id="setup-hint")
             yield Input(
                 value=self._provider,
-                placeholder="Provider: openrouter or ollama",
+                placeholder=f"Provider: {self._provider_choices_text()}",
                 id="setup-provider",
             )
             yield Input(value=self._model, placeholder="Model ID", id="setup-model")
-            yield Input(password=True, placeholder="OpenRouter API key", id="setup-key")
+            yield Input(password=True, placeholder="API key (provider-specific)", id="setup-key")
             yield Static("", id="setup-error")
 
     def on_mount(self) -> None:
@@ -213,15 +247,22 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         model = self.query_one("#setup-model", Input).value.strip()
         api_key = self.query_one("#setup-key", Input).value.strip()
         error = self.query_one("#setup-error", Static)
+        provider_choices = self._provider_choices_text()
+        selected_provider = self._supported_providers.get(provider)
 
-        if provider not in {"openrouter", "ollama"}:
-            error.update("Error: provider must be openrouter or ollama")
+        if provider not in self._supported_providers:
+            error.update(f"Error: provider must be one of: {provider_choices}")
             return
         if not model:
             error.update("Error: model is required")
             return
-        if provider == "openrouter" and not api_key and not self._has_saved_key:
-            error.update("Error: OpenRouter requires an API key")
+        if (
+            selected_provider is not None
+            and selected_provider.requires_api_key
+            and not api_key
+            and not self._has_saved_key_by_provider.get(provider, self._has_saved_key)
+        ):
+            error.update(f"Error: {selected_provider.display_name} requires an API key")
             return
 
         self.dismiss(
@@ -243,8 +284,8 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
 
     @on(Input.Submitted, "#setup-model")
     def on_model_submitted(self) -> None:
-        provider = self.query_one("#setup-provider", Input).value.strip().lower()
-        if provider == "ollama":
+        selected_provider = self._selected_provider()
+        if selected_provider is not None and not selected_provider.requires_api_key:
             self.action_submit_setup()
             return
         self.query_one("#setup-key", Input).focus()
@@ -255,26 +296,43 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
 
     def _refresh_hint(self) -> None:
         hint = self.query_one("#setup-hint", Static)
-        if self._provider == "ollama":
+        key_input = self.query_one("#setup-key", Input)
+        provider = self._selected_provider()
+        if provider is None:
             hint.update(
-                "Provider -> Ollama\n"
-                "Model -> any local Ollama tag, for example `llama3.1`\n"
+                "Provider -> choose one of the supported providers\n"
+                f"Supported -> {self._provider_choices_text()}\n"
+                "Model -> enter a provider model id\n"
+                "Key -> provider-specific\n"
+                "Save -> Ctrl+S or Enter"
+            )
+            key_input.placeholder = "API key (provider-specific)"
+            return
+
+        model_example = DEFAULT_MODELS.get(provider, "provider-default-model")
+        if not provider.requires_api_key:
+            hint.update(
+                f"Provider -> {provider.display_name}\n"
+                f"Model -> for example `{model_example}`\n"
                 "Key -> not required\n"
                 "Save -> Ctrl+S or Enter"
             )
+            key_input.placeholder = "No key required for this provider"
             return
 
         reuse = (
             "leave key blank to reuse saved key"
-            if self._has_saved_key
-            else "paste your OpenRouter key"
+            if self._selected_has_saved_key()
+            else f"paste your {provider.display_name} key"
         )
         hint.update(
-            "Provider -> OpenRouter\n"
-            f"Model -> full OpenRouter model id, for example `{DEFAULT_OPENROUTER_MODEL}`\n"
+            f"Provider -> {provider.display_name}\n"
+            f"Model -> for example `{model_example}`\n"
+            f"Key format -> {provider.key_format_hint}\n"
             f"Key -> {reuse}\n"
             "Save -> Ctrl+S or Enter"
         )
+        key_input.placeholder = f"{provider.display_name} API key"
 
 
 class CommandPalette(ModalScreen[str | None]):

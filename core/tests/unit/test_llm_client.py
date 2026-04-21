@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 
 from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.llm.client import LLMAPIError, LLMClient
@@ -28,6 +29,77 @@ def test_from_provider_non_ollama_uses_provider_env_key(monkeypatch):
     try:
         assert client.provider == AuthProvider.OPENROUTER
         assert client.api_key == "sk-or-test-123456"
+    finally:
+        client.close()
+
+
+def test_from_provider_new_provider_uses_provider_env_key(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-test-123456")
+
+    client = LLMClient.from_provider("gemini")
+    try:
+        assert client.provider == AuthProvider.GEMINI
+        assert client.api_key == "gemini-test-123456"
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "env_var", "api_key", "default_model", "base_url"),
+    [
+        (
+            "gemini",
+            "GEMINI_API_KEY",
+            "gemini-test-key-123456",
+            "gemini-2.0-flash",
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+        ),
+        (
+            "grok",
+            "XAI_API_KEY",
+            "xai-test-key-123456",
+            "grok-4-0709",
+            "https://api.x.ai/v1",
+        ),
+        (
+            "moonshot",
+            "MOONSHOT_API_KEY",
+            "moonshot-test-key-123456",
+            "kimi-k2.6",
+            "https://api.moonshot.cn/v1",
+        ),
+        (
+            "glm",
+            "GLM_API_KEY",
+            "glm-test-key-123456",
+            "glm-5.1",
+            "https://open.bigmodel.cn/api/paas/v4",
+        ),
+        (
+            "minimax",
+            "MINIMAX_API_KEY",
+            "minimax-test-key-123456",
+            "MiniMax-M2.7",
+            "https://api.minimax.io/v1",
+        ),
+    ],
+)
+def test_from_provider_new_openai_compatible_providers_defaults(
+    monkeypatch,
+    provider_name,
+    env_var,
+    api_key,
+    default_model,
+    base_url,
+):
+    monkeypatch.setenv(env_var, api_key)
+
+    client = LLMClient.from_provider(provider_name)
+    try:
+        assert client.api_key == api_key
+        assert client.model == default_model
+        assert client.base_url == base_url
+        assert client._chat_path == "/chat/completions"
     finally:
         client.close()
 

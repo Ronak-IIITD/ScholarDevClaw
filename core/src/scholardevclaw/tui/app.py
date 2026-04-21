@@ -66,9 +66,23 @@ logger = logging.getLogger(__name__)
 
 MODES = ("analyze", "search", "edit")
 SUPPORTED_TUI_PROVIDERS = {
+    "anthropic": AuthProvider.ANTHROPIC,
+    "openai": AuthProvider.OPENAI,
+    "gemini": AuthProvider.GEMINI,
+    "grok": AuthProvider.GROK,
+    "moonshot": AuthProvider.MOONSHOT,
+    "glm": AuthProvider.GLM,
+    "minimax": AuthProvider.MINIMAX,
     "openrouter": AuthProvider.OPENROUTER,
     "ollama": AuthProvider.OLLAMA,
+    "groq": AuthProvider.GROQ,
+    "mistral": AuthProvider.MISTRAL,
+    "deepseek": AuthProvider.DEEPSEEK,
+    "cohere": AuthProvider.COHERE,
+    "together": AuthProvider.TOGETHER,
+    "fireworks": AuthProvider.FIREWORKS,
 }
+DEFAULT_TUI_PROVIDER = "openrouter"
 DEFAULT_OPENROUTER_MODEL = DEFAULT_MODELS[AuthProvider.OPENROUTER]
 MODE_HINTS = {
     "analyze": [
@@ -108,6 +122,7 @@ MODE_COMMANDS = {
         "validate ./repo",
         "set dir ./repo",
         "set provider openrouter",
+        "set provider anthropic",
         f"set model {DEFAULT_OPENROUTER_MODEL}",
         "runs",
         "inspect",
@@ -162,6 +177,7 @@ GLOBAL_COMMANDS = [
     "set mode search",
     "set mode edit",
     "set provider openrouter",
+    "set provider anthropic",
     "set provider ollama",
     f"set model {DEFAULT_OPENROUTER_MODEL}",
     "set dir ./repo",
@@ -299,8 +315,10 @@ class RunEvent:
 class Phase9WorkflowState:
     active: bool = False
     source: str = ""
+    provider: str = ""
     model: str = ""
     api_key: str = ""
+    llm_client: LLMClient | None = None
     work_dir: Path | None = None
     output_dir: Path | None = None
     paper_document: PaperDocument | None = None
@@ -1022,6 +1040,9 @@ class ScholarDevClawApp(App[None]):
     def _resolve_auth_provider(self) -> AuthProvider | None:
         return SUPPORTED_TUI_PROVIDERS.get(self._provider)
 
+    def _supported_provider_names(self) -> str:
+        return ", ".join(SUPPORTED_TUI_PROVIDERS)
+
     def _get_saved_key_for_provider(self, provider: AuthProvider) -> str | None:
         try:
             store = AuthStore(enable_audit=False, enable_rate_limit=False)
@@ -1102,7 +1123,7 @@ class ScholarDevClawApp(App[None]):
             if self._provider == "ollama" and not self._ollama_reachable(timeout=1.0):
                 self._append_output(
                     "Startup: Ollama selected but not reachable at OLLAMA_HOST. "
-                    "Run `ollama serve` or `set provider openrouter`.",
+                    "Run `ollama serve`, `setup`, or switch provider with `set provider <name>`.",
                     "warning",
                 )
                 self._set_status("Ollama unavailable", "warning")
@@ -1116,13 +1137,19 @@ class ScholarDevClawApp(App[None]):
         self._open_setup()
 
     def _open_setup(self) -> None:
+        setup_provider = (
+            self._provider if self._provider in SUPPORTED_TUI_PROVIDERS else DEFAULT_TUI_PROVIDER
+        )
         self.push_screen(
             ProviderSetupScreen(
-                provider=self._provider
-                if self._provider in SUPPORTED_TUI_PROVIDERS
-                else "openrouter",
-                model=self._model or DEFAULT_MODELS[AuthProvider.OPENROUTER],
-                has_saved_key=self._provider_has_credentials("openrouter"),
+                provider=setup_provider,
+                model=self._model or self._model_for_provider(setup_provider),
+                has_saved_key=self._provider_has_credentials(setup_provider),
+                supported_providers=SUPPORTED_TUI_PROVIDERS,
+                has_saved_key_by_provider={
+                    provider_name: self._provider_has_credentials(provider_name)
+                    for provider_name in SUPPORTED_TUI_PROVIDERS
+                },
             ),
             self._apply_setup_result,
         )
@@ -1222,30 +1249,42 @@ class ScholarDevClawApp(App[None]):
         if self._phase9_is_cancelled(state):
             raise TaskCancelledError("Phase-9 workflow cancelled")
 
-    def _phase9_model_and_key(self) -> tuple[str, str]:
+    def _phase9_model_and_key(self) -> tuple[str, str, str]:
         if self._provider not in SUPPORTED_TUI_PROVIDERS:
             raise ValueError(
                 "Provider is not configured. Run `setup` and choose a provider/model before "
                 "running the Phase-9 workflow."
             )
+        provider_name = self._provider
+        auth_provider = SUPPORTED_TUI_PROVIDERS[provider_name]
         model = (
             self._model.strip()
-            or (os.environ.get("SCHOLARDEVCLAW_API_MODEL") or "").strip()
-            or "claude-sonnet-4-5"
+            or self._model_for_provider(provider_name)
+            or DEFAULT_MODELS[auth_provider]
         )
-        api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip() or (
-            os.environ.get("SCHOLARDEVCLAW_API_KEY") or ""
-        ).strip()
         if not model:
             raise ValueError(
                 "Model is missing. Set one with `set model <id>` and retry Phase-9 workflow."
             )
+        if auth_provider == AuthProvider.OLLAMA:
+            os.environ.setdefault(
+                "OLLAMA_HOST",
+                auth_provider.default_base_url or "http://localhost:11434",
+            )
+            return provider_name, model, ""
+
+        api_key = (
+            self._get_saved_key_for_provider(auth_provider)
+            or (os.environ.get(auth_provider.env_var_name) or "").strip()
+            or (os.environ.get("SCHOLARDEVCLAW_API_KEY") or "").strip()
+        )
         if not api_key:
             raise ValueError(
-                "API key is missing. Set ANTHROPIC_API_KEY (or SCHOLARDEVCLAW_API_KEY) "
-                "before running the Phase-9 workflow."
+                "API key is missing. Set "
+                f"{auth_provider.env_var_name} (or SCHOLARDEVCLAW_API_KEY) before "
+                "running the Phase-9 workflow."
             )
-        return model, api_key
+        return provider_name, model, api_key
 
     def _phase9_prepare_dirs(self, source: str) -> tuple[Path, Path]:
         root = Path(self._directory).expanduser().resolve()
@@ -1340,7 +1379,11 @@ class ScholarDevClawApp(App[None]):
         assert state.paper_document is not None
         self._phase9_status("Phase 9: understanding paper", "accent")
         self._phase9_log("[2/7] Understanding paper...", "accent")
-        agent = UnderstandingAgent(api_key=state.api_key, model=state.model)
+        agent = UnderstandingAgent(
+            api_key=state.api_key,
+            model=state.model,
+            provider=state.provider,
+        )
         return agent.understand(state.paper_document)
 
     def _phase9_plan_implementation(self, state: Phase9WorkflowState) -> ImplementationPlan:
@@ -1348,7 +1391,11 @@ class ScholarDevClawApp(App[None]):
         assert state.understanding is not None
         self._phase9_status("Phase 9: planning implementation", "accent")
         self._phase9_log("[3/7] Planning implementation...", "accent")
-        planner = ImplementationPlanner(api_key=state.api_key, model=state.model)
+        planner = ImplementationPlanner(
+            api_key=state.api_key,
+            model=state.model,
+            provider=state.provider,
+        )
         return planner.plan(state.understanding, state.paper_document)
 
     def _phase9_generate_code(self, state: Phase9WorkflowState) -> GenerationResult:
@@ -1364,7 +1411,11 @@ class ScholarDevClawApp(App[None]):
         self._phase9_status("Phase 9: generating code", "accent")
         self._phase9_log(f"[4/7] Generating {len(module_ids)} modules...", "accent")
 
-        orchestrator = CodeOrchestrator(api_key=state.api_key, model=state.model)
+        orchestrator = CodeOrchestrator(
+            api_key=state.api_key,
+            model=state.model,
+            client=state.llm_client,
+        )
         state.generation_orchestrator = orchestrator
 
         done = threading.Event()
@@ -1491,6 +1542,7 @@ class ScholarDevClawApp(App[None]):
             orchestrator = state.generation_orchestrator or CodeOrchestrator(
                 api_key=state.api_key,
                 model=state.model,
+                client=state.llm_client,
             )
             healer = SelfHealingLoop(orchestrator, runner)
             generation_result = healer.heal(generation_result, plan, understanding)
@@ -1532,7 +1584,12 @@ class ScholarDevClawApp(App[None]):
         assert state.understanding is not None
         self._phase9_status("Phase 9: scoring reproducibility", "accent")
         self._phase9_log("[6/7] Scoring reproducibility...", "accent")
-        scorer = ReproducibilityScorer(api_key=state.api_key)
+        scorer = ReproducibilityScorer(
+            api_key=state.api_key,
+            model=state.model,
+            provider=state.provider,
+            client=state.llm_client,
+        )
         report = scorer.score(state.understanding, execution_report)
         self._phase9_log(
             f"Reproducibility: {report.score:.0%} ({report.verdict})",
@@ -1591,9 +1648,15 @@ class ScholarDevClawApp(App[None]):
 
     def _run_phase9_workflow_thread(self, state: Phase9WorkflowState) -> None:
         try:
-            model, api_key = self._phase9_model_and_key()
+            provider_name, model, api_key = self._phase9_model_and_key()
+            state.provider = provider_name
             state.model = model
             state.api_key = api_key
+            state.llm_client = LLMClient.from_provider(
+                provider_name,
+                api_key=api_key,
+                model=model,
+            )
             self._phase9_log(f"Starting Phase-9 workflow for source: {state.source}", "accent")
             self._phase9_run_flow(state)
             if self._phase9_is_cancelled(state):
@@ -1610,6 +1673,10 @@ class ScholarDevClawApp(App[None]):
             )
             self._phase9_status("Phase 9 workflow failed", "error")
         finally:
+            if state.llm_client is not None:
+                with contextlib.suppress(Exception):
+                    state.llm_client.close()
+                state.llm_client = None
             state.active = False
             if self._phase9_workflow is state:
                 self._phase9_workflow.active = False
@@ -1658,33 +1725,34 @@ class ScholarDevClawApp(App[None]):
         provider_name = provider.strip().lower()
         auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider_name)
         if auth_provider is None:
-            return False, "Provider must be openrouter or ollama"
+            return False, f"Provider must be one of: {self._supported_provider_names()}"
         if not model.strip():
             return False, "Model is required"
 
         store = AuthStore(enable_audit=False, enable_rate_limit=False)
+        normalized_api_key = api_key.strip()
         existing = None
         for key in store.list_api_keys():
             if key.provider == auth_provider:
                 existing = key
-                if api_key and key.key == api_key:
+                if normalized_api_key and key.key == normalized_api_key:
                     break
 
         try:
-            if auth_provider == AuthProvider.OPENROUTER:
-                if api_key:
-                    if existing and existing.key == api_key:
+            if auth_provider.requires_api_key:
+                if normalized_api_key:
+                    if existing and existing.key == normalized_api_key:
                         store.set_default_key(existing.id)
                     else:
                         store.add_api_key(
-                            api_key,
-                            "openrouter-tui",
+                            normalized_api_key,
+                            f"{provider_name}-tui",
                             auth_provider,
                             set_default=True,
                             validate=True,
                             metadata={"source": "tui"},
                         )
-                    os.environ[auth_provider.env_var_name] = api_key
+                    os.environ[auth_provider.env_var_name] = normalized_api_key
                 else:
                     saved = self._get_saved_key_for_provider(auth_provider)
                     env_key = (os.environ.get(auth_provider.env_var_name) or "").strip()
@@ -1693,20 +1761,21 @@ class ScholarDevClawApp(App[None]):
                     elif env_key:
                         os.environ[auth_provider.env_var_name] = env_key
                     else:
-                        return False, "OpenRouter requires an API key"
+                        return False, f"{auth_provider.display_name} requires an API key"
             else:
                 if existing is not None:
                     store.set_default_key(existing.id)
                 else:
                     store.add_api_key(
-                        "ollama-local",
-                        "ollama-local",
+                        f"{provider_name}-local",
+                        f"{provider_name}-local",
                         auth_provider,
                         set_default=True,
                         metadata={"source": "tui"},
                     )
                 os.environ.setdefault(
-                    "OLLAMA_HOST", auth_provider.default_base_url or "http://localhost:11434"
+                    auth_provider.env_var_name,
+                    auth_provider.default_base_url or "http://localhost:11434",
                 )
         except Exception as exc:
             return False, str(exc)
@@ -2118,7 +2187,8 @@ class ScholarDevClawApp(App[None]):
             for token in (
                 "config",
                 "setup",
-                "no openrouter key",
+                "no key found",
+                "requires an api key",
                 "llm setup",
                 "provider",
             )
@@ -3236,7 +3306,7 @@ class ScholarDevClawApp(App[None]):
     def _get_llm_client(self) -> LLMClient:
         auth_provider = self._resolve_auth_provider()
         if auth_provider is None:
-            raise LLMConfigError("Run `setup` to choose OpenRouter or Ollama first.")
+            raise LLMConfigError("Run `setup` to choose an LLM provider first.")
 
         model = self._model or DEFAULT_MODELS[auth_provider]
         if auth_provider == AuthProvider.OLLAMA:
@@ -3251,7 +3321,9 @@ class ScholarDevClawApp(App[None]):
         )
         key = key.strip()
         if not key:
-            raise LLMConfigError("No OpenRouter key found. Run `setup` and paste your key.")
+            raise LLMConfigError(
+                f"No {auth_provider.display_name} key found. Run `setup` and paste your key."
+            )
         os.environ[auth_provider.env_var_name] = key
         return LLMClient.from_provider(auth_provider, api_key=key, model=model)
 
@@ -3340,7 +3412,10 @@ class ScholarDevClawApp(App[None]):
             self._set_status("Run state: RUNNING | another task in progress", "warning")
             return
         if not self._llm_ready():
-            self._append_output("Error: configure OpenRouter or Ollama first", "error")
+            self._append_output(
+                f"Error: configure an LLM provider first ({self._supported_provider_names()})",
+                "error",
+            )
             self._open_setup()
             self._set_status("LLM setup required", "warning")
             return
@@ -3616,7 +3691,7 @@ class ScholarDevClawApp(App[None]):
             self._open_setup()
             return
         if action == "providers":
-            self._append_output("Providers: openrouter, ollama")
+            self._append_output(f"Providers: {self._supported_provider_names()}")
             self._append_output("Use `setup` to configure credentials and model IDs.")
             return
         if action == "status":
@@ -3692,7 +3767,10 @@ class ScholarDevClawApp(App[None]):
         if action == "set_provider":
             provider = str(request.get("provider", "") or "").strip().lower()
             if provider not in SUPPORTED_TUI_PROVIDERS:
-                self._append_output("Error: provider must be openrouter or ollama", "error")
+                self._append_output(
+                    f"Error: provider must be one of: {self._supported_provider_names()}",
+                    "error",
+                )
                 return
             self._provider = provider
             self._model = self._model_for_provider(provider)
@@ -3715,7 +3793,11 @@ class ScholarDevClawApp(App[None]):
             self._update_command_meta()
             return
         if action == "set_key":
-            provider = self._provider if self._provider in SUPPORTED_TUI_PROVIDERS else "openrouter"
+            provider = (
+                self._provider
+                if self._provider in SUPPORTED_TUI_PROVIDERS
+                else DEFAULT_TUI_PROVIDER
+            )
             ok, message = self._save_provider_setup(
                 provider,
                 self._model or DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[provider]],

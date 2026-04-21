@@ -23,6 +23,13 @@ def test_provider_setup_submitted_handlers_are_field_scoped():
     assert "@on(Input.Submitted)\n    def on_input_submitted" not in source
 
 
+def test_provider_setup_source_no_longer_hardcodes_openrouter_ollama_validation():
+    source = inspect.getsource(ProviderSetupScreen)
+
+    assert "provider must be openrouter or ollama" not in source
+    assert "provider must be one of:" in source
+
+
 def test_help_text_uses_current_openrouter_default_model():
     assert DEFAULT_OPENROUTER_MODEL in HELP_TEXT
 
@@ -50,6 +57,11 @@ def test_help_text_mentions_inspector_focus_and_key_actions():
     assert "Ctrl+I focus inspector" in HELP_TEXT
     assert "Inspector: j/k move; Enter/Space events; r rerun; s show; e events" in HELP_TEXT
     assert "Review mode: a/x/g set hunk, A/X/G set all, Enter/Space submit" in HELP_TEXT
+
+
+def test_help_text_mentions_expanded_provider_selection():
+    for provider in ["anthropic", "openai", "gemini", "grok", "moonshot", "glm", "minimax"]:
+        assert provider in HELP_TEXT
 
 
 def test_phase9_screens_return_structured_decisions():

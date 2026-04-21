@@ -2,7 +2,148 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-20
+**Last updated:** 2026-04-21
+
+### 2026-04-21 (Phase-9 provider-agnostic runtime execution in TUI)
+
+**Summary:** Made the TUI Phase-9 paper→product runtime provider-aware so execution uses the selected provider/model instead of Anthropic-only assumptions, while keeping Anthropic behavior backward compatible.
+
+**What changed:**
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Extended `Phase9WorkflowState` with `provider` and reusable `llm_client`.
+  - Reworked `_phase9_model_and_key()` to resolve credentials/model by selected provider:
+    - validates provider in `SUPPORTED_TUI_PROVIDERS`
+    - picks selected/saved/default model via `DEFAULT_MODELS`
+    - resolves API key from saved provider key, provider env var, then `SCHOLARDEVCLAW_API_KEY`
+    - supports keyless Ollama path and ensures `OLLAMA_HOST` default
+    - provider-specific missing-key error messaging (no Anthropic hardcode)
+  - `_run_phase9_workflow_thread()` now stores provider/model/api key in state and builds a provider-specific `LLMClient` for the run.
+  - Phase-9 understanding/planning/generation/healing/scoring now use provider-aware wiring:
+    - passes provider to `UnderstandingAgent` and `ImplementationPlanner`
+    - uses provider-specific `LLMClient` as `client=` for `CodeOrchestrator` (including healing reuse)
+    - passes provider/client into `ReproducibilityScorer`
+  - Added guaranteed cleanup of reusable Phase-9 `LLMClient` in `finally`.
+
+- `core/src/scholardevclaw/understanding/agent.py`
+  - Added optional `provider` constructor arg.
+  - Preserved Anthropic SDK path as default.
+  - Added non-Anthropic path using `LLMClient.from_provider(...).chat(...)` with existing JSON parsing/output behavior preserved.
+
+- `core/src/scholardevclaw/planning/planner.py`
+  - Added optional `provider` constructor arg.
+  - Preserved Anthropic SDK path as default.
+  - Added non-Anthropic path using `LLMClient.from_provider(...).chat(...)` with same plan JSON parsing/validation flow.
+
+- `core/src/scholardevclaw/generation/module_agent.py`
+  - Added compatibility async completion helper that supports:
+    - Anthropic-style `client.messages.create(...)` (sync or async)
+    - `LLMClient.chat(...)` via `asyncio.to_thread`
+  - Added adapter response objects so existing content/token extraction continues to work unchanged.
+  - Switched both module generation and test generation paths to use the helper.
+
+- `core/src/scholardevclaw/execution/scorer.py`
+  - Added optional `provider` and `client` constructor args.
+  - Preserved Anthropic behavior when defaulting to anthropic.
+  - Added provider-based `LLMClient` fallback support for metric extraction and client-neutral chat handling.
+
+- `core/tests/unit/test_tui_app.py`
+  - Added Phase-9 credential resolution test asserting selected provider env var is used (`OPENROUTER_API_KEY`, not Anthropic-only).
+  - Added Phase-9 Ollama resolution test asserting no API key is required and `OLLAMA_HOST` is defaulted.
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/tui/app.py src/scholardevclaw/understanding/agent.py src/scholardevclaw/planning/planner.py src/scholardevclaw/generation/module_agent.py src/scholardevclaw/execution/scorer.py tests/unit/test_tui_app.py tests/test_understanding.py tests/generation/test_orchestrator.py tests/test_execution.py`
+  - `All checks passed!`
+- ✅ `cd core && ruff format --check src/scholardevclaw/tui/app.py src/scholardevclaw/understanding/agent.py src/scholardevclaw/planning/planner.py src/scholardevclaw/generation/module_agent.py src/scholardevclaw/execution/scorer.py tests/unit/test_tui_app.py tests/test_understanding.py tests/generation/test_orchestrator.py tests/test_execution.py`
+  - `9 files already formatted`
+- ✅ `cd core && python -m pytest tests/unit/test_tui_app.py tests/test_understanding.py tests/generation/test_orchestrator.py tests/test_execution.py -q`
+  - `108 passed, 1 skipped in 2.52s`
+
+### 2026-04-21 (TUI/provider UX expansion: broad multi-provider setup + commands)
+
+**Summary:** Expanded provider selection and setup UX beyond OpenRouter/Ollama across auth types, LLM client/provider config, research assistant env auto-detect, and TUI provider setup/commands.
+
+**What changed:**
+
+- `core/src/scholardevclaw/auth/types.py`
+  - Added providers: `gemini`, `grok`, `moonshot`, `glm`, `minimax`.
+  - Added them to `_LLM_PROVIDERS`.
+  - Added default base URLs:
+    - Gemini: `https://generativelanguage.googleapis.com/v1beta/openai`
+    - Grok: `https://api.x.ai/v1`
+    - Moonshot: `https://api.moonshot.cn/v1`
+    - GLM: `https://open.bigmodel.cn/api/paas/v4`
+    - MiniMax: `https://api.minimax.io/v1`
+  - Added API key env var names:
+    - `GEMINI_API_KEY`, `XAI_API_KEY`, `MOONSHOT_API_KEY`, `GLM_API_KEY`, `MINIMAX_API_KEY`
+  - Added display names and key hints for new providers.
+  - Kept key validation permissive for new providers (length-based only).
+
+- `core/src/scholardevclaw/llm/client.py`
+  - Added new providers to `_PROVIDER_CONFIG` using OpenAI-compatible request/response handlers.
+  - Added default models:
+    - Gemini: `gemini-2.0-flash`
+    - Grok: `grok-4-0709`
+    - Moonshot: `kimi-k2.6`
+    - GLM: `glm-5.1`
+    - MiniMax: `MiniMax-M2.7`
+
+- `core/src/scholardevclaw/llm/research_assistant.py`
+  - Added env auto-detect mappings:
+    - `GEMINI_API_KEY -> gemini`
+    - `XAI_API_KEY -> grok`
+    - `MOONSHOT_API_KEY -> moonshot`
+    - `GLM_API_KEY -> glm`
+    - `MINIMAX_API_KEY -> minimax`
+
+- `core/src/scholardevclaw/tui/app.py`
+  - Expanded `SUPPORTED_TUI_PROVIDERS` to include:
+    - `anthropic`, `openai`, `gemini`, `grok`, `moonshot`, `glm`, `minimax`, `openrouter`, `ollama`
+    - plus existing: `groq`, `mistral`, `deepseek`, `cohere`, `together`, `fireworks`
+  - Updated provider-related UX/messages to dynamic provider lists:
+    - `providers` command output
+    - `set_provider` invalid-provider error
+    - setup/prompt errors
+  - Generalized setup launch defaults (`_open_setup`) to active provider/model, not OpenRouter-only.
+  - Generalized `_save_provider_setup()`:
+    - Works for all supported providers
+    - Requires key for providers that need keys, but allows blank key if saved/env key exists
+    - Persists keys in AuthStore and sets provider-specific env var
+    - Keeps Ollama host handling as no-key special case
+  - Generalized `_get_llm_client()` and chat readiness errors to provider-agnostic wording.
+
+- `core/src/scholardevclaw/tui/screens.py`
+  - Expanded setup help text and provider input placeholder for many providers.
+  - `ProviderSetupScreen` now accepts a supported-provider map from app.
+  - Validation now allows all supported providers (not only openrouter/ollama).
+  - Dynamic hints by selected provider:
+    - model examples from `DEFAULT_MODELS`
+    - provider-specific key-format hint
+    - Ollama/no-key providers show key-not-required guidance
+  - Preserved backward-compatible setup flow behavior.
+
+- Tests updated:
+  - `core/tests/unit/test_tui_app.py`
+    - Added assertions that `set provider` accepts new providers (`anthropic`, `grok`, `gemini`, `moonshot`, `glm`, `minimax`)
+    - Added assertions for expanded provider list output
+    - Added invalid-provider message coverage for expanded dynamic list
+    - Added provider-agnostic key-missing error coverage (`openai` path)
+    - Added setup save coverage for a new provider (`gemini`) and env var persistence
+  - `core/tests/unit/test_tui_screens.py`
+    - Added coverage that setup validation no longer hardcodes only openrouter/ollama
+    - Added help-text coverage for expanded provider names
+  - `core/tests/unit/test_llm_client.py`
+    - Added provider env-key resolution test for `gemini`
+
+**Verification:**
+
+- ✅ `cd core && ruff check src/scholardevclaw/auth/types.py src/scholardevclaw/llm/client.py src/scholardevclaw/llm/research_assistant.py src/scholardevclaw/tui/app.py src/scholardevclaw/tui/screens.py tests/unit/test_tui_app.py tests/unit/test_tui_screens.py tests/unit/test_llm_client.py`
+  - `All checks passed!`
+- ✅ `cd core && ruff format --check src/scholardevclaw/auth/types.py src/scholardevclaw/llm/client.py src/scholardevclaw/llm/research_assistant.py src/scholardevclaw/tui/app.py src/scholardevclaw/tui/screens.py tests/unit/test_tui_app.py tests/unit/test_tui_screens.py tests/unit/test_llm_client.py`
+  - `8 files already formatted`
+- ✅ `cd core && python -m pytest tests/unit/test_tui_app.py tests/unit/test_tui_screens.py tests/unit/test_llm_client.py -q`
+  - `103 passed in 4.08s`
 
 ### 2026-04-20 (Phase 9 follow-up: real TUI paper→product workflow wiring)
 

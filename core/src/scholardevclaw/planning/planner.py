@@ -4,7 +4,9 @@ import json
 import re
 from typing import Any
 
+from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.ingestion.models import PaperDocument
+from scholardevclaw.llm.client import LLMClient
 from scholardevclaw.planning.models import ImplementationPlan
 from scholardevclaw.understanding.models import PaperUnderstanding
 
@@ -29,21 +31,51 @@ def _is_topologically_ordered(plan: ImplementationPlan) -> bool:
 class ImplementationPlanner:
     """LLM-backed implementation planner producing ``ImplementationPlan``."""
 
-    def __init__(self, api_key: str, model: str = "claude-opus-4-5") -> None:
-        if anthropic is None:
-            raise ImportError(
-                "What failed: ImplementationPlanner initialization. "
-                "Why: the optional dependency 'anthropic' is not installed. "
-                "Fix: install extras with `pip install -e '.[understanding,execution]'`."
-            )
-        if not api_key.strip():
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-opus-4-5",
+        provider: str | None = None,
+    ) -> None:
+        provider_name = (provider or AuthProvider.ANTHROPIC.value).strip().lower()
+        try:
+            auth_provider = AuthProvider(provider_name)
+        except ValueError as exc:
             raise ValueError(
                 "What failed: ImplementationPlanner initialization. "
-                "Why: provided api_key is empty. "
-                "Fix: set ANTHROPIC_API_KEY and pass a non-empty key."
-            )
+                f"Why: unsupported provider '{provider_name}'. "
+                "Fix: choose a supported provider and retry."
+            ) from exc
 
-        self.client = anthropic.Anthropic(api_key=api_key)
+        if auth_provider == AuthProvider.ANTHROPIC:
+            if anthropic is None:
+                raise ImportError(
+                    "What failed: ImplementationPlanner initialization. "
+                    "Why: the optional dependency 'anthropic' is not installed. "
+                    "Fix: install extras with `pip install -e '.[understanding,execution]'`."
+                )
+            if not api_key.strip():
+                raise ValueError(
+                    "What failed: ImplementationPlanner initialization. "
+                    "Why: provided api_key is empty. "
+                    "Fix: set ANTHROPIC_API_KEY and pass a non-empty key."
+                )
+            self.client: Any = anthropic.Anthropic(api_key=api_key)
+            self._llm_client: LLMClient | None = None
+        else:
+            normalized_key = api_key.strip()
+            if auth_provider.requires_api_key and not normalized_key:
+                raise ValueError(
+                    "What failed: ImplementationPlanner initialization. "
+                    "Why: provided api_key is empty. "
+                    f"Fix: set {auth_provider.env_var_name} and pass a non-empty key."
+                )
+            self._llm_client = LLMClient.from_provider(
+                auth_provider,
+                api_key=normalized_key,
+                model=model,
+            )
+            self.client = self._llm_client
         self.model = model
 
     def plan(
@@ -127,26 +159,40 @@ Rules:
 - Modules must be ordered so that a module's dependencies are always lower priority numbers.
 - Return only JSON. No markdown. No preamble.
 """
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        if not response.content:
-            raise ValueError(
-                "What failed: planning model response parsing. "
-                "Why: model response had no content blocks. "
-                "Fix: retry planning request or switch model."
+        if self._llm_client is not None:
+            response = self._llm_client.chat(
+                prompt,
+                model=self.model,
+                max_tokens=4096,
+            )
+            raw = response.content if isinstance(response.content, str) else ""
+            if not raw.strip():
+                raise ValueError(
+                    "What failed: planning model response parsing. "
+                    "Why: response did not contain a non-empty text block. "
+                    "Fix: retry and ensure text output is enabled."
+                )
+        else:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}],
             )
 
-        raw = self._extract_first_text_block(response.content)
-        if not isinstance(raw, str) or not raw.strip():
-            raise ValueError(
-                "What failed: planning model response parsing. "
-                "Why: response did not contain a non-empty text block. "
-                "Fix: retry and ensure text output is enabled."
-            )
+            if not response.content:
+                raise ValueError(
+                    "What failed: planning model response parsing. "
+                    "Why: model response had no content blocks. "
+                    "Fix: retry planning request or switch model."
+                )
+
+            raw = self._extract_first_text_block(response.content)
+            if not isinstance(raw, str) or not raw.strip():
+                raise ValueError(
+                    "What failed: planning model response parsing. "
+                    "Why: response did not contain a non-empty text block. "
+                    "Fix: retry and ensure text output is enabled."
+                )
 
         return self._parse_json_response(raw)
 

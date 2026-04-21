@@ -553,6 +553,11 @@ Return a JSON object:
 _AUTO_DETECT_ENV_VARS = [
     ("ANTHROPIC_API_KEY", "anthropic"),
     ("OPENAI_API_KEY", "openai"),
+    ("GEMINI_API_KEY", "gemini"),
+    ("XAI_API_KEY", "grok"),
+    ("MOONSHOT_API_KEY", "moonshot"),
+    ("GLM_API_KEY", "glm"),
+    ("MINIMAX_API_KEY", "minimax"),
     ("GROQ_API_KEY", "groq"),
     ("DEEPSEEK_API_KEY", "deepseek"),
     ("MISTRAL_API_KEY", "mistral"),

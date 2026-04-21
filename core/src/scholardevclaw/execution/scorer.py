@@ -6,7 +6,9 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.execution.sandbox import ExecutionReport
+from scholardevclaw.llm.client import LLMClient
 from scholardevclaw.understanding.models import PaperUnderstanding
 
 try:
@@ -54,11 +56,39 @@ class ReproducibilityReport:
 
 
 class ReproducibilityScorer:
-    def __init__(self, api_key: str | None = None, model: str = "claude-sonnet-4-5") -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "claude-sonnet-4-5",
+        provider: str | None = None,
+        client: Any | None = None,
+    ) -> None:
         self.model = model
         self.client: Any | None = None
 
+        if client is not None:
+            self.client = client
+            return
+
+        provider_name = (provider or "anthropic").strip().lower()
+
         normalized_key = (api_key or "").strip()
+        if provider_name != AuthProvider.ANTHROPIC.value:
+            try:
+                auth_provider = AuthProvider(provider_name)
+            except ValueError:
+                auth_provider = None
+            if auth_provider is not None and (normalized_key or not auth_provider.requires_api_key):
+                try:
+                    self.client = LLMClient.from_provider(
+                        auth_provider,
+                        api_key=normalized_key,
+                        model=model,
+                    )
+                except Exception as exc:  # pragma: no cover - runtime/client dependent
+                    logger.warning("Failed to initialize scorer LLM client: %s", exc)
+            return
+
         if normalized_key and anthropic is not None:
             try:
                 self.client = anthropic.Anthropic(api_key=normalized_key)
@@ -214,15 +244,23 @@ class ReproducibilityScorer:
         )
 
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=512,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            if not response.content:
-                return {}
-            raw = self._extract_first_text_block(response.content)
-            if not isinstance(raw, str):
+            chat_fn = getattr(self.client, "chat", None)
+            if callable(chat_fn):
+                response = chat_fn(prompt, model=self.model, max_tokens=512)
+                raw = response.content if isinstance(response.content, str) else ""
+            else:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=512,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                if not response.content:
+                    return {}
+                raw = self._extract_first_text_block(response.content)
+                if not isinstance(raw, str):
+                    return {}
+
+            if not raw.strip():
                 return {}
             loaded = json.loads(raw.strip())
             if not isinstance(loaded, dict):

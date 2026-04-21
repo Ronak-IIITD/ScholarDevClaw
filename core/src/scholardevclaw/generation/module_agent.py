@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import ast
+import asyncio
+import inspect
+from dataclasses import dataclass
 from typing import Any
 
 from scholardevclaw.generation.models import ModuleResult
@@ -25,6 +28,24 @@ for the given Python module. Use pytest fixtures. Mock external dependencies.
 Include at least one happy-path test and one edge-case test per public function.
 Return ONLY the pytest code. No markdown. No explanation.
 """
+
+
+@dataclass
+class _CompatContentBlock:
+    text: str
+
+
+@dataclass
+class _CompatUsage:
+    total_tokens: int
+    input_tokens: int
+    output_tokens: int
+
+
+@dataclass
+class _CompatResponse:
+    content: list[_CompatContentBlock]
+    usage: _CompatUsage
 
 
 def _extract_tokens_used(response: Any) -> int:
@@ -81,11 +102,11 @@ class ModuleAgent:
                 prior_errors=errors,
                 error_context=error_context,
             )
-            response = await self.client.messages.create(
+            response = await self._create_completion(
+                prompt=prompt,
+                system=MODULE_SYSTEM_PROMPT,
                 model=self.model,
                 max_tokens=8192,
-                system=MODULE_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}],
             )
             tokens_used += _extract_tokens_used(response)
 
@@ -374,11 +395,11 @@ Code:
 {error_block}
 
 Write pytest tests for this module."""
-        response = await self.client.messages.create(
+        response = await self._create_completion(
+            prompt=prompt,
+            system=TEST_SYSTEM_PROMPT,
             model=self.model,
             max_tokens=4096,
-            system=TEST_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
         )
 
         if not response.content:
@@ -396,3 +417,54 @@ Write pytest tests for this module."""
             if isinstance(text, str) and text.strip():
                 return text
         return None
+
+    async def _create_completion(
+        self,
+        *,
+        prompt: str,
+        system: str,
+        model: str,
+        max_tokens: int,
+    ) -> Any:
+        messages_api = getattr(self.client, "messages", None)
+        create_fn = getattr(messages_api, "create", None)
+        if callable(create_fn):
+            response = create_fn(
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            if inspect.isawaitable(response):
+                return await response
+            return response
+
+        chat_fn = getattr(self.client, "chat", None)
+        if callable(chat_fn):
+            llm_response = await asyncio.to_thread(
+                chat_fn,
+                prompt,
+                system=system,
+                model=model,
+                max_tokens=max_tokens,
+            )
+            content = str(getattr(llm_response, "content", "") or "")
+            input_tokens = int(getattr(llm_response, "input_tokens", 0) or 0)
+            output_tokens = int(getattr(llm_response, "output_tokens", 0) or 0)
+            total_tokens = int(getattr(llm_response, "total_tokens", 0) or 0)
+            if total_tokens <= 0:
+                total_tokens = max(0, input_tokens + output_tokens)
+            return _CompatResponse(
+                content=[_CompatContentBlock(text=content)],
+                usage=_CompatUsage(
+                    total_tokens=total_tokens,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                ),
+            )
+
+        raise RuntimeError(
+            "What failed: module generation model request. "
+            "Why: client does not support messages.create(...) or chat(...). "
+            "Fix: provide an Anthropic-style async client or LLMClient-compatible chat client."
+        )
