@@ -41,6 +41,7 @@ Version: 2.0
 """
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -50,6 +51,103 @@ from typing import Any
 
 from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
 from scholardevclaw.auth.cli import cmd_auth
+
+
+def _resolve_api_key_and_provider(
+    provider_arg: str | None,
+    model_arg: str | None,
+    *,
+    require_key: bool = True,
+) -> tuple[str, str, str]:
+    """Resolve provider, API key, and effective model for CLI commands."""
+    from scholardevclaw.auth.types import AuthProvider
+    from scholardevclaw.llm.client import DEFAULT_MODELS
+
+    provider_name = (
+        provider_arg or os.getenv("SCHOLARDEVCLAW_API_PROVIDER", "")
+    ).strip().lower() or "openrouter"
+
+    try:
+        auth_provider = AuthProvider(provider_name)
+    except ValueError:
+        supported = sorted(provider.value for provider in AuthProvider if provider.is_llm_provider)
+        print(
+            "Error: invalid provider "
+            f"'{provider_name}'. Supported providers: {', '.join(supported)}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if not auth_provider.is_llm_provider:
+        supported = sorted(provider.value for provider in AuthProvider if provider.is_llm_provider)
+        print(
+            "Error: provider "
+            f"'{provider_name}' is not an LLM provider. "
+            f"Choose one of: {', '.join(supported)}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    env_var_name = auth_provider.env_var_name
+    api_key = os.getenv(env_var_name, "").strip()
+    if not api_key:
+        api_key = os.getenv("SCHOLARDEVCLAW_API_KEY", "").strip()
+    if not api_key and auth_provider != AuthProvider.OLLAMA:
+        api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+
+    if require_key and auth_provider.requires_api_key and not api_key:
+        print(
+            "Error: No API key found. Set "
+            f"{env_var_name}, SCHOLARDEVCLAW_API_KEY, or ANTHROPIC_API_KEY "
+            "(legacy fallback), or use --provider ollama for local models.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    effective_model = (model_arg or "").strip()
+    if auth_provider != AuthProvider.ANTHROPIC and (
+        not effective_model or effective_model in {"claude-opus-4-5", "claude-sonnet-4-5"}
+    ):
+        effective_model = str(DEFAULT_MODELS.get(auth_provider, "")).strip()
+
+    return provider_name, api_key, effective_model
+
+
+def _create_code_orchestrator(
+    *,
+    provider_name: str,
+    api_key: str,
+    model: str,
+    knowledge_base: Any | None,
+) -> tuple[Any, Any | None]:
+    from scholardevclaw.auth.types import AuthProvider
+    from scholardevclaw.generation import CodeOrchestrator
+    from scholardevclaw.llm.client import LLMClient
+
+    if provider_name == AuthProvider.ANTHROPIC.value:
+        return (
+            CodeOrchestrator(
+                api_key=api_key,
+                model=model,
+                knowledge_base=knowledge_base,
+            ),
+            None,
+        )
+
+    llm_client = LLMClient.from_provider(
+        provider_name,
+        api_key=api_key,
+        model=model or None,
+    )
+    return (
+        CodeOrchestrator(
+            api_key="",
+            model="",
+            client=llm_client,
+            knowledge_base=knowledge_base,
+        ),
+        llm_client,
+    )
 
 
 def _print_compatibility_report(payload: dict, expected_type: str, *, stderr: bool = False) -> None:
@@ -440,13 +538,11 @@ def cmd_understand(args):
     understanding_path = output_dir / "understanding.json"
     graph_path = output_dir / "concept_graph.json"
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
-        print(
-            "Error: ANTHROPIC_API_KEY is required for understand command",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    requested_model = getattr(args, "model", None)
+    provider_name, api_key, effective_model = _resolve_api_key_and_provider(
+        getattr(args, "provider", None),
+        requested_model,
+    )
 
     print(f"Understanding paper document: {input_path}")
     print(f"Output directory: {output_dir}")
@@ -464,7 +560,11 @@ def cmd_understand(args):
         from scholardevclaw.understanding.graph import build_concept_graph, export_graph_json
 
         document = PaperDocument.from_dict(payload)
-        agent = UnderstandingAgent(api_key=api_key, model=args.model)
+        agent = UnderstandingAgent(
+            api_key=api_key,
+            model=effective_model or args.model,
+            provider=provider_name,
+        )
         understanding = agent.understand(document)
         concept_graph = build_concept_graph(understanding)
     except ImportError as exc:
@@ -532,10 +632,11 @@ def cmd_plan(args):
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "implementation_plan.json"
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
-        print("Error: ANTHROPIC_API_KEY is required for plan command", file=sys.stderr)
-        sys.exit(1)
+    requested_model = getattr(args, "model", None)
+    provider_name, api_key, effective_model = _resolve_api_key_and_provider(
+        getattr(args, "provider", None),
+        requested_model,
+    )
 
     print(f"Planning implementation from: {input_path}")
     print(f"Output directory: {output_dir}")
@@ -602,7 +703,11 @@ def cmd_plan(args):
         )
 
         forced_stack = "numpy-only" if args.stack == "numpy" else args.stack
-        planner = ImplementationPlanner(api_key=api_key, model="claude-opus-4-5")
+        planner = ImplementationPlanner(
+            api_key=api_key,
+            model=effective_model or requested_model or "claude-opus-4-5",
+            provider=provider_name,
+        )
         plan = planner.plan(understanding, doc, forced_stack=forced_stack)
     except ImportError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -792,7 +897,6 @@ def cmd_generate(args):
         sys.exit(1)
 
     try:
-        from scholardevclaw.generation import CodeOrchestrator
         from scholardevclaw.planning.models import ImplementationPlan
         from scholardevclaw.understanding.models import PaperUnderstanding
 
@@ -802,10 +906,10 @@ def cmd_generate(args):
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
-        print("Error: ANTHROPIC_API_KEY is required for generate command", file=sys.stderr)
-        sys.exit(1)
+    provider_name, api_key, effective_model = _resolve_api_key_and_provider(
+        getattr(args, "provider", None),
+        args.model,
+    )
 
     output_dir = (
         Path(args.output_dir).expanduser().resolve()
@@ -822,10 +926,12 @@ def cmd_generate(args):
     print(f"Output directory: {output_dir}")
     print("-" * 50)
 
+    orchestrator_client: Any | None = None
     try:
-        orchestrator = CodeOrchestrator(
+        orchestrator, orchestrator_client = _create_code_orchestrator(
+            provider_name=provider_name,
             api_key=api_key,
-            model=args.model,
+            model=effective_model or args.model,
             knowledge_base=knowledge_base,
         )
         result = orchestrator.generate_sync(
@@ -837,6 +943,10 @@ def cmd_generate(args):
     except (ImportError, OSError, RuntimeError, ValueError) as exc:
         print(f"Error: failed to generate implementation: {exc}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        if orchestrator_client is not None:
+            with contextlib.suppress(Exception):
+                orchestrator_client.close()
 
     report_payload = result.to_dict()
     report_path.write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
@@ -898,7 +1008,6 @@ def cmd_execute(args):
             SandboxRunner,
             SelfHealingLoop,
         )
-        from scholardevclaw.generation import CodeOrchestrator
         from scholardevclaw.generation.models import GenerationResult, ModuleResult
         from scholardevclaw.planning.models import ImplementationPlan
         from scholardevclaw.understanding.models import PaperUnderstanding
@@ -936,7 +1045,17 @@ def cmd_execute(args):
     initial_execution_report = runner.run_tests(project_dir)
     final_execution_report = initial_execution_report
 
-    scorer = ReproducibilityScorer(api_key=os.getenv("ANTHROPIC_API_KEY", "").strip() or None)
+    scorer_provider, scorer_key, scorer_model = _resolve_api_key_and_provider(
+        getattr(args, "provider", None),
+        None,
+        require_key=False,
+    )
+
+    scorer = ReproducibilityScorer(
+        api_key=scorer_key or None,
+        model=scorer_model or "claude-sonnet-4-5",
+        provider=scorer_provider,
+    )
     reproducibility_report = scorer.score(understanding, final_execution_report)
 
     if args.heal:
@@ -947,10 +1066,14 @@ def cmd_execute(args):
                 file=sys.stderr,
             )
         else:
-            api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-            if not api_key:
+            heal_provider, heal_api_key, heal_model = _resolve_api_key_and_provider(
+                getattr(args, "provider", None),
+                "claude-sonnet-4-5",
+                require_key=False,
+            )
+            if not heal_api_key:
                 print(
-                    "Warning: ANTHROPIC_API_KEY missing; skipping healing",
+                    "Warning: no provider API key configured; skipping healing",
                     file=sys.stderr,
                 )
             else:
@@ -1023,13 +1146,20 @@ def cmd_execute(args):
                         ),
                     )
 
-                    orchestrator = CodeOrchestrator(
-                        api_key=api_key,
-                        model="claude-sonnet-4-5",
-                        knowledge_base=knowledge_base,
-                    )
-                    healer = SelfHealingLoop(orchestrator, runner)
-                    healed_result = healer.heal(generation_result, plan, understanding)
+                    healer_client: Any | None = None
+                    try:
+                        orchestrator, healer_client = _create_code_orchestrator(
+                            provider_name=heal_provider,
+                            api_key=heal_api_key,
+                            model=heal_model or "claude-sonnet-4-5",
+                            knowledge_base=knowledge_base,
+                        )
+                        healer = SelfHealingLoop(orchestrator, runner)
+                        healed_result = healer.heal(generation_result, plan, understanding)
+                    finally:
+                        if healer_client is not None:
+                            with contextlib.suppress(Exception):
+                                healer_client.close()
 
                     final_execution_report = runner.run_tests(project_dir)
                     reproducibility_report = scorer.score(understanding, final_execution_report)
@@ -1252,10 +1382,10 @@ def cmd_from_paper(args):
         print("Error: --max-parallel must be >= 1", file=sys.stderr)
         sys.exit(1)
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
-        print("Error: ANTHROPIC_API_KEY is required for from-paper command", file=sys.stderr)
-        sys.exit(1)
+    provider_name, api_key, effective_model = _resolve_api_key_and_provider(
+        getattr(args, "provider", None),
+        args.model,
+    )
 
     output_dir_arg = str(getattr(args, "output_dir", "") or "").strip()
     output_root = Path(output_dir_arg).expanduser().resolve() if output_dir_arg else None
@@ -1308,7 +1438,11 @@ def cmd_from_paper(args):
 
     print("[2/6] Understanding paper...")
     try:
-        understanding_agent = UnderstandingAgent(api_key=api_key, model=args.model)
+        understanding_agent = UnderstandingAgent(
+            api_key=api_key,
+            model=effective_model or args.model,
+            provider=provider_name,
+        )
         understanding = understanding_agent.understand(document)
         concept_graph = build_concept_graph(understanding)
     except ImportError as exc:
@@ -1322,7 +1456,11 @@ def cmd_from_paper(args):
     try:
         from scholardevclaw.planning import ImplementationPlanner
 
-        planner = ImplementationPlanner(api_key=api_key, model=args.model)
+        planner = ImplementationPlanner(
+            api_key=api_key,
+            model=effective_model or args.model,
+            provider=provider_name,
+        )
         plan = planner.plan(understanding, document)
     except ImportError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -1392,17 +1530,18 @@ def cmd_from_paper(args):
 
     try:
         from scholardevclaw.execution import ReproducibilityScorer, SandboxRunner, SelfHealingLoop
-        from scholardevclaw.generation import CodeOrchestrator
         from scholardevclaw.product import ProductScaffolder
     except ImportError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
     print(f"[4/6] Generating {len(plan.modules)} modules...")
+    orchestrator_client: Any | None = None
     try:
-        orchestrator = CodeOrchestrator(
+        orchestrator, orchestrator_client = _create_code_orchestrator(
+            provider_name=provider_name,
             api_key=api_key,
-            model=args.model,
+            model=effective_model or args.model,
             knowledge_base=knowledge_base,
         )
         generation_result = orchestrator.generate_sync(
@@ -1414,6 +1553,10 @@ def cmd_from_paper(args):
     except (ImportError, OSError, RuntimeError, ValueError) as exc:
         print(f"Error: failed to generate implementation: {exc}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        if orchestrator_client is not None:
+            with contextlib.suppress(Exception):
+                orchestrator_client.close()
 
     print(f"    Success rate: {generation_result.success_rate:.0%}")
 
@@ -1428,8 +1571,20 @@ def cmd_from_paper(args):
 
     if bool(getattr(args, "heal", False)):
         print("[5/6] Running tests + self-healing...")
-        healer = SelfHealingLoop(orchestrator, runner)
-        generation_result = healer.heal(generation_result, plan, understanding)
+        healer_client: Any | None = None
+        try:
+            heal_orchestrator, healer_client = _create_code_orchestrator(
+                provider_name=provider_name,
+                api_key=api_key,
+                model=effective_model or args.model,
+                knowledge_base=knowledge_base,
+            )
+            healer = SelfHealingLoop(heal_orchestrator, runner)
+            generation_result = healer.heal(generation_result, plan, understanding)
+        finally:
+            if healer_client is not None:
+                with contextlib.suppress(Exception):
+                    healer_client.close()
         final_execution_report = runner.run_tests(project_dir)
         healing_payload = {
             "round_count": len(healer.round_reports),
@@ -1442,7 +1597,11 @@ def cmd_from_paper(args):
     else:
         print("[5/6] Running tests...")
 
-    reproducibility_scorer = ReproducibilityScorer(api_key=api_key)
+    reproducibility_scorer = ReproducibilityScorer(
+        api_key=api_key,
+        model=effective_model or args.model,
+        provider=provider_name,
+    )
     reproducibility_report = reproducibility_scorer.score(understanding, final_execution_report)
     print(
         f"    Reproducibility: {reproducibility_report.score:.0%} ({reproducibility_report.verdict})"
@@ -3368,6 +3527,10 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         help="LLM model name for understanding extraction",
     )
     p_understand.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
+    )
+    p_understand.add_argument(
         "--output-dir",
         help="Directory to store understanding.json and concept_graph.json",
     )
@@ -3389,6 +3552,10 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_plan.add_argument(
         "--output-dir",
         help="Directory to store implementation_plan.json",
+    )
+    p_plan.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
     )
 
     # kb
@@ -3482,6 +3649,10 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         action="store_true",
         help="Use legacy specs-based workflow (arg1=repo_path arg2=spec)",
     )
+    p_generate.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
+    )
 
     # execute
     p_execute = subparsers.add_parser(
@@ -3503,6 +3674,10 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_execute.add_argument(
         "--output-dir",
         help="Directory to store execution_report.json and reproducibility_report.json",
+    )
+    p_execute.add_argument(
+        "--provider",
+        help="LLM provider for reproducibility scoring (default: openrouter)",
     )
 
     # scaffold
@@ -3574,6 +3749,10 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "--dry-run",
         action="store_true",
         help="Run ingest/understand/plan only and stop before generation",
+    )
+    p_from_paper.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
     )
 
     # validate

@@ -477,6 +477,7 @@ def test_understand_parser_with_model_and_output_dir(monkeypatch):
     def fake_cmd(args):
         called["paper_document_json"] = args.paper_document_json
         called["model"] = args.model
+        called["provider"] = args.provider
         called["output_dir"] = args.output_dir
 
     monkeypatch.setattr(cli, "cmd_understand", fake_cmd)
@@ -489,6 +490,8 @@ def test_understand_parser_with_model_and_output_dir(monkeypatch):
             "/tmp/paper_document.json",
             "--model",
             "claude-opus-4-5",
+            "--provider",
+            "openrouter",
             "--output-dir",
             "/tmp/out",
         ],
@@ -499,6 +502,7 @@ def test_understand_parser_with_model_and_output_dir(monkeypatch):
     assert called == {
         "paper_document_json": "/tmp/paper_document.json",
         "model": "claude-opus-4-5",
+        "provider": "openrouter",
         "output_dir": "/tmp/out",
     }
 
@@ -509,6 +513,7 @@ def test_plan_parser_with_stack_and_output_dir(monkeypatch):
     def fake_cmd(args):
         called["understanding_json"] = args.understanding_json
         called["stack"] = args.stack
+        called["provider"] = args.provider
         called["output_dir"] = args.output_dir
 
     monkeypatch.setattr(cli, "cmd_plan", fake_cmd)
@@ -521,6 +526,8 @@ def test_plan_parser_with_stack_and_output_dir(monkeypatch):
             "/tmp/understanding.json",
             "--stack",
             "numpy-only",
+            "--provider",
+            "openrouter",
             "--output-dir",
             "/tmp/plan-out",
         ],
@@ -531,6 +538,7 @@ def test_plan_parser_with_stack_and_output_dir(monkeypatch):
     assert called == {
         "understanding_json": "/tmp/understanding.json",
         "stack": "numpy-only",
+        "provider": "openrouter",
         "output_dir": "/tmp/plan-out",
     }
 
@@ -600,6 +608,7 @@ def test_generate_parser_dynamic_mode_arguments(monkeypatch):
         called["arg2"] = args.arg2
         called["max_parallel"] = args.max_parallel
         called["model"] = args.model
+        called["provider"] = args.provider
         called["output_dir"] = args.output_dir
 
     monkeypatch.setattr(cli, "cmd_generate", fake_cmd)
@@ -615,6 +624,8 @@ def test_generate_parser_dynamic_mode_arguments(monkeypatch):
             "3",
             "--model",
             "claude-opus-4-5",
+            "--provider",
+            "anthropic",
             "--output-dir",
             "/tmp/generated",
         ],
@@ -627,6 +638,7 @@ def test_generate_parser_dynamic_mode_arguments(monkeypatch):
         "arg2": "/tmp/understanding.json",
         "max_parallel": 3,
         "model": "claude-opus-4-5",
+        "provider": "anthropic",
         "output_dir": "/tmp/generated",
     }
 
@@ -638,6 +650,7 @@ def test_execute_parser_with_heal_timeout_and_output_dir(monkeypatch):
         called["project_dir"] = args.project_dir
         called["heal"] = args.heal
         called["timeout"] = args.timeout
+        called["provider"] = args.provider
         called["output_dir"] = args.output_dir
 
     monkeypatch.setattr(cli, "cmd_execute", fake_cmd)
@@ -651,6 +664,8 @@ def test_execute_parser_with_heal_timeout_and_output_dir(monkeypatch):
             "--heal",
             "--timeout",
             "120",
+            "--provider",
+            "openrouter",
             "--output-dir",
             "/tmp/out",
         ],
@@ -662,6 +677,7 @@ def test_execute_parser_with_heal_timeout_and_output_dir(monkeypatch):
         "project_dir": "/tmp/project",
         "heal": True,
         "timeout": 120,
+        "provider": "openrouter",
         "output_dir": "/tmp/out",
     }
 
@@ -713,6 +729,7 @@ def test_from_paper_parser_with_all_flags(monkeypatch):
         called["scaffold"] = args.scaffold
         called["max_parallel"] = args.max_parallel
         called["model"] = args.model
+        called["provider"] = args.provider
         called["no_kb"] = args.no_kb
         called["dry_run"] = args.dry_run
 
@@ -732,6 +749,8 @@ def test_from_paper_parser_with_all_flags(monkeypatch):
             "8",
             "--model",
             "claude-opus-4-5",
+            "--provider",
+            "openrouter",
             "--no-kb",
             "--dry-run",
         ],
@@ -746,6 +765,7 @@ def test_from_paper_parser_with_all_flags(monkeypatch):
         "scaffold": True,
         "max_parallel": 8,
         "model": "claude-opus-4-5",
+        "provider": "openrouter",
         "no_kb": True,
         "dry_run": True,
     }
@@ -789,8 +809,8 @@ def test_cmd_from_paper_dry_run_writes_phase_artifacts(monkeypatch, tmp_path):
             )
 
     class FakeUnderstandingAgent:
-        def __init__(self, api_key: str, model: str) -> None:
-            del api_key, model
+        def __init__(self, api_key: str, model: str, *, provider: str | None = None) -> None:
+            del api_key, model, provider
 
         def understand(self, document: PaperDocument) -> PaperUnderstanding:
             del document
@@ -808,8 +828,8 @@ def test_cmd_from_paper_dry_run_writes_phase_artifacts(monkeypatch, tmp_path):
             )
 
     class FakePlanner:
-        def __init__(self, api_key: str, model: str) -> None:
-            del api_key, model
+        def __init__(self, api_key: str, model: str, *, provider: str | None = None) -> None:
+            del api_key, model, provider
 
         def plan(
             self, understanding: PaperUnderstanding, document: PaperDocument
@@ -860,6 +880,7 @@ def test_cmd_from_paper_dry_run_writes_phase_artifacts(monkeypatch, tmp_path):
         scaffold=True,
         max_parallel=4,
         model="claude-opus-4-5",
+        provider="openrouter",
         no_kb=True,
         dry_run=True,
     )
@@ -938,8 +959,8 @@ def test_cmd_from_paper_full_pipeline_with_heal_and_scaffold(monkeypatch, tmp_pa
             )
 
     class FakeUnderstandingAgent:
-        def __init__(self, api_key: str, model: str) -> None:
-            del api_key, model
+        def __init__(self, api_key: str, model: str, *, provider: str | None = None) -> None:
+            del api_key, model, provider
 
         def understand(self, document: PaperDocument) -> PaperUnderstanding:
             del document
@@ -957,8 +978,8 @@ def test_cmd_from_paper_full_pipeline_with_heal_and_scaffold(monkeypatch, tmp_pa
             )
 
     class FakePlanner:
-        def __init__(self, api_key: str, model: str) -> None:
-            del api_key, model
+        def __init__(self, api_key: str, model: str, *, provider: str | None = None) -> None:
+            del api_key, model, provider
 
         def plan(
             self, understanding: PaperUnderstanding, document: PaperDocument
@@ -995,10 +1016,12 @@ def test_cmd_from_paper_full_pipeline_with_heal_and_scaffold(monkeypatch, tmp_pa
             api_key: str,
             model: str,
             *,
+            client=None,
             knowledge_base=None,
         ) -> None:
             observed["orchestrator_api_key"] = api_key
             observed["orchestrator_model"] = model
+            observed["orchestrator_client"] = client
             observed["orchestrator_kb"] = knowledge_base
 
         def generate_sync(self, *, plan, understanding, output_dir: Path, max_parallel: int):
@@ -1078,9 +1101,16 @@ def test_cmd_from_paper_full_pipeline_with_heal_and_scaffold(monkeypatch, tmp_pa
             return generation_result
 
     class FakeScorer:
-        def __init__(self, api_key: str | None = None, model: str = "claude-sonnet-4-5") -> None:
+        def __init__(
+            self,
+            api_key: str | None = None,
+            model: str = "claude-sonnet-4-5",
+            *,
+            provider: str | None = None,
+        ) -> None:
             observed["scorer_api_key"] = api_key
             observed["scorer_model"] = model
+            observed["scorer_provider"] = provider
 
         def score(self, understanding: PaperUnderstanding, execution_report):
             del understanding, execution_report
@@ -1126,6 +1156,7 @@ def test_cmd_from_paper_full_pipeline_with_heal_and_scaffold(monkeypatch, tmp_pa
     monkeypatch.setattr(product, "ProductScaffolder", FakeScaffolder)
     monkeypatch.setattr(cli, "_initialize_knowledge_base", lambda *, strict: fake_kb)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-test-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "fake-openrouter-key")
 
     output_root = tmp_path / "from-paper-full"
     args = SimpleNamespace(
@@ -1135,6 +1166,7 @@ def test_cmd_from_paper_full_pipeline_with_heal_and_scaffold(monkeypatch, tmp_pa
         scaffold=True,
         max_parallel=2,
         model="claude-opus-4-5",
+        provider="openrouter",
         no_kb=False,
         dry_run=False,
     )
@@ -1159,17 +1191,20 @@ def test_cmd_from_paper_full_pipeline_with_heal_and_scaffold(monkeypatch, tmp_pa
     assert fake_kb.papers_stored == 1
     assert fake_kb.implementations_stored == 1
 
-    assert observed == {
-        "orchestrator_api_key": "fake-test-key",
-        "orchestrator_model": "claude-opus-4-5",
-        "orchestrator_kb": fake_kb,
-        "generate_project_name": "phase8_project",
-        "generate_understanding": "Full Flow Paper",
-        "generate_output_dir": str(project_dir.resolve()),
-        "generate_max_parallel": 2,
-        "scorer_api_key": "fake-test-key",
-        "scorer_model": "claude-sonnet-4-5",
-    }
+    # When provider is non-Anthropic, orchestrator is created with empty api_key/model but with client
+    assert observed["orchestrator_api_key"] == ""
+    assert observed["orchestrator_model"] == ""
+    assert observed["orchestrator_client"] is not None
+    assert observed["orchestrator_kb"] == fake_kb
+    assert observed["generate_project_name"] == "phase8_project"
+    assert observed["generate_understanding"] == "Full Flow Paper"
+    assert observed["generate_output_dir"] == str(project_dir.resolve())
+    assert observed["generate_max_parallel"] == 2
+    # Scorer uses the same provider as the main orchestrator (openrouter)
+    # When provider is non-Anthropic, model defaults to provider's default
+    assert observed["scorer_api_key"] == "fake-openrouter-key"
+    assert observed["scorer_model"] == "openai/gpt-4.1-mini"
+    assert observed["scorer_provider"] == "openrouter"
 
 
 def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_path):
@@ -1203,10 +1238,12 @@ def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_pat
             api_key: str,
             model: str,
             *,
+            client=None,
             knowledge_base=None,
         ) -> None:
             observed["api_key"] = api_key
             observed["model"] = model
+            observed["client"] = client
             observed["knowledge_base"] = knowledge_base
 
         def generate_sync(self, *, plan, understanding, output_dir: Path, max_parallel: int):
@@ -1251,6 +1288,7 @@ def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_pat
         output_dir=str(output_dir),
         max_parallel=2,
         model="claude-sonnet-4-5",
+        provider="openrouter",
         output_json=False,
         use_specs=False,
     )
@@ -1266,15 +1304,15 @@ def test_cmd_generate_dynamic_mode_writes_generation_report(monkeypatch, tmp_pat
         "module_results",
         "total_tokens_used",
     }
-    assert observed == {
-        "api_key": "fake-test-key",
-        "model": "claude-sonnet-4-5",
-        "knowledge_base": fake_kb,
-        "plan_project_name": "demo-project",
-        "understanding_title": "Demo Paper",
-        "output_dir": str(output_dir.resolve()),
-        "max_parallel": 2,
-    }
+    # When provider is non-Anthropic, orchestrator is created with empty api_key/model but with client
+    assert observed["api_key"] == ""
+    assert observed["model"] == ""
+    assert observed["client"] is not None
+    assert observed["knowledge_base"] == fake_kb
+    assert observed["plan_project_name"] == "demo-project"
+    assert observed["understanding_title"] == "Demo Paper"
+    assert observed["output_dir"] == str(output_dir.resolve())
+    assert observed["max_parallel"] == 2
 
 
 def test_cmd_scaffold_writes_artifacts_to_output_dir(tmp_path):
@@ -1376,8 +1414,10 @@ def test_cmd_execute_writes_execution_and_reproducibility_reports(monkeypatch, t
             )
 
     class FakeScorer:
-        def __init__(self, *, api_key=None, model: str = "claude-sonnet-4-5") -> None:
-            del api_key, model
+        def __init__(
+            self, *, api_key=None, model: str = "claude-sonnet-4-5", provider: str | None = None
+        ) -> None:
+            del api_key, model, provider
 
         def score(self, understanding, execution_report):
             del understanding, execution_report
@@ -1466,8 +1506,10 @@ def test_cmd_execute_with_heal_updates_generation_report_metadata(monkeypatch, t
             return report
 
     class FakeScorer:
-        def __init__(self, *, api_key=None, model: str = "claude-sonnet-4-5") -> None:
-            del api_key, model
+        def __init__(
+            self, *, api_key=None, model: str = "claude-sonnet-4-5", provider: str | None = None
+        ) -> None:
+            del api_key, model, provider
 
         def score(self, understanding, execution_report):
             del understanding, execution_report
@@ -1490,10 +1532,12 @@ def test_cmd_execute_with_heal_updates_generation_report_metadata(monkeypatch, t
             api_key: str,
             model: str,
             *,
+            client=None,
             knowledge_base=None,
         ) -> None:
             self.api_key = api_key
             self.model = model
+            self.client = client
             self.knowledge_base = knowledge_base
 
     class FakeHealer:
@@ -1625,8 +1669,10 @@ def test_cmd_execute_exits_nonzero_when_final_execution_fails(monkeypatch, tmp_p
             )
 
     class FakeScorer:
-        def __init__(self, *, api_key=None, model: str = "claude-sonnet-4-5") -> None:
-            del api_key, model
+        def __init__(
+            self, *, api_key=None, model: str = "claude-sonnet-4-5", provider: str | None = None
+        ) -> None:
+            del api_key, model, provider
 
         def score(self, understanding, execution_report):
             del understanding, execution_report
