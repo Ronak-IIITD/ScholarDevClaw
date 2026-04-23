@@ -3635,7 +3635,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_generate.add_argument(
         "--max-parallel",
         type=int,
-        default=4,
+        default=2,
         help="Maximum number of modules to generate in parallel",
     )
     p_generate.add_argument(
@@ -3732,7 +3732,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_from_paper.add_argument(
         "--max-parallel",
         type=int,
-        default=4,
+        default=2,
         help="Maximum number of modules to generate in parallel",
     )
     p_from_paper.add_argument(

@@ -1737,3 +1737,199 @@ def test_cmd_deploy_check_missing_env_file_exits_1(tmp_path, capsys):
 
     assert exc.value.code == 1
     assert "Environment file not found" in capsys.readouterr().err
+
+
+# =============================================================================
+# Provider-aware CLI edge case tests
+# =============================================================================
+
+
+def test_resolve_api_key_with_provider_env_var(monkeypatch):
+    """Test that provider-specific env vars are respected."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "env-openrouter-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    from scholardevclaw.cli import _resolve_api_key_and_provider
+
+    provider, key, model = _resolve_api_key_and_provider("openrouter", None, require_key=False)
+    assert provider == "openrouter"
+    assert key == "env-openrouter-key"
+
+
+def test_resolve_api_key_falls_back_to_anthropic(monkeypatch):
+    """Test fallback to ANTHROPIC_API_KEY when provider-specific key is missing."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-fallback-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    from scholardevclaw.cli import _resolve_api_key_and_provider
+
+    provider, key, model = _resolve_api_key_and_provider("openrouter", None, require_key=False)
+    assert provider == "openrouter"
+    assert key == "anthropic-fallback-key"
+
+
+def test_resolve_api_key_with_invalid_provider_exits(tmp_path):
+    """Test that invalid provider name exits with error."""
+    import scholardevclaw.cli as cli_module
+    from scholardevclaw.cli import _resolve_api_key_and_provider
+
+    # Patch sys.exit to capture the exit call
+    exit_codes = []
+    original_exit = cli_module.sys.exit
+
+    def mock_exit(code):
+        exit_codes.append(code)
+        raise SystemExit(code)
+
+    cli_module.sys.exit = mock_exit
+
+    try:
+        with pytest.raises(SystemExit):
+            _resolve_api_key_and_provider("invalid_provider", "claude-sonnet-4-5")
+    finally:
+        cli_module.sys.exit = original_exit
+
+    assert exit_codes[0] == 1
+
+
+def test_resolve_api_key_none_provider_defaults_to_openrouter(monkeypatch):
+    """Test that None provider defaults to openrouter."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    from scholardevclaw.cli import _resolve_api_key_and_provider
+
+    provider, key, model = _resolve_api_key_and_provider(None, None, require_key=False)
+    assert provider == "openrouter"
+
+
+def test_resolve_api_key_non_anthropic_uses_default_model(monkeypatch):
+    """Test that non-Anthropic providers get provider-specific default models."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    from scholardevclaw.cli import _resolve_api_key_and_provider
+
+    # OpenRouter should use gpt-4.1-mini as default
+    provider, key, model = _resolve_api_key_and_provider("openrouter", None, require_key=False)
+    assert model == "openai/gpt-4.1-mini"
+
+
+def test_resolve_api_key_anthropic_preserves_model(monkeypatch):
+    """Test that Anthropic provider preserves user-specified model."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    from scholardevclaw.cli import _resolve_api_key_and_provider
+
+    provider, key, model = _resolve_api_key_and_provider(
+        "anthropic", "claude-opus-4-5", require_key=False
+    )
+    assert provider == "anthropic"
+    assert model == "claude-opus-4-5"
+
+
+def test_create_code_orchestrator_with_openrouter(monkeypatch):
+    """Test that _create_code_orchestrator works with OpenRouter."""
+    from scholardevclaw.cli import _create_code_orchestrator
+
+    orchestrator, client = _create_code_orchestrator(
+        provider_name="openrouter",
+        api_key="test-key",
+        model="openai/gpt-4.1-mini",
+        knowledge_base=None,
+    )
+
+    # Should return orchestrator with client (not api_key)
+    assert orchestrator is not None
+    assert client is not None
+
+
+def test_create_code_orchestrator_with_anthropic(monkeypatch):
+    """Test that _create_code_orchestrator works with Anthropic."""
+    # Skip if anthropic SDK not installed
+    pytest.importorskip("anthropic")
+
+    from scholardevclaw.cli import _create_code_orchestrator
+
+    orchestrator, client = _create_code_orchestrator(
+        provider_name="anthropic",
+        api_key="sk-ant-test",
+        model="claude-sonnet-4-5",
+        knowledge_base=None,
+    )
+
+    # Should return orchestrator with api_key (no client)
+    assert orchestrator is not None
+    assert client is None
+
+
+def test_resolve_api_key_gemini(monkeypatch):
+    """Test that Gemini provider resolves correctly."""
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-test-key")
+
+    from scholardevclaw.cli import _resolve_api_key_and_provider
+
+    provider, key, model = _resolve_api_key_and_provider("gemini", None, require_key=False)
+    assert provider == "gemini"
+    assert key == "gemini-test-key"
+
+
+def test_resolve_api_key_grok(monkeypatch):
+    """Test that Grok provider resolves correctly."""
+    monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
+
+    from scholardevclaw.cli import _resolve_api_key_and_provider
+
+    provider, key, model = _resolve_api_key_and_provider("grok", None, require_key=False)
+    assert provider == "grok"
+    assert key == "xai-test-key"
+
+
+def test_generate_parser_default_max_parallel_is_2(monkeypatch):
+    """Test that generate parser defaults max_parallel to 2."""
+    called = {}
+
+    def fake_cmd(args):
+        called["max_parallel"] = args.max_parallel
+
+    monkeypatch.setattr(cli, "cmd_generate", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "generate",
+            "/tmp/plan.json",
+            "/tmp/understanding.json",
+        ],
+    )
+
+    cli.main()
+
+    assert called["max_parallel"] == 2
+
+
+def test_from_paper_parser_default_max_parallel_is_2(monkeypatch):
+    """Test that from-paper parser defaults max_parallel to 2."""
+    called = {}
+
+    def fake_cmd(args):
+        called["max_parallel"] = args.max_parallel
+
+    monkeypatch.setattr(cli, "cmd_from_paper", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "from-paper",
+            "arxiv:1706.03762",
+            "--output-dir",
+            "/tmp/out",
+        ],
+    )
+
+    cli.main()
+
+    assert called["max_parallel"] == 2
