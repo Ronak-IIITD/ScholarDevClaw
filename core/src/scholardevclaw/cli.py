@@ -768,6 +768,16 @@ def cmd_map(args):
     if getattr(args, "use_specs", False):
         print("Using legacy specs-based workflow for map.")
 
+    import os
+
+    # Set environment variables for LLM provider selection if provider is specified
+    provider_arg = getattr(args, "provider", None)
+    model_arg = getattr(args, "model", None)
+    if provider_arg:
+        os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = provider_arg
+    if model_arg:
+        os.environ["SCHOLARDEVCLAW_API_MODEL"] = model_arg
+
     path = Path(args.repo_path)
     if not path.exists():
         print(f"Error: Repository not found: {args.repo_path}", file=sys.stderr)
@@ -1733,7 +1743,17 @@ def cmd_integrate(args):
     if getattr(args, "use_specs", False):
         print("Using legacy specs-based workflow for integrate.")
 
+    import os
+
     from scholardevclaw.application.pipeline import run_integrate
+
+    # Set environment variables for LLM provider selection if provider is specified
+    provider_arg = getattr(args, "provider", None)
+    model_arg = getattr(args, "model", None)
+    if provider_arg:
+        os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = provider_arg
+    if model_arg:
+        os.environ["SCHOLARDEVCLAW_API_MODEL"] = model_arg
 
     def _print_log(line: str) -> None:
         print(f"  • {line}")
@@ -1794,7 +1814,17 @@ def cmd_integrate(args):
 
 def cmd_planner(args):
     """Plan multi-spec migration strategy"""
+    import os
+
     from scholardevclaw.planner import run_planner
+
+    # Set environment variables for LLM provider selection if provider is specified
+    provider_arg = getattr(args, "provider", None)
+    model_arg = getattr(args, "model", None)
+    if provider_arg:
+        os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = provider_arg
+    if model_arg:
+        os.environ["SCHOLARDEVCLAW_API_MODEL"] = model_arg
 
     print(f"Planning multi-spec migration for: {args.repo_path}")
     print("=" * 60)
@@ -1846,7 +1876,17 @@ def cmd_planner(args):
 
 def cmd_critic(args):
     """Run critic to verify generated patches"""
+    import os
+
     from scholardevclaw.critic import run_critic
+
+    # Set environment variables for LLM provider selection if provider is specified
+    provider_arg = getattr(args, "provider", None)
+    model_arg = getattr(args, "model", None)
+    if provider_arg:
+        os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = provider_arg
+    if model_arg:
+        os.environ["SCHOLARDEVCLAW_API_MODEL"] = model_arg
 
     print(f"Running critic for: {args.repo_path}")
     print("=" * 60)
@@ -3606,6 +3646,15 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         action="store_true",
         help="Use legacy specs-based workflow",
     )
+    p_integrate.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
+    )
+    p_integrate.add_argument(
+        "--model",
+        default="claude-sonnet-4-5",
+        help="LLM model name",
+    )
 
     # map
     p_map = subparsers.add_parser("map", help="Map a paper specification to repository locations")
@@ -3616,6 +3665,15 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "--use-specs",
         action="store_true",
         help="Use legacy specs-based workflow",
+    )
+    p_map.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
+    )
+    p_map.add_argument(
+        "--model",
+        default="claude-sonnet-4-5",
+        help="LLM model name",
     )
 
     # generate
@@ -3771,6 +3829,15 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_planner.add_argument("--max-specs", type=int, default=5, help="Maximum specs to recommend")
     p_planner.add_argument("--categories", help="Comma-separated categories to focus on")
     p_planner.add_argument("--output-json", action="store_true", help="Output JSON")
+    p_planner.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
+    )
+    p_planner.add_argument(
+        "--model",
+        default="claude-sonnet-4-5",
+        help="LLM model name",
+    )
 
     # critic
     p_critic = subparsers.add_parser("critic", help="Verify generated patches for issues")
@@ -3778,6 +3845,15 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_critic.add_argument("spec", nargs="?", help="Paper specification to verify")
     p_critic.add_argument("--patch-json", help="JSON string containing patch result to verify")
     p_critic.add_argument("--output-json", action="store_true", help="Output JSON")
+    p_critic.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
+    )
+    p_critic.add_argument(
+        "--model",
+        default="claude-sonnet-4-5",
+        help="LLM model name",
+    )
 
     # context
     p_context = subparsers.add_parser("context", help="Manage project context and memory")
