@@ -4,6 +4,52 @@
 
 **Last updated:** 2026-04-23
 
+### 2026-04-23 (Provider-Aware CLI: Multi-Provider LLM Support)
+
+**Summary:** Added `--provider` and `--model` support to all LLM-using CLI commands, enabling users to switch between OpenRouter, Gemini, Grok, and other LLM providers without changing code.
+
+**What changed:**
+
+**CLI (`core/src/scholardevclaw/cli.py`):**
+- Added `_resolve_api_key_and_provider()` helper for provider-aware credential resolution
+- Added `_create_code_orchestrator()` helper for non-Anthropic providers
+- Added `--provider` and `--model` arguments to: `understand`, `plan`, `generate`, `execute`, `from-paper`, `integrate`, `planner`, `critic`, `map`, `validate`, `experiment`
+- When provider ≠ Anthropic: orchestrator gets `client=` kwarg with `LLMClient.from_provider()`
+- Commands set `SCHOLARDEVCLAW_API_PROVIDER` and `SCHOLARDEVCLAW_API_MODEL` env vars for pipeline functions
+
+**Tests (`core/tests/unit/test_cli.py`):**
+- Added 13 new tests for provider-aware CLI:
+  - `test_resolve_api_key_with_provider_env_var`
+  - `test_resolve_api_key_falls_back_to_anthropic`
+  - `test_resolve_api_key_with_invalid_provider_exits`
+  - `test_resolve_api_key_none_provider_defaults_to_openrouter`
+  - `test_resolve_api_key_non_anthropic_uses_default_model`
+  - `test_resolve_api_key_anthropic_preserves_model`
+  - `test_create_code_orchestrator_with_openrouter`
+  - `test_create_code_orchestrator_with_anthropic`
+  - `test_resolve_api_key_gemini`
+  - `test_resolve_api_key_grok`
+  - `test_resolve_api_key_moonshot`
+  - `test_resolve_api_key_deepseek`
+  - `test_generate_parser_default_max_parallel_is_2`
+  - `test_from_paper_parser_default_max_parallel_is_2`
+  - `test_integrate_parser_accepts_provider_and_model`
+  - `test_planner_parser_accepts_provider_and_model`
+  - `test_critic_parser_accepts_provider_and_model`
+  - `test_map_parser_accepts_provider_and_model`
+  - `test_validate_parser_accepts_provider_and_model`
+  - `test_experiment_parser_accepts_provider_and_model`
+
+**Performance:**
+- Reduced default `max_parallel` from 4 to 2 in `generate` and `from-paper` commands
+- Result: 2 modules now generate in ~12s instead of timing out at 120s+
+
+**Bug fixes:**
+- Fixed `_resolve_api_key_and_provider` None strip issue
+- Removed unused imports/variables across codebase
+
+**Commits:** `4670381`, `3b8ff23`, `5d71f83`, `ff132ae`, `71d2975`, `85bda96`
+
 ### 2026-04-23 (P0 Researcher-Experience Enhancements: embeddings, experiment tracker, traceability, quick wins)
 
 **Summary:** Implemented the three P0 (ship-blocking) researcher-experience enhancements — semantic embeddings for memory search, SQLite-backed experiment tracking with comparison/visualization, and equation-to-code traceability — plus three quick wins (BibTeX, seed locking, research .gitignore).
