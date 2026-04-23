@@ -1699,7 +1699,17 @@ def cmd_from_paper(args):
 
 def cmd_validate(args):
     """Run validation on a repository"""
+    import os
+
     from scholardevclaw.application.pipeline import run_validate
+
+    # Set environment variables for LLM provider selection if provider is specified
+    provider_arg = getattr(args, "provider", None)
+    model_arg = getattr(args, "model", None)
+    if provider_arg:
+        os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = provider_arg
+    if model_arg:
+        os.environ["SCHOLARDEVCLAW_API_MODEL"] = model_arg
 
     print(f"Validating repository: {args.repo_path}")
     print("-" * 50)
@@ -2105,7 +2115,17 @@ def cmd_context(args):
 
 def cmd_experiment(args):
     """Run experiment loop for hypothesis testing"""
+    import os
+
     from scholardevclaw.experiment import run_experiment
+
+    # Set environment variables for LLM provider selection if provider is specified
+    provider_arg = getattr(args, "provider", None)
+    model_arg = getattr(args, "model", None)
+    if provider_arg:
+        os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = provider_arg
+    if model_arg:
+        os.environ["SCHOLARDEVCLAW_API_MODEL"] = model_arg
 
     print(f"Running experiment for: {args.repo_path}")
     print(f"Spec: {args.spec}")
@@ -3816,6 +3836,15 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_validate = subparsers.add_parser("validate", help="Validate tests and benchmark")
     p_validate.add_argument("repo_path", help="Path to repository")
     p_validate.add_argument("--output-json", action="store_true", help="Output JSON")
+    p_validate.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
+    )
+    p_validate.add_argument(
+        "--model",
+        default="claude-sonnet-4-5",
+        help="LLM model name",
+    )
 
     # specs
     p_specs = subparsers.add_parser("specs", help="List paper specifications")
@@ -3876,6 +3905,15 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     )
     p_experiment.add_argument("--output-dir", help="Output directory for variants")
     p_experiment.add_argument("--output-json", action="store_true", help="Output JSON")
+    p_experiment.add_argument(
+        "--provider",
+        help="LLM provider (default: openrouter)",
+    )
+    p_experiment.add_argument(
+        "--model",
+        default="claude-sonnet-4-5",
+        help="LLM model name",
+    )
 
     # plugin
     p_plugin = subparsers.add_parser("plugin", help="Manage plugins")

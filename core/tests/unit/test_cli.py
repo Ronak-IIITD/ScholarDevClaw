@@ -500,3 +500,64 @@ def test_from_paper_parser_default_max_parallel_is_2(monkeypatch):
     cli.main()
 
     assert called["max_parallel"] == 2
+
+
+def test_validate_parser_accepts_provider_and_model(monkeypatch):
+    """Test that validate parser accepts --provider and --model arguments."""
+    called = {}
+
+    def fake_cmd(args):
+        called["repo_path"] = args.repo_path
+        called["provider"] = args.provider
+        called["model"] = args.model
+
+    monkeypatch.setattr(cli, "cmd_validate", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "validate",
+            "/tmp/repo",
+            "--provider",
+            "openrouter",
+            "--model",
+            "openai/gpt-4.1-mini",
+        ],
+    )
+
+    cli.main()
+
+    assert called["provider"] == "openrouter"
+    assert called["model"] == "openai/gpt-4.1-mini"
+
+
+def test_experiment_parser_accepts_provider_and_model(monkeypatch):
+    """Test that experiment parser accepts --provider and --model arguments."""
+    called = {}
+
+    def fake_cmd(args):
+        called["repo_path"] = args.repo_path
+        called["provider"] = args.provider
+        called["model"] = args.model
+
+    monkeypatch.setattr(cli, "cmd_experiment", fake_cmd)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "scholardevclaw",
+            "experiment",
+            "/tmp/repo",
+            "rmsnorm",
+            "--provider",
+            "gemini",
+            "--model",
+            "gemini-2.0-flash",
+        ],
+    )
+
+    cli.main()
+
+    assert called["provider"] == "gemini"
+    assert called["model"] == "gemini-2.0-flash"
