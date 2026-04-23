@@ -32,6 +32,7 @@ def cmd_auth(args):
         "profiles": _cmd_profiles,
         "usage": _cmd_usage,
         "expiry": _cmd_expiry,
+        "validate": _cmd_validate,
     }
 
     handler = dispatch.get(action)
@@ -40,7 +41,7 @@ def cmd_auth(args):
     else:
         print(
             "Unknown auth action. Use: login, logout, status, list, add, remove, "
-            "default, setup, rotate, audit, export, import, encrypt, profiles, usage, expiry"
+            "default, setup, rotate, audit, export, import, encrypt, profiles, usage, expiry, validate"
         )
         sys.exit(1)
 
@@ -762,3 +763,59 @@ def _cmd_expiry(args, store: AuthStore):
 
     else:
         print("Usage: auth expiry [check|set|deactivate]")
+
+
+# ------------------------------------------------------------------
+# Validate API keys
+# ------------------------------------------------------------------
+
+
+def _cmd_validate(args, store: AuthStore):
+    """Validate API keys by making a test request"""
+    import os
+
+    # Get provider from args or environment, default to openrouter
+    provider_arg = getattr(args, "provider", None)
+    provider_name = (
+        provider_arg or os.environ.get("SCHOLARDEVCLAW_API_PROVIDER", "") or "openrouter"
+    )
+
+    # Get API key from args --api-key flag or environment variable
+    api_key_arg = getattr(args, "api_key", None)
+    env_var_name = f"{provider_name.upper()}_API_KEY"
+    api_key = api_key_arg or os.environ.get(env_var_name, "")
+
+    if not api_key:
+        print(f"Error: No API key found for provider '{provider_name}'", file=sys.stderr)
+        print(f"Set API key in env var: {env_var_name}")
+        print(
+            "Or pass directly: scholardevclaw auth validate --provider <provider> --api-key <key>"
+        )
+        sys.exit(1)
+
+    print(f"Validating API key for {provider_name}...")
+
+    # Get model from args or use provider default
+    model_arg = getattr(args, "model", None)
+    model = model_arg or None
+
+    try:
+        from scholardevclaw.llm.client import LLMClient
+
+        client = LLMClient.from_provider(provider_name, api_key=api_key, model=model)
+
+        # Make a simple test request
+        response = client.chat("Say 'OK' if you receive this.", max_tokens=10)
+
+        if response:
+            print("✅ API key is valid!")
+            print(f"   Model: {response.model}")
+            print(f"   Provider: {response.provider}")
+            print(f"   Latency: {response.latency_ms:.0f}ms")
+        else:
+            print("❌ API key validation failed (empty response)", file=sys.stderr)
+            sys.exit(1)
+
+    except Exception as e:
+        print(f"❌ API key validation failed: {e}", file=sys.stderr)
+        sys.exit(1)

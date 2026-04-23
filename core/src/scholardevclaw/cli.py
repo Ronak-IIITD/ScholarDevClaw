@@ -4020,16 +4020,34 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "auth_action",
         nargs="?",
         default="status",
-        choices=["setup", "login", "logout", "status", "list", "add", "remove", "default"],
+        choices=[
+            "setup",
+            "login",
+            "logout",
+            "status",
+            "list",
+            "add",
+            "remove",
+            "default",
+            "validate",
+        ],
         help="Action to perform",
     )
     p_auth.add_argument("--key", help="API key value")
     p_auth.add_argument("--name", help="Key name")
-    p_auth.add_argument("--provider", help="Provider (anthropic, openai, github, custom)")
+    p_auth.add_argument("--provider", help="Provider (anthropic, openrouter, gemini, grok, etc)")
     p_auth.add_argument("--default", action="store_true", help="Set as default key")
     p_auth.add_argument("--force", action="store_true", help="Force action without confirmation")
     p_auth.add_argument("--key-id", help="Key ID for remove/default actions")
     p_auth.add_argument("--output-json", action="store_true", help="Output JSON")
+    p_auth.add_argument(
+        "--model",
+        help="Model name for validation (default: provider-specific)",
+    )
+    p_auth.add_argument(
+        "--api-key",
+        help="API key to validate (if not set, reads from environment)",
+    )
 
     # multi-repo
     p_multi_repo = subparsers.add_parser(
