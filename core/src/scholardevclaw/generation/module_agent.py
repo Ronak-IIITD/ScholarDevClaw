@@ -250,15 +250,10 @@ Write complete, production-quality Python code for {module.file_path}.
         understanding: PaperUnderstanding,
     ) -> str:
         """Build a block of relevant equations for the module's prompt context."""
-        if not module.paper_sections:
-            return ""
-
         # Collect equations from the understanding's hyperparameters/algorithm
-        # that are relevant to this module's paper sections
+        # that are relevant to this module
         lines: list[str] = []
         lines.append("\nRelevant paper equations for this module:")
-
-        section_set = set(s.lower() for s in module.paper_sections)
 
         # Include hyperparameters as equation-like references
         if understanding.hyperparameters:
