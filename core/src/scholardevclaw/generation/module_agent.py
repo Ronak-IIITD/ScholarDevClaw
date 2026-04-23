@@ -214,11 +214,15 @@ class ModuleAgent:
                 f"{error_context[:3000]}"
             )
 
+        # Build equation reference block for traceability
+        equation_block = self._build_equation_block(module, understanding)
+
         context_block = "\n".join(context_parts)
 
         return f"""Paper: {understanding.paper_title}
 Core algorithm: {understanding.core_algorithm_description}
 Tech stack: {plan.tech_stack}
+{equation_block}
 
 Implement this module:
 Module: {module.name} ({module.id})
@@ -228,11 +232,45 @@ Estimated lines: {module.estimated_lines}
 {error_block}
 {report_block}
 
+IMPORTANT: For every function or class that implements a paper equation,
+add a comment block above it in this exact format:
+  # Equation <number> (§<section>): <description>
+  # <equation in readable notation>
+This enables equation-to-code traceability.
+
 Context from dependencies:
 {context_block}
 
 Write complete, production-quality Python code for {module.file_path}.
 """
+
+    def _build_equation_block(
+        self,
+        module: CodeModule,
+        understanding: PaperUnderstanding,
+    ) -> str:
+        """Build a block of relevant equations for the module's prompt context."""
+        if not module.paper_sections:
+            return ""
+
+        # Collect equations from the understanding's hyperparameters/algorithm
+        # that are relevant to this module's paper sections
+        lines: list[str] = []
+        lines.append("\nRelevant paper equations for this module:")
+
+        section_set = set(s.lower() for s in module.paper_sections)
+
+        # Include hyperparameters as equation-like references
+        if understanding.hyperparameters:
+            lines.append("  Hyperparameters from paper:")
+            for name, value in understanding.hyperparameters.items():
+                lines.append(f"    {name} = {value}")
+
+        # Include the input/output spec
+        if understanding.input_output_spec:
+            lines.append(f"  I/O Spec: {understanding.input_output_spec}")
+
+        return "\n".join(lines) if len(lines) > 1 else ""
 
     def _check_syntax(self, code: str) -> list[str]:
         try:

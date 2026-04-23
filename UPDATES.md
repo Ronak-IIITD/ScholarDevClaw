@@ -2,7 +2,94 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-23
+
+### 2026-04-23 (P0 Researcher-Experience Enhancements: embeddings, experiment tracker, traceability, quick wins)
+
+**Summary:** Implemented the three P0 (ship-blocking) researcher-experience enhancements — semantic embeddings for memory search, SQLite-backed experiment tracking with comparison/visualization, and equation-to-code traceability — plus three quick wins (BibTeX, seed locking, research .gitignore).
+
+**What changed:**
+
+- `core/src/scholardevclaw/agent/embeddings.py` (new)
+  - Added `EmbeddingEngine` with three auto-fallback backends:
+    - `SentenceTransformerBackend` (highest quality, uses `all-MiniLM-L6-v2`)
+    - `TFIDFBackend` (numpy-only, incremental vocabulary)
+    - `KeywordBackend` (feature hashing, always available)
+  - Added `cosine_similarity()` utility for vector comparison.
+  - Added thread-safe lazy singleton via `get_embedding_engine()`.
+  - All backends return L2-normalized vectors for consistent similarity.
+
+- `core/src/scholardevclaw/agent/memory.py`
+  - Added lazy embedding engine initialization (`_get_embedding_engine()`, `_embed_text()`).
+  - `add()` now auto-embeds content for semantic search.
+  - `retrieve()` computes query embedding once, uses it for all comparisons.
+  - `_calculate_relevance()` now blends embedding cosine similarity (70%) + keyword overlap (30%) when embeddings are available, falling back to keyword-only.
+  - Extracted `_keyword_relevance()` as clean fallback method.
+  - `_find_similar()` upgraded to use embeddings for consolidation matching.
+  - Added config keys: `embedding_backend` (auto/tfidf/keyword-hash/sentence-transformers), `enable_embeddings` (bool).
+
+- `core/src/scholardevclaw/experiment/tracker.py` (new)
+  - Added `ExperimentTracker` with SQLite-backed run lifecycle:
+    - `start_run()` with auto-detection of GPU, git SHA/branch, Python version, hardware.
+    - `log_metric()` / `log_metrics()` for per-epoch metric recording.
+    - `end_run()` with auto-computed final metrics from last logged values.
+  - Added querying: `get_run()`, `list_runs()`, `get_metrics()`, `get_metric_names()`.
+  - Added export: JSON and CSV formats via `export_run()`.
+  - Added `stats()` for tracker-wide statistics.
+  - Added `delete_run()` for cleanup.
+  - Added `RunConfig`, `MetricEntry`, `ExperimentRun`, `ComparisonResult` data models.
+  - Fixed PyTorch GPU property: handles both `total_memory` (new) and `total_mem` (old) API.
+
+- `core/src/scholardevclaw/experiment/compare.py` (new)
+  - Added `compare_runs()` with metric-by-metric analysis, baseline deltas, and percent changes.
+  - Added auto-detection of metric direction via `is_higher_better()` (recognizes loss, perplexity, error_rate, mse, etc.).
+  - Added markdown comparison table generation with best-run highlighting.
+  - Added `compute_metric_statistics()` for aggregate stats (mean, std, min, max, median).
+
+- `core/src/scholardevclaw/experiment/visualize.py` (new)
+  - Added matplotlib-based visualization (lazy-loaded, Agg backend):
+    - `plot_training_curves()` — per-run metric plots over epochs
+    - `plot_comparison_bars()` — bar chart comparing metric across runs
+    - `plot_multi_run_curves()` — overlay training curves from multiple runs
+    - `plot_metric_heatmap()` — heatmap of all metrics × all runs
+  - All functions accept optional `save_path` for PNG export.
+
+- `core/src/scholardevclaw/product/traceability.py` (new)
+  - Added `EquationReference` and `CodeMapping` data models.
+  - Added `generate_equation_comment()` producing formatted code comments with LaTeX→Unicode conversion (Greek letters, fractions, superscripts, subscripts, operators).
+  - Added `TraceabilityBuilder` for mapping equations to code locations with confidence scores and coverage tracking.
+  - Added `scan_code_for_references()` for auto-discovering equation comments in generated code files.
+  - Added `export_traceability_markdown()` producing publication-ready reports with coverage bar, traceability matrix table, detailed mappings, and unmapped equation warnings.
+
+- `core/src/scholardevclaw/generation/module_agent.py`
+  - Added `_build_equation_block()` to inject relevant paper equations/hyperparameters into generation prompts.
+  - Added explicit LLM instruction to generate `# Equation N (§X): description` comments in code, enabling `TraceabilityBuilder.scan_code_for_references()` auto-discovery.
+
+- `core/src/scholardevclaw/product/scaffolder.py`
+  - Added `_generate_bibtex()` — auto-generates `CITATION.bib` from paper understanding.
+  - Added `_generate_gitignore()` — research-specific `.gitignore` (checkpoints, data, wandb, notebooks, model weights).
+  - Added `_generate_seed_utils()` — `src/utils/reproducibility.py` with seed locking for `random`, `numpy`, `torch`, `tensorflow`, and `jax`.
+  - Updated `scaffold()` to call all three new generators.
+
+**Verification:**
+
+- ✅ All 8 new/modified modules import successfully:
+  ```
+  ✅ embeddings module imports OK
+  ✅ memory module imports OK
+  ✅ experiment tracker imports OK
+  ✅ experiment compare imports OK
+  ✅ experiment visualize imports OK
+  ✅ traceability module imports OK
+  ✅ scaffolder imports OK
+  ✅ module_agent imports OK
+  ```
+- ✅ Embedding similarity: related topics (0.577) > unrelated topics (0.000)
+- ✅ Memory retrieval: semantic query correctly ranks normalization content above unrelated content
+- ✅ Experiment tracker: full lifecycle (start → log 5 epochs → end → compare) with correct final metrics
+- ✅ Comparison table: metric deltas with percentage changes (accuracy +1.1%, loss -50.0%)
+- ✅ Equation traceability: 67% coverage (2/3 equations mapped), 47-line markdown report generated
+- ✅ LaTeX→Unicode conversion working (Greek letters, fractions, superscripts)
 
 ### 2026-04-21 (Phase-9 provider-agnostic runtime execution in TUI)
 

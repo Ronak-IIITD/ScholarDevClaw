@@ -5,17 +5,19 @@ Features:
 - Multi-tier storage (hot/warm/cold)
 - Memory consolidation (episodic -> semantic)
 - Memory decay and TTL
-- Semantic embeddings for similarity search
+- Semantic embeddings for similarity search (sentence-transformers / TF-IDF / keyword)
 - Memory summarization
 - Cross-session persistence
 - Memory indexing and fast retrieval
 - Importance boosting and decay
 - Auto-cleanup and archival
+- Cosine similarity-based retrieval with fallback
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import uuid
@@ -24,6 +26,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryType(Enum):
@@ -289,6 +293,12 @@ class AdvancedAgentMemory:
 
         self.store = PersistentMemoryStore(self.store_dir)
         self._memories_cache: dict[str, Memory] = {}
+
+        # Lazy-init embedding engine (avoids import cost if unused)
+        self._embedding_engine: Any = None
+        self._embedding_backend_name: str = self.config.get("embedding_backend", "auto")
+        self._embeddings_enabled: bool = self.config.get("enable_embeddings", True)
+
         self._load_to_cache()
 
     def _load_to_cache(self):
@@ -307,7 +317,7 @@ class AdvancedAgentMemory:
         tags: list[str] | None = None,
         expires_in_days: int | None = None,
     ) -> Memory:
-        """Add a new memory with auto-tiering"""
+        """Add a new memory with auto-tiering and semantic embedding."""
         expires_at = None
         if expires_in_days:
             expires_at = (datetime.now() + timedelta(days=expires_in_days)).isoformat()
@@ -321,11 +331,15 @@ class AdvancedAgentMemory:
                     datetime.now() + timedelta(days=self.ttl_config[memory_type])
                 ).isoformat()
 
+        # Auto-embed the content for semantic search
+        embedding = self._embed_text(content)
+
         memory = Memory(
             id=str(uuid.uuid4()),
             content=content,
             memory_type=memory_type,
             importance=importance,
+            embedding=embedding,
             metadata=metadata or {},
             tags=tags or [],
             expires_at=expires_at,
@@ -351,6 +365,37 @@ class AdvancedAgentMemory:
             return MemoryTier.WARM
         return MemoryTier.COLD
 
+    def _get_embedding_engine(self) -> Any:
+        """Lazy-initialize the embedding engine."""
+        if self._embedding_engine is None and self._embeddings_enabled:
+            try:
+                from scholardevclaw.agent.embeddings import EmbeddingEngine
+
+                backend = None if self._embedding_backend_name == "auto" else self._embedding_backend_name
+                self._embedding_engine = EmbeddingEngine(
+                    preferred_backend=backend,
+                    cache_dir=self.store_dir / "models",
+                )
+                logger.info(
+                    "Memory embeddings initialized: backend=%s",
+                    self._embedding_engine.backend_name,
+                )
+            except Exception as exc:
+                logger.warning("Embeddings unavailable, falling back to keywords: %s", exc)
+                self._embeddings_enabled = False
+        return self._embedding_engine
+
+    def _embed_text(self, text: str) -> list[float]:
+        """Embed a text string, returning empty list if embeddings unavailable."""
+        engine = self._get_embedding_engine()
+        if engine is None:
+            return []
+        try:
+            return engine.encode_single(text)
+        except Exception as exc:
+            logger.debug("Embedding failed for text: %s", exc)
+            return []
+
     def retrieve(
         self,
         query: str,
@@ -358,7 +403,11 @@ class AdvancedAgentMemory:
         limit: int = 10,
         include_archived: bool = False,
     ) -> list[MemoryRetrieval]:
-        """Retrieve relevant memories with multi-signal scoring"""
+        """Retrieve relevant memories with multi-signal scoring.
+
+        Uses semantic embeddings (cosine similarity) when available,
+        falling back to keyword overlap when embeddings are not initialized.
+        """
         memory_types = [MemoryType.ARCHIVED] if include_archived else None
         if memory_type:
             memory_types = [memory_type]
@@ -367,18 +416,23 @@ class AdvancedAgentMemory:
         for mt in memory_types or [MemoryType.EPISODIC, MemoryType.SEMANTIC, MemoryType.PROCEDURAL]:
             all_memories.extend(self.store.get_all(memory_type=mt))
 
-        results = []
+        # Compute query embedding once for all comparisons
+        query_embedding = self._embed_text(query) if query else []
         query_terms = set(query.lower().split()) if query else set()
 
+        results = []
         for memory in all_memories:
             if self._is_expired(memory):
                 continue
 
-            relevance = self._calculate_relevance(query_terms, memory)
+            relevance = self._calculate_relevance(
+                query_terms, query_embedding, memory
+            )
             recency = self._calculate_recency(memory)
             importance_boost = self._calculate_importance_boost(memory)
 
-            relevance * 0.5 + recency * 0.3 + importance_boost * 0.2
+            # Weighted composite score
+            composite = relevance * 0.5 + recency * 0.3 + importance_boost * 0.2
 
             results.append(
                 MemoryRetrieval(
@@ -389,11 +443,43 @@ class AdvancedAgentMemory:
                 )
             )
 
-        results.sort(key=lambda r: r.relevance + r.recency + r.importance_boost, reverse=True)
+        results.sort(
+            key=lambda r: r.relevance * 0.5 + r.recency * 0.3 + r.importance_boost * 0.2,
+            reverse=True,
+        )
         return results[:limit]
 
-    def _calculate_relevance(self, query_terms: set[str], memory: Memory) -> float:
-        """Calculate relevance score using keyword overlap"""
+    def _calculate_relevance(
+        self,
+        query_terms: set[str],
+        query_embedding: list[float],
+        memory: Memory,
+    ) -> float:
+        """Calculate relevance score using embeddings with keyword fallback.
+
+        Strategy:
+        - If both query and memory have embeddings → cosine similarity (0.7 weight)
+          + keyword overlap (0.3 weight)
+        - Otherwise → keyword overlap only
+        """
+        if not query_terms and not query_embedding:
+            return 0.5
+
+        # Keyword-based score (always computed)
+        keyword_score = self._keyword_relevance(query_terms, memory)
+
+        # Embedding-based score (when available)
+        if query_embedding and memory.embedding:
+            from scholardevclaw.agent.embeddings import cosine_similarity
+
+            embedding_score = cosine_similarity(query_embedding, memory.embedding)
+            # Blend: embeddings dominate when available
+            return embedding_score * 0.7 + keyword_score * 0.3
+
+        return keyword_score
+
+    def _keyword_relevance(self, query_terms: set[str], memory: Memory) -> float:
+        """Calculate keyword-overlap relevance (fallback method)."""
         if not query_terms:
             return 0.5
 
@@ -506,9 +592,12 @@ class AdvancedAgentMemory:
                 self._memories_cache[semantic_memory.id] = semantic_memory
 
     def _find_similar(self, memory: Memory, threshold: float = 0.8) -> Memory | None:
-        """Find similar semantic memory"""
+        """Find similar semantic memory using embeddings or keywords."""
+        query_terms = set(memory.content.lower().split())
+        query_embedding = memory.embedding or self._embed_text(memory.content)
+
         for mem in self.store.get_all(memory_type=MemoryType.SEMANTIC):
-            relevance = self._calculate_relevance(set(memory.content.lower().split()), mem)
+            relevance = self._calculate_relevance(query_terms, query_embedding, mem)
             if relevance >= threshold:
                 return mem
         return None
