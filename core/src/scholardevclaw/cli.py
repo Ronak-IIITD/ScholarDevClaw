@@ -63,9 +63,8 @@ def _resolve_api_key_and_provider(
     from scholardevclaw.auth.types import AuthProvider
     from scholardevclaw.llm.client import DEFAULT_MODELS
 
-    provider_name = (
-        provider_arg or os.getenv("SCHOLARDEVCLAW_API_PROVIDER", "")
-    ).strip().lower() or "openrouter"
+    env_provider = os.getenv("SCHOLARDEVCLAW_API_PROVIDER", "")
+    provider_name = (provider_arg or (env_provider or "")).strip().lower() or "openrouter"
 
     try:
         auth_provider = AuthProvider(provider_name)

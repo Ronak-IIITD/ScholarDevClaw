@@ -10,10 +10,8 @@ Provides SQLite-backed logging of experiment runs with:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import os
 import platform
 import sqlite3
 import threading
@@ -114,9 +112,7 @@ class ExperimentTracker:
         self,
         store_dir: Path | None = None,
     ):
-        self.store_dir = (
-            store_dir or Path.home() / ".scholardevclaw" / "experiments"
-        )
+        self.store_dir = store_dir or Path.home() / ".scholardevclaw" / "experiments"
         self.store_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.store_dir / "experiments.db"
         self._lock = threading.RLock()
@@ -277,9 +273,7 @@ class ExperimentTracker:
 
         logger.info("Ended run %s with status '%s'", run_id, status)
 
-    def _compute_final_metrics(
-        self, cursor: sqlite3.Cursor, run_id: str
-    ) -> dict[str, float]:
+    def _compute_final_metrics(self, cursor: sqlite3.Cursor, run_id: str) -> dict[str, float]:
         """Get the last logged value for each metric in a run."""
         cursor.execute(
             """
@@ -401,10 +395,7 @@ class ExperimentTracker:
             # Filter by tags if specified
             if tags:
                 tag_set = set(t.lower() for t in tags)
-                runs = [
-                    r for r in runs
-                    if tag_set.intersection(set(t.lower() for t in r.tags))
-                ]
+                runs = [r for r in runs if tag_set.intersection(set(t.lower() for t in r.tags))]
 
             return runs
 
@@ -577,9 +568,7 @@ class ExperimentTracker:
         elif format == "csv":
             lines = ["epoch,step,metric_name,metric_value,timestamp"]
             for m in metrics:
-                lines.append(
-                    f"{m.epoch},{m.step},{m.metric_name},{m.metric_value},{m.timestamp}"
-                )
+                lines.append(f"{m.epoch},{m.step},{m.metric_name},{m.metric_value},{m.timestamp}")
             return "\n".join(lines)
 
         return ""
@@ -606,10 +595,9 @@ class ExperimentTracker:
             run_id=row["run_id"],
             experiment_name=row["experiment_name"],
             status=row["status"],
-            config=RunConfig(**{
-                k: v for k, v in config_dict.items()
-                if k in RunConfig.__dataclass_fields__
-            }),
+            config=RunConfig(
+                **{k: v for k, v in config_dict.items() if k in RunConfig.__dataclass_fields__}
+            ),
             started_at=row["started_at"],
             ended_at=row["ended_at"],
             duration_seconds=row["duration_seconds"],
@@ -622,6 +610,7 @@ class ExperimentTracker:
         """Auto-detect GPU info."""
         try:
             import torch
+
             if torch.cuda.is_available():
                 props = torch.cuda.get_device_properties(0)
                 # Handle both old (total_mem) and new (total_memory) API
@@ -638,9 +627,12 @@ class ExperimentTracker:
         """Detect current git SHA."""
         try:
             import subprocess
+
             result = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             return result.stdout.strip()[:12] if result.returncode == 0 else ""
         except Exception:
@@ -650,9 +642,12 @@ class ExperimentTracker:
         """Detect current git branch."""
         try:
             import subprocess
+
             result = subprocess.run(
                 ["git", "branch", "--show-current"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             return result.stdout.strip() if result.returncode == 0 else ""
         except Exception:

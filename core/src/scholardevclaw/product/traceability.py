@@ -13,10 +13,9 @@ Features:
 
 from __future__ import annotations
 
-import json
 import logging
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -120,30 +119,81 @@ def _simplify_latex_for_comment(latex: str) -> str:
     s = latex.strip()
 
     # Remove display-mode delimiters
-    for delim in ["$$", "$", "\\[", "\\]", "\\begin{equation}", "\\end{equation}",
-                   "\\begin{align}", "\\end{align}", "\\begin{gather}", "\\end{gather}"]:
+    for delim in [
+        "$$",
+        "$",
+        "\\[",
+        "\\]",
+        "\\begin{equation}",
+        "\\end{equation}",
+        "\\begin{align}",
+        "\\end{align}",
+        "\\begin{gather}",
+        "\\end{gather}",
+    ]:
         s = s.replace(delim, "")
 
     # Common substitutions
     replacements = {
-        "\\alpha": "α", "\\beta": "β", "\\gamma": "γ", "\\delta": "δ",
-        "\\epsilon": "ε", "\\varepsilon": "ε", "\\zeta": "ζ", "\\eta": "η",
-        "\\theta": "θ", "\\lambda": "λ", "\\mu": "μ", "\\nu": "ν",
-        "\\xi": "ξ", "\\pi": "π", "\\rho": "ρ", "\\sigma": "σ",
-        "\\tau": "τ", "\\phi": "φ", "\\chi": "χ", "\\psi": "ψ",
-        "\\omega": "ω", "\\Omega": "Ω", "\\Sigma": "Σ", "\\Pi": "Π",
-        "\\Delta": "Δ", "\\Theta": "Θ", "\\Lambda": "Λ",
-        "\\cdot": "·", "\\times": "×", "\\div": "÷",
-        "\\leq": "≤", "\\geq": "≥", "\\neq": "≠", "\\approx": "≈",
-        "\\infty": "∞", "\\partial": "∂", "\\nabla": "∇",
-        "\\sum": "Σ", "\\prod": "Π", "\\int": "∫",
-        "\\rightarrow": "→", "\\leftarrow": "←", "\\Rightarrow": "⇒",
-        "\\in": "∈", "\\notin": "∉", "\\subset": "⊂",
-        "\\forall": "∀", "\\exists": "∃",
-        "\\mathbb{R}": "ℝ", "\\mathbb{N}": "ℕ", "\\mathbb{Z}": "ℤ",
-        "\\text{softmax}": "softmax", "\\text{ReLU}": "ReLU",
-        "\\text{LayerNorm}": "LayerNorm", "\\text{Attention}": "Attention",
-        "\\mathrm{": "", "\\text{": "", "\\mathbf{": "", "\\mathcal{": "",
+        "\\alpha": "α",
+        "\\beta": "β",
+        "\\gamma": "γ",
+        "\\delta": "δ",
+        "\\epsilon": "ε",
+        "\\varepsilon": "ε",
+        "\\zeta": "ζ",
+        "\\eta": "η",
+        "\\theta": "θ",
+        "\\lambda": "λ",
+        "\\mu": "μ",
+        "\\nu": "ν",
+        "\\xi": "ξ",
+        "\\pi": "π",
+        "\\rho": "ρ",
+        "\\sigma": "σ",
+        "\\tau": "τ",
+        "\\phi": "φ",
+        "\\chi": "χ",
+        "\\psi": "ψ",
+        "\\omega": "ω",
+        "\\Omega": "Ω",
+        "\\Sigma": "Σ",
+        "\\Pi": "Π",
+        "\\Delta": "Δ",
+        "\\Theta": "Θ",
+        "\\Lambda": "Λ",
+        "\\cdot": "·",
+        "\\times": "×",
+        "\\div": "÷",
+        "\\leq": "≤",
+        "\\geq": "≥",
+        "\\neq": "≠",
+        "\\approx": "≈",
+        "\\infty": "∞",
+        "\\partial": "∂",
+        "\\nabla": "∇",
+        "\\sum": "Σ",
+        "\\prod": "Π",
+        "\\int": "∫",
+        "\\rightarrow": "→",
+        "\\leftarrow": "←",
+        "\\Rightarrow": "⇒",
+        "\\in": "∈",
+        "\\notin": "∉",
+        "\\subset": "⊂",
+        "\\forall": "∀",
+        "\\exists": "∃",
+        "\\mathbb{R}": "ℝ",
+        "\\mathbb{N}": "ℕ",
+        "\\mathbb{Z}": "ℤ",
+        "\\text{softmax}": "softmax",
+        "\\text{ReLU}": "ReLU",
+        "\\text{LayerNorm}": "LayerNorm",
+        "\\text{Attention}": "Attention",
+        "\\mathrm{": "",
+        "\\text{": "",
+        "\\mathbf{": "",
+        "\\mathcal{": "",
     }
 
     for old, new in replacements.items():
@@ -157,9 +207,21 @@ def _simplify_latex_for_comment(latex: str) -> str:
     s = re.sub(r"\\frac\{([^}]+)\}\{([^}]+)\}", r"(\1)/(\2)", s)
 
     # Handle superscripts: x^{2} -> x²  (simple cases)
-    sup_map = {"0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
-               "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
-               "T": "ᵀ", "n": "ⁿ", "-1": "⁻¹"}
+    sup_map = {
+        "0": "⁰",
+        "1": "¹",
+        "2": "²",
+        "3": "³",
+        "4": "⁴",
+        "5": "⁵",
+        "6": "⁶",
+        "7": "⁷",
+        "8": "⁸",
+        "9": "⁹",
+        "T": "ᵀ",
+        "n": "ⁿ",
+        "-1": "⁻¹",
+    }
     for old, new in sup_map.items():
         s = s.replace(f"^{{{old}}}", new)
         s = s.replace(f"^{old}", new)
@@ -196,7 +258,7 @@ class TraceabilityBuilder:
         self.paper_id = paper_id
         self.equations = [
             EquationReference(
-                equation_id=eq.get("id", f"eq_{i+1}"),
+                equation_id=eq.get("id", f"eq_{i + 1}"),
                 equation_latex=eq.get("latex", ""),
                 equation_description=eq.get("description", ""),
                 paper_section=eq.get("section", ""),
@@ -223,16 +285,18 @@ class TraceabilityBuilder:
             logger.warning("Equation '%s' not found in paper", equation_id)
             return
 
-        self.mappings.append(CodeMapping(
-            equation_ref=eq_ref,
-            file_path=file_path,
-            line_start=line_start,
-            line_end=line_end,
-            code_snippet=code_snippet,
-            confidence=confidence,
-            mapping_type=mapping_type,
-            notes=notes,
-        ))
+        self.mappings.append(
+            CodeMapping(
+                equation_ref=eq_ref,
+                file_path=file_path,
+                line_start=line_start,
+                line_end=line_end,
+                code_snippet=code_snippet,
+                confidence=confidence,
+                mapping_type=mapping_type,
+                notes=notes,
+            )
+        )
 
     def scan_code_for_references(self, project_dir: Path) -> None:
         """
@@ -261,8 +325,8 @@ class TraceabilityBuilder:
                 match = eq_pattern.match(lines[i].strip())
                 if match:
                     eq_id = match.group(1)
-                    section = match.group(2) or ""
-                    description = match.group(3) or ""
+                    # Note: match.group(2) and match.group(3) are intentionally unused
+                    # (section name and description from the comment)
 
                     # Find the code block following the comment
                     code_start = i + 1
@@ -279,15 +343,17 @@ class TraceabilityBuilder:
 
                     eq_ref = self._find_equation(eq_id)
                     if eq_ref:
-                        self.mappings.append(CodeMapping(
-                            equation_ref=eq_ref,
-                            file_path=rel_path,
-                            line_start=code_start + 1,  # 1-indexed
-                            line_end=code_end,
-                            code_snippet=code_snippet[:500],
-                            confidence=0.9,  # High confidence — explicit comment
-                            mapping_type="direct",
-                        ))
+                        self.mappings.append(
+                            CodeMapping(
+                                equation_ref=eq_ref,
+                                file_path=rel_path,
+                                line_start=code_start + 1,  # 1-indexed
+                                line_end=code_end,
+                                code_snippet=code_snippet[:500],
+                                confidence=0.9,  # High confidence — explicit comment
+                                mapping_type="direct",
+                            )
+                        )
 
                     i = code_end
                 else:
@@ -348,14 +414,18 @@ def export_traceability_markdown(
     """
     lines: list[str] = []
 
-    lines.append(f"# Equation-to-Code Traceability Report")
+    lines.append("# Equation-to-Code Traceability Report")
     lines.append("")
     lines.append(f"**Paper:** {report.paper_title}")
+    lines.append(f"**Paper ID:** {report.paper_id}")
+    lines.append(f"**Generated:** {report.generated_at}")
     if report.paper_id:
         lines.append(f"**Paper ID:** {report.paper_id}")
     lines.append(f"**Generated:** {report.generated_at}")
-    lines.append(f"**Coverage:** {report.coverage_score:.0%} "
-                 f"({report.mapped_equations}/{report.total_equations} equations mapped)")
+    lines.append(
+        f"**Coverage:** {report.coverage_score:.0%} "
+        f"({report.mapped_equations}/{report.total_equations} equations mapped)"
+    )
     lines.append("")
 
     # Coverage bar
@@ -398,7 +468,9 @@ def export_traceability_markdown(
             lines.append(f"**Equation:** `{simplified}`")
             lines.append("")
 
-        lines.append(f"**File:** `{mapping.file_path}` (lines {mapping.line_start}–{mapping.line_end})")
+        lines.append(
+            f"**File:** `{mapping.file_path}` (lines {mapping.line_start}–{mapping.line_end})"
+        )
         lines.append(f"**Confidence:** {mapping.confidence:.0%} | **Type:** {mapping.mapping_type}")
         lines.append("")
 

@@ -7,7 +7,6 @@ and structured comparison reports between experiment runs.
 
 from __future__ import annotations
 
-import math
 import statistics
 from dataclasses import dataclass, field
 from typing import Any
@@ -41,16 +40,28 @@ class RunComparison:
 
 
 # Metrics where lower is better
-_LOWER_IS_BETTER = frozenset({
-    "loss", "train_loss", "val_loss", "test_loss",
-    "perplexity", "ppl",
-    "error", "error_rate",
-    "mse", "mae", "rmse",
-    "latency", "latency_ms",
-    "memory_mb", "memory_gb",
-    "flops",
-    "cer", "wer",  # character/word error rate
-})
+_LOWER_IS_BETTER = frozenset(
+    {
+        "loss",
+        "train_loss",
+        "val_loss",
+        "test_loss",
+        "perplexity",
+        "ppl",
+        "error",
+        "error_rate",
+        "mse",
+        "mae",
+        "rmse",
+        "latency",
+        "latency_ms",
+        "memory_mb",
+        "memory_gb",
+        "flops",
+        "cer",
+        "wer",  # character/word error rate
+    }
+)
 
 
 def is_higher_better(metric_name: str) -> bool:
@@ -134,15 +145,17 @@ def compare_runs(
 
         win_counts[best_id] = win_counts.get(best_id, 0) + 1
 
-        metric_comparisons.append(MetricComparison(
-            metric_name=metric_name,
-            values=values,
-            best_run_id=best_id,
-            worst_run_id=worst_id,
-            delta_from_baseline=delta_from_baseline,
-            percent_change=percent_change,
-            is_higher_better=higher_better,
-        ))
+        metric_comparisons.append(
+            MetricComparison(
+                metric_name=metric_name,
+                values=values,
+                best_run_id=best_id,
+                worst_run_id=worst_id,
+                delta_from_baseline=delta_from_baseline,
+                percent_change=percent_change,
+                is_higher_better=higher_better,
+            )
+        )
 
     # Overall winner
     winner = max(win_counts, key=lambda k: win_counts[k]) if win_counts else ""

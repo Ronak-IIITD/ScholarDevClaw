@@ -28,6 +28,7 @@ def _check_matplotlib() -> bool:
     if _MPL_AVAILABLE is None:
         try:
             import matplotlib
+
             matplotlib.use("Agg")  # Non-interactive backend
             _MPL_AVAILABLE = True
         except ImportError:
@@ -73,7 +74,8 @@ def plot_training_curves(
         return None
 
     fig, axes = plt.subplots(
-        len(metric_names), 1,
+        len(metric_names),
+        1,
         figsize=(10, 4 * len(metric_names)),
         squeeze=False,
     )
@@ -172,8 +174,7 @@ def plot_comparison_bars(
     from scholardevclaw.experiment.compare import is_higher_better
 
     best_idx = (
-        values.index(max(values)) if is_higher_better(metric_name)
-        else values.index(min(values))
+        values.index(max(values)) if is_higher_better(metric_name) else values.index(min(values))
     )
     bar_colors[best_idx] = "#2CA02C"  # Green for best
 
@@ -185,7 +186,10 @@ def plot_comparison_bars(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + max(values) * 0.02,
             f"{val:.4f}",
-            ha="center", va="bottom", fontsize=10, fontweight="bold",
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            fontweight="bold",
         )
 
     ax.set_xticks(range(len(run_labels)))
@@ -193,7 +197,8 @@ def plot_comparison_bars(
     ax.set_ylabel(metric_name, fontsize=12)
     ax.set_title(
         title or f"{metric_name} — Run Comparison",
-        fontsize=14, fontweight="bold",
+        fontsize=14,
+        fontweight="bold",
     )
     ax.grid(axis="y", alpha=0.3)
     ax.spines["top"].set_visible(False)
@@ -242,7 +247,16 @@ def plot_multi_run_curves(
     t = tracker or get_tracker()
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    colors = ["#4C78A8", "#F58518", "#E45756", "#72B7B2", "#54A24B", "#EECA3B", "#B07AA1", "#FF9DA7"]
+    colors = [
+        "#4C78A8",
+        "#F58518",
+        "#E45756",
+        "#72B7B2",
+        "#54A24B",
+        "#EECA3B",
+        "#B07AA1",
+        "#FF9DA7",
+    ]
 
     for idx, rid in enumerate(run_ids):
         entries = t.get_metrics(rid, metric_name)
@@ -251,22 +265,26 @@ def plot_multi_run_curves(
 
         epochs = [e.epoch for e in entries]
         values = [e.metric_value for e in entries]
-        label = (labels[idx] if labels and idx < len(labels)
-                 else f"Run {rid[:8]}")
+        label = labels[idx] if labels and idx < len(labels) else f"Run {rid[:8]}"
         color = colors[idx % len(colors)]
 
         ax.plot(
-            epochs, values,
-            color=color, linewidth=2,
-            marker="o", markersize=3,
-            label=label, alpha=0.85,
+            epochs,
+            values,
+            color=color,
+            linewidth=2,
+            marker="o",
+            markersize=3,
+            label=label,
+            alpha=0.85,
         )
 
     ax.set_xlabel("Epoch", fontsize=12)
     ax.set_ylabel(metric_name, fontsize=12)
     ax.set_title(
         title or f"{metric_name} — Multi-Run Training Curves",
-        fontsize=14, fontweight="bold",
+        fontsize=14,
+        fontweight="bold",
     )
     ax.legend(frameon=True, fancybox=True, shadow=True, fontsize=10)
     ax.grid(True, alpha=0.3)
@@ -352,7 +370,8 @@ def plot_metric_heatmap(
 
     ax.set_title(
         title or "Metric Heatmap Across Runs",
-        fontsize=14, fontweight="bold",
+        fontsize=14,
+        fontweight="bold",
     )
 
     fig.tight_layout()

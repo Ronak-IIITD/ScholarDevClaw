@@ -371,7 +371,9 @@ class AdvancedAgentMemory:
             try:
                 from scholardevclaw.agent.embeddings import EmbeddingEngine
 
-                backend = None if self._embedding_backend_name == "auto" else self._embedding_backend_name
+                backend = (
+                    None if self._embedding_backend_name == "auto" else self._embedding_backend_name
+                )
                 self._embedding_engine = EmbeddingEngine(
                     preferred_backend=backend,
                     cache_dir=self.store_dir / "models",
@@ -425,14 +427,9 @@ class AdvancedAgentMemory:
             if self._is_expired(memory):
                 continue
 
-            relevance = self._calculate_relevance(
-                query_terms, query_embedding, memory
-            )
+            relevance = self._calculate_relevance(query_terms, query_embedding, memory)
             recency = self._calculate_recency(memory)
             importance_boost = self._calculate_importance_boost(memory)
-
-            # Weighted composite score
-            composite = relevance * 0.5 + recency * 0.3 + importance_boost * 0.2
 
             results.append(
                 MemoryRetrieval(
