@@ -4030,6 +4030,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
             "remove",
             "default",
             "validate",
+            "list-providers",
         ],
         help="Action to perform",
     )

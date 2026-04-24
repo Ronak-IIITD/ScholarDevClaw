@@ -845,3 +845,40 @@ def _cmd_validate(args, store: AuthStore):
     except Exception as e:
         print(f"❌ API key validation failed: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+# ------------------------------------------------------------------
+# List available providers
+# ------------------------------------------------------------------
+
+
+def _cmd_list_providers(args, store: AuthStore):
+    """List all available LLM providers"""
+    from scholardevclaw.auth.types import AuthProvider
+
+    print("Available LLM providers:")
+    print("=" * 50)
+
+    # Get LLM providers only
+    llm_providers = [p for p in AuthProvider if p.is_llm_provider]
+
+    for provider in sorted(llm_providers, key=lambda p: p.value):
+        # Get default model for this provider
+        from scholardevclaw.llm.client import DEFAULT_MODELS
+
+        default_model = DEFAULT_MODELS.get(provider, "")
+
+        # Get environment variable name
+        env_var = provider.env_var_name
+
+        # Check if key is configured
+        import os
+
+        configured = bool(os.environ.get(env_var, ""))
+
+        status = "✓ configured" if configured else "✗ not set"
+        print(f"  {provider.value:<15} {status}")
+        if default_model:
+            print(f"    Default model: {default_model}")
+        print(f"    Env var: {env_var}")
+        print()
