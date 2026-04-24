@@ -56,3 +56,23 @@ pre,
 .animate-fade-in {
   animation: fade-in-up 0.3s ease-out forwards;
 }
+
+/* Glow ring for active pipeline phase */
+@keyframes glow-ring {
+  0%, 100% { box-shadow: 0 0 12px 2px rgba(59, 130, 246, 0.15); }
+  50% { box-shadow: 0 0 24px 4px rgba(59, 130, 246, 0.3); }
+}
+.animate-glow {
+  animation: glow-ring 2s ease-in-out infinite;
+}
+
+/* Shimmer effect for loading text */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}

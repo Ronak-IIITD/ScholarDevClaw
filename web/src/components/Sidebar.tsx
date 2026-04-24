@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
+  Sparkles,
   BookOpen,
   Play,
   Github,
@@ -8,6 +9,7 @@ import {
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/paper-to-code", label: "Paper → Code", icon: Sparkles },
   { to: "/specs", label: "Paper Specs", icon: BookOpen },
   { to: "/pipeline", label: "Pipeline", icon: Play },
 ] as const;

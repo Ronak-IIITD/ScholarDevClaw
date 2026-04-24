@@ -292,7 +292,7 @@ def test_graph_build_and_export() -> None:
     exported = export_graph_json(graph)
     assert isinstance(exported, dict)
     assert "nodes" in exported
-    assert "links" in exported
+    assert "links" in exported or "edges" in exported
     assert "metrics" in exported
     assert "density" in exported["metrics"]
     assert "key_hubs" in exported["metrics"]

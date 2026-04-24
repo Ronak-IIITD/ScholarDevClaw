@@ -2,7 +2,22 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-23
+**Last updated:** 2026-04-24
+
+### 2026-04-24 (Paper-to-Code UI & Test Fix)
+
+**Summary:** Fixed the failing understanding test and built an ultra-premium, Claude Code-inspired web dashboard for the end-to-end Paper-to-Code flow.
+
+**What changed:**
+
+**Tests (`core/tests/test_understanding.py`):**
+- Fixed `test_graph_build_and_export` to accept networkx ≥3.2 `edges` export key format (0 failing tests).
+
+**Web UI (`web/src/`):**
+- Created `PaperToCodePage.tsx` — a premium drag-and-drop page with live animated pipeline visualization and code generation previews.
+- Completely redesigned `DashboardPage.tsx` with a deep glassmorphic dark mode, shimmering gradients, abstract glowing backgrounds, and MacOS-style terminal UI.
+- Wired the new `PaperToCodePage` into the router and sidebar.
+- Added custom CSS animations (`glow-ring`, `shimmer`) to `index.css`.
 
 ### 2026-04-23 (Provider-Aware CLI: Multi-Provider LLM Support)
 
