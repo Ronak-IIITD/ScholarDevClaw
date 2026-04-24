@@ -797,12 +797,38 @@ def _cmd_validate(args, store: AuthStore):
 
     # Get model from args or use provider default
     model_arg = getattr(args, "model", None)
-    model = model_arg or None
 
     try:
-        from scholardevclaw.llm.client import LLMClient
+        from scholardevclaw.auth.types import AuthProvider
+        from scholardevclaw.llm.client import DEFAULT_MODELS, LLMClient
 
-        client = LLMClient.from_provider(provider_name, api_key=api_key, model=model)
+        auth_provider = AuthProvider(provider_name)
+        model = model_arg or DEFAULT_MODELS.get(auth_provider, "")
+
+        # OpenRouter requires HTTP-Referer and X-Title for free tier
+        if auth_provider == AuthProvider.OPENROUTER:
+            # Build headers with OpenRouter-specific additions
+            openrouter_extra = {
+                "HTTP-Referer": "https://scholardevclaw.dev",
+                "X-Title": "ScholarDevClaw",
+            }
+            client = LLMClient(
+                auth_provider,
+                api_key=api_key,
+                model=model,
+                base_url="https://openrouter.ai/api/v1",
+            )
+            # Patch the _build_headers to include OpenRouter extras
+            original_build_headers = client._build_headers
+
+            def _openrouter_headers(key: str) -> dict:
+                h = original_build_headers(key)
+                h.update(openrouter_extra)
+                return h
+
+            client._build_headers = _openrouter_headers
+        else:
+            client = LLMClient.from_provider(provider_name, api_key=api_key, model=model)
 
         # Make a simple test request
         response = client.chat("Say 'OK' if you receive this.", max_tokens=10)
