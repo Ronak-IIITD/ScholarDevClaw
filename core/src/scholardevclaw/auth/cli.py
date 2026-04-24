@@ -33,6 +33,7 @@ def cmd_auth(args):
         "usage": _cmd_usage,
         "expiry": _cmd_expiry,
         "validate": _cmd_validate,
+        "list-providers": _cmd_list_providers,
     }
 
     handler = dispatch.get(action)
