@@ -4,6 +4,51 @@
 
 **Last updated:** 2026-04-25
 
+### 2026-04-25 (Paper workflow trust reports + traceability artifacts)
+
+**Summary:** Added a trust/reporting spine to the paper workflow so both the CLI `from-paper` path and the TUI Paper-to-Code flow now emit inspectable trust artifacts directly into the generated project.
+
+**What changed:**
+
+**Reporting (`core/src/scholardevclaw/product/trust_report.py`):**
+- Added a shared paper workflow report writer that builds:
+  - `trust_report.json`
+  - `TRUST_REPORT.md`
+  - `traceability_report.json`
+  - `TRACEABILITY_REPORT.md`
+- Added consolidated trust scoring/status (`trusted`, `needs_review`, `failed`) based on:
+  - generation success rate
+  - execution/test success
+  - reproducibility score
+  - equation traceability coverage
+- Added module-level summaries, review notes, artifact listings, and metric summaries to the trust report.
+- Reused the existing equation-comment traceability engine to auto-scan generated code and export equation-to-code coverage.
+
+**CLI/TUI integration (`core/src/scholardevclaw/cli.py`, `core/src/scholardevclaw/tui/app.py`):**
+- Wired trust artifact generation into `scholardevclaw from-paper`.
+- Wired trust artifact generation into the TUI Paper-to-Code workflow before the product browser opens, so the generated project includes the reports immediately.
+- Added TUI healing metadata persistence into the workflow state so trust reports can record self-healing rounds and before/after failure counts.
+- CLI now prints the generated trust and traceability report paths at the end of a run.
+
+**Exports/tests (`core/src/scholardevclaw/product/__init__.py`, `core/tests/unit/test_product_trust_report.py`):**
+- Exported the shared trust report writer from `scholardevclaw.product`.
+- Added unit coverage for:
+  - successful trust/traceability artifact generation
+  - low-confidence/low-reproducibility review-note generation
+
+**Verification:**
+
+- `python3 -m ruff check core/src/scholardevclaw/product/trust_report.py core/src/scholardevclaw/product/__init__.py core/src/scholardevclaw/cli.py core/src/scholardevclaw/tui/app.py core/tests/unit/test_product_trust_report.py`
+  - `All checks passed!`
+- `python3 -m ruff format --check core/src/scholardevclaw/product/trust_report.py core/src/scholardevclaw/product/__init__.py core/src/scholardevclaw/cli.py core/src/scholardevclaw/tui/app.py core/tests/unit/test_product_trust_report.py`
+  - `5 files already formatted`
+- `python3 -m pytest core/tests/unit/test_product_trust_report.py core/tests/unit/test_tui_app.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_widgets.py -q`
+  - `117 passed in 1.72s`
+- `python3 -m pytest core/tests/unit/test_cli.py -q`
+  - `51 passed in 1.05s`
+- `python3 -m pytest core/tests/unit/test_product_trust_report.py core/tests/unit/test_tui_app.py core/tests/unit/test_cli.py -q`
+  - `144 passed in 1.87s`
+
 ### 2026-04-25 (TUI-first Paper-to-Code workflow promotion)
 
 **Summary:** Promoted the existing TUI paper pipeline into a first-class Paper-to-Code flow so users can launch and monitor it directly from the terminal UI instead of discovering it first through the web dashboard.

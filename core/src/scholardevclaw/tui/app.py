@@ -45,6 +45,7 @@ from scholardevclaw.ingestion import PaperIngester
 from scholardevclaw.ingestion.models import PaperDocument
 from scholardevclaw.llm.client import DEFAULT_MODELS, LLMAPIError, LLMClient, LLMConfigError
 from scholardevclaw.planning import ImplementationPlan, ImplementationPlanner
+from scholardevclaw.product.trust_report import write_paper_workflow_reports
 from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 from scholardevclaw.understanding import PaperUnderstanding, UnderstandingAgent
 
@@ -340,7 +341,9 @@ class Phase9WorkflowState:
     understanding: PaperUnderstanding | None = None
     plan: ImplementationPlan | None = None
     generation_result: GenerationResult | None = None
+    execution_report: Any | None = None
     reproducibility_report: ReproducibilityReport | None = None
+    healing_payload: dict[str, Any] | None = None
     generation_orchestrator: CodeOrchestrator | None = None
     cancel_event: threading.Event | None = None
 
@@ -1549,6 +1552,7 @@ class ScholarDevClawApp(App[None]):
 
         runner = SandboxRunner()
         report = runner.run_tests(output_dir)
+        state.healing_payload = None
         for line in (report.stdout or "").splitlines()[-200:]:
             self._phase9_call_screen(execution_screen, "append_pytest_output", line)
         for test_name, passed in self._phase9_extract_test_status(report.stdout or ""):
@@ -1561,6 +1565,8 @@ class ScholarDevClawApp(App[None]):
 
         healing_enabled = self._env_flag_enabled(PHASE9_HEALING_ENV, default=False)
         if healing_enabled and not report.success:
+            initial_failed_tests = report.tests_failed
+            initial_error_tests = report.tests_errors
             self._phase9_log("Sandbox tests failed; starting self-healing...", "warning")
             orchestrator = state.generation_orchestrator or CodeOrchestrator(
                 api_key=state.api_key,
@@ -1589,6 +1595,14 @@ class ScholarDevClawApp(App[None]):
             report = runner.run_tests(output_dir)
             for line in (report.stdout or "").splitlines()[-120:]:
                 self._phase9_call_screen(execution_screen, "append_pytest_output", line)
+            state.healing_payload = {
+                "round_count": len(healer.round_reports),
+                "round_reports": healer.round_reports,
+                "initial_failed_tests": initial_failed_tests,
+                "initial_error_tests": initial_error_tests,
+                "final_failed_tests": report.tests_failed,
+                "final_error_tests": report.tests_errors,
+            }
 
         self._phase9_log(
             (
@@ -1624,6 +1638,46 @@ class ScholarDevClawApp(App[None]):
     def _phase9_present_product(self, state: Phase9WorkflowState) -> None:
         assert state.output_dir is not None
         self._phase9_set_phase("paper_product")
+        if (
+            state.paper_document is not None
+            and state.understanding is not None
+            and state.plan is not None
+            and state.generation_result is not None
+            and state.execution_report is not None
+            and state.reproducibility_report is not None
+        ):
+            try:
+                workflow_reports = write_paper_workflow_reports(
+                    source=state.source,
+                    document=state.paper_document,
+                    understanding=state.understanding,
+                    plan=state.plan,
+                    generation_result=state.generation_result,
+                    execution_report=state.execution_report,
+                    reproducibility_report=state.reproducibility_report,
+                    project_dir=state.output_dir,
+                    healing_payload=state.healing_payload,
+                )
+                self._phase9_log(
+                    f"Trust report: {workflow_reports.trust_report_markdown_path}",
+                    "accent",
+                )
+                self._phase9_log(
+                    (
+                        "Traceability coverage: "
+                        f"{workflow_reports.traceability_report.coverage_score:.0%} "
+                        f"({workflow_reports.traceability_report.mapped_equations}/"
+                        f"{workflow_reports.traceability_report.total_equations})"
+                    ),
+                    (
+                        "success"
+                        if workflow_reports.traceability_report.coverage_score >= 0.5
+                        or workflow_reports.traceability_report.total_equations == 0
+                        else "warning"
+                    ),
+                )
+            except (OSError, RuntimeError, ValueError) as exc:
+                self._phase9_log(f"Warning: failed to write trust artifacts: {exc}", "warning")
         install_command = f'pip install -e "{state.output_dir}"'
         self._phase9_ui_call(
             self.push_screen,
@@ -1664,6 +1718,7 @@ class ScholarDevClawApp(App[None]):
         self._phase9_raise_if_cancelled(state)
 
         execution_report, generation_result = self._phase9_execute_tests(state)
+        state.execution_report = execution_report
         state.generation_result = generation_result
         self._phase9_raise_if_cancelled(state)
 

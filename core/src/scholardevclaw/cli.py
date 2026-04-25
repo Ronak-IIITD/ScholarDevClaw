@@ -1539,7 +1539,7 @@ def cmd_from_paper(args):
 
     try:
         from scholardevclaw.execution import ReproducibilityScorer, SandboxRunner, SelfHealingLoop
-        from scholardevclaw.product import ProductScaffolder
+        from scholardevclaw.product import ProductScaffolder, write_paper_workflow_reports
     except ImportError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -1651,6 +1651,22 @@ def cmd_from_paper(args):
     else:
         print("[6/6] Scaffold skipped (use --scaffold to enable)")
 
+    workflow_reports = None
+    try:
+        workflow_reports = write_paper_workflow_reports(
+            source=source,
+            document=document,
+            understanding=understanding,
+            plan=plan,
+            generation_result=generation_result,
+            execution_report=final_execution_report,
+            reproducibility_report=reproducibility_report,
+            project_dir=project_dir,
+            healing_payload=healing_payload,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"Warning: failed to write trust artifacts: {exc}", file=sys.stderr)
+
     if knowledge_base is not None:
         try:
             knowledge_base.store_paper(document, understanding)
@@ -1692,6 +1708,9 @@ def cmd_from_paper(args):
         print(f"API: {project_dir / 'api' / 'main.py'}")
         print(f"Demo: {project_dir / 'demo.py'}")
         print(f"Docs: {project_dir / 'README.md'}")
+    if workflow_reports is not None:
+        print(f"Trust report: {workflow_reports.trust_report_markdown_path}")
+        print(f"Traceability: {workflow_reports.traceability_markdown_path}")
 
     if not bool(getattr(final_execution_report, "success", False)):
         sys.exit(1)
