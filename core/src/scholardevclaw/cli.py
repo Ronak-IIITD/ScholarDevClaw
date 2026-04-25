@@ -3451,7 +3451,7 @@ def cmd_tui(args):
         print(f"Details: {e}", file=sys.stderr)
         sys.exit(1)
 
-    run_tui()
+    run_tui(yes_mode=getattr(args, "yes", False))
 
 
 def cmd_agent(args):
@@ -3850,6 +3850,11 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "--provider",
         help="LLM provider (default: openrouter)",
     )
+    p_from_paper.add_argument(
+        "--yes",
+        action="store_true",
+        help="Auto-approve all prompts (one-shot mode: skip approval gates)",
+    )
 
     # validate
     p_validate = subparsers.add_parser("validate", help="Validate tests and benchmark")
@@ -4115,7 +4120,12 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_workspace.add_argument("--output-json", action="store_true", help="Output JSON")
 
     # tui
-    subparsers.add_parser("tui", help="Launch interactive terminal UI")
+    p_tui = subparsers.add_parser("tui", help="Launch interactive terminal UI")
+    p_tui.add_argument(
+        "--yes",
+        action="store_true",
+        help="Auto-approve all prompts (one-shot mode: no approval gates)",
+    )
 
     # demo
     p_demo = subparsers.add_parser(

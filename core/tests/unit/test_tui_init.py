@@ -12,7 +12,7 @@ def test_run_tui_delegates_to_app_run_tui(monkeypatch):
     app_module = ModuleType("scholardevclaw.tui.app")
     calls = {"count": 0}
 
-    def fake_run_tui():
+    def fake_run_tui(*, yes_mode: bool = False):
         calls["count"] += 1
         return "ok"
 

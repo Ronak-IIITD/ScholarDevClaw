@@ -1,10 +1,10 @@
 """Textual TUI entrypoints."""
 
 
-def run_tui():
+def run_tui(*, yes_mode: bool = False):
     from .app import run_tui as _run_tui
 
-    return _run_tui()
+    return _run_tui(yes_mode=yes_mode)
 
 
 __all__ = [

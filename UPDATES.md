@@ -4,6 +4,34 @@
 
 **Last updated:** 2026-04-25
 
+### 2026-04-25 (One-shot --yes mode + install.sh)
+
+**Summary:** Added `install.sh` for quick TUI setup and `--yes` flag to `scholardevclaw tui` and `scholardevclaw from-paper` for true one-shot paper-to-code with zero approval gates.
+
+**What changed:**
+
+**Installer (`install.sh`):**
+- Created `install.sh` at repo root for one-command TUI installation
+- Sets up Python venv, installs core with `[arxiv,ml,dev,tui]` extras
+- Checks for optional tools (git, node, bun) and reports status
+- Provides quick-start commands after installation
+
+**TUI `--yes` mode (`core/src/scholardevclaw/tui/app.py`):**
+- Added `yes_mode` parameter to `ScholarDevClawApp.__init__`
+- Added `auto_approve` field to `Phase9WorkflowState`
+- `_phase9_wait_for_understanding_decision` and `_phase9_wait_for_planning_approval` now auto-approve when `yes_mode` is active
+- Added `SCHOLARDEVCLAW_TUI_PHASE9_AUTO_APPROVE` env var for non-CLI usage
+- `--scholardevclaw tui --yes` skips both the understanding confirmation and the planning approval screens
+
+**CLI (`core/src/scholardevclaw/cli.py`):**
+- Added `--yes` flag to `tui` subcommand
+- Added `--yes` flag to `from-paper` subcommand
+
+**Tests (`core/tests/unit/test_tui_init.py`):**
+- Updated `fake_run_tui` mock to accept `yes_mode` keyword argument
+
+---
+
 ### 2026-04-25 (Paper workflow trust reports + traceability artifacts)
 
 **Summary:** Added a trust/reporting spine to the paper workflow so both the CLI `from-paper` path and the TUI Paper-to-Code flow now emit inspectable trust artifacts directly into the generated project.

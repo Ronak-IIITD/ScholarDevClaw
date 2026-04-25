@@ -346,6 +346,7 @@ class Phase9WorkflowState:
     healing_payload: dict[str, Any] | None = None
     generation_orchestrator: CodeOrchestrator | None = None
     cancel_event: threading.Event | None = None
+    auto_approve: bool = False
 
 
 class TaskLog(Message):
@@ -459,7 +460,7 @@ class ScholarDevClawApp(App[None]):
         "error": TUI_COLORS["error"],
     }
 
-    def __init__(self) -> None:
+    def __init__(self, *, yes_mode: bool = False) -> None:
         super().__init__()
         self._mode = "analyze"
         self._provider = "setup"
@@ -501,6 +502,7 @@ class ScholarDevClawApp(App[None]):
         self._approval_lock = threading.Lock()
         self._pending_integrate_reviews: dict[str, dict[str, Any]] = {}
         self._phase9_workflow = Phase9WorkflowState()
+        self._yes_mode = yes_mode
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
             self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
@@ -1332,6 +1334,11 @@ class ScholarDevClawApp(App[None]):
         state: Phase9WorkflowState,
         understanding: PaperUnderstanding,
     ) -> bool:
+        if state.auto_approve or os.environ.get(
+            "SCHOLARDEVCLAW_TUI_PHASE9_AUTO_APPROVE", ""
+        ).strip().lower() in {"1", "true", "yes"}:
+            self._phase9_log("Auto-approved (--yes mode)", "accent")
+            return True
         done = threading.Event()
         decision: dict[str, bool] = {"proceed": True}
 
@@ -1361,6 +1368,11 @@ class ScholarDevClawApp(App[None]):
         state: Phase9WorkflowState,
         plan: ImplementationPlan,
     ) -> bool:
+        if state.auto_approve or os.environ.get(
+            "SCHOLARDEVCLAW_TUI_PHASE9_AUTO_APPROVE", ""
+        ).strip().lower() in {"1", "true", "yes"}:
+            self._phase9_log("Auto-approved (--yes mode)", "accent")
+            return True
         done = threading.Event()
         decision: dict[str, bool] = {"approved": False}
 
@@ -1799,6 +1811,7 @@ class ScholarDevClawApp(App[None]):
             work_dir=work_dir,
             output_dir=output_dir,
             cancel_event=threading.Event(),
+            auto_approve=self._yes_mode,
         )
         self._phase9_workflow = workflow_state
         self._set_phase("paper_ingest")
@@ -4476,7 +4489,10 @@ class ScholarDevClawApp(App[None]):
         self._run_state = RunLifecycleState.IDLE
 
 
-def run_tui() -> None:
+def run_tui(*, yes_mode: bool = False) -> None:
+    if yes_mode:
+        os.environ["SCHOLARDEVCLAW_TUI_APPROVAL_GATES"] = "false"
+        os.environ["SCHOLARDEVCLAW_TUI_PHASE9_AUTO_APPROVE"] = "true"
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
     app = ScholarDevClawApp()
     app.run()
