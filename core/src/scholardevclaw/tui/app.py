@@ -65,6 +65,8 @@ from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspect
 logger = logging.getLogger(__name__)
 
 MODES = ("analyze", "search", "edit")
+PAPER_WORKFLOW_NAME = "Paper to Code"
+PAPER_WORKFLOW_ALIASES = ("paper", "paper-to-code", "papertocode", "from-paper")
 SUPPORTED_TUI_PROVIDERS = {
     "anthropic": AuthProvider.ANTHROPIC,
     "openai": AuthProvider.OPENAI,
@@ -86,6 +88,7 @@ DEFAULT_TUI_PROVIDER = "openrouter"
 DEFAULT_OPENROUTER_MODEL = DEFAULT_MODELS[AuthProvider.OPENROUTER]
 MODE_HINTS = {
     "analyze": [
+        "Hint -> paper arxiv:1706.03762",
         "Hint -> /run analyze ./repo",
         "Hint -> /ask what this repo does",
         "Hint -> runs",
@@ -95,6 +98,7 @@ MODE_HINTS = {
         "Hint -> validate ./repo",
     ],
     "search": [
+        "Hint -> paper ./paper.pdf",
         "Hint -> /run search layer normalization",
         "Hint -> /ask papers on flash attention",
         "Hint -> runs",
@@ -104,6 +108,7 @@ MODE_HINTS = {
         "Hint -> setup",
     ],
     "edit": [
+        "Hint -> from-paper arxiv:1706.03762",
         "Hint -> /run map ./repo rmsnorm",
         "Hint -> /ask implement RMSNorm",
         "Hint -> runs",
@@ -115,6 +120,8 @@ MODE_HINTS = {
 }
 MODE_COMMANDS = {
     "analyze": [
+        "paper",
+        "paper arxiv:1706.03762",
         "/run analyze ./repo",
         "/ask explain this repository",
         "analyze ./repo",
@@ -133,6 +140,8 @@ MODE_COMMANDS = {
         ":edit",
     ],
     "search": [
+        "paper",
+        "paper ./paper.pdf",
         "/run search layer normalization",
         "/ask find fast inference ideas",
         "search layer normalization",
@@ -149,6 +158,8 @@ MODE_COMMANDS = {
         ":edit",
     ],
     "edit": [
+        "paper",
+        "from-paper arxiv:1706.03762",
         "/run map ./repo rmsnorm",
         "/ask how should I patch this file",
         "map ./repo rmsnorm",
@@ -166,6 +177,10 @@ MODE_COMMANDS = {
     ],
 }
 GLOBAL_COMMANDS = [
+    "paper",
+    "paper arxiv:1706.03762",
+    "paper ./paper.pdf",
+    "from-paper arxiv:1706.03762",
     "setup",
     "providers",
     "status",
@@ -367,7 +382,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+i", "focus_inspector", "Inspector"),
         ("ctrl+h", "show_help", "Help"),
         ("escape", "handle_escape", "ESC"),
-        ("ctrl+p", "open_paper_ingestion", "Ingestion"),
+        ("ctrl+p", "open_paper_ingestion", "Paper"),
         ("ctrl+u", "open_understanding", "Understanding"),
         ("ctrl+l", "open_planning", "Planning"),
         ("ctrl+g", "open_generation", "Generation"),
@@ -1178,13 +1193,13 @@ class ScholarDevClawApp(App[None]):
 
     def _on_paper_ingestion_result(self, result: dict[str, Any] | None) -> None:
         if result is None:
-            self._append_output("Paper ingestion dismissed", "warning")
+            self._append_output("Paper workflow dismissed", "warning")
             return
         source = ""
         if isinstance(result, dict):
             source = str(result.get("source", "") or "").strip()
         if not source:
-            self._append_output("Paper ingestion cancelled (no source provided)", "warning")
+            self._append_output("Paper workflow cancelled (no source provided)", "warning")
             return
         self._start_phase9_workflow(source)
 
@@ -1222,7 +1237,7 @@ class ScholarDevClawApp(App[None]):
         self._append_output(f"Product result: {result}")
 
     # ------------------------------------------------------------------
-    # Phase-9 paper-to-product TUI workflow
+    # Paper-to-code TUI workflow
     # ------------------------------------------------------------------
 
     def _phase9_ui_call(self, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
@@ -1236,6 +1251,9 @@ class ScholarDevClawApp(App[None]):
 
     def _phase9_status(self, message: str, level: str = "info") -> None:
         self._phase9_ui_call(self._set_status, message, level)
+
+    def _phase9_set_phase(self, phase: str) -> None:
+        self._phase9_ui_call(self._set_phase, phase)
 
     @staticmethod
     def _phase9_slugify(source: str) -> str:
@@ -1370,14 +1388,16 @@ class ScholarDevClawApp(App[None]):
 
     def _phase9_ingest_paper(self, state: Phase9WorkflowState) -> PaperDocument:
         assert state.work_dir is not None
-        self._phase9_status("Phase 9: ingesting paper", "accent")
+        self._phase9_set_phase("paper_ingest")
+        self._phase9_status(f"{PAPER_WORKFLOW_NAME}: ingesting paper", "accent")
         self._phase9_log(f"[1/7] Ingesting paper source: {state.source}", "accent")
         ingester = PaperIngester()
         return ingester.ingest(state.source, state.work_dir / "paper")
 
     def _phase9_understand_paper(self, state: Phase9WorkflowState) -> PaperUnderstanding:
         assert state.paper_document is not None
-        self._phase9_status("Phase 9: understanding paper", "accent")
+        self._phase9_set_phase("paper_understand")
+        self._phase9_status(f"{PAPER_WORKFLOW_NAME}: understanding paper", "accent")
         self._phase9_log("[2/7] Understanding paper...", "accent")
         agent = UnderstandingAgent(
             api_key=state.api_key,
@@ -1389,7 +1409,8 @@ class ScholarDevClawApp(App[None]):
     def _phase9_plan_implementation(self, state: Phase9WorkflowState) -> ImplementationPlan:
         assert state.paper_document is not None
         assert state.understanding is not None
-        self._phase9_status("Phase 9: planning implementation", "accent")
+        self._phase9_set_phase("paper_plan")
+        self._phase9_status(f"{PAPER_WORKFLOW_NAME}: planning implementation", "accent")
         self._phase9_log("[3/7] Planning implementation...", "accent")
         planner = ImplementationPlanner(
             api_key=state.api_key,
@@ -1408,7 +1429,8 @@ class ScholarDevClawApp(App[None]):
         module_ids = [module.id for module in plan.modules if module.id.strip()]
         generation_screen = GenerationScreen(module_ids=module_ids)
         self._phase9_ui_call(self.push_screen, generation_screen, self._on_generation_result)
-        self._phase9_status("Phase 9: generating code", "accent")
+        self._phase9_set_phase("paper_generate")
+        self._phase9_status(f"{PAPER_WORKFLOW_NAME}: generating code", "accent")
         self._phase9_log(f"[4/7] Generating {len(module_ids)} modules...", "accent")
 
         orchestrator = CodeOrchestrator(
@@ -1521,7 +1543,8 @@ class ScholarDevClawApp(App[None]):
 
         execution_screen = ExecutionScreen()
         self._phase9_ui_call(self.push_screen, execution_screen, self._on_execution_result)
-        self._phase9_status("Phase 9: executing tests", "accent")
+        self._phase9_set_phase("paper_execute")
+        self._phase9_status(f"{PAPER_WORKFLOW_NAME}: executing tests", "accent")
         self._phase9_log("[5/7] Running sandbox tests...", "accent")
 
         runner = SandboxRunner()
@@ -1582,7 +1605,8 @@ class ScholarDevClawApp(App[None]):
         execution_report: Any,
     ) -> ReproducibilityReport:
         assert state.understanding is not None
-        self._phase9_status("Phase 9: scoring reproducibility", "accent")
+        self._phase9_set_phase("paper_score")
+        self._phase9_status(f"{PAPER_WORKFLOW_NAME}: scoring reproducibility", "accent")
         self._phase9_log("[6/7] Scoring reproducibility...", "accent")
         scorer = ReproducibilityScorer(
             api_key=state.api_key,
@@ -1599,6 +1623,7 @@ class ScholarDevClawApp(App[None]):
 
     def _phase9_present_product(self, state: Phase9WorkflowState) -> None:
         assert state.output_dir is not None
+        self._phase9_set_phase("paper_product")
         install_command = f'pip install -e "{state.output_dir}"'
         self._phase9_ui_call(
             self.push_screen,
@@ -1615,7 +1640,7 @@ class ScholarDevClawApp(App[None]):
                 self._phase9_log(f"  - {path.relative_to(state.output_dir)}")
         self._phase9_log(f"Install command: {install_command}", "accent")
 
-    def _phase9_run_flow(self, state: Phase9WorkflowState) -> None:
+    def _phase9_run_flow(self, state: Phase9WorkflowState) -> str:
         self._phase9_raise_if_cancelled(state)
         state.paper_document = self._phase9_ingest_paper(state)
         self._phase9_raise_if_cancelled(state)
@@ -1625,7 +1650,7 @@ class ScholarDevClawApp(App[None]):
         proceed = self._phase9_wait_for_understanding_decision(state, state.understanding)
         if not proceed:
             self._phase9_log("Understanding rejected. Workflow stopped before planning.", "warning")
-            return
+            return "stopped"
 
         state.plan = self._phase9_plan_implementation(state)
         self._phase9_raise_if_cancelled(state)
@@ -1633,7 +1658,7 @@ class ScholarDevClawApp(App[None]):
         approved = self._phase9_wait_for_planning_approval(state, state.plan)
         if not approved:
             self._phase9_log("Planning approval rejected. Generation was not started.", "warning")
-            return
+            return "stopped"
 
         state.generation_result = self._phase9_generate_code(state)
         self._phase9_raise_if_cancelled(state)
@@ -1645,6 +1670,7 @@ class ScholarDevClawApp(App[None]):
         state.reproducibility_report = self._phase9_score_reproducibility(state, execution_report)
         self._phase9_raise_if_cancelled(state)
         self._phase9_present_product(state)
+        return "completed"
 
     def _run_phase9_workflow_thread(self, state: Phase9WorkflowState) -> None:
         try:
@@ -1657,21 +1683,31 @@ class ScholarDevClawApp(App[None]):
                 api_key=api_key,
                 model=model,
             )
-            self._phase9_log(f"Starting Phase-9 workflow for source: {state.source}", "accent")
-            self._phase9_run_flow(state)
-            if self._phase9_is_cancelled(state):
-                self._phase9_status("Phase 9 workflow cancelled", "warning")
-            else:
-                self._phase9_status("Phase 9 workflow complete", "success")
-        except TaskCancelledError:
-            self._phase9_log("Phase 9 workflow cancelled", "warning")
-            self._phase9_status("Phase 9 workflow cancelled", "warning")
-        except Exception as exc:
             self._phase9_log(
-                f"Phase 9 workflow failed: {exc}",
+                f"Starting {PAPER_WORKFLOW_NAME} workflow for source: {state.source}",
+                "accent",
+            )
+            outcome = self._phase9_run_flow(state)
+            if self._phase9_is_cancelled(state):
+                self._phase9_set_phase("idle")
+                self._phase9_status(f"{PAPER_WORKFLOW_NAME} workflow cancelled", "warning")
+            elif outcome == "stopped":
+                self._phase9_set_phase("idle")
+                self._phase9_status(f"{PAPER_WORKFLOW_NAME} workflow stopped", "warning")
+            else:
+                self._phase9_set_phase("complete")
+                self._phase9_status(f"{PAPER_WORKFLOW_NAME} workflow complete", "success")
+        except TaskCancelledError:
+            self._phase9_set_phase("idle")
+            self._phase9_log(f"{PAPER_WORKFLOW_NAME} workflow cancelled", "warning")
+            self._phase9_status(f"{PAPER_WORKFLOW_NAME} workflow cancelled", "warning")
+        except Exception as exc:
+            self._phase9_set_phase("idle")
+            self._phase9_log(
+                f"{PAPER_WORKFLOW_NAME} workflow failed: {exc}",
                 "error",
             )
-            self._phase9_status("Phase 9 workflow failed", "error")
+            self._phase9_status(f"{PAPER_WORKFLOW_NAME} workflow failed", "error")
         finally:
             if state.llm_client is not None:
                 with contextlib.suppress(Exception):
@@ -1684,12 +1720,13 @@ class ScholarDevClawApp(App[None]):
 
     def _start_phase9_workflow(self, source: str) -> None:
         if self._phase9_workflow.active:
-            self._append_output("Phase 9 workflow already running", "warning")
-            self._set_status("Phase 9 workflow already running", "warning")
+            self._append_output(f"{PAPER_WORKFLOW_NAME} workflow already running", "warning")
+            self._set_status(f"{PAPER_WORKFLOW_NAME} workflow already running", "warning")
             return
         if self._running_action is not None:
             self._append_output(
-                "Finish current command task before starting Phase 9 workflow", "warning"
+                f"Finish current command task before starting {PAPER_WORKFLOW_NAME} workflow",
+                "warning",
             )
             self._set_status("Command task running", "warning")
             return
@@ -1697,7 +1734,7 @@ class ScholarDevClawApp(App[None]):
         source_text = str(source or "").strip()
         if not source_text:
             self._append_output("Paper source is required", "warning")
-            self._set_status("Phase 9 source missing", "warning")
+            self._set_status(f"{PAPER_WORKFLOW_NAME} source missing", "warning")
             return
 
         work_dir, output_dir = self._phase9_prepare_dirs(source_text)
@@ -1709,8 +1746,9 @@ class ScholarDevClawApp(App[None]):
             cancel_event=threading.Event(),
         )
         self._phase9_workflow = workflow_state
-        self._append_output(f"Phase 9 work directory: {work_dir}", "accent")
-        self._set_status("Phase 9 workflow running", "accent")
+        self._set_phase("paper_ingest")
+        self._append_output(f"{PAPER_WORKFLOW_NAME} work directory: {work_dir}", "accent")
+        self._set_status(f"{PAPER_WORKFLOW_NAME} workflow running", "accent")
 
         thread = threading.Thread(
             target=self._run_phase9_workflow_thread,
@@ -2767,6 +2805,10 @@ class ScholarDevClawApp(App[None]):
     def _all_commands(self) -> list[str]:
         command_dir = self._directory if self._directory not in {"", "."} else "./repo"
         contextual = [
+            "paper",
+            "paper arxiv:1706.03762",
+            "paper ./paper.pdf",
+            "from-paper arxiv:1706.03762",
             f"/run analyze {command_dir}",
             f"/run generate {command_dir} rmsnorm",
             "/ask explain this repository",
@@ -2967,6 +3009,9 @@ class ScholarDevClawApp(App[None]):
                     except ValueError:
                         return "run_events", parsed
                 return "run_events", parsed
+
+        if head in PAPER_WORKFLOW_ALIASES:
+            return "paper_workflow", {"source": raw[len(parts[0]) :].strip()}
 
         if head == "/ask":
             return "chat", {"action": "chat", "prompt": raw[len(parts[0]) :].strip()}
@@ -3754,6 +3799,9 @@ class ScholarDevClawApp(App[None]):
             else:
                 self._set_status(f"Run #{run_id} events", "info")
             return
+        if action == "paper_workflow":
+            self._open_paper_workflow(str(request.get("source", "") or ""))
+            return
         if action == "quit":
             self.exit()
             return
@@ -4272,8 +4320,11 @@ class ScholarDevClawApp(App[None]):
         if self._running_action is None:
             if self._phase9_workflow.active and self._phase9_workflow.cancel_event is not None:
                 self._phase9_workflow.cancel_event.set()
-                self._append_output("Cancel requested (Phase 9 workflow)...", "warning")
-                self._set_status("Phase 9 cancellation requested", "warning")
+                self._append_output(
+                    f"Cancel requested ({PAPER_WORKFLOW_NAME} workflow)...",
+                    "warning",
+                )
+                self._set_status(f"{PAPER_WORKFLOW_NAME} cancellation requested", "warning")
                 return
             self.exit()
             return
@@ -4295,8 +4346,15 @@ class ScholarDevClawApp(App[None]):
     def action_open_command_palette(self) -> None:
         self.push_screen(CommandPalette(), self._on_command_palette_result)
 
-    def action_open_paper_ingestion(self) -> None:
+    def _open_paper_workflow(self, source: str = "") -> None:
+        source_text = str(source or "").strip()
+        if source_text:
+            self._start_phase9_workflow(source_text)
+            return
         self.push_screen(PaperIngestionScreen(), self._on_paper_ingestion_result)
+
+    def action_open_paper_ingestion(self) -> None:
+        self._open_paper_workflow()
 
     def action_open_understanding(self) -> None:
         self.push_screen(UnderstandingScreen(), self._on_understanding_result)

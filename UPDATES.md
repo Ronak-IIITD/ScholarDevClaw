@@ -2,7 +2,40 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-24
+**Last updated:** 2026-04-25
+
+### 2026-04-25 (TUI-first Paper-to-Code workflow promotion)
+
+**Summary:** Promoted the existing TUI paper pipeline into a first-class Paper-to-Code flow so users can launch and monitor it directly from the terminal UI instead of discovering it first through the web dashboard.
+
+**What changed:**
+
+**TUI shell (`core/src/scholardevclaw/tui/app.py`):**
+- Added first-class paper workflow command aliases: `paper`, `paper-to-code`, `papertocode`, and `from-paper`.
+- Surfaced paper workflow examples in command hints, command suggestions, and global command discovery.
+- Routed `paper` commands directly into the TUI paper workflow and made `Ctrl+P` a clearer `Paper` action.
+- Replaced user-facing `Phase 9` status text with `Paper to Code` wording.
+- Added paper-specific phase tracker states for ingest, understand, plan, generate, execute, score, and product.
+- Fixed workflow completion messaging so rejected understanding/planning gates now end as `stopped` instead of incorrectly reporting `complete`.
+
+**TUI screens (`core/src/scholardevclaw/tui/screens.py`):**
+- Updated welcome/help copy to emphasize the Paper-to-Code TUI path first.
+- Added paper workflow commands to the command palette.
+- Renamed paper workflow modal titles from internal `Phase 9` labels to `Paper to Code`.
+
+**TUI widgets/tests (`core/src/scholardevclaw/tui/widgets.py`, `core/tests/unit/test_tui_app.py`, `core/tests/unit/test_tui_screens.py`):**
+- Extended `PhaseTracker` with paper workflow phases.
+- Added coverage for paper workflow command parsing and execution routing.
+- Updated TUI copy/binding assertions for the new Paper-to-Code wording and shortcuts.
+
+**Verification:**
+
+- `python3 -m ruff check core/src/scholardevclaw/tui/app.py core/src/scholardevclaw/tui/screens.py core/src/scholardevclaw/tui/widgets.py core/tests/unit/test_tui_app.py core/tests/unit/test_tui_screens.py`
+  - `All checks passed!`
+- `python3 -m ruff format --check core/src/scholardevclaw/tui/app.py core/src/scholardevclaw/tui/screens.py core/src/scholardevclaw/tui/widgets.py core/tests/unit/test_tui_app.py core/tests/unit/test_tui_screens.py`
+  - `5 files already formatted`
+- `python3 -m pytest core/tests/unit/test_tui_app.py core/tests/unit/test_tui_screens.py core/tests/unit/test_tui_widgets.py -q`
+  - `115 passed in 2.33s`
 
 ### 2026-04-24 (Paper-to-Code UI & Test Fix)
 

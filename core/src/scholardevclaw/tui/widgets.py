@@ -23,6 +23,13 @@ class PhaseTracker(Static):
         ("mapping", "Map"),
         ("generating", "Generate"),
         ("validating_patches", "Validate"),
+        ("paper_ingest", "Paper: Ingest"),
+        ("paper_understand", "Paper: Understand"),
+        ("paper_plan", "Paper: Plan"),
+        ("paper_generate", "Paper: Generate"),
+        ("paper_execute", "Paper: Test"),
+        ("paper_score", "Paper: Score"),
+        ("paper_product", "Paper: Product"),
         ("complete", "Done"),
     ]
 

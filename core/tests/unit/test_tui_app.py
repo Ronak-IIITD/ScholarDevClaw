@@ -350,6 +350,22 @@ def test_build_request_supports_setup_and_provider_commands():
     assert req == {}
 
 
+def test_build_request_supports_paper_workflow_aliases():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("paper")
+    assert action == "paper_workflow"
+    assert req == {"source": ""}
+
+    action, req = app._build_request("paper ./paper.pdf")
+    assert action == "paper_workflow"
+    assert req == {"source": "./paper.pdf"}
+
+    action, req = app._build_request("from-paper arxiv:1706.03762")
+    assert action == "paper_workflow"
+    assert req == {"source": "arxiv:1706.03762"}
+
+
 def test_build_request_supports_ask_namespace():
     app = _minimal_app_for_unit()
 
@@ -1714,6 +1730,21 @@ def test_on_paper_ingestion_result_starts_phase9_workflow_with_source():
     assert started == ["2406.12345"]
 
 
+def test_execute_action_request_routes_paper_workflow_to_open_paper_workflow():
+    app = _minimal_app_for_unit()
+    opened: list[str] = []
+
+    app._open_paper_workflow = lambda source="": opened.append(source)
+
+    app._execute_action_request(
+        "paper_workflow",
+        {"source": "2406.12345"},
+        command="paper 2406.12345",
+    )
+
+    assert opened == ["2406.12345"]
+
+
 def test_phase9_model_and_key_uses_selected_provider_env_var(monkeypatch):
     app = _minimal_app_for_unit()
     app._provider = "openrouter"
@@ -1770,9 +1801,10 @@ def test_phase9_run_flow_blocks_generation_when_planning_rejected():
     phase9_app._phase9_generate_code = lambda state: generate_calls.append("generate")
     phase9_app._phase9_log = lambda line, level="info": logs.append(f"{level}:{line}")
 
-    app._phase9_run_flow(state)
+    outcome = app._phase9_run_flow(state)
 
     assert generate_calls == []
+    assert outcome == "stopped"
     assert any("generation was not started" in line.lower() for line in logs)
 
 
@@ -1813,7 +1845,7 @@ def test_phase9_run_flow_invokes_helpers_in_order():
     )
     phase9_app._phase9_present_product = lambda state: _mark("product")
 
-    app._phase9_run_flow(state)
+    outcome = app._phase9_run_flow(state)
 
     assert call_order == [
         "ingest",
@@ -1826,6 +1858,7 @@ def test_phase9_run_flow_invokes_helpers_in_order():
         "score",
         "product",
     ]
+    assert outcome == "completed"
     assert state.generation_result is healed
 
 
@@ -1848,12 +1881,12 @@ def test_action_cancel_task_cancels_phase9_workflow_when_active():
 
     assert phase9_cancel.is_set() is True
     assert exits == []
-    assert any("phase 9" in line.lower() for line in output)
-    assert any("phase 9" in line.lower() for line in statuses)
+    assert any("paper to code" in line.lower() for line in output)
+    assert any("paper to code" in line.lower() for line in statuses)
 
 
 def test_bindings_include_phase9_shortcuts():
     source = inspect.getsource(ScholarDevClawApp)
 
-    assert '("ctrl+p", "open_paper_ingestion", "Ingestion")' in source
+    assert '("ctrl+p", "open_paper_ingestion", "Paper")' in source
     assert '("ctrl+l", "open_planning", "Planning")' in source

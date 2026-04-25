@@ -43,6 +43,14 @@ def test_help_text_mentions_ask_and_run_namespaces():
     assert "/run <action> [args...]" in HELP_TEXT
 
 
+def test_help_and_palette_include_paper_workflow_commands():
+    assert "paper [source]" in HELP_TEXT
+    assert "from-paper <source>" in HELP_TEXT
+    assert "Ctrl+P open paper workflow" in HELP_TEXT
+    assert "paper" in CommandPalette.PALETTE_COMMANDS
+    assert "from-paper arxiv:1706.03762" in CommandPalette.PALETTE_COMMANDS
+
+
 def test_help_and_palette_include_run_events_command():
     assert "run events <id> [limit]" in HELP_TEXT
     assert "run events 1" in CommandPalette.PALETTE_COMMANDS

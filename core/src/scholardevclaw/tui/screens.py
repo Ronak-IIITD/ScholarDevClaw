@@ -1,4 +1,4 @@
-"""Modal screens for the command-first TUI and paper-to-product workflow."""
+"""Modal screens for the command-first TUI and paper-to-code workflow."""
 
 from __future__ import annotations
 
@@ -57,7 +57,12 @@ def _meter(value: float, *, width: int = 24) -> str:
 WELCOME_TEXT = (
     "ScholarDevClaw\n\n"
     "Keyboard-first research-to-code shell.\n"
-    "Type commands like:\n"
+    "Paper workflow:\n"
+    "  paper\n"
+    "  paper arxiv:1706.03762\n"
+    "  paper ./paper.pdf\n"
+    "  Ctrl+P opens the paper workflow\n\n"
+    "Repo workflow:\n"
     "  setup\n"
     "  /run analyze ./repo\n"
     "  /ask explain this repository\n"
@@ -73,6 +78,7 @@ HELP_TEXT = (
     "Keys\n"
     "Tab autocomplete\n"
     "Up/Down history\n"
+    "Ctrl+P open paper workflow\n"
     "Ctrl+I focus inspector\n"
     "Inspector: j/k move; Enter/Space events; r rerun; s show; e events\n"
     "Review mode: a/x/g set hunk, A/X/G set all, Enter/Space submit\n"
@@ -84,6 +90,10 @@ HELP_TEXT = (
     "setup\n"
     "set provider anthropic|openai|gemini|grok|moonshot|glm|minimax|openrouter|ollama\n"
     f"set model {DEFAULT_OPENROUTER_MODEL}\n\n"
+    "Paper to Code\n"
+    "paper [source]\n"
+    "from-paper <source>\n"
+    "  source: arXiv ID, DOI, URL, or local PDF\n\n"
     "Commands\n"
     "/ask <question>\n"
     "/run <action> [args...]\n"
@@ -346,6 +356,10 @@ class CommandPalette(ModalScreen[str | None]):
     ]
 
     PALETTE_COMMANDS = [
+        "paper",
+        "paper arxiv:1706.03762",
+        "paper ./paper.pdf",
+        "from-paper arxiv:1706.03762",
         "setup",
         "/ask explain this repository",
         "/run analyze ./repo",
@@ -463,7 +477,7 @@ class CommandPalette(ModalScreen[str | None]):
 
 
 class PaperIngestionScreen(ModalScreen[dict[str, str] | None]):
-    """Phase 9: ingest paper source and preview extracted structures."""
+    """Paper-to-code entry: ingest paper source and preview extracted structures."""
 
     BINDINGS = [("escape", "dismiss", "Dismiss")]
 
@@ -520,7 +534,7 @@ class PaperIngestionScreen(ModalScreen[dict[str, str] | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Phase 9 · Paper Ingestion")
+            yield Static("Paper to Code · Ingestion")
             yield Input(
                 value=self._paper_source,
                 placeholder="Examples: 2406.12345, 10.1145/1234567, https://arxiv.org/abs/..., ./paper.pdf",
@@ -610,7 +624,7 @@ class PaperIngestionScreen(ModalScreen[dict[str, str] | None]):
 
 
 class UnderstandingScreen(ModalScreen[dict[str, str] | None]):
-    """Phase 9: inspect parsed understanding and confirm quality."""
+    """Paper-to-code review: inspect parsed understanding and confirm quality."""
 
     BINDINGS = [("escape", "dismiss", "Dismiss")]
 
@@ -660,7 +674,7 @@ class UnderstandingScreen(ModalScreen[dict[str, str] | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Phase 9 · Understanding")
+            yield Static("Paper to Code · Understanding")
             with Horizontal(id="understanding-main"):
                 yield Static("", id="understanding-graph")
                 yield Static("", id="understanding-sidebar")
@@ -731,7 +745,7 @@ class UnderstandingScreen(ModalScreen[dict[str, str] | None]):
 
 
 class PlanningScreen(ModalScreen[dict[str, Any] | None]):
-    """Phase 9: inspect implementation plan and pass approval gate."""
+    """Paper-to-code review: inspect implementation plan and pass approval gate."""
 
     BINDINGS = [("escape", "dismiss", "Dismiss")]
 
@@ -780,7 +794,7 @@ class PlanningScreen(ModalScreen[dict[str, Any] | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Phase 9 · Planning")
+            yield Static("Paper to Code · Planning")
             with Horizontal(id="planning-main"):
                 yield Static("", id="planning-details")
                 yield Static("", id="planning-estimates")
@@ -865,7 +879,7 @@ class PlanningScreen(ModalScreen[dict[str, Any] | None]):
 
 
 class GenerationScreen(ModalScreen[None]):
-    """Phase 9: generation monitor with live logs and progress."""
+    """Paper-to-code generation monitor with live logs and progress."""
 
     BINDINGS = [
         ("escape", "dismiss", "Dismiss"),
@@ -931,7 +945,7 @@ class GenerationScreen(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Phase 9 · Generation")
+            yield Static("Paper to Code · Generation")
             yield Static("", id="generation-tabs")
             yield Static("", id="generation-overall")
             yield Static("", id="generation-module-progress")
@@ -1070,7 +1084,7 @@ class GenerationScreen(ModalScreen[None]):
 
 
 class ExecutionScreen(ModalScreen[None]):
-    """Phase 9: execution + healing + reproducibility monitoring."""
+    """Paper-to-code execution, healing, and reproducibility monitoring."""
 
     BINDINGS = [("escape", "dismiss", "Dismiss")]
 
@@ -1125,7 +1139,7 @@ class ExecutionScreen(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Phase 9 · Execution")
+            yield Static("Paper to Code · Execution")
             yield Static("Healing round: 0", id="execution-healing")
             with Horizontal(id="execution-main"):
                 yield Static("", id="execution-output")
@@ -1193,7 +1207,7 @@ class ExecutionScreen(ModalScreen[None]):
 
 
 class ProductScreen(ModalScreen[None]):
-    """Phase 9: browse generated project artifacts and quick actions."""
+    """Paper-to-code output browser with generated artifacts and quick actions."""
 
     BINDINGS = [
         ("escape", "dismiss", "Dismiss"),
@@ -1261,7 +1275,7 @@ class ProductScreen(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Phase 9 · Product")
+            yield Static("Paper to Code · Product")
             with Horizontal(id="product-main"):
                 yield Static("", id="product-tree")
                 yield Static("", id="product-preview")
