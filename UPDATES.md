@@ -2,7 +2,22 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-25
+**Last updated:** 2026-04-26
+
+### 2026-04-26 (Natural language 'build me X' → paper workflow)
+
+**Summary:** The TUI now routes natural language prompts like "build me Flash Attention using this paper" directly to the paper-to-code workflow. Natural action routing is now always on (no env-var gate).
+
+**What changed:**
+
+**TUI natural language routing (`core/src/scholardevclaw/tui/app.py`):**
+- `_parse_natural_command` now detects "build/implement/create/add X using this paper" patterns
+- Strips trailing "using this paper" / "using this research" / "from this paper" from build target
+- `build_target` passed through `paper_workflow_no_source` or `paper_workflow` request
+- Added `paper_workflow_no_source` action that prompts user to load a paper first
+- Removed env-var gate on natural action routing — always enabled
+
+---
 
 ### 2026-04-25 (One-shot --yes mode + install.sh)
 
