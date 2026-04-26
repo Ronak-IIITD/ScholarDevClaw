@@ -67,7 +67,12 @@ logger = logging.getLogger(__name__)
 
 MODES = ("analyze", "search", "edit")
 PAPER_WORKFLOW_NAME = "Paper to Code"
-PAPER_WORKFLOW_ALIASES = ("paper", "paper-to-code", "papertocode", "from-paper")
+PAPER_WORKFLOW_ALIASES = (
+    "paper",
+    "paper-to-code",
+    "papertocode",
+    "from-paper",
+)
 SUPPORTED_TUI_PROVIDERS = {
     "anthropic": AuthProvider.ANTHROPIC,
     "openai": AuthProvider.OPENAI,
@@ -2033,6 +2038,35 @@ class ScholarDevClawApp(App[None]):
                 action = resolved
                 break
 
+        # Detect "build/implement/create X using this paper" pattern → paper workflow
+        build_patterns = (
+            "build me ",
+            "implement me ",
+            "create me ",
+            "add me ",
+            "build ",
+            "implement ",
+            "create ",
+            "add ",
+            "make me ",
+            "make ",
+        )
+        for pattern in build_patterns:
+            if normalized.startswith(pattern):
+                action = "paper_workflow"
+                raw_target = normalized[len(pattern) :].strip()
+                # Strip trailing "using this paper" / "from this paper"
+                for suffix in (
+                    "using this paper",
+                    "using this research",
+                    "from this paper",
+                    "from this research",
+                ):
+                    if raw_target.endswith(suffix):
+                        raw_target = raw_target[: -len(suffix)].strip()
+                ctx["build_target"] = raw_target
+                break
+
         for token in tokens:
             if token.startswith("./") or token.startswith("/") or token.startswith("../"):
                 ctx["repo_path"] = token
@@ -3169,9 +3203,16 @@ class ScholarDevClawApp(App[None]):
             return head, {"action": head, "repo_path": repo_path, "spec": spec}
 
         action, ctx = self._parse_natural_command(raw)
-        if self._env_flag_enabled(NATURAL_ACTION_ROUTING_ENV, default=False):
-            if action == "chat":
-                return "chat", {"action": "chat", "prompt": ctx.get("prompt", raw)}
+        if action == "paper_workflow" and ctx.get("build_target"):
+            # "build me X using this paper" — use stored paper source if available
+            last_paper = getattr(self._phase9_workflow, "source", "") or ""
+            source = last_paper if last_paper else ""
+            result = {"source": source, "build_target": ctx["build_target"]}
+            if source:
+                return "paper_workflow", result
+            # No paper loaded yet — prompt to load one first
+            return "paper_workflow_no_source", result
+        if action != "chat":
             ctx.setdefault("action", action)
             if action == "search":
                 ctx.setdefault("include_arxiv", True)
@@ -3869,6 +3910,16 @@ class ScholarDevClawApp(App[None]):
             return
         if action == "paper_workflow":
             self._open_paper_workflow(str(request.get("source", "") or ""))
+            return
+        if action == "paper_workflow_no_source":
+            build_target = request.get("build_target", "")
+            self._append_output(f"Load a paper first. Try: paper arxiv:1706.03762", "warning")
+            self._set_status("No paper loaded", "warning")
+            self._context_hints = [
+                f"paper arxiv:1706.03762",
+                f"build me {build_target} using this paper",
+            ]
+            self._update_command_meta()
             return
         if action == "quit":
             self.exit()

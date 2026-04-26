@@ -405,24 +405,34 @@ def test_build_request_routes_plain_text_to_chat():
     assert req["prompt"] == "hello model"
 
 
-def test_build_request_natural_action_routing_disabled_by_default():
+def test_build_request_natural_action_routing_enabled_by_default():
     app = _minimal_app_for_unit()
-
-    action, req = app._build_request("please analyze ./repo")
-
-    assert action == "chat"
-    assert req["prompt"] == "please analyze ./repo"
-
-
-def test_build_request_natural_action_routing_enabled_by_env(monkeypatch):
-    app = _minimal_app_for_unit()
-    monkeypatch.setenv("SCHOLARDEVCLAW_TUI_ENABLE_NATURAL_ACTION_ROUTING", "true")
 
     action, req = app._build_request("please analyze ./repo")
 
     assert action == "analyze"
     assert req["action"] == "analyze"
     assert req["repo_path"] == "./repo"
+
+
+def test_build_request_build_me_routes_to_paper_workflow():
+    app = _minimal_app_for_unit()
+
+    action, req = app._build_request("build me flash attention using this paper")
+
+    assert action == "paper_workflow_no_source"
+    assert req["build_target"] == "flash attention"
+
+
+def test_build_request_build_with_paper_loaded():
+    app = _minimal_app_for_unit()
+    app._phase9_workflow.source = "arxiv:1706.03762"
+
+    action, req = app._build_request("implement me rmsnorm using this paper")
+
+    assert action == "paper_workflow"
+    assert req["source"] == "arxiv:1706.03762"
+    assert req["build_target"] == "rmsnorm"
 
 
 def test_parse_approval_value_accepts_common_truthy_and_falsey_values():
