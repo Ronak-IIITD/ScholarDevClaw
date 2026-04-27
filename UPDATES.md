@@ -2,7 +2,35 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-27
+
+### 2026-04-27 (Provider-aware model picker in TUI setup)
+
+**Summary:** Added an interactive model picker experience to TUI setup so users can choose curated model presets per provider (with keyboard shortcuts), while still allowing custom model IDs.
+
+**What changed:**
+
+**TUI setup UX (`core/src/scholardevclaw/tui/screens.py`):**
+- Added curated `PROVIDER_MODEL_PRESETS` for supported providers (OpenAI, Anthropic, Gemini, OpenRouter, Ollama, Groq, etc.)
+- Added setup model picker controls to `ProviderSetupScreen`:
+  - `Prev` / `Next` / `Use` buttons
+  - keyboard shortcuts: `Ctrl+P` (previous), `Ctrl+N` (next), `Ctrl+U` (apply preset)
+- Added dynamic preset status line (`#setup-model-presets`) showing current selection and index
+- Provider changes now refresh model presets and auto-fill provider default model when appropriate
+- Model input edits immediately sync picker selection context
+- Help text updated to mention setup preset shortcuts
+
+**Tests (`core/tests/unit/test_tui_screens.py`):**
+- Added tests validating:
+  - model preset shortcuts are documented in help text
+  - setup screen source includes model preset bindings/buttons
+  - curated presets exist for OpenRouter and Ollama
+
+**Validation:**
+- Targeted: `core/tests/unit/test_tui_screens.py` (pass)
+- Full suite: `1455 passed, 1 skipped`
+
+---
 
 ### 2026-04-26 (Natural language 'build me X' → paper workflow)
 

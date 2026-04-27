@@ -10,8 +10,10 @@ from scholardevclaw.tui.screens import (
     DEFAULT_OPENROUTER_MODEL,
     HELP_TEXT,
     CommandPalette,
+    PROVIDER_MODEL_PRESETS,
     ProviderSetupScreen,
 )
+from scholardevclaw.auth.types import AuthProvider
 
 
 def test_provider_setup_submitted_handlers_are_field_scoped():
@@ -70,6 +72,31 @@ def test_help_text_mentions_inspector_focus_and_key_actions():
 def test_help_text_mentions_expanded_provider_selection():
     for provider in ["anthropic", "openai", "gemini", "grok", "moonshot", "glm", "minimax"]:
         assert provider in HELP_TEXT
+
+
+def test_help_text_mentions_setup_model_presets_shortcuts():
+    assert "setup screen presets: Ctrl+N/Ctrl+P choose, Ctrl+U apply" in HELP_TEXT
+
+
+def test_provider_setup_includes_model_preset_bindings_and_buttons():
+    source = inspect.getsource(ProviderSetupScreen)
+
+    assert '("ctrl+n", "model_next", "Next model")' in source
+    assert '("ctrl+p", "model_prev", "Prev model")' in source
+    assert '("ctrl+u", "apply_model_preset", "Use model")' in source
+    assert 'id="setup-model-presets"' in source
+    assert 'id="setup-model-prev"' in source
+    assert 'id="setup-model-next"' in source
+    assert 'id="setup-model-apply"' in source
+
+
+def test_provider_model_presets_include_curated_openrouter_and_ollama_options():
+    openrouter_presets = PROVIDER_MODEL_PRESETS[AuthProvider.OPENROUTER]
+    ollama_presets = PROVIDER_MODEL_PRESETS[AuthProvider.OLLAMA]
+
+    assert "openai/gpt-4.1-mini" in openrouter_presets
+    assert "anthropic/claude-sonnet-4" in openrouter_presets
+    assert "llama3.1" in ollama_presets
 
 
 def test_phase9_screens_return_structured_decisions():

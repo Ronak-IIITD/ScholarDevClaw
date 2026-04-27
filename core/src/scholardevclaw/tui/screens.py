@@ -43,6 +43,81 @@ DEFAULT_TUI_PROVIDER_CHOICES: dict[str, AuthProvider] = {
     "fireworks": AuthProvider.FIREWORKS,
 }
 
+# Curated setup-time model presets per provider (editable by users).
+PROVIDER_MODEL_PRESETS: dict[AuthProvider, tuple[str, ...]] = {
+    AuthProvider.ANTHROPIC: (
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-1",
+        "claude-3.5-haiku",
+    ),
+    AuthProvider.OPENAI: (
+        "gpt-4o",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "o4-mini",
+        "o3",
+    ),
+    AuthProvider.GEMINI: (
+        "gemini-2.0-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+    ),
+    AuthProvider.GROK: (
+        "grok-4-0709",
+        "grok-4-fast",
+    ),
+    AuthProvider.MOONSHOT: (
+        "kimi-k2.6",
+        "kimi-k2",
+    ),
+    AuthProvider.GLM: (
+        "glm-5.1",
+        "glm-4.5",
+    ),
+    AuthProvider.MINIMAX: (
+        "MiniMax-M2.7",
+        "MiniMax-M2.5",
+    ),
+    AuthProvider.OPENROUTER: (
+        "openai/gpt-4.1-mini",
+        "anthropic/claude-sonnet-4",
+        "google/gemini-2.5-pro",
+        "meta-llama/llama-3.3-70b-instruct",
+    ),
+    AuthProvider.OLLAMA: (
+        "llama3.1",
+        "qwen2.5-coder:7b",
+        "mistral-small3.1",
+        "gemma3",
+    ),
+    AuthProvider.GROQ: (
+        "llama-3.1-70b-versatile",
+        "mixtral-8x7b-32768",
+        "llama-3.1-8b-instant",
+    ),
+    AuthProvider.MISTRAL: (
+        "mistral-large-latest",
+        "mistral-small-latest",
+        "codestral-latest",
+    ),
+    AuthProvider.DEEPSEEK: (
+        "deepseek-chat",
+        "deepseek-reasoner",
+    ),
+    AuthProvider.COHERE: (
+        "command-r-plus",
+        "command-r",
+    ),
+    AuthProvider.TOGETHER: (
+        "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+        "Qwen/Qwen2.5-Coder-32B-Instruct",
+    ),
+    AuthProvider.FIREWORKS: (
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        "accounts/fireworks/models/qwen3-32b",
+    ),
+}
+
 
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
@@ -89,7 +164,8 @@ HELP_TEXT = (
     "Setup\n"
     "setup\n"
     "set provider anthropic|openai|gemini|grok|moonshot|glm|minimax|openrouter|ollama\n"
-    f"set model {DEFAULT_OPENROUTER_MODEL}\n\n"
+    f"set model {DEFAULT_OPENROUTER_MODEL}\n"
+    "setup screen presets: Ctrl+N/Ctrl+P choose, Ctrl+U apply\n\n"
     "Paper to Code\n"
     "paper [source]\n"
     "from-paper <source>\n"
@@ -158,6 +234,9 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
 
     BINDINGS = [
         ("ctrl+s", "submit_setup", "Save"),
+        ("ctrl+n", "model_next", "Next model"),
+        ("ctrl+p", "model_prev", "Prev model"),
+        ("ctrl+u", "apply_model_preset", "Use model"),
         ("escape", "dismiss_skip", "Skip"),
     ]
 
@@ -200,6 +279,25 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         height: auto;
         color: $error;
     }
+
+    #setup-model-picker {
+        width: 100%;
+        height: auto;
+        margin: 0 0 1 0;
+    }
+
+    #setup-model-presets {
+        width: 1fr;
+        height: auto;
+        color: $text-muted;
+        padding: 0 1;
+    }
+
+    #setup-model-prev,
+    #setup-model-next,
+    #setup-model-apply {
+        min-width: 8;
+    }
     """
 
     def __init__(
@@ -222,6 +320,59 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
             str(key).strip().lower(): bool(value)
             for key, value in (has_saved_key_by_provider or {}).items()
         }
+        self._model_presets: list[str] = []
+        self._model_preset_index: int = 0
+
+    def _provider_model_presets(self, provider: AuthProvider | None) -> list[str]:
+        if provider is None:
+            return []
+        presets = [
+            model.strip() for model in PROVIDER_MODEL_PRESETS.get(provider, ()) if model.strip()
+        ]
+        default_model = (DEFAULT_MODELS.get(provider, "") or "").strip()
+        if default_model and default_model not in presets:
+            presets.insert(0, default_model)
+        return presets
+
+    def _sync_model_presets(self) -> None:
+        provider = self._selected_provider()
+        model_input = self.query_one("#setup-model", Input)
+        current_model = model_input.value.strip()
+        presets = self._provider_model_presets(provider)
+        if current_model and current_model not in presets:
+            presets.insert(0, current_model)
+        self._model_presets = presets
+        if not self._model_presets:
+            self._model_preset_index = 0
+            return
+        if current_model in self._model_presets:
+            self._model_preset_index = self._model_presets.index(current_model)
+        else:
+            self._model_preset_index = max(
+                0, min(self._model_preset_index, len(self._model_presets) - 1)
+            )
+
+    def _refresh_model_preset_ui(self) -> None:
+        presets_widget = self.query_one("#setup-model-presets", Static)
+        prev_button = self.query_one("#setup-model-prev", Button)
+        next_button = self.query_one("#setup-model-next", Button)
+        apply_button = self.query_one("#setup-model-apply", Button)
+
+        self._sync_model_presets()
+        if not self._model_presets:
+            presets_widget.update("Presets -> none (enter model manually)")
+            prev_button.disabled = True
+            next_button.disabled = True
+            apply_button.disabled = True
+            return
+
+        selected = self._model_presets[self._model_preset_index]
+        presets_widget.update(
+            f"Presets [{self._model_preset_index + 1}/{len(self._model_presets)}] -> {selected}"
+        )
+        prev_button.disabled = len(self._model_presets) <= 1
+        next_button.disabled = len(self._model_presets) <= 1
+        apply_button.disabled = False
 
     def _provider_choices_text(self) -> str:
         return ", ".join(self._supported_providers)
@@ -242,11 +393,22 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
                 id="setup-provider",
             )
             yield Input(value=self._model, placeholder="Model ID", id="setup-model")
+            with Horizontal(id="setup-model-picker"):
+                yield Button("Prev", id="setup-model-prev")
+                yield Static("", id="setup-model-presets")
+                yield Button("Next", id="setup-model-next")
+                yield Button("Use", id="setup-model-apply")
             yield Input(password=True, placeholder="API key (provider-specific)", id="setup-key")
             yield Static("", id="setup-error")
 
     def on_mount(self) -> None:
+        model_input = self.query_one("#setup-model", Input)
+        if not model_input.value.strip():
+            provider = self._selected_provider()
+            if provider is not None:
+                model_input.value = DEFAULT_MODELS.get(provider, "")
         self._refresh_hint()
+        self._refresh_model_preset_ui()
         self.query_one("#setup-provider", Input).focus()
 
     def action_dismiss_skip(self) -> None:
@@ -285,8 +447,25 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
 
     @on(Input.Changed, "#setup-provider")
     def on_provider_changed(self, event: Input.Changed) -> None:
+        previous_provider = self._selected_provider()
+        previous_default = (
+            DEFAULT_MODELS.get(previous_provider, "") if previous_provider is not None else ""
+        )
         self._provider = event.value.strip().lower()
+        model_input = self.query_one("#setup-model", Input)
+        selected_provider = self._selected_provider()
+        if selected_provider is not None:
+            next_default = DEFAULT_MODELS.get(selected_provider, "")
+            current_model = model_input.value.strip()
+            if not current_model or current_model == previous_default:
+                model_input.value = next_default
         self._refresh_hint()
+        self._refresh_model_preset_ui()
+
+    @on(Input.Changed, "#setup-model")
+    def on_model_changed(self, event: Input.Changed) -> None:
+        self._model = event.value.strip()
+        self._refresh_model_preset_ui()
 
     @on(Input.Submitted, "#setup-provider")
     def on_provider_submitted(self) -> None:
@@ -304,6 +483,46 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
     def on_key_submitted(self) -> None:
         self.action_submit_setup()
 
+    @on(Button.Pressed, "#setup-model-prev")
+    def on_model_prev_pressed(self) -> None:
+        self.action_model_prev()
+
+    @on(Button.Pressed, "#setup-model-next")
+    def on_model_next_pressed(self) -> None:
+        self.action_model_next()
+
+    @on(Button.Pressed, "#setup-model-apply")
+    def on_model_apply_pressed(self) -> None:
+        self.action_apply_model_preset()
+
+    def action_model_prev(self) -> None:
+        self._sync_model_presets()
+        if not self._model_presets:
+            self._refresh_model_preset_ui()
+            return
+        self._model_preset_index = (self._model_preset_index - 1) % len(self._model_presets)
+        self._refresh_model_preset_ui()
+
+    def action_model_next(self) -> None:
+        self._sync_model_presets()
+        if not self._model_presets:
+            self._refresh_model_preset_ui()
+            return
+        self._model_preset_index = (self._model_preset_index + 1) % len(self._model_presets)
+        self._refresh_model_preset_ui()
+
+    def action_apply_model_preset(self) -> None:
+        self._sync_model_presets()
+        if not self._model_presets:
+            self._refresh_model_preset_ui()
+            return
+        selected = self._model_presets[self._model_preset_index]
+        model_input = self.query_one("#setup-model", Input)
+        model_input.value = selected
+        self._model = selected
+        self.query_one("#setup-error", Static).update("")
+        self._refresh_model_preset_ui()
+
     def _refresh_hint(self) -> None:
         hint = self.query_one("#setup-hint", Static)
         key_input = self.query_one("#setup-key", Input)
@@ -313,6 +532,7 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
                 "Provider -> choose one of the supported providers\n"
                 f"Supported -> {self._provider_choices_text()}\n"
                 "Model -> enter a provider model id\n"
+                "Model presets -> buttons or Ctrl+N/Ctrl+P (Ctrl+U to apply)\n"
                 "Key -> provider-specific\n"
                 "Save -> Ctrl+S or Enter"
             )
@@ -324,6 +544,7 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
             hint.update(
                 f"Provider -> {provider.display_name}\n"
                 f"Model -> for example `{model_example}`\n"
+                "Model presets -> buttons or Ctrl+N/Ctrl+P (Ctrl+U to apply)\n"
                 "Key -> not required\n"
                 "Save -> Ctrl+S or Enter"
             )
@@ -338,6 +559,7 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         hint.update(
             f"Provider -> {provider.display_name}\n"
             f"Model -> for example `{model_example}`\n"
+            "Model presets -> buttons or Ctrl+N/Ctrl+P (Ctrl+U to apply)\n"
             f"Key format -> {provider.key_format_hint}\n"
             f"Key -> {reuse}\n"
             "Save -> Ctrl+S or Enter"
