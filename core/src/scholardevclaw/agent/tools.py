@@ -883,14 +883,14 @@ class ToolManager:
                                 "stderr": result.stderr,
                                 "returncode": result.returncode,
                             }
-                result = subprocess.run(
-                    command,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    cwd=cwd,
-                    timeout=60,
-                )
+                # SECURITY FIX: Reject shell=True fallback. If command is not a list
+                # and executable is not in runner_aliases, reject securely.
+                logger.warning("Blocked potentially unsafe command execution: %s", command[:100])
+                return {
+                    "success": False,
+                    "error": "Command execution rejected: only Python/Node/Bash scripts via allowlisted executables supported",
+                    "returncode": -1,
+                }
             return {
                 "success": result.returncode == 0,
                 "stdout": result.stdout,

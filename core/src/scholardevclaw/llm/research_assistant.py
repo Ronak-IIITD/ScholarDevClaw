@@ -26,6 +26,61 @@ from .client import LLMAPIError, LLMClient, LLMConfigError
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Prompt injection detection
+# ---------------------------------------------------------------------------
+
+# Patterns that indicate prompt injection attempts
+_INJECTION_PATTERNS = [
+    re.compile(r"ignore\s+(previous|all)\s+(instructions?|commands?)", re.IGNORECASE),
+    re.compile(r"disregard\s+(previous|all)\s+(instructions?|commands?)", re.IGNORECASE),
+    re.compile(r"you\s+are\s+(now\s+a)?[\s\w]*assistant\s+(that\s+)?reveal", re.IGNORECASE),
+    re.compile(r"forget\s+(everything|all)\s+above", re.IGNORECASE),
+    re.compile(r"new\s+instructions?:\s*", re.IGNORECASE),
+    re.compile(r"system\s+(prompt|instruction)", re.IGNORECASE),
+    re.compile(r"#\s*instructions?", re.IGNORECASE),
+    re.compile(r"<\|system\|>", re.IGNORECASE),
+    re.compile(r"{{.*?system.*?}}", re.IGNORECASE),
+]
+
+# Content that should trigger rejection (block dangerous payloads entirely)
+_DANGEROUS_PATTERNS = [
+    re.compile(r"api[_\s]?key", re.IGNORECASE),
+    re.compile(r"password\s*=", re.IGNORECASE),
+    re.compile(r"secret\s*token", re.IGNORECASE),
+    re.compile(r"eval\s*\(", re.IGNORECASE),
+    re.compile(r"exec\s*\(", re.IGNORECASE),
+    re.compile(r"__import__\s*\(", re.IGNORECASE),
+    re.compile(r"subprocess\s*\.", re.IGNORECASE),
+]
+
+
+def _sanitize_prompt_content(content: str) -> str:
+    """Sanitize user-provided content before embedding in LLM prompts.
+
+    Removes or escapes known prompt injection patterns while preserving
+    legitimate content. This is defense-in-depth - the LLM itself has
+    system prompts that reinforce correct behavior.
+    """
+    if not content:
+        return content
+
+    # Check for dangerous patterns - block content with attempted credential extraction
+    for pattern in _DANGEROUS_PATTERNS:
+        if pattern.search(content):
+            logger.warning("Blocked content with potential credential extraction pattern")
+            return "[content blocked: potential security risk]"
+
+    # Remove injection pattern matches
+    sanitized = content
+    for pattern in _INJECTION_PATTERNS:
+        sanitized = pattern.sub("[REDACTED]", sanitized)
+
+    # Normalize excessive whitespace that could be used to hide patterns
+    sanitized = re.sub(r"\s{4,}", " ", sanitized)
+
+    return sanitized
+
 
 # ---------------------------------------------------------------------------
 # Result dataclasses
@@ -209,6 +264,9 @@ class LLMResearchAssistant:
             "Always respond with valid JSON — no extra prose."
         )
 
+        # Sanitize user-provided content before embedding in prompt
+        sanitized_paper_text = _sanitize_prompt_content(paper_text[:12000])
+
         prompt = f"""Analyse the following research paper text and extract a structured
 implementation specification in JSON format.
 
@@ -216,7 +274,7 @@ Paper title: {paper_title or "(unknown)"}
 Target language: {target_language}
 
 ---BEGIN PAPER TEXT---
-{paper_text[:12000]}
+{sanitized_paper_text}
 ---END PAPER TEXT---
 
 Return a JSON object with exactly these top-level keys:
@@ -301,7 +359,10 @@ Return a JSON object with exactly these top-level keys:
 
         focus_instruction = ""
         if focus:
-            focus_instruction = f"\nFocus area: {focus}"
+            sanitized_focus = _sanitize_prompt_content(focus)
+            focus_instruction = f"\nFocus area: {sanitized_focus}"
+
+        sanitized_code = _sanitize_prompt_content(code[:8000])
 
         prompt = f"""Analyse the following {language} code and identify patterns
 and potential improvements based on recent ML research.{focus_instruction}
@@ -309,7 +370,7 @@ and potential improvements based on recent ML research.{focus_instruction}
 File: {file_path or "(unknown)"}
 
 ```{language}
-{code[:8000]}
+{sanitized_code}
 ```
 
 Return a JSON object:
@@ -448,7 +509,8 @@ Return a JSON object:
         )
 
         results_text = json.dumps(results[:20], indent=2, default=str)[:6000]
-        prompt = f"""Summarise these search results for the query: "{query}"
+        sanitized_query = _sanitize_prompt_content(query)
+        prompt = f"""Summarise these search results for the query: "{sanitized_query}"
 
 {results_text}
 

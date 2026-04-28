@@ -2,7 +2,44 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-27
+**Last updated:** 2026-04-28
+
+### 2026-04-28 (Security hardening — launch-blocking fixes)
+
+**Summary:** Fixed 5 critical/high security vulnerabilities identified in pre-flight security audit before launch readiness.
+
+**What changed:**
+
+**Prompt Injection Defense (`core/src/scholardevclaw/llm/research_assistant.py`):**
+- Added `_sanitize_prompt_content()` with regex-based injection pattern detection
+- Strips known injection patterns: "ignore previous instructions", "disregard all commands", jailbreak prompts
+- Blocks dangerous patterns: credential extraction (`api_key`, `password=`, `eval(`, `__import__(`, etc.)
+- Applied sanitization to all user-controlled LLM prompt fields: paper text, code content, focus area, search queries
+
+**Shell=True RCE Fix (`core/src/scholardevclaw/agent/tools.py`):**
+- Removed `shell=True` fallback in `_run_command()` that could enable command injection
+- Now rejects non-allowlisted string commands securely with error logging
+- Only allowlisted executables (python, node, bash, etc.) via list form with `shell=False`
+
+**Dev Mode Hardening (`core/src/scholardevclaw/api/server.py`):**
+- Added `ENV`/`NODE_ENV` check — warns if `SCHOLARDEVCLAW_DEV_MODE=true` in non-development environments
+- Logs `SECURITY WARNING` when dev mode active in production-like environments
+
+**ChromaDB User Isolation (`core/src/scholardevclaw/knowledge/store.py`):**
+- Added `user_id` parameter to `KnowledgeBase.__init__`
+- Collections now use per-user namespacing (`papers_{user_id}` vs `papers`)
+- `clear()` method respects user-isolated collection names
+
+**API Per-User Repo Authorization (`core/src/scholardevclaw/api/server.py`):**
+- Added `X-User-ID` header support in auth middleware (stored in `request.state.user_id`)
+- Added `_USER_ALLOWED_DIRS` dict from `SCHOLARDEVCLAW_USER_ALLOWED_DIRS_userX` env vars
+- `_resolve_existing_repo_path()` now uses per-user allowed dirs when `X-User-ID` provided
+- All 4 repo-accessing endpoints (`/repo/analyze`, `/mapping/map`, `/patch/generate`, `/validation/run`) pass `user_id` for isolation
+- Falls back to global `_ALLOWED_BASE_DIRS` when no `X-User-ID` (backward compatible)
+
+**Validation:**
+- Targeted: `core/tests/unit/test_api_server.py` (pass)
+- All modified files pass `python3 -m py_compile`
 
 ### 2026-04-27 (Provider-aware model picker in TUI setup)
 

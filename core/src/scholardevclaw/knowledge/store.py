@@ -14,9 +14,17 @@ EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 
 
 class KnowledgeBase:
-    def __init__(self, persist_dir: Path = Path.home() / ".scholardevclaw" / "kb") -> None:
+    def __init__(
+        self,
+        persist_dir: Path = Path.home() / ".scholardevclaw" / "kb",
+        *,
+        user_id: str | None = None,
+    ) -> None:
         self.persist_dir = persist_dir.expanduser().resolve()
         self.persist_dir.mkdir(parents=True, exist_ok=True)
+        # SECURITY: user_id enables per-user collection namespacing in shared deployments
+        # When set, collections are prefixed (e.g., papers_user123 instead of papers)
+        self._user_id = user_id or "default"
 
         chromadb_module, settings_cls, embedder_cls = self._load_optional_dependencies()
 
@@ -26,9 +34,10 @@ class KnowledgeBase:
         )
         self.embedder = embedder_cls(EMBED_MODEL)
 
-        self.papers = self.client.get_or_create_collection("papers")
-        self.implementations = self.client.get_or_create_collection("implementations")
-        self.patterns = self.client.get_or_create_collection("patterns")
+        # SECURITY: User-isolated collection names to prevent cross-user data access
+        self.papers = self.client.get_or_create_collection(f"papers_{self._user_id}")
+        self.implementations = self.client.get_or_create_collection(f"implementations_{self._user_id}")
+        self.patterns = self.client.get_or_create_collection(f"patterns_{self._user_id}")
 
     def store_paper(self, doc: PaperDocument, understanding: PaperUnderstanding) -> None:
         text = (
@@ -140,7 +149,12 @@ class KnowledgeBase:
 
     def clear(self) -> None:
         delete_collection = getattr(self.client, "delete_collection", None)
-        collection_names = ("papers", "implementations", "patterns")
+        # SECURITY: Use user-isolated collection names
+        collection_names = (
+            f"papers_{self._user_id}",
+            f"implementations_{self._user_id}",
+            f"patterns_{self._user_id}",
+        )
 
         if callable(delete_collection):
             for name in collection_names:
@@ -154,9 +168,10 @@ class KnowledgeBase:
                 collection = getattr(self, name, None)
                 self._clear_collection(collection)
 
-        self.papers = self.client.get_or_create_collection("papers")
-        self.implementations = self.client.get_or_create_collection("implementations")
-        self.patterns = self.client.get_or_create_collection("patterns")
+        # SECURITY: Re-create with user-isolated names
+        self.papers = self.client.get_or_create_collection(f"papers_{self._user_id}")
+        self.implementations = self.client.get_or_create_collection(f"implementations_{self._user_id}")
+        self.patterns = self.client.get_or_create_collection(f"patterns_{self._user_id}")
 
     def _load_optional_dependencies(self) -> tuple[Any, Any, Any]:
         chromadb_module: Any | None = None

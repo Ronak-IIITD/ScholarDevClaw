@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 # Security: Allowed base directories for repo path confinement
 # ---------------------------------------------------------------------------
 _ALLOWED_BASE_DIRS: list[Path] = []
+# Per-user allowed directories: X-User-ID -> list of allowed Path
+_USER_ALLOWED_DIRS: dict[str, list[Path]] = {}
 
 _env_allowed = os.environ.get("SCHOLARDEVCLAW_ALLOWED_REPO_DIRS", "")
 if _env_allowed:
@@ -42,6 +44,19 @@ elif os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").lower() != "true":
         "Set SCHOLARDEVCLAW_ALLOWED_REPO_DIRS to a colon-separated list of allowed repo roots "
         "(e.g. /repos:/workspace) or set SCHOLARDEVCLAW_DEV_MODE=true for local development."
     )
+
+# Load per-user allowed directories from environment
+# Format: SCHOLARDEVCLAW_USER_ALLOWED_DIRS_user123=/home/user123/repos:/home/user123/work
+for key, val in os.environ.items():
+    if key.startswith("SCHOLARDEVCLAW_USER_ALLOWED_DIRS_"):
+        user_id = key.removeprefix("SCHOLARDEVCLAW_USER_ALLOWED_DIRS_")
+        user_dirs = []
+        for d in val.split(":"):
+            d = d.strip()
+            if d:
+                user_dirs.append(Path(d).resolve())
+        if user_dirs:
+            _USER_ALLOWED_DIRS[user_id] = user_dirs
 
 
 app = FastAPI(
@@ -109,7 +124,21 @@ async def request_id_middleware(request: Request, call_next):
 # API key authentication middleware
 # ---------------------------------------------------------------------------
 _API_AUTH_KEY = os.environ.get("SCHOLARDEVCLAW_API_AUTH_KEY", "")
-if not _API_AUTH_KEY and os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").lower() != "true":
+_DEV_MODE = os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").lower() == "true"
+
+# SECURITY: Warn if dev mode is active but not in development environment
+if _DEV_MODE:
+    import warnings
+    env = os.environ.get("ENV", os.environ.get("NODE_ENV", "")).lower()
+    if env not in ("development", "dev", "local"):
+        warnings.warn(
+            "SCHOLARDEVCLAW_DEV_MODE is enabled but ENV is not 'development'. "
+            "Authentication is DISABLED - do NOT use this in production!",
+            UserWarning,
+        )
+        logger.warning("SECURITY WARNING: Dev mode active in non-dev environment %s", env)
+
+if not _API_AUTH_KEY and not _DEV_MODE:
     raise RuntimeError(
         "SCHOLARDEVCLAW_API_AUTH_KEY is not set and SCHOLARDEVCLAW_DEV_MODE is not 'true'. "
         "Set SCHOLARDEVCLAW_API_AUTH_KEY to a strong secret or set SCHOLARDEVCLAW_DEV_MODE=true "
@@ -120,7 +149,11 @@ _AUTH_EXEMPT_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/", "/metr
 
 @app.middleware("http")
 async def api_key_auth_middleware(request: Request, call_next):
-    """Require API key for all non-exempt endpoints when configured."""
+    """Require API key for all non-exempt endpoints when configured.
+
+    SECURITY: Extracts X-User-ID for per-user repo isolation. If no X-User-ID
+    is provided, uses global _ALLOWED_BASE_DIRS (legacy single-tenant behavior).
+    """
     if _API_AUTH_KEY:
         # Use prefix matching for exempt paths (e.g. /docs/json matches /docs)
         is_exempt = any(
@@ -138,6 +171,11 @@ async def api_key_auth_middleware(request: Request, call_next):
                     media_type="application/json",
                     headers={"X-Request-ID": getattr(request.state, "request_id", "")},
                 )
+
+    # SECURITY: Extract user identity for per-user repo isolation
+    user_id = request.headers.get("X-User-ID", "").strip() or None
+    request.state.user_id = user_id
+
     return await call_next(request)
 
 
@@ -323,12 +361,19 @@ class ValidationResponse(BaseModel):
     payloadType: str | None = None  # noqa: N815
 
 
-def _resolve_existing_repo_path(repo_path: str) -> Path:
+def _get_allowed_dirs_for_user(user_id: str | None) -> list[Path]:
+    """Get allowed directories for a user. Falls back to global dirs if no user or no per-user config."""
+    if user_id and user_id in _USER_ALLOWED_DIRS:
+        return _USER_ALLOWED_DIRS[user_id]
+    return _ALLOWED_BASE_DIRS
+
+
+def _resolve_existing_repo_path(repo_path: str, user_id: str | None = None) -> Path:
     """Resolve and validate a repo path, enforcing confinement.
 
-    SECURITY: When SCHOLARDEVCLAW_ALLOWED_REPO_DIRS is set, the resolved
-    path must be under one of the allowed base directories to prevent
-    arbitrary filesystem traversal.
+    SECURITY: Uses per-user allowed directories when X-User-ID is provided and
+    per-user configs exist. Falls back to global _ALLOWED_BASE_DIRS for backward
+    compatibility (single-tenant deployments).
     """
     path = Path(repo_path).expanduser().resolve()
     if not path.exists():
@@ -350,16 +395,22 @@ def _resolve_existing_repo_path(repo_path: str) -> Path:
             ),
         )
 
-    # Path confinement: enforce allowed base dirs if configured
-    if _ALLOWED_BASE_DIRS:
-        if not any(path == base or path.is_relative_to(base) for base in _ALLOWED_BASE_DIRS):
-            logger.warning("Path confinement violation: %s", path)
+    # SECURITY: Path confinement with per-user isolation
+    allowed_dirs = _get_allowed_dirs_for_user(user_id)
+    if allowed_dirs:
+        if not any(path == base or path.is_relative_to(base) for base in allowed_dirs):
+            logger.warning(
+                "Path confinement violation for user=%s: %s (allowed=%s)",
+                user_id,
+                path,
+                allowed_dirs,
+            )
             raise HTTPException(
                 status_code=403,
                 detail=(
                     "What failed: repository path confinement check. "
-                    "Why: resolved path is outside SCHOLARDEVCLAW_ALLOWED_REPO_DIRS. "
-                    "Fix: use a repository within allowed directories or update server configuration."
+                    "Why: resolved path is outside user's allowed directories. "
+                    "Fix: use a repository within your allowed directories or contact admin."
                 ),
             )
 
@@ -734,9 +785,10 @@ async def health_ready():
     summary="Analyze repository",
     description="Analyze repository structure to identify models, training loops, and patterns",
 )
-async def analyze_repo(request: RepoAnalyzeRequest):
+async def analyze_repo(request: RepoAnalyzeRequest, http_request: Request):
     try:
-        repo_path = _resolve_existing_repo_path(request.repoPath)
+        user_id = getattr(http_request.state, "user_id", None)
+        repo_path = _resolve_existing_repo_path(request.repoPath, user_id=user_id)
 
         analyzer = TreeSitterAnalyzer(repo_path)
         analysis = analyzer.analyze()
@@ -816,8 +868,9 @@ async def extract_research(request: ResearchExtractRequest):
     summary="Map spec to code",
     description="Map a research specification to specific code locations in the repository",
 )
-async def map_architecture(request: MappingRequest):
+async def map_architecture(request: MappingRequest, http_request: Request):
     try:
+        user_id = getattr(http_request.state, "user_id", None)
         llm_assistant = _create_llm_assistant()
         normalized_spec = _normalize_research_spec_for_mapping(request.research_spec)
         engine = MappingEngine(
@@ -892,9 +945,10 @@ async def map_architecture(request: MappingRequest):
     summary="Generate patch",
     description="Generate code patches implementing the research specification",
 )
-async def generate_patch(request: PatchGenerateRequest):
+async def generate_patch(request: PatchGenerateRequest, http_request: Request):
     try:
-        generator_repo_path = _resolve_existing_repo_path(request.repo_path)
+        user_id = getattr(http_request.state, "user_id", None)
+        generator_repo_path = _resolve_existing_repo_path(request.repo_path, user_id=user_id)
         llm_assistant = _create_llm_assistant()
         generator = PatchGenerator(generator_repo_path, llm_assistant=llm_assistant)
         normalized_mapping = _normalize_mapping_for_patch(request.mapping)
@@ -935,9 +989,10 @@ async def generate_patch(request: PatchGenerateRequest):
     summary="Run validation",
     description="Run tests and benchmarks to validate the generated patches",
 )
-async def run_validation(request: ValidationRequest):
+async def run_validation(request: ValidationRequest, http_request: Request):
     try:
-        repo_path = _resolve_existing_repo_path(request.repo_path)
+        user_id = getattr(http_request.state, "user_id", None)
+        repo_path = _resolve_existing_repo_path(request.repo_path, user_id=user_id)
 
         runner = ValidationRunner(repo_path)
         result = runner.run(request.patch, str(repo_path))
