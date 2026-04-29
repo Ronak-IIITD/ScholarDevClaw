@@ -6,14 +6,14 @@ import pytest
 
 pytest.importorskip("textual")
 
+from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.tui.screens import (
     DEFAULT_OPENROUTER_MODEL,
     HELP_TEXT,
-    CommandPalette,
     PROVIDER_MODEL_PRESETS,
+    CommandPalette,
     ProviderSetupScreen,
 )
-from scholardevclaw.auth.types import AuthProvider
 
 
 def test_provider_setup_submitted_handlers_are_field_scoped():

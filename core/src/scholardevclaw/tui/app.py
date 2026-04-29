@@ -3913,10 +3913,10 @@ class ScholarDevClawApp(App[None]):
             return
         if action == "paper_workflow_no_source":
             build_target = request.get("build_target", "")
-            self._append_output(f"Load a paper first. Try: paper arxiv:1706.03762", "warning")
+            self._append_output("Load a paper first. Try: paper arxiv:1706.03762", "warning")
             self._set_status("No paper loaded", "warning")
             self._context_hints = [
-                f"paper arxiv:1706.03762",
+                "paper arxiv:1706.03762",
                 f"build me {build_target} using this paper",
             ]
             self._update_command_meta()

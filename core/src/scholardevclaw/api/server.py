@@ -870,7 +870,8 @@ async def extract_research(request: ResearchExtractRequest):
 )
 async def map_architecture(request: MappingRequest, http_request: Request):
     try:
-        user_id = getattr(http_request.state, "user_id", None)
+        # user_id extracted for consistency but this endpoint doesn't access filesystem
+        _ = getattr(http_request.state, "user_id", None)
         llm_assistant = _create_llm_assistant()
         normalized_spec = _normalize_research_spec_for_mapping(request.research_spec)
         engine = MappingEngine(
