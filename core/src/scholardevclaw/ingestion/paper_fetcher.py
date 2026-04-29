@@ -665,6 +665,20 @@ class PaperFetcher:
                     f"Why: host '{host}' resolved to a non-public IP address. "
                     "Fix: use a publicly routable host."
                 )
+            # Defense-in-depth: explicitly block AWS/GCP/Azure metadata endpoints
+            # These are link-local but we block explicitly for clarity and defense
+            if str(ip_addr) in (
+                "169.254.169.254",  # AWS EC2 metadata
+                "169.254.169.253",  # GCP metadata
+                "169.254.169.250",  # Azure instance metadata
+                "169.254.169.251",  # Azure instance metadata
+                "169.254.169.252",  # Azure instance metadata
+            ):
+                raise PaperSourceResolutionError(
+                    "What failed: remote host safety validation. "
+                    f"Why: host '{host}' resolves to cloud metadata IP which is blocked. "
+                    "Fix: use a publicly routable host."
+                )
 
     def _normalize_whitespace(self, text: str) -> str:
         return " ".join(text.split()).strip()

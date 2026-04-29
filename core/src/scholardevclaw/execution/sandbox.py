@@ -96,7 +96,7 @@ class SandboxRunner:
                 working_dir="/workspace",
                 mem_limit=f"{self.memory_limit}m",
                 network_disabled=True,
-                remove=False,
+                remove=True,
                 detach=True,
             )
 

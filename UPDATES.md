@@ -2,7 +2,33 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-28
+**Last updated:** 2026-04-29
+
+### 2026-04-29 (Additional security hardening)
+
+**Summary:** Additional security improvements from pre-flight audit — sandbox cleanup, SSRF defense-in-depth, and certifi update.
+
+**What changed:**
+
+**Sandbox container cleanup (`core/src/scholardevclaw/execution/sandbox.py`):**
+- Changed `remove=False` to `remove=True` to prevent zombie containers on crash
+- Container is now auto-removed after execution (cleanup in finally block still exists as backup)
+
+**SSRF defense-in-depth (`core/src/scholardevclaw/ingestion/paper_fetcher.py`):**
+- Added explicit block for AWS/GCP/Azure metadata IPs: 169.254.169.254, 169.254.169.253, 169.254.169.250-252
+- Defense-in-depth alongside the existing `is_link_local` check (which already catches these)
+- More descriptive error messages for blocked metadata access attempts
+
+**Certifi update:**
+- Upgraded certifi to 2026.04.22 (from 2023.11.17)
+- Addresses outdated CA bundle vulnerability
+
+**Orchestrator.ts verification:**
+- Confirmed file is complete with no truncation at line 878 — file ends properly with closing brace
+
+**Validation:**
+- Targeted: `core/tests/unit/test_api_server.py` (pass)
+- All modified files pass `python3 -m py_compile`
 
 ### 2026-04-28 (Security hardening — launch-blocking fixes)
 
