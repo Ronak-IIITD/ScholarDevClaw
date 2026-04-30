@@ -290,18 +290,25 @@ def cmd_analyze(args):
 
 def cmd_search(args):
     """Search for research papers and implementations"""
-    query = args.query
+    import json
 
-    print(f"Searching for: '{query}'")
-    print("-" * 50)
+    query = args.query
+    output_json = getattr(args, "output_json", False)
+
+    if not output_json:
+        print(f"Searching for: '{query}'")
+        print("-" * 50)
+
+    results = {"query": query, "local_specs": [], "arxiv_papers": [], "web_results": {}}
 
     # Search local paper specs
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
     extractor = ResearchExtractor()
     local_results = extractor.search_by_keyword(query, max_results=10)
+    results["local_specs"] = local_results or []
 
-    if local_results:
+    if not output_json and local_results:
         print(f"\nLocal paper specs found: {len(local_results)}")
         for spec in local_results:
             print(f"\n  {spec['title']}")
@@ -312,7 +319,8 @@ def cmd_search(args):
 
     # Search arXiv
     if args.arxiv:
-        print("\nSearching arXiv...")
+        if not output_json:
+            print("\nSearching arXiv...")
         try:
             from scholardevclaw.research_intelligence.extractor import ResearchQuery
 
@@ -321,39 +329,59 @@ def cmd_search(args):
             import asyncio
 
             papers = asyncio.run(extractor.search_arxiv(research_query))
+            results["arxiv_papers"] = [
+                {
+                    "title": p.title,
+                    "authors": p.authors[:3],
+                    "categories": p.categories[:3],
+                    "arxiv_id": p.arxiv_id,
+                }
+                for p in (papers or [])
+            ]
 
-            if papers:
-                print(f"\narXiv papers found: {len(papers)}")
-                for paper in papers[:5]:
-                    print(f"\n  {paper.title}")
-                    print(f"    Authors: {', '.join(paper.authors[:3])}")
-                    print(f"    Categories: {', '.join(paper.categories[:3])}")
-                    print(f"    arXiv ID: {paper.arxiv_id}")
-            else:
-                print("\nNo papers found on arXiv.")
+            if not output_json:
+                if papers:
+                    print(f"\narXiv papers found: {len(papers)}")
+                    for paper in papers[:5]:
+                        print(f"\n  {paper.title}")
+                        print(f"    Authors: {', '.join(paper.authors[:3])}")
+                        print(f"    Categories: {', '.join(paper.categories[:3])}")
+                        print(f"    arXiv ID: {paper.arxiv_id}")
+                else:
+                    print("\nNo papers found on arXiv.")
         except Exception as e:
-            print(f"\nNote: arXiv search requires 'arxiv' package. Error: {e}")
+            if not output_json:
+                print(f"\nNote: arXiv search requires 'arxiv' package. Error: {e}")
+            results["arxiv_error"] = str(e)
 
     # Search web sources
     if args.web:
-        print("\nSearching web sources...")
+        if not output_json:
+            print("\nSearching web sources...")
         try:
             from scholardevclaw.research_intelligence.web_research import SyncWebResearchEngine
 
             engine = SyncWebResearchEngine()
             web_results = engine.search_all(query, args.language, args.max_results)
+            results["web_results"] = web_results or {}
 
-            if web_results.get("github_repos"):
-                print(f"\nGitHub repositories: {len(web_results['github_repos'])}")
-                for repo in web_results["github_repos"][:3]:
-                    print(f"  - {repo.owner}/{repo.name} ({repo.stars} stars)")
+            if not output_json:
+                if web_results.get("github_repos"):
+                    print(f"\nGitHub repositories: {len(web_results['github_repos'])}")
+                    for repo in web_results["github_repos"][:3]:
+                        print(f"  - {repo.owner}/{repo.name} ({repo.stars} stars)")
 
-            if web_results.get("papers_with_code"):
-                print(f"\nPapers with Code: {len(web_results['papers_with_code'])}")
-                for paper in web_results["papers_with_code"][:3]:
-                    print(f"  - {paper.title}")
+                if web_results.get("papers_with_code"):
+                    print(f"\nPapers with Code: {len(web_results['papers_with_code'])}")
+                    for paper in web_results["papers_with_code"][:3]:
+                        print(f"  - {paper.title}")
         except Exception as e:
-            print(f"Web search error: {e}")
+            if not output_json:
+                print(f"Web search error: {e}")
+            results["web_error"] = str(e)
+
+    if output_json:
+        print(json.dumps(results, indent=2))
 
 
 def cmd_kb(args):
@@ -3568,6 +3596,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_search.add_argument("--web", action="store_true", help="Search web sources (GitHub, etc.)")
     p_search.add_argument("--language", default="python", help="Programming language filter")
     p_search.add_argument("--max-results", type=int, default=10, help="Maximum results")
+    p_search.add_argument("--output-json", action="store_true", help="Output JSON")
 
     # ingest
     p_ingest = subparsers.add_parser(

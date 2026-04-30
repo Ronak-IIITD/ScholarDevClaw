@@ -279,12 +279,39 @@ async function run(): Promise<void> {
     const paperUrl = getArg('--paper-url');
     const paperPdfPath = getArg('--paper-pdf');
     const mode = getArg('--mode') as 'step_approval' | 'autonomous' | undefined;
+    const cmd = getArg('--command') || 'integrate';
 
     if (!repoUrl) throw new Error('Missing required argument: --repo <path-or-url>');
-    if (!paperUrl && !paperPdfPath) throw new Error('Provide: --paper-url <url> or --paper-pdf <path>');
+    if (cmd === 'integrate' && !paperUrl && !paperPdfPath) {
+      throw new Error('Provide: --paper-url <url> or --paper-pdf <path> for integrate command');
+    }
 
-    await orchestrator.runIntegration({ repoUrl, paperUrl, paperPdfPath, mode });
-    logger.info('Run completed');
+    const integrationInput: IntegrationCreate = { repoUrl };
+    if (paperUrl) integrationInput.paperUrl = paperUrl;
+    if (paperPdfPath) integrationInput.paperPdfPath = paperPdfPath;
+
+    if (cmd === 'integrate') {
+      await orchestrator.runIntegration(integrationInput, { mode });
+    } else if (cmd === 'analyze') {
+      // Run only phase 1 (repo analysis)
+      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1, contextOverrides: { repoPath: repoUrl } });
+    } else if (cmd === 'suggest') {
+      // Run phases 1-2 (analysis + research) for suggestions
+      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1 });
+    } else if (cmd === 'map') {
+      // Run phases 1-3 (analysis + research + mapping)
+      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1 });
+    } else if (cmd === 'generate') {
+      // Run phases 1-4 (analysis + research + mapping + patch generation)
+      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1 });
+    } else if (cmd === 'validate') {
+      // Run phases 1-5 (analysis + research + mapping + patch + validation)
+      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1 });
+    } else {
+      throw new Error(`Unknown command: ${cmd}. Use: analyze, suggest, integrate, map, generate, validate`);
+    }
+
+    logger.info(`Command ${cmd} completed`);
     return;
   }
 

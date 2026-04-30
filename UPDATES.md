@@ -2,7 +2,40 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-29
+**Last updated:** 2026-04-30
+
+### 2026-04-30 (Apply honest assessment fixes)
+
+**Summary:** Address gaps from honest assessment: wire TUI to TypeScript agent, fix subprocess mode, propagate LLM keys, update changelog.
+
+**What changed:**
+
+**1. TUI → Agent Invocation (Highest Priority):**
+- Modified TUI (`core/src/scholardevclaw/tui/app.py`) to invoke TypeScript agent via subprocess instead of calling Python pipeline directly
+- All TUI actions (analyze, suggest, search, map, generate, validate, integrate) now route to `ScholarDevClawOrchestrator` via `bun run agent/src/index.ts run --command <action>`
+- Removed unused pipeline imports from TUI, fixed ruff errors
+
+**2. Fix Agent Subprocess Mode (Phases 2-5):**
+- Implemented missing methods in `agent/src/bridges/python-subprocess.ts`:
+  - `extractResearch()`: Calls Python CLI `search` command with `--output-json`
+  - `mapArchitecture()`: Calls Python CLI `map` command with `--output-json`
+  - `generatePatch()`: Calls Python CLI `generate` command with `--output-json`
+  - `validate()`: Calls Python CLI `validate` command with `--output-json`
+- Added `--output-json` flag to Python CLI `search` command for JSON output
+- Refactored `cmd_search()` in `cli.py` to support JSON output and collect results
+
+**3. LLM API Key Propagation:**
+- Modified TUI's agent subprocess call to pass current environment variables (including `ANTHROPIC_API_KEY`) to the agent process
+- Agent now receives LLM keys when invoked from TUI
+
+**4. Validation:**
+- Ruff checks pass for all modified files
+- Agent subprocess bridge now supports all phases in subprocess mode
+- TUI correctly invokes agent with proper environment variables
+
+**Remaining Gaps (Next Steps):**
+- Convex approvals: Event-driven webhooks (currently polling-only)
+- Python pipeline → Convex wiring (now handled via agent invocation)
 
 ### 2026-04-29 (Additional security hardening)
 

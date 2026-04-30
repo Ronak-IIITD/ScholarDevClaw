@@ -26,15 +26,7 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Input, Static
 
-from scholardevclaw.application.pipeline import (
-    run_analyze,
-    run_generate,
-    run_integrate,
-    run_map,
-    run_search,
-    run_suggest,
-    run_validate,
-)
+# Pipeline imports removed: TUI now invokes TypeScript agent directly
 from scholardevclaw.auth.store import AuthStore
 from scholardevclaw.auth.types import AuthProvider
 from scholardevclaw.execution import ReproducibilityScorer, SandboxRunner, SelfHealingLoop
@@ -3638,37 +3630,72 @@ class ScholarDevClawApp(App[None]):
                 self.call_from_thread(self.post_message, TaskLog(token, line))
 
             with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
-                if action == "analyze":
-                    result = run_analyze(request["repo_path"], log_callback=_log_callback)
-                elif action == "suggest":
-                    result = run_suggest(request["repo_path"], log_callback=_log_callback)
+                # Route all actions to TypeScript agent instead of Python pipeline
+                agent_path = (
+                    "/home/ronak-anand/Desktop/schoraldevClaw/ScholarDevClaw/agent/src/index.ts"
+                )
+                agent_cwd = "/home/ronak-anand/Desktop/schoraldevClaw/ScholarDevClaw/agent"
+                cmd = ["bun", "run", agent_path, "run", "--command", action]
+
+                if action in ("analyze", "suggest", "validate"):
+                    cmd.extend(["--repo", request["repo_path"]])
+                elif action in ("map", "generate", "integrate"):
+                    cmd.extend(
+                        ["--repo", request["repo_path"], "--paper-url", f"spec:{request['spec']}"]
+                    )
                 elif action == "search":
-                    result = run_search(
+                    # Search uses query instead of repo
+                    cmd = [
+                        "bun",
+                        "run",
+                        agent_path,
+                        "run",
+                        "--command",
+                        "search",
+                        "--query",
                         request["query"],
-                        include_arxiv=bool(request.get("include_arxiv")),
-                        include_web=bool(request.get("include_web")),
-                        log_callback=_log_callback,
+                    ]
+                    if request.get("include_arxiv"):
+                        cmd.append("--include-arxiv")
+                    if request.get("include_web"):
+                        cmd.append("--include-web")
+                else:
+                    raise RuntimeError(f"Unsupported action: {action}")
+
+                _log_callback(f"Invoking ScholarDevClaw Agent: {' '.join(cmd)}")
+
+                try:
+                    # Pass current environment to agent so LLM keys are available
+                    agent_env = os.environ.copy()
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        cwd=agent_cwd,
+                        env=agent_env,
                     )
-                elif action == "map":
-                    result = run_map(
-                        request["repo_path"], request["spec"], log_callback=_log_callback
-                    )
-                elif action == "generate":
-                    result = run_generate(
-                        request["repo_path"],
-                        request["spec"],
-                        log_callback=_log_callback,
-                    )
-                elif action == "validate":
-                    result = run_validate(request["repo_path"], log_callback=_log_callback)
-                elif action == "integrate":
-                    approval_callback = self._build_integrate_approval_callback(token)
-                    result = run_integrate(
-                        request["repo_path"],
-                        request["spec"],
-                        log_callback=_log_callback,
-                        approval_callback=approval_callback,
-                    )
+                    # Stream output to log callback
+                    if process.stdout:
+                        for line in process.stdout:
+                            _log_callback(line.strip())
+                    process.wait()
+                    if process.returncode != 0:
+                        raise RuntimeError(f"Agent exited with return code {process.returncode}")
+                    result = type(
+                        "Result",
+                        (),
+                        {
+                            "ok": True,
+                            "payload": {"agent_run": True, "action": action},
+                            "error": None,
+                            "logs": [],
+                        },
+                    )()
+                except Exception as e:
+                    _log_callback(f"Agent error: {str(e)}")
+                    raise
                 else:
                     raise RuntimeError(f"Unsupported action: {action}")
         except TaskCancelledError:

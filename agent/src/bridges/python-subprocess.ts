@@ -204,44 +204,31 @@ export class PythonSubprocessBridge {
 
   async extractResearch(paperSource: string, sourceType: 'pdf' | 'arxiv' = 'pdf'): Promise<PhaseResult> {
     logger.info('Extracting research', { paperSource, sourceType });
-    return {
-      success: false,
-      error:
-        'Subprocess mode does not support research extraction via module CLI. Use PythonHttpBridge for end-to-end phase execution.',
-    };
+    const args = sourceType === 'arxiv' 
+      ? ['search', '--arxiv', paperSource, '--output-json']
+      : ['search', '--pdf', paperSource, '--output-json'];
+    return this.runPythonModule('scholardevclaw.cli', args);
   }
 
   async mapArchitecture(repoAnalysis: unknown, researchSpec: unknown): Promise<PhaseResult> {
     logger.info('Mapping architecture');
-    void repoAnalysis;
-    void researchSpec;
-    return {
-      success: false,
-      error:
-        'Subprocess mode does not support mapping execution. Use PythonHttpBridge for end-to-end phase execution.',
-    };
+    // repoAnalysis and researchSpec are used to build map arguments
+    const repoPath = (repoAnalysis as any)?.repoPath || '';
+    const spec = (researchSpec as any)?.algorithm?.name || 'rmsnorm';
+    return this.runPythonModule('scholardevclaw.cli', ['map', repoPath, spec, '--output-json']);
   }
 
   async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
     logger.info('Generating patch');
-    void mapping;
-    void repoPath;
-    return {
-      success: false,
-      error:
-        'Subprocess mode does not support patch generation execution. Use PythonHttpBridge for end-to-end phase execution.',
-    };
+    const spec = (mapping as any)?.strategy || 'rmsnorm';
+    const path = repoPath || '';
+    return this.runPythonModule('scholardevclaw.cli', ['generate', path, spec, '--output-json']);
   }
 
   async validate(patch: unknown, repoPath?: string): Promise<PhaseResult> {
     logger.info('Running validation');
-    void patch;
-    void repoPath;
-    return {
-      success: false,
-      error:
-        'Subprocess mode does not support validation execution. Use PythonHttpBridge for end-to-end phase execution.',
-    };
+    const path = repoPath || '';
+    return this.runPythonModule('scholardevclaw.cli', ['validate', path, '--output-json']);
   }
 
   async healthCheck(): Promise<boolean> {
