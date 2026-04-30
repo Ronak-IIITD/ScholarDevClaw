@@ -1,5 +1,6 @@
 import { logger } from './utils/logger.js';
 import { ScholarDevClawOrchestrator } from './orchestrator.js';
+import type { IntegrationCreate } from './api/convex.js';
 import * as readline from 'readline';
 
 function getArg(flag: string): string | undefined {
@@ -289,24 +290,25 @@ async function run(): Promise<void> {
     const integrationInput: IntegrationCreate = { repoUrl };
     if (paperUrl) integrationInput.paperUrl = paperUrl;
     if (paperPdfPath) integrationInput.paperPdfPath = paperPdfPath;
+    if (mode) integrationInput.mode = mode;
 
     if (cmd === 'integrate') {
-      await orchestrator.runIntegration(integrationInput, { mode });
+      await orchestrator.runIntegration(integrationInput, {});
     } else if (cmd === 'analyze') {
       // Run only phase 1 (repo analysis)
-      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1, contextOverrides: { repoPath: repoUrl } });
+      await orchestrator.runIntegration(integrationInput, { startPhase: 1, contextOverrides: { repoPath: repoUrl } });
     } else if (cmd === 'suggest') {
       // Run phases 1-2 (analysis + research) for suggestions
-      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1 });
+      await orchestrator.runIntegration(integrationInput, { startPhase: 1 });
     } else if (cmd === 'map') {
       // Run phases 1-3 (analysis + research + mapping)
-      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1 });
+      await orchestrator.runIntegration(integrationInput, { startPhase: 1 });
     } else if (cmd === 'generate') {
       // Run phases 1-4 (analysis + research + mapping + patch generation)
-      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1 });
+      await orchestrator.runIntegration(integrationInput, { startPhase: 1 });
     } else if (cmd === 'validate') {
       // Run phases 1-5 (analysis + research + mapping + patch + validation)
-      await orchestrator.runIntegration(integrationInput, { mode, startPhase: 1 });
+      await orchestrator.runIntegration(integrationInput, { startPhase: 1 });
     } else {
       throw new Error(`Unknown command: ${cmd}. Use: analyze, suggest, integrate, map, generate, validate`);
     }

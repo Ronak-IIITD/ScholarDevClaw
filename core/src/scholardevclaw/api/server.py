@@ -129,6 +129,7 @@ _DEV_MODE = os.environ.get("SCHOLARDEVCLAW_DEV_MODE", "").lower() == "true"
 # SECURITY: Warn if dev mode is active but not in development environment
 if _DEV_MODE:
     import warnings
+
     env = os.environ.get("ENV", os.environ.get("NODE_ENV", "")).lower()
     if env not in ("development", "dev", "local"):
         warnings.warn(

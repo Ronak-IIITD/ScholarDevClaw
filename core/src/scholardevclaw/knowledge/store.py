@@ -36,7 +36,9 @@ class KnowledgeBase:
 
         # SECURITY: User-isolated collection names to prevent cross-user data access
         self.papers = self.client.get_or_create_collection(f"papers_{self._user_id}")
-        self.implementations = self.client.get_or_create_collection(f"implementations_{self._user_id}")
+        self.implementations = self.client.get_or_create_collection(
+            f"implementations_{self._user_id}"
+        )
         self.patterns = self.client.get_or_create_collection(f"patterns_{self._user_id}")
 
     def store_paper(self, doc: PaperDocument, understanding: PaperUnderstanding) -> None:
@@ -170,7 +172,9 @@ class KnowledgeBase:
 
         # SECURITY: Re-create with user-isolated names
         self.papers = self.client.get_or_create_collection(f"papers_{self._user_id}")
-        self.implementations = self.client.get_or_create_collection(f"implementations_{self._user_id}")
+        self.implementations = self.client.get_or_create_collection(
+            f"implementations_{self._user_id}"
+        )
         self.patterns = self.client.get_or_create_collection(f"patterns_{self._user_id}")
 
     def _load_optional_dependencies(self) -> tuple[Any, Any, Any]:
