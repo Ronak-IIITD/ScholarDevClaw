@@ -3661,10 +3661,7 @@ class ScholarDevClawApp(App[None]):
                 else:
                     raise RuntimeError(f"Unsupported action: {action}")
 
-                _log_callback(
-                    f"Invoking ScholarDevClaw Agent: {shlex.join(cmd)} "
-                    f"(cwd={agent_cwd})"
-                )
+                _log_callback(f"Invoking ScholarDevClaw Agent: {shlex.join(cmd)} (cwd={agent_cwd})")
 
                 process: subprocess.Popen[str] | None = None
                 try:
