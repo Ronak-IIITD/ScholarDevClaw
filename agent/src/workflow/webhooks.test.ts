@@ -22,7 +22,7 @@ describe('WebhookNotifier logging', () => {
       events: ['workflow_started'],
     });
 
-    const infoSpy = vi.mocked(logger.info);
+    const infoSpy = logger.info as ReturnType<typeof vi.fn>;
     const firstCallArgs = infoSpy.mock.calls[0]?.[0] as string;
     expect(firstCallArgs).toContain('https://example.com/path');
     expect(firstCallArgs).not.toContain('token=secret');

@@ -1,6 +1,8 @@
 import { logger } from './utils/logger.js';
 import { ScholarDevClawOrchestrator } from './orchestrator.js';
 import type { IntegrationCreate } from './api/convex.js';
+import { PythonSubprocessBridge } from './bridges/python-subprocess.js';
+import { config } from './utils/config.js';
 import * as readline from 'readline';
 
 function getArg(flag: string): string | undefined {
@@ -9,6 +11,15 @@ function getArg(flag: string): string | undefined {
     return undefined;
   }
   return process.argv[index + 1];
+}
+
+function hasFlag(flag: string): boolean {
+  return process.argv.includes(flag);
+}
+
+function specFromPaperArg(paperUrl?: string): string {
+  if (!paperUrl) return 'rmsnorm';
+  return paperUrl.startsWith('spec:') ? paperUrl.slice('spec:'.length) || 'rmsnorm' : paperUrl;
 }
 
 interface ParsedCommand {
@@ -271,9 +282,15 @@ async function run(): Promise<void> {
     return;
   }
 
-  const useHttp = process.env.CORE_BRIDGE_MODE !== 'subprocess';
-  const orchestrator = new ScholarDevClawOrchestrator(useHttp);
-  await orchestrator.initialize();
+  let orchestrator: ScholarDevClawOrchestrator | undefined;
+  const getOrchestrator = async (): Promise<ScholarDevClawOrchestrator> => {
+    if (!orchestrator) {
+      const useHttp = process.env.CORE_BRIDGE_MODE !== 'subprocess';
+      orchestrator = new ScholarDevClawOrchestrator(useHttp);
+      await orchestrator.initialize();
+    }
+    return orchestrator;
+  };
 
   if (command === 'run') {
     const repoUrl = getArg('--repo') || getArg('--repo-url');
@@ -281,6 +298,24 @@ async function run(): Promise<void> {
     const paperPdfPath = getArg('--paper-pdf');
     const mode = getArg('--mode') as 'step_approval' | 'autonomous' | undefined;
     const cmd = getArg('--command') || 'integrate';
+
+    if (cmd === 'search') {
+      const query = getArg('--query') || getArg('--q');
+      if (!query) throw new Error('Missing required argument: --query <search-query>');
+      const bridge = new PythonSubprocessBridge(config.python.subprocessCommand);
+      const result = await bridge.searchResearch(query, {
+        includeArxiv: hasFlag('--include-arxiv') || hasFlag('--arxiv'),
+        includeWeb: hasFlag('--include-web') || hasFlag('--web'),
+        language: getArg('--language'),
+        maxResults: getArg('--max-results'),
+      });
+      if (!result.success) {
+        throw new Error(result.error || 'Search failed');
+      }
+      console.log(JSON.stringify(result.data ?? {}, null, 2));
+      logger.info('Command search completed');
+      return;
+    }
 
     if (!repoUrl) throw new Error('Missing required argument: --repo <path-or-url>');
     if (cmd === 'integrate' && !paperUrl && !paperPdfPath) {
@@ -292,25 +327,37 @@ async function run(): Promise<void> {
     if (paperPdfPath) integrationInput.paperPdfPath = paperPdfPath;
     if (mode) integrationInput.mode = mode;
 
+    if (cmd !== 'integrate') {
+      const bridge = new PythonSubprocessBridge(config.python.subprocessCommand);
+      let result;
+      if (cmd === 'analyze') {
+        result = await bridge.analyzeRepo(repoUrl);
+      } else if (cmd === 'suggest') {
+        result = await bridge.runCli(['suggest', repoUrl]);
+      } else if (cmd === 'map') {
+        const spec = specFromPaperArg(paperUrl);
+        result = await bridge.runCli(['map', repoUrl, spec, '--output-json']);
+      } else if (cmd === 'generate') {
+        const spec = specFromPaperArg(paperUrl);
+        result = await bridge.runCli(['generate', repoUrl, spec, '--use-specs', '--output-json']);
+      } else if (cmd === 'validate') {
+        result = await bridge.runCli(['validate', repoUrl, '--output-json']);
+      } else {
+        throw new Error(`Unknown command: ${cmd}. Use: analyze, suggest, integrate, map, generate, validate, search`);
+      }
+
+      if (!result.success) {
+        throw new Error(result.error || `Command ${cmd} failed`);
+      }
+      if (result.data !== undefined) {
+        console.log(typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2));
+      }
+      logger.info(`Command ${cmd} completed`);
+      return;
+    }
+
     if (cmd === 'integrate') {
-      await orchestrator.runIntegration(integrationInput, {});
-    } else if (cmd === 'analyze') {
-      // Run only phase 1 (repo analysis)
-      await orchestrator.runIntegration(integrationInput, { startPhase: 1, contextOverrides: { repoPath: repoUrl } });
-    } else if (cmd === 'suggest') {
-      // Run phases 1-2 (analysis + research) for suggestions
-      await orchestrator.runIntegration(integrationInput, { startPhase: 1 });
-    } else if (cmd === 'map') {
-      // Run phases 1-3 (analysis + research + mapping)
-      await orchestrator.runIntegration(integrationInput, { startPhase: 1 });
-    } else if (cmd === 'generate') {
-      // Run phases 1-4 (analysis + research + mapping + patch generation)
-      await orchestrator.runIntegration(integrationInput, { startPhase: 1 });
-    } else if (cmd === 'validate') {
-      // Run phases 1-5 (analysis + research + mapping + patch + validation)
-      await orchestrator.runIntegration(integrationInput, { startPhase: 1 });
-    } else {
-      throw new Error(`Unknown command: ${cmd}. Use: analyze, suggest, integrate, map, generate, validate`);
+      await (await getOrchestrator()).runIntegration(integrationInput, {});
     }
 
     logger.info(`Command ${cmd} completed`);
@@ -320,13 +367,13 @@ async function run(): Promise<void> {
   if (command === 'resume') {
     const runId = getArg('--run-id');
     if (!runId) throw new Error('Missing required argument: --run-id <run-id>');
-    const resumed = await orchestrator.resumeRun(runId);
+    const resumed = await (await getOrchestrator()).resumeRun(runId);
     if (!resumed) throw new Error(`Resume failed for run id: ${runId}`);
     logger.info('Resume completed', { runId });
     return;
   }
 
-  await orchestrator.processPendingWork();
+  await (await getOrchestrator()).processPendingWork();
   logger.info('Heartbeat check completed');
 }
 

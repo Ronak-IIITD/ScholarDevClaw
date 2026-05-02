@@ -28,6 +28,7 @@ _SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/DOI:"
 _SEMANTIC_SCHOLAR_FIELDS = "title,authors,year,abstract,openAccessPdf,venue,externalIds"
 _SEMANTIC_SCHOLAR_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 _DEFAULT_CACHE_DIR = Path.home() / ".scholardevclaw" / "cache"
+_MAX_SAFE_REDIRECTS = 5
 
 __all__ = [
     "PaperFetchError",
@@ -475,11 +476,7 @@ class PaperFetcher:
         normalized_url = self._normalize_http_url(url)
 
         def _request() -> bytes:
-            response = httpx.get(
-                normalized_url,
-                timeout=self.timeout_seconds,
-                follow_redirects=True,
-            )
+            response = self._request_with_safe_redirects("GET", normalized_url)
             response.raise_for_status()
             return response.content
 
@@ -504,11 +501,7 @@ class PaperFetcher:
     def _head_content_type(self, url: str) -> str:
         normalized_url = self._normalize_http_url(url)
         try:
-            response = httpx.head(
-                normalized_url,
-                timeout=self.timeout_seconds,
-                follow_redirects=True,
-            )
+            response = self._request_with_safe_redirects("HEAD", normalized_url)
             response.raise_for_status()
             return str(response.headers.get("content-type", "")).casefold()
         except httpx.HTTPError as exc:
@@ -520,11 +513,7 @@ class PaperFetcher:
     def _http_get_text(self, url: str) -> str:
         normalized_url = self._normalize_http_url(url)
         try:
-            response = httpx.get(
-                normalized_url,
-                timeout=self.timeout_seconds,
-                follow_redirects=True,
-            )
+            response = self._request_with_safe_redirects("GET", normalized_url)
             response.raise_for_status()
             return response.text
         except httpx.HTTPStatusError as exc:
@@ -627,6 +616,40 @@ class PaperFetcher:
             )
         self._assert_public_host(host)
         return parsed.geturl()
+
+    def _request_with_safe_redirects(self, method: str, url: str) -> httpx.Response:
+        current_url = self._normalize_http_url(url)
+        for redirect_count in range(_MAX_SAFE_REDIRECTS + 1):
+            response = httpx.request(
+                method,
+                current_url,
+                timeout=self.timeout_seconds,
+                follow_redirects=False,
+            )
+            if not response.is_redirect:
+                return response
+
+            if redirect_count >= _MAX_SAFE_REDIRECTS:
+                raise PaperSourceResolutionError(
+                    "What failed: URL redirect validation. "
+                    f"Why: '{url}' exceeded {_MAX_SAFE_REDIRECTS} redirects. "
+                    "Fix: use a direct public PDF URL."
+                )
+
+            location = response.headers.get("location", "").strip()
+            if not location:
+                raise PaperSourceResolutionError(
+                    "What failed: URL redirect validation. "
+                    "Why: redirect response did not include a Location header. "
+                    "Fix: use a direct public PDF URL."
+                )
+            current_url = self._normalize_http_url(urljoin(current_url, location))
+
+        raise PaperSourceResolutionError(
+            "What failed: URL redirect validation. "
+            "Why: redirect handling ended unexpectedly. "
+            "Fix: use a direct public PDF URL."
+        )
 
     def _assert_public_host(self, host: str) -> None:
         lowered = host.casefold()

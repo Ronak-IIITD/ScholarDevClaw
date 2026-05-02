@@ -2,7 +2,39 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-04-30
+**Last updated:** 2026-05-02
+
+### 2026-05-02 (TUI/agent contract hardening + SSRF redirect defense)
+
+**Summary:** Fixed broken TUI-to-agent command execution, aligned subprocess-mode CLI contracts, and tightened remote paper fetch redirect validation.
+
+**What changed:**
+
+**1. TUI → TypeScript Agent execution path:**
+- Removed the success-path `Unsupported action` failure in `core/src/scholardevclaw/tui/app.py`
+- Replaced hardcoded local agent paths with repo-relative resolution from the installed TUI module
+- Added safer command logging via shell quoting and ensured spawned agent processes are terminated on task errors/cancellation
+
+**2. Agent CLI/subprocess contract alignment:**
+- Added explicit `run --command search --query ...` support in `agent/src/index.ts`
+- Routed analyze/suggest/map/generate/validate commands through the Python CLI bridge instead of accidentally running the full integration workflow
+- Made Convex optional unless both `CONVEX_URL` and `SCHOLARDEVCLAW_CONVEX_AUTH_KEY` are configured
+- Fixed Python subprocess core path discovery so subprocess mode works from both repo root and `agent/`
+- Normalized Python CLI JSON shapes for repo analysis, research specs, mappings, and patch generation in `agent/src/bridges/python-subprocess.ts`
+
+**3. Paper fetch SSRF hardening:**
+- Added safe manual redirect handling in `core/src/scholardevclaw/ingestion/paper_fetcher.py`
+- Every redirect target is re-normalized and revalidated before follow-up requests
+- Added regression coverage for public URL redirects to cloud metadata IPs
+
+**4. Test/CI cleanup:**
+- Fixed Bun-compatible webhook logger mock assertions in `agent/src/workflow/webhooks.test.ts`
+- Validation run:
+  - `cd agent && bun run build`
+  - `cd agent && bun test src/workflow/webhooks.test.ts src/bridges/python-http.test.ts`
+  - `cd core && ruff check src/scholardevclaw/ingestion/paper_fetcher.py src/scholardevclaw/tui/app.py tests/test_ingestion.py`
+  - `cd core && pytest tests/test_ingestion.py tests/unit/test_api_server.py -q`
+  - Smoke-tested agent `search`, `analyze`, `map`, `generate`, and `validate` subprocess commands
 
 ### 2026-04-30 (Apply honest assessment fixes)
 

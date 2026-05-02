@@ -7,6 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from scholardevclaw.ingestion.models import (
@@ -20,6 +21,7 @@ from scholardevclaw.ingestion.paper_fetcher import (
     PaperFetcher,
     PaperIngester,
     PaperNotAccessibleError,
+    PaperSourceResolutionError,
 )
 
 
@@ -201,6 +203,34 @@ def test_fetch_by_url_uses_html_pdf_discovery(
     assert result.abstract == expected_doc.abstract
     assert result.source_url == "https://example.org/page"
     assert downloaded["url"].name == "paper.pdf"
+
+
+def test_download_file_revalidates_redirect_targets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fetcher = PaperFetcher(cache_dir=tmp_path / "cache")
+
+    def _fake_getaddrinfo(host: str, *_args: Any, **_kwargs: Any) -> list[Any]:
+        ip = "169.254.169.254" if host == "169.254.169.254" else "93.184.216.34"
+        return [(None, None, None, None, (ip, 443))]
+
+    def _fake_request(method: str, url: str, **_kwargs: Any) -> httpx.Response:
+        assert method == "GET"
+        request = httpx.Request(method, url)
+        return httpx.Response(
+            302,
+            headers={"location": "http://169.254.169.254/latest/meta-data"},
+            request=request,
+        )
+
+    monkeypatch.setattr("socket.getaddrinfo", _fake_getaddrinfo)
+    monkeypatch.setattr(httpx, "request", _fake_request)
+
+    destination = tmp_path / "paper.pdf"
+    with pytest.raises(PaperSourceResolutionError):
+        fetcher._download_file("https://example.org/paper.pdf", destination)
+
+    assert not destination.exists()
 
 
 def test_paper_ingester_delegates_to_fetcher(tmp_path: Path) -> None:

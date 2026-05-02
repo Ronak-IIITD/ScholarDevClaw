@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import re
+import shlex
 import subprocess
 import sys
 import threading
@@ -3631,11 +3632,9 @@ class ScholarDevClawApp(App[None]):
 
             with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
                 # Route all actions to TypeScript agent instead of Python pipeline
-                agent_path = (
-                    "/home/ronak-anand/Desktop/schoraldevClaw/ScholarDevClaw/agent/src/index.ts"
-                )
-                agent_cwd = "/home/ronak-anand/Desktop/schoraldevClaw/ScholarDevClaw/agent"
-                cmd = ["bun", "run", agent_path, "run", "--command", action]
+                repo_root = Path(__file__).resolve().parents[4]
+                agent_cwd = repo_root / "agent"
+                cmd = ["bun", "run", "src/index.ts", "run", "--command", action]
 
                 if action in ("analyze", "suggest", "validate"):
                     cmd.extend(["--repo", request["repo_path"]])
@@ -3648,7 +3647,7 @@ class ScholarDevClawApp(App[None]):
                     cmd = [
                         "bun",
                         "run",
-                        agent_path,
+                        "src/index.ts",
                         "run",
                         "--command",
                         "search",
@@ -3662,8 +3661,12 @@ class ScholarDevClawApp(App[None]):
                 else:
                     raise RuntimeError(f"Unsupported action: {action}")
 
-                _log_callback(f"Invoking ScholarDevClaw Agent: {' '.join(cmd)}")
+                _log_callback(
+                    f"Invoking ScholarDevClaw Agent: {shlex.join(cmd)} "
+                    f"(cwd={agent_cwd})"
+                )
 
+                process: subprocess.Popen[str] | None = None
                 try:
                     # Pass current environment to agent so LLM keys are available
                     agent_env = os.environ.copy()
@@ -3673,7 +3676,7 @@ class ScholarDevClawApp(App[None]):
                         stderr=subprocess.STDOUT,
                         text=True,
                         bufsize=1,
-                        cwd=agent_cwd,
+                        cwd=str(agent_cwd),
                         env=agent_env,
                     )
                     # Stream output to log callback
@@ -3694,10 +3697,14 @@ class ScholarDevClawApp(App[None]):
                         },
                     )()
                 except Exception as e:
+                    if process is not None and process.poll() is None:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
                     _log_callback(f"Agent error: {str(e)}")
                     raise
-                else:
-                    raise RuntimeError(f"Unsupported action: {action}")
         except TaskCancelledError:
             result = type(
                 "Result",

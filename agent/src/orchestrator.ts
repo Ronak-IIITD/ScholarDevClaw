@@ -66,8 +66,12 @@ export class ScholarDevClawOrchestrator {
   async initialize(): Promise<void> {
     await this.runStore.initialize();
 
-    if (config.convex.deploymentUrl) {
+    if (config.convex.deploymentUrl && process.env.SCHOLARDEVCLAW_CONVEX_AUTH_KEY) {
       this.convex = new ConvexClientWrapper();
+    } else if (config.convex.deploymentUrl) {
+      logger.warn(
+        'CONVEX_URL is set but SCHOLARDEVCLAW_CONVEX_AUTH_KEY is missing; running without Convex state integration.',
+      );
     }
 
     if (config.github.token) {
