@@ -22,6 +22,7 @@ from scholardevclaw.tui.app import (
     RunLifecycleState,
     ScholarDevClawApp,
     TaskCompleted,
+    TaskLog,
 )
 from scholardevclaw.tui.widgets import RunInspector
 from scholardevclaw.understanding.models import PaperUnderstanding
@@ -1365,6 +1366,167 @@ def test_build_request_supports_run_events_commands_and_limit():
     action, req = app._build_request("run events 7 3")
     assert action == "run_events"
     assert req == {"run_id": 7, "limit": 3}
+
+
+def test_run_task_in_thread_posts_success_for_agent_analyze(monkeypatch):
+    app = _minimal_app_for_unit()
+    posted: list[Any] = []
+    popen_calls: list[dict[str, Any]] = []
+
+    class _FakeProcess:
+        stdout = ["agent ok\n"]
+        returncode = 0
+
+        def __init__(self, cmd, **kwargs):
+            popen_calls.append({"cmd": cmd, **kwargs})
+
+        def wait(self, timeout=None):
+            return 0
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            raise AssertionError("terminate should not be called on success")
+
+        def kill(self):
+            raise AssertionError("kill should not be called on success")
+
+    monkeypatch.setattr("scholardevclaw.tui.app.subprocess.Popen", _FakeProcess)
+    app._apply_provider_env = lambda: {}
+    app._restore_provider_env = lambda _prev: None
+    app.call_from_thread = lambda _fn, message: posted.append(message)  # type: ignore[assignment]
+
+    request = {"repo_path": "./repo", "spec": ""}
+    app._run_task_in_thread(11, "analyze", request)
+
+    assert popen_calls[0]["cmd"] == [
+        "bun",
+        "run",
+        "src/index.ts",
+        "run",
+        "--command",
+        "analyze",
+        "--repo",
+        "./repo",
+    ]
+    assert popen_calls[0]["cwd"].endswith("/agent")
+    assert any(isinstance(message, TaskLog) and "agent ok" in message.line for message in posted)
+    completed = next(message for message in posted if isinstance(message, TaskCompleted))
+    assert completed.action == "analyze"
+    assert completed.result.ok is True
+    assert completed.result.payload == {"agent_run": True, "action": "analyze"}
+
+
+def test_run_task_in_thread_builds_search_command_without_repo(monkeypatch):
+    app = _minimal_app_for_unit()
+    posted: list[Any] = []
+    popen_calls: list[dict[str, Any]] = []
+
+    class _FakeProcess:
+        stdout = []
+        returncode = 0
+
+        def __init__(self, cmd, **kwargs):
+            popen_calls.append({"cmd": cmd, **kwargs})
+
+        def wait(self, timeout=None):
+            return 0
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            raise AssertionError("terminate should not be called on success")
+
+        def kill(self):
+            raise AssertionError("kill should not be called on success")
+
+    monkeypatch.setattr("scholardevclaw.tui.app.subprocess.Popen", _FakeProcess)
+    app._apply_provider_env = lambda: {}
+    app._restore_provider_env = lambda _prev: None
+    app.call_from_thread = lambda _fn, message: posted.append(message)  # type: ignore[assignment]
+
+    request = {"query": "flash attention", "include_arxiv": True, "include_web": True}
+    app._run_task_in_thread(12, "search", request)
+
+    assert popen_calls[0]["cmd"] == [
+        "bun",
+        "run",
+        "src/index.ts",
+        "run",
+        "--command",
+        "search",
+        "--query",
+        "flash attention",
+        "--include-arxiv",
+        "--include-web",
+    ]
+    completed = next(message for message in posted if isinstance(message, TaskCompleted))
+    assert completed.result.ok is True
+
+
+def test_run_task_in_thread_posts_failure_for_agent_nonzero_exit(monkeypatch):
+    app = _minimal_app_for_unit()
+    posted: list[Any] = []
+    terminated = {"called": False}
+
+    class _FakeProcess:
+        stdout = ["bad thing\n"]
+        returncode = 2
+
+        def __init__(self, _cmd, **_kwargs):
+            pass
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            terminated["called"] = True
+
+        def kill(self):
+            raise AssertionError("kill should not be called when process already exited")
+
+    monkeypatch.setattr("scholardevclaw.tui.app.subprocess.Popen", _FakeProcess)
+    app._apply_provider_env = lambda: {}
+    app._restore_provider_env = lambda _prev: None
+    app.call_from_thread = lambda _fn, message: posted.append(message)  # type: ignore[assignment]
+
+    request = {"repo_path": "./repo", "spec": "rmsnorm"}
+    app._run_task_in_thread(13, "generate", request)
+
+    completed = next(message for message in posted if isinstance(message, TaskCompleted))
+    assert completed.result.ok is False
+    assert "return code 2" in completed.result.error
+    assert completed.result.logs == ["Agent exited with return code 2"]
+    assert terminated["called"] is False
+
+
+def test_run_task_in_thread_posts_cancelled_when_token_cancelled(monkeypatch):
+    app = _minimal_app_for_unit()
+    posted: list[Any] = []
+    popen_called = {"called": False}
+
+    class _FakeProcess:
+        def __init__(self, *_args, **_kwargs):
+            popen_called["called"] = True
+
+    monkeypatch.setattr("scholardevclaw.tui.app.subprocess.Popen", _FakeProcess)
+    app._apply_provider_env = lambda: {}
+    app._restore_provider_env = lambda _prev: None
+    app._is_task_cancelled = lambda _token: True
+    app.call_from_thread = lambda _fn, message: posted.append(message)  # type: ignore[assignment]
+
+    app._run_task_in_thread(14, "analyze", {"repo_path": "./repo"})
+
+    completed = next(message for message in posted if isinstance(message, TaskCompleted))
+    assert completed.result.ok is False
+    assert completed.result.payload == {"cancelled": True}
+    assert completed.result.error == "Task cancelled"
+    assert popen_called["called"] is False
 
 
 def test_on_task_completed_emits_terminal_completion_event():

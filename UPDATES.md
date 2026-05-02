@@ -4,6 +4,20 @@
 
 **Last updated:** 2026-05-02
 
+### 2026-05-02 (TUI subprocess contract tests)
+
+**Summary:** Added regression coverage for the TUI-to-agent subprocess path fixed earlier.
+
+**What changed:**
+- Added unit tests in `core/tests/unit/test_tui_app.py` for successful agent task completion
+- Added search command construction coverage to ensure TUI sends `--query` without requiring `--repo`
+- Added nonzero agent exit coverage so failures become `TaskCompleted(ok=False)` results
+- Added pre-spawn cancellation coverage so cancelled tasks do not start a subprocess
+
+**Validation:**
+- `cd core && pytest tests/unit/test_tui_app.py -q`
+- `cd core && ruff check tests/unit/test_tui_app.py`
+
 ### 2026-05-02 (TUI/agent contract hardening + SSRF redirect defense)
 
 **Summary:** Fixed broken TUI-to-agent command execution, aligned subprocess-mode CLI contracts, and tightened remote paper fetch redirect validation.
