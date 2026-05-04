@@ -30,6 +30,7 @@ from textual.widgets import Input, Static
 # Pipeline imports removed: TUI now invokes TypeScript agent directly
 from scholardevclaw.auth.store import AuthStore
 from scholardevclaw.auth.types import AuthProvider
+from scholardevclaw.convex_client import ConvexClient, ConvexIntegration
 from scholardevclaw.execution import ReproducibilityScorer, SandboxRunner, SelfHealingLoop
 from scholardevclaw.execution.scorer import ReproducibilityReport
 from scholardevclaw.generation import CodeOrchestrator
@@ -460,6 +461,10 @@ class ScholarDevClawApp(App[None]):
 
     def __init__(self, *, yes_mode: bool = False) -> None:
         super().__init__()
+        self._convex = ConvexClient()
+        self._current_integration_id: str | None = None
+        self._monitor_thread: threading.Thread | None = None
+        self._stop_monitor = threading.Event()
         self._mode = "analyze"
         self._provider = "setup"
         self._model = ""
@@ -1802,26 +1807,60 @@ class ScholarDevClawApp(App[None]):
             self._set_status(f"{PAPER_WORKFLOW_NAME} source missing", "warning")
             return
 
-        work_dir, output_dir = self._phase9_prepare_dirs(source_text)
-        workflow_state = Phase9WorkflowState(
-            active=True,
-            source=source_text,
-            work_dir=work_dir,
-            output_dir=output_dir,
-            cancel_event=threading.Event(),
-            auto_approve=self._yes_mode,
-        )
-        self._phase9_workflow = workflow_state
-        self._set_phase("paper_ingest")
-        self._append_output(f"{PAPER_WORKFLOW_NAME} work directory: {work_dir}", "accent")
-        self._set_status(f"{PAPER_WORKFLOW_NAME} workflow running", "accent")
+        # SECURITY/INTEGRATION: Trigger TypeScript Agent via Convex
+        try:
+            repo_url = self._get_active_repo_path() or ""
+            self._append_output(f"Triggering agent via Convex... (Repo: {repo_url})", "accent")
 
-        thread = threading.Thread(
-            target=self._run_phase9_workflow_thread,
-            args=(workflow_state,),
-            daemon=True,
-        )
-        thread.start()
+            # Create integration record in Convex
+            integration_id = self._convex.create_integration(
+                repo_url=repo_url,
+                paper_url=source_text if "http" in source_text else None,
+                paper_pdf_path=source_text if not ("http" in source_text) else None,
+                mode="step_approval" if not self._yes_mode else "autonomous"
+            )
+            self._current_integration_id = integration_id
+
+            # Start monitoring the agent's progress
+            self._start_agent_monitor()
+
+        except Exception as e:
+            self._append_output(f"Failed to trigger agent: {e}", "error")
+            self._set_status("Agent trigger failed", "error")
+            return
+
+    def _start_agent_monitor(self) -> None:
+        """Starts a background thread to poll Convex for agent status."""
+        if self._monitor_thread and self._monitor_thread.is_alive():
+            return
+
+        self._stop_monitor.clear()
+        self._monitor_thread = threading.Thread(target=self._monitor_agent_loop, daemon=True)
+        self._monitor_thread.start()
+
+    def _monitor_agent_loop(self) -> None:
+        """Polls Convex and updates TUI output."""
+        while not self._stop_monitor.is_set():
+            if not self._current_integration_id:
+                break
+
+            try:
+                status = self._convex.get_integration_status(self._current_integration_id)
+                self._append_output(f"Agent Status: {status.status} (Phase {status.currentPhase})", "info")
+                self._set_status(f"Agent: {status.status}", "accent")
+
+                if status.status in ("completed", "failed"):
+                    self._append_output(f"Agent workflow {status.status}!", "success" if status.status == "completed" else "error")
+                    self._current_integration_id = None
+                    break
+
+                if status.status == "awaiting_approval":
+                    self._append_output("Agent is awaiting approval. Please review the la l-TUI inspector.", "warning")
+
+            except Exception as e:
+                logger.debug("Agent monitor poll failed: %s", e)
+
+            time.sleep(5)
 
     def _save_provider_setup(
         self, provider: str, model: str, api_key: str = ""
@@ -2700,6 +2739,38 @@ class ScholarDevClawApp(App[None]):
             return None
 
         def _callback(stage: str, context: dict[str, Any]) -> bool | dict[str, Any]:
+            # SECURITY/INTEGRATION: If an agent run is active, route approval to Convex
+            if self._current_integration_id:
+                # We assume 'stage' here maps to the agent's phase number
+                # This is a simplification: in a real system, we'd map stage name -> phase index
+                phase_map = {
+                    "analysis": 1,
+                    "extraction": 2,
+                    "mapping": 3,
+                    "generation": 4,
+                    "validation": 5,
+                }
+                phase_idx = phase_map.get(stage.lower(), 0)
+
+                try:
+                    self._convex.create_approval(
+                        integration_id=self._current_integration_id,
+                        phase=phase_idx,
+                        action="approved",
+                        notes="Approved via TUI"
+                    )
+                    self.call_from_thread(
+                        self.post_message,
+                        TaskLog(token, f"Approval [{stage}] sent to Convex agent"),
+                    )
+                    return True
+                except Exception as e:
+                    logger.error("Failed to send approval to Convex: %s", e)
+                    self.call_from_thread(
+                        self.post_message,
+                        TaskLog(token, f"Error sending approval to Convex: {e}"),
+                    )
+
             prompt = self._approval_stage_message(stage)
             self.call_from_thread(
                 self.post_message,

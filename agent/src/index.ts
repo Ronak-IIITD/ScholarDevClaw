@@ -373,8 +373,19 @@ async function run(): Promise<void> {
     return;
   }
 
-  await (await getOrchestrator()).processPendingWork();
-  logger.info('Heartbeat check completed');
+  // Heartbeat / Daemon mode: continuously process pending work from Convex
+  const orch = await getOrchestrator();
+  logger.info('Agent starting in heartbeat mode. Polling Convex for pending work...');
+
+  while (true) {
+    try {
+      await orch.processPendingWork();
+    } catch (e) {
+      logger.error('Error during heartbeat processPendingWork: %s', e);
+    }
+    // Poll every 10 seconds
+    await new Promise(resolve => setTimeout(resolve, 10000));
+  }
 }
 
 run().catch((err: unknown) => {
