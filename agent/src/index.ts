@@ -381,7 +381,8 @@ async function run(): Promise<void> {
     try {
       await orch.processPendingWork();
     } catch (e) {
-      logger.error('Error during heartbeat processPendingWork: %s', e);
+      const message = e instanceof Error ? e.message : String(e);
+      logger.error('Error during heartbeat processPendingWork', { error: message });
     }
     // Poll every 10 seconds
     await new Promise(resolve => setTimeout(resolve, 10000));

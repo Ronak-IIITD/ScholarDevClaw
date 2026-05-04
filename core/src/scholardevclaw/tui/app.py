@@ -30,7 +30,7 @@ from textual.widgets import Input, Static
 # Pipeline imports removed: TUI now invokes TypeScript agent directly
 from scholardevclaw.auth.store import AuthStore
 from scholardevclaw.auth.types import AuthProvider
-from scholardevclaw.convex_client import ConvexClient, ConvexIntegration
+from scholardevclaw.convex_client import ConvexClient
 from scholardevclaw.execution import ReproducibilityScorer, SandboxRunner, SelfHealingLoop
 from scholardevclaw.execution.scorer import ReproducibilityReport
 from scholardevclaw.generation import CodeOrchestrator
@@ -1816,8 +1816,8 @@ class ScholarDevClawApp(App[None]):
             integration_id = self._convex.create_integration(
                 repo_url=repo_url,
                 paper_url=source_text if "http" in source_text else None,
-                paper_pdf_path=source_text if not ("http" in source_text) else None,
-                mode="step_approval" if not self._yes_mode else "autonomous"
+                paper_pdf_path=source_text if "http" not in source_text else None,
+                mode="step_approval" if not self._yes_mode else "autonomous",
             )
             self._current_integration_id = integration_id
 
@@ -1846,16 +1846,24 @@ class ScholarDevClawApp(App[None]):
 
             try:
                 status = self._convex.get_integration_status(self._current_integration_id)
-                self._append_output(f"Agent Status: {status.status} (Phase {status.currentPhase})", "info")
+                self._append_output(
+                    f"Agent Status: {status.status} (Phase {status.current_phase})", "info"
+                )
                 self._set_status(f"Agent: {status.status}", "accent")
 
                 if status.status in ("completed", "failed"):
-                    self._append_output(f"Agent workflow {status.status}!", "success" if status.status == "completed" else "error")
+                    self._append_output(
+                        f"Agent workflow {status.status}!",
+                        "success" if status.status == "completed" else "error",
+                    )
                     self._current_integration_id = None
                     break
 
                 if status.status == "awaiting_approval":
-                    self._append_output("Agent is awaiting approval. Please review the la l-TUI inspector.", "warning")
+                    self._append_output(
+                        "Agent is awaiting approval. Please review the la l-TUI inspector.",
+                        "warning",
+                    )
 
             except Exception as e:
                 logger.debug("Agent monitor poll failed: %s", e)
@@ -2757,7 +2765,7 @@ class ScholarDevClawApp(App[None]):
                         integration_id=self._current_integration_id,
                         phase=phase_idx,
                         action="approved",
-                        notes="Approved via TUI"
+                        notes="Approved via TUI",
                     )
                     self.call_from_thread(
                         self.post_message,
