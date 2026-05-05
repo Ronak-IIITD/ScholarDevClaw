@@ -48,6 +48,7 @@ htmlcov/
 .env
 .env.local
 demo.md
+g44xggb2fo.tmp
 
 # SECURITY: Auth and encryption files
 auth.json
