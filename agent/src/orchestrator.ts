@@ -647,9 +647,9 @@ export class ScholarDevClawOrchestrator {
       }
       await this.convex.updateStatus(integrationId, 'pending', phase);
     } else {
-      logger.warn('No Convex configured — auto-approving after timeout. Set CONVEX_URL for real approval gates.', { runId, phase });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      await this.runStore.addApproval(runId, phase, 'approved');
+      const errorMsg = 'Approval gate required but Convex is not configured. Set CONVEX_URL and SCHOLARDEVCLAW_CONVEX_AUTH_KEY for mandatory approval gates.';
+      logger.error(errorMsg, { runId, phase });
+      throw new Error(errorMsg);
     }
 
     logger.info('Approval received (or simulated)');

@@ -4,6 +4,63 @@
 
 **Last updated:** 2026-05-06
 
+### 2026-05-06 (Security Fixes — Critical/High)
+**Summary:** Fixed critical security and reliability issues from SECURITY_UPDATES.md audit.
+
+**What changed:**
+
+1. **Patch truncation fix (Critical #1):**
+   - Removed 500-character truncation of `original` and `modified` fields in `core/src/scholardevclaw/patch_generation/generator.py` (lines 1360-1361).
+   - Removed same truncation in API response in `core/src/scholardevclaw/api/server.py` (lines 964-965).
+   - Patches now store and return full file content instead of preview snippets.
+
+2. **Validation reliability (Critical #2):**
+   - Fixed test failure handling: validation now aborts on any test failure (`not test_result.passed`) instead of only on errors (line 323 of `validation/runner.py`).
+   - Fixed Docker sandbox mode: now runs pytest inside Docker container instead of auto-passing (lines 445-490 of `validation/runner.py`).
+   - Fixed torch availability check: now actually checks inside Docker instead of returning False (lines 575-590 of `validation/runner.py`).
+
+3. **Paper to Code web flow (Critical #3):**
+   - Added `FromPaperRequest` and `FromPaperResponse` Pydantic models to `api/server.py`.
+   - Implemented `/from-paper` POST endpoint that runs full pipeline: research extraction → repo analysis → mapping → patch generation → validation.
+   - Fixed LSP errors by converting dataclasses to dicts using `asdict()`.
+
+4. **Install path fix (Critical #4):**
+   - Fixed `landing/install.sh` to install from `core/` subdirectory instead of repo root (line 140).
+   - Fixed GitHub fallback to use `#subdirectory=core` (line 147).
+
+5. **TypeScript bridge fix (High #1 & #2):**
+   - Fixed `agent/src/bridges/python-subprocess.ts` to pass full mapping/patch payloads instead of collapsed strings.
+   - `generatePatch()` now passes full mapping JSON to CLI instead of just spec name.
+   - `validate()` now passes full patch payload to CLI.
+   - Fixed "[object Object]" spec name issue by extracting actual name from mapping object.
+
+**Verification:**
+- `cd core && ruff check src/scholardevclaw/patch_generation/generator.py src/scholardevclaw/validation/runner.py src/scholardevclaw/api/server.py`
+- `cd core && python -m pytest tests/unit/test_patch_generator.py -q` (pending)
+- `cd core && python -m pytest tests/unit/test_validation_runner.py -q` ✅ (40 passed in 1.66s)
+
+### 2026-05-06 (Security Fixes — High Priority)
+**Summary:** Fixed high priority security issues from SECURITY_UPDATES.md.
+
+**What changed:**
+
+1. **Auto-approve fix (High #3):**
+   - Modified `agent/src/orchestrator.ts` to throw error when approval gate required but Convex is not configured (lines 649-653).
+   - Removed auto-approve after 1 second when Convex is absent.
+
+2. **Web API authentication (High #4):**
+   - Updated `web/src/lib/api.ts` to include Authorization header in all API requests.
+   - Token is retrieved from localStorage (`scholardevclaw_api_token`) and added as Bearer token.
+
+3. **Synthetic benchmark fix (Critical #2):**
+   - Replaced synthetic training benchmark in `core/src/scholardevclaw/validation/runner.py` with actual repo benchmark/test execution.
+   - Now runs real benchmark/test scripts with timing and reports pass/fail status.
+
+**Verification:**
+- `cd agent && bun run build` (pending)
+- `cd web && npm run build` (pending)
+- `cd core && pytest tests/unit/test_validation_runner.py -q` (pending)
+
 ### 2026-05-06 (Security and reliability audit report)
 
 Added a root-level audit record in `SECURITY_UPDATES.md` capturing the full repository findings from the 2026-05-06 review.

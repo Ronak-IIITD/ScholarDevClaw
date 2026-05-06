@@ -1357,8 +1357,8 @@ class PatchGenerator:
                         transformations.append(
                             Transformation(
                                 file=str(target.get("file", "model.py")),
-                                original=original[:500],
-                                modified=modified[:500],
+                                original=original,
+                                modified=modified,
                                 changes=[
                                     {
                                         "type": "replace",

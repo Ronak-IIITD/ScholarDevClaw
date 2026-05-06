@@ -136,15 +136,15 @@ install_package() {
     pip_flags+=(--upgrade)
   fi
 
-  # Build install command
-  install_cmd="$PYTHON_CMD -m pip install ${pip_flags[*]} ."
+  # Build install command - install from core/ subdirectory
+  install_cmd="$PYTHON_CMD -m pip install ${pip_flags[*]} ./core"
 
-  log_info "Installing from local source..."
+  log_info "Installing from local source (core/)..."
   if ! eval "$install_cmd"; then
     log_warn "Local install failed. Trying from GitHub source..."
 
-    # Fallback: install from GitHub
-    if ! $PYTHON_CMD -m pip install ${pip_flags[*]} "git+https://github.com/Ronak-IIITD/ScholarDevClaw.git@main"; then
+    # Fallback: install from GitHub (core/ subdirectory)
+    if ! $PYTHON_CMD -m pip install ${pip_flags[*]} "git+https://github.com/Ronak-IIITD/ScholarDevClaw.git@main#subdirectory=core"; then
       log_error "Installation failed."
       log_error "Please report this at: https://github.com/Ronak-IIITD/ScholarDevClaw/issues"
       exit 1

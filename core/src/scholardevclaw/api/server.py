@@ -2,6 +2,7 @@ import hmac
 import logging
 import os
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
@@ -234,6 +235,23 @@ class ValidationRequest(BaseModel):
 
     patch: dict[str, Any]
     repo_path: str = Field(alias="repoPath")
+
+
+class FromPaperRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    repo_path: str = Field(alias="repoPath")
+    paper_source: str = Field(alias="paperSource")
+    source_type: Literal["arxiv", "pdf"] = Field(default="arxiv", alias="sourceType")
+
+
+class FromPaperResponse(BaseModel):
+    researchSpec: dict[str, Any] = Field(alias="researchSpec")
+    mapping: dict[str, Any]
+    patch: dict[str, Any]
+    validation: dict[str, Any]
+    schemaVersion: str = Field(alias="schemaVersion")
+    payloadType: str = Field(alias="payloadType")
 
 
 class ModelEntry(BaseModel):
@@ -961,8 +979,8 @@ async def generate_patch(request: PatchGenerateRequest, http_request: Request):
             "transformations": [
                 {
                     "file": t.file,
-                    "original": t.original[:500],
-                    "modified": t.modified[:500],
+                    "original": t.original,
+                    "modified": t.modified,
                     "changes": t.changes,
                 }
                 for t in patch.transformations
@@ -1020,6 +1038,81 @@ async def run_validation(request: ValidationRequest, http_request: Request):
             detail=(
                 "What failed: validation request. "
                 "Why: an unexpected internal error occurred while running validation. "
+                "Fix: check server logs using X-Request-ID and retry."
+            ),
+        )
+
+
+@app.post(
+    "/from-paper",
+    response_model=FromPaperResponse,
+    tags=["paper-to-code"],
+    summary="Paper to Code",
+    description="Generate code patches from a research paper for a given repository",
+)
+async def from_paper(request: FromPaperRequest, http_request: Request):
+    try:
+        user_id = getattr(http_request.state, "user_id", None)
+        repo_path = _resolve_existing_repo_path(request.repo_path, user_id=user_id)
+
+        # 1. Extract research spec from paper
+        extractor = ResearchExtractor()
+        research_spec = extractor.extract(request.paper_source, request.source_type)
+
+        # 2. Analyze repository
+        analyzer = TreeSitterAnalyzer(repo_path)
+        repo_analysis = analyzer.analyze()
+
+        # 3. Map research spec to code
+        mapper = MappingEngine(asdict(repo_analysis), research_spec)
+        mapping = mapper.map()
+
+        # 4. Generate patch
+        llm_assistant = _create_llm_assistant()
+        generator = PatchGenerator(repo_path, llm_assistant=llm_assistant)
+        normalized_mapping = _normalize_mapping_for_patch(asdict(mapping))
+        patch = generator.generate(normalized_mapping)
+
+        # 5. Validate patch
+        runner = ValidationRunner(repo_path)
+        validation_result = runner.run(asdict(patch), str(repo_path))
+
+        # 6. Build response
+        response = {
+            "researchSpec": research_spec,
+            "mapping": mapping,
+            "patch": {
+                "newFiles": [{"path": f.path, "content": f.content} for f in patch.new_files],
+                "transformations": [
+                    {
+                        "file": t.file,
+                        "original": t.original,
+                        "modified": t.modified,
+                        "changes": t.changes,
+                    }
+                    for t in patch.transformations
+                ],
+                "branchName": patch.branch_name,
+            },
+            "validation": {
+                "passed": validation_result.passed,
+                "stage": validation_result.stage,
+                "logs": validation_result.logs,
+                "error": validation_result.error,
+            },
+            "schemaVersion": SCHEMA_VERSION,
+            "payloadType": "from-paper",
+        }
+        return FromPaperResponse.model_validate(response)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("from_paper failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "What failed: paper to code request. "
+                "Why: an unexpected internal error occurred while processing paper to code. "
                 "Fix: check server logs using X-Request-ID and retry."
             ),
         )

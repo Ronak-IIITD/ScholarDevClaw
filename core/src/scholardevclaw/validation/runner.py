@@ -320,7 +320,7 @@ class ValidationRunner:
 
         test_result = self._run_tests()
 
-        if not test_result.passed and test_result.error:
+        if not test_result.passed:
             return test_result
 
         benchmark_result = self._run_benchmark()
@@ -443,11 +443,53 @@ class ValidationRunner:
             )
 
         if self._sandbox_mode() == "docker":
-            return ValidationResult(
-                passed=True,
-                stage="tests",
-                logs="Docker sandbox mode: pytest execution is currently disabled in this phase.",
-            )
+            if not self._docker_available():
+                return ValidationResult(
+                    passed=False,
+                    stage="tests",
+                    error="Docker requested but not available",
+                )
+            docker_image = self._docker_image()
+            docker_cmd = [
+                "docker",
+                "run",
+                "--rm",
+                "-v",
+                f"{self.repo_path}:/repo",
+                "-w",
+                "/repo",
+                docker_image,
+                "pytest",
+                "-v",
+                "--tb=short",
+                "-x",
+                "--timeout=60",
+            ]
+            try:
+                result = subprocess.run(
+                    docker_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                passed = result.returncode == 0
+                return ValidationResult(
+                    passed=passed,
+                    stage="tests",
+                    logs=result.stdout + result.stderr,
+                )
+            except subprocess.TimeoutExpired:
+                return ValidationResult(
+                    passed=False,
+                    stage="tests",
+                    error="Test timeout after 120 seconds in Docker",
+                )
+            except FileNotFoundError:
+                return ValidationResult(
+                    passed=False,
+                    stage="tests",
+                    error="Docker executable not found",
+                )
 
         try:
             result = subprocess.run(
@@ -485,45 +527,113 @@ class ValidationRunner:
             )
 
     # ------------------------------------------------------------------
-    # Benchmark orchestration
+    # Benchmark orchestration — runs actual repo benchmarks/tests
     # ------------------------------------------------------------------
 
     def _run_benchmark(self) -> ValidationResult:
-        has_torch = self._check_torch_available()
+        """Run actual repo benchmarks or tests with timing."""
+        import time
+        import json as _json
 
-        baseline = self._run_training_test(use_variant=False, use_torch=has_torch)
-        new = self._run_training_test(use_variant=True, use_torch=has_torch)
+        # Check for benchmark scripts in the repo
+        benchmark_scripts = list(self.repo_path.glob("**/benchmark*.py")) + list(
+            self.repo_path.glob("**/bench*.py")
+        )
 
-        if baseline and new:
-            speedup = new.tokens_per_second / max(baseline.tokens_per_second, 1e-9)
-            loss_change = ((new.loss - baseline.loss) / max(abs(baseline.loss), 1e-9)) * 100
+        test_files = list(self.repo_path.glob("**/test*.py"))
 
-            passed = abs(loss_change) < 5 and speedup > 0.95
-
-            mode = "PyTorch" if has_torch else "generic-compute"
+        if not benchmark_scripts and not test_files:
             return ValidationResult(
-                passed=passed,
+                passed=True,
                 stage="benchmark",
-                baseline_metrics=baseline,
-                new_metrics=new,
-                comparison={
-                    "speedup": round(speedup, 4),
-                    "loss_change": round(loss_change, 4),
-                    "passed": passed,
-                    "mode": mode,
-                },
-                logs=(
-                    f"[{mode}] Baseline: {baseline.tokens_per_second:.0f} tok/s "
-                    f"({baseline.runtime_seconds:.2f}s, {baseline.memory_mb:.1f} MB), "
-                    f"Variant: {new.tokens_per_second:.0f} tok/s "
-                    f"({new.runtime_seconds:.2f}s, {new.memory_mb:.1f} MB)"
-                ),
+                logs="No benchmark or test files found — skipping benchmark",
             )
 
+        # Run benchmarks if available, else run tests with timing
+        scripts_to_run = (
+            benchmark_scripts if benchmark_scripts else test_files[:5]
+        )  # Limit to 5 test files
+        results = []
+
+        for script in scripts_to_run:
+            start_time = time.time()
+            try:
+                if self._sandbox_mode() == "docker":
+                    docker_image = self._docker_image()
+                    result = subprocess.run(
+                        [
+                            "docker",
+                            "run",
+                            "--rm",
+                            "-v",
+                            f"{self.repo_path}:/repo",
+                            "-w",
+                            "/repo",
+                            docker_image,
+                            "python",
+                            str(script.relative_to(self.repo_path)),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                else:
+                    result = subprocess.run(
+                        [sys.executable, str(script)],
+                        cwd=str(self.repo_path),
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                end_time = time.time()
+                duration = end_time - start_time
+                passed = result.returncode == 0
+                results.append(
+                    {
+                        "script": str(script.relative_to(self.repo_path)),
+                        "passed": passed,
+                        "duration": round(duration, 2),
+                        "output": result.stdout[-500:] if result.stdout else "",  # Last 500 chars
+                        "error": result.stderr[-500:] if result.stderr else "",
+                    }
+                )
+            except subprocess.TimeoutExpired:
+                results.append(
+                    {
+                        "script": str(script.relative_to(self.repo_path)),
+                        "passed": False,
+                        "duration": 120,
+                        "error": "Timeout after 120 seconds",
+                    }
+                )
+            except Exception as e:
+                results.append(
+                    {
+                        "script": str(script.relative_to(self.repo_path)),
+                        "passed": False,
+                        "error": str(e),
+                    }
+                )
+
+        # Aggregate results
+        total = len(results)
+        passed_count = sum(1 for r in results if r["passed"])
+        avg_duration = sum(r.get("duration", 0) for r in results) / max(total, 1)
+        all_passed = all(r["passed"] for r in results)
+
+        logs = f"Ran {total} benchmark(s): {passed_count} passed, {total - passed_count} failed. Avg duration: {avg_duration:.2f}s"
+
         return ValidationResult(
-            passed=False,
+            passed=all_passed,
             stage="benchmark",
-            error="Could not run training benchmark — subprocess failed",
+            comparison={
+                "total": total,
+                "passed": passed_count,
+                "failed": total - passed_count,
+                "avg_duration": round(avg_duration, 2),
+                "results": results,
+            },
+            logs=logs,
         )
 
     # ------------------------------------------------------------------
@@ -531,15 +641,31 @@ class ValidationRunner:
     # ------------------------------------------------------------------
 
     def _check_torch_available(self) -> bool:
-        if self._sandbox_mode() == "docker":
-            return False
         try:
-            result = subprocess.run(
-                [sys.executable, "-c", "import torch; print(torch.__version__)"],
-                capture_output=True,
-                timeout=10,
-            )
-            return result.returncode == 0
+            if self._sandbox_mode() == "docker":
+                # Check torch inside Docker container
+                docker_image = self._docker_image()
+                result = subprocess.run(
+                    [
+                        "docker",
+                        "run",
+                        "--rm",
+                        docker_image,
+                        "python",
+                        "-c",
+                        "import torch; print(torch.__version__)",
+                    ],
+                    capture_output=True,
+                    timeout=30,
+                )
+                return result.returncode == 0
+            else:
+                result = subprocess.run(
+                    [sys.executable, "-c", "import torch; print(torch.__version__)"],
+                    capture_output=True,
+                    timeout=10,
+                )
+                return result.returncode == 0
         except Exception:
             return False
 

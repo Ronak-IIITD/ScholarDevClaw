@@ -288,15 +288,31 @@ export class PythonSubprocessBridge {
   async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
     logger.info('Generating patch');
     const mappingRecord = this.asRecord(mapping);
-    const spec = this.inferSpecName(mappingRecord?.research_spec || mappingRecord?.strategy);
+    // Pass full mapping payload as JSON via stdin instead of just spec name
     const path = repoPath || '';
     const result = await this.runPythonModule('scholardevclaw.cli', [
       'generate',
       path,
-      spec,
       '--use-specs',
       '--output-json',
-    ]);
+    ], JSON.stringify(mapping));
+    if (!result.success) {
+      return result;
+    }
+    return { success: true, data: this.normalizePatch(result.data) };
+  }
+
+  async validate(patch: unknown, repoPath?: string): Promise<PhaseResult> {
+    logger.info('Running validation');
+    const path = repoPath || '';
+    // Pass full patch payload as JSON via stdin
+    const result = await this.runPythonModule('scholardevclaw.cli', [
+      'validate',
+      path,
+      '--output-json',
+    ], JSON.stringify(patch));
+    return result;
+  }
     if (!result.success) {
       return result;
     }
