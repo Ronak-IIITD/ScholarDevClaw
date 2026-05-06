@@ -2,7 +2,22 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-06
+
+### 2026-05-06 (Security and reliability audit report)
+
+Added a root-level audit record in `SECURITY_UPDATES.md` capturing the full repository findings from the 2026-05-06 review.
+
+What changed:
+- added `SECURITY_UPDATES.md` with critical, high, medium, and low findings across `agent/`, `core/`, `web/`, `convex/`, `docker/`, `scripts/`, `landing/`, `docs/`, `vendor/`, and `install/`
+- documented the highest-impact breakages: patch truncation, invalid validation flow, placeholder Paper to Code UI, broken installer path, subprocess bridge contract loss, HTTP auth mismatch, and deployment-claim drift
+- added a claims audit table covering product claims versus implementation reality
+- ranked the top five fixes by real-world impact
+
+Verification notes:
+- confirmed the root installer path is broken because the repository root is not a Python package
+- confirmed `vendor/openclaw` is not wired as a valid submodule
+- no full test suite run; this change adds audit documentation only
 
 ### 2026-05-02 (TUI subprocess contract tests)
 
