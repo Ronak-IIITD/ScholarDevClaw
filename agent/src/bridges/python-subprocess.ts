@@ -285,17 +285,25 @@ export class PythonSubprocessBridge {
     return { success: true, data: this.normalizeMapping(result.data) };
   }
 
-  async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
+async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
     logger.info('Generating patch');
     const mappingRecord = this.asRecord(mapping);
-    // Pass full mapping payload as JSON via stdin instead of just spec name
-    const path = repoPath || '';
+    const path = repoPath || String(mappingRecord?.repoPath || mappingRecord?.root_path || '');
+    // Extract spec name from mapping for generate command
+    const targetsArray = Array.isArray(mappingRecord?.targets) ? mappingRecord.targets : [];
+    const firstTarget = this.asRecord(targetsArray[0]);
+    const specName = this.inferSpecName(
+      this.asRecord(mappingRecord?.research_spec)?.name ||
+      (firstTarget ? String(firstTarget.file || '') : '') ||
+      ''
+    );
     const result = await this.runPythonModule('scholardevclaw.cli', [
       'generate',
       path,
+      specName,
       '--use-specs',
       '--output-json',
-    ], JSON.stringify(mapping));
+    ]);
     if (!result.success) {
       return result;
     }
@@ -304,25 +312,16 @@ export class PythonSubprocessBridge {
 
   async validate(patch: unknown, repoPath?: string): Promise<PhaseResult> {
     logger.info('Running validation');
-    const path = repoPath || '';
-    // Pass full patch payload as JSON via stdin
+    const path = repoPath || String(this.asRecord(patch)?.repoPath || this.asRecord(patch)?.root_path || '');
     const result = await this.runPythonModule('scholardevclaw.cli', [
       'validate',
       path,
       '--output-json',
-    ], JSON.stringify(patch));
-    return result;
-  }
+    ]);
     if (!result.success) {
       return result;
     }
-    return { success: true, data: this.normalizePatch(result.data) };
-  }
-
-  async validate(patch: unknown, repoPath?: string): Promise<PhaseResult> {
-    logger.info('Running validation');
-    const path = repoPath || '';
-    return this.runPythonModule('scholardevclaw.cli', ['validate', path, '--output-json']);
+    return { success: true, data: this.normalizeValidationResult(result.data) };
   }
 
   async healthCheck(): Promise<boolean> {
@@ -486,6 +485,19 @@ export class PythonSubprocessBridge {
         };
       }),
       branchName: String(record.branchName || record.branch_name || ''),
+    };
+  }
+
+  private normalizeValidationResult(data: unknown): ValidationResult {
+    const record = this.asRecord(data) || {};
+    return {
+      passed: Boolean(record.passed),
+      stage: String(record.stage || ''),
+      baselineMetrics: this.asRecord(record.baselineMetrics) ? record.baselineMetrics as unknown as ValidationResult['baselineMetrics'] : undefined,
+      newMetrics: this.asRecord(record.newMetrics) ? record.newMetrics as unknown as ValidationResult['newMetrics'] : undefined,
+      comparison: this.asRecord(record.comparison) ? record.comparison as unknown as ValidationResult['comparison'] : undefined,
+      logs: String(record.logs || ''),
+      error: record.error ? String(record.error) : undefined,
     };
   }
 }

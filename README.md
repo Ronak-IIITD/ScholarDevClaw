@@ -102,8 +102,8 @@ scholardevclaw suggest .
 # map a paper spec to your code locations
 scholardevclaw map . rmsnorm
 
-# generate patch artifacts
-scholardevclaw generate . rmsnorm --output-dir ./integration-patch
+# generate patch artifacts (requires --use-specs for spec-based generation)
+scholardevclaw generate . rmsnorm --use-specs --output-dir ./integration-patch
 
 # validate
 scholardevclaw validate .
