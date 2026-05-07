@@ -105,7 +105,7 @@ export interface ValidationResult {
     speedup: number;
     passed: boolean;
   };
-  logs: string;
+  logs?: string;
   error?: string;
 }
 

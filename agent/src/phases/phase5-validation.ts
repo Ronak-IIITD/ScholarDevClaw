@@ -11,7 +11,8 @@ export async function executePhase5(
   logger.info('=== Phase 5: Validation Engine ===');
 
   try {
-    const result = await bridge.validate(context.patch, repoPath);
+    const patch = context.patch!;
+    const result = await bridge.validate(patch, repoPath);
 
     if (!result.success) {
       logger.error('Phase 5 failed', { error: result.error });

@@ -246,12 +246,12 @@ class FromPaperRequest(BaseModel):
 
 
 class FromPaperResponse(BaseModel):
-    researchSpec: dict[str, Any] = Field(alias="researchSpec")
+    research_spec: dict[str, Any] = Field(alias="researchSpec")
     mapping: dict[str, Any]
     patch: dict[str, Any]
     validation: dict[str, Any]
-    schemaVersion: str = Field(alias="schemaVersion")
-    payloadType: str = Field(alias="payloadType")
+    schema_version: str = Field(alias="schemaVersion")
+    payload_type: str = Field(alias="payloadType")
 
 
 class ModelEntry(BaseModel):

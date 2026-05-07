@@ -533,7 +533,6 @@ class ValidationRunner:
     def _run_benchmark(self) -> ValidationResult:
         """Run actual repo benchmarks or tests with timing."""
         import time
-        import json as _json
 
         # Check for benchmark scripts in the repo
         benchmark_scripts = list(self.repo_path.glob("**/benchmark*.py")) + list(

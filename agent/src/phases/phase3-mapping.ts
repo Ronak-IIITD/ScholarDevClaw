@@ -10,9 +10,11 @@ export async function executePhase3(
   logger.info('=== Phase 3: Mapping Engine ===');
 
   try {
+    const repoAnalysis = context.repoAnalysis!;
+    const researchSpec = context.researchSpec!;
     const result = await bridge.mapArchitecture(
-      context.repoAnalysis,
-      context.researchSpec
+      repoAnalysis,
+      researchSpec
     );
 
     if (!result.success) {

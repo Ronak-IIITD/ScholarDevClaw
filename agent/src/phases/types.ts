@@ -26,27 +26,27 @@ export interface Phase1Context extends PhaseContext {
 }
 
 export interface Phase2Context extends PhaseContext {
-  repoAnalysis: RepoAnalysisResult;
+  repoAnalysis?: RepoAnalysisResult;
   researchSpec?: ResearchSpecResult;
 }
 
 export interface Phase3Context extends Phase2Context {
-  researchSpec: ResearchSpecResult;
+  researchSpec?: ResearchSpecResult;
   mapping?: MappingResult;
 }
 
 export interface Phase4Context extends Phase3Context {
-  mapping: MappingResult;
+  mapping?: MappingResult;
   patch?: PatchResult;
 }
 
 export interface Phase5Context extends Phase4Context {
-  patch: PatchResult;
+  patch?: PatchResult;
   validation?: ValidationResult;
 }
 
 export interface Phase6Context extends Phase5Context {
-  validation: ValidationResult;
+  validation?: ValidationResult;
   report?: {
     metadata: unknown;
     summary: unknown;
