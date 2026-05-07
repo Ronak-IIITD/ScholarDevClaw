@@ -2,7 +2,23 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-06
+**Last updated:** 2026-05-07
+
+### 2026-05-07 (TypeScript Bridge Fix)
+**Summary:** Fixed TypeScript build errors and bridge payload handling.
+
+**What changed:**
+1. **TypeScript bridge fix (continued):**
+   - Fixed duplicate `validate()` method definitions that caused build errors in `python-subprocess.ts`.
+   - `generatePatch()` now extracts spec name from mapping payload correctly.
+   - Added `normalizeValidationResult()` method for proper result parsing.
+   - No longer passes stdin to subprocess (CLI doesn't support it) - passes spec names as args instead.
+
+**Verification:**
+- `cd agent && bun run build` ✅ (compiles without errors in bridge files)
+- `cd core && python -m pytest tests/unit/test_validation_runner.py -q` ✅ (40 passed)
+
+---
 
 ### 2026-05-06 (Security Fixes — Critical/High)
 **Summary:** Fixed critical security and reliability issues from SECURITY_UPDATES.md audit.
