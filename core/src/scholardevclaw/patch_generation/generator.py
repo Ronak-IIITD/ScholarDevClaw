@@ -1211,6 +1211,132 @@ class PatchGenerator:
             paper_reference=paper_reference,
         )
 
+    def heal_patch(
+        self, patch: Patch, validation_result: ValidationResult, mapping_result: dict
+    ) -> Patch:
+        """
+        Attempt to heal a failed patch by analyzing validation errors and fixing the code.
+
+        Args:
+            patch: The original failed patch
+            validation_result: The validation result containing error information
+            mapping_result: The mapping result used to generate the original patch
+
+        Returns:
+            A healed Patch object, or the original patch if healing fails
+        """
+        if self.llm_assistant is None:
+            logger.warning("Cannot heal patch: no LLM assistant available")
+            return patch
+
+        errors = []
+        if validation_result.error:
+            errors.append(f"Error: {validation_result.error}")
+        if validation_result.logs:
+            # Extract test failures from logs
+            log_lines = validation_result.logs.split("\n")
+            for line in log_lines:
+                if any(
+                    keyword in line.lower()
+                    for keyword in ["error", "fail", "exception", "traceback"]
+                ):
+                    errors.append(line.strip())
+
+        if not errors:
+            logger.info("No specific errors found to heal")
+            return patch
+
+        logger.info("Attempting to heal patch with %d error(s)", len(errors))
+
+        # Build context for the LLM
+        error_summary = "\n".join(errors[:10])  # Limit context size
+
+        # Try to heal new files
+        healed_new_files = []
+        for new_file in patch.new_files:
+            try:
+                healed_content = self._heal_code(
+                    new_file.content, error_summary, "new_file", new_file.path
+                )
+                healed_new_files.append(NewFile(path=new_file.path, content=healed_content))
+            except Exception as e:
+                logger.warning("Failed to heal new file %s: %s", new_file.path, e)
+                healed_new_files.append(new_file)
+
+        # Try to heal transformations
+        healed_transformations = []
+        for transformation in patch.transformations:
+            try:
+                healed_original = self._heal_code(
+                    transformation.original, error_summary, "original", transformation.file
+                )
+                healed_modified = self._heal_code(
+                    transformation.modified, error_summary, "modified", transformation.file
+                )
+                healed_transformations.append(
+                    Transformation(
+                        file=transformation.file,
+                        original=healed_original,
+                        modified=healed_modified,
+                        changes=transformation.changes,
+                    )
+                )
+            except Exception as e:
+                logger.warning("Failed to heal transformation for %s: %s", transformation.file, e)
+                healed_transformations.append(transformation)
+
+        return Patch(
+            new_files=healed_new_files,
+            transformations=healed_transformations,
+            branch_name=patch.branch_name,
+            algorithm_name=patch.algorithm_name,
+            paper_reference=patch.paper_reference,
+        )
+
+    def _heal_code(self, code: str, error_summary: str, code_type: str, file_path: str) -> str:
+        """Use LLM to heal a piece of code given the error summary."""
+        if not code or not error_summary:
+            return code
+
+        prompt = f"""You are a Python code fixing expert. The following code has validation errors.
+
+File: {file_path}
+Code type: {code_type}
+
+Original code:
+```python
+{code}
+```
+
+Validation errors:
+{error_summary}
+
+Please fix the code to resolve these errors. Return ONLY the fixed code without any explanation or markdown formatting.
+"""
+        try:
+            # Use the LLM assistant to generate fixed code
+            if hasattr(self.llm_assistant, "generate_text"):
+                fixed_code = self.llm_assistant.generate_text(prompt)
+            elif hasattr(self.llm_assistant, "complete"):
+                fixed_code = self.llm_assistant.complete(prompt)
+            else:
+                logger.warning("LLM assistant doesn't have a known text generation method")
+                return code
+
+            # Validate the fixed code is still valid Python
+            if fixed_code:
+                try:
+                    ast.parse(fixed_code)
+                    logger.info("Successfully healed code for %s", file_path)
+                    return fixed_code
+                except SyntaxError as e:
+                    logger.warning("Healed code has syntax errors: %s", e)
+                    return code
+            return code
+        except Exception as e:
+            logger.warning("LLM healing failed: %s", e)
+            return code
+
     # ------------------------------------------------------------------
     # New file creation
     # ------------------------------------------------------------------

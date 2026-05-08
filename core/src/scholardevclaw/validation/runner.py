@@ -9,7 +9,11 @@ No hardcoded fake numbers — every metric comes from a real measurement.
 
 from __future__ import annotations
 
+import logging
+
+_logger = logging.getLogger(__name__)
 import ast
+from scholardevclaw.patch_generation.generator import PatchGenerator, Patch
 import json
 import os
 import subprocess
@@ -303,7 +307,7 @@ class ValidationRunner:
         except Exception:
             return False
 
-    def run(self, patch: dict, repo_path: str) -> ValidationResult:
+    def run(self, patch: dict, repo_path: str, mapping_result: dict | None = None) -> ValidationResult:
         artifact_result = self._validate_patch_artifacts(patch)
         if not artifact_result.passed:
             return artifact_result
@@ -318,8 +322,82 @@ class ValidationRunner:
 
         policy_warning = self._execution_policy_warning()
 
+        # Run tests
         test_result = self._run_tests()
-
+        
+        # Healing loop - attempt to fix failed patches
+        max_heal_attempts = 2
+        heal_attempts = 0
+        
+        while not test_result.passed and heal_attempts < max_heal_attempts:
+            _logger.info("Test failed, attempting to heal patch (attempt %d/%d)", heal_attempts + 1, max_heal_attempts)
+            
+            try:
+                # Convert dict to Patch object
+                from scholardevclaw.patch_generation.generator import Patch, NewFile, Transformation
+                
+                new_files = [
+                    NewFile(path=f.get("path", ""), content=f.get("content", ""))
+                    for f in patch.get("new_files", [])
+                ]
+                transformations = [
+                    Transformation(
+                        file=t.get("file", ""),
+                        original=t.get("original", ""),
+                        modified=t.get("modified", ""),
+                        changes=t.get("changes", []),
+                    )
+                    for t in patch.get("transformations", [])
+                ]
+                
+                patch_obj = Patch(
+                    new_files=new_files,
+                    transformations=transformations,
+                    branch_name=patch.get("branch_name", ""),
+                    algorithm_name=patch.get("algorithm_name", ""),
+                    paper_reference=patch.get("paper_reference", ""),
+                )
+                
+                # Create PatchGenerator and heal
+                llm_assistant = None
+                try:
+                    from scholardevclaw.llm.research_assistant import LLMResearchAssistant
+                    llm_assistant = LLMResearchAssistant.create()
+                except Exception:
+                    _logger.warning("Could not create LLM assistant for healing")
+                
+                generator = PatchGenerator(repo_path, llm_assistant=llm_assistant)
+                healed_patch_obj = generator.heal_patch(patch_obj, test_result, mapping_result or {})
+                
+                # Convert healed Patch back to dict
+                healed_patch = {
+                    "new_files": [{"path": f.path, "content": f.content} for f in healed_patch_obj.new_files],
+                    "transformations": [
+                        {
+                            "file": t.file,
+                            "original": t.original,
+                            "modified": t.modified,
+                            "changes": t.changes,
+                        }
+                        for t in healed_patch_obj.transformations
+                    ],
+                    "branch_name": healed_patch_obj.branch_name,
+                }
+                
+                # Re-run tests with healed patch
+                test_result = self._run_tests()
+                patch = healed_patch  # Update patch for potential next iteration
+                heal_attempts += 1
+                
+                if test_result.passed:
+                    _logger.info("Healing successful after %d attempt(s)", heal_attempts)
+                    break
+                    
+            except Exception as e:
+                _logger.warning("Healing attempt %d failed: %s", heal_attempts + 1, e)
+                heal_attempts += 1
+                break  # Don't continue if healing itself fails
+        
         if not test_result.passed:
             return test_result
 

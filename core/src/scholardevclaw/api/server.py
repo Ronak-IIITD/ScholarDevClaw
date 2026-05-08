@@ -1075,7 +1075,7 @@ async def from_paper(request: FromPaperRequest, http_request: Request):
 
         # 5. Validate patch
         runner = ValidationRunner(repo_path)
-        validation_result = runner.run(asdict(patch), str(repo_path))
+        validation_result = runner.run(asdict(patch), str(repo_path), asdict(mapping))
 
         # 6. Build response
         response = {
