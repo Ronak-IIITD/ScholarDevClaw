@@ -18,7 +18,10 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
+import { runFromPaper } from "@/lib/api";
 
+/* ------------------------------------------------------------------ */
+/* Types                                                               */
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
@@ -246,6 +249,7 @@ function ModuleCard({
 export default function PaperToCodePage() {
   const [mode, setMode] = useState<"url" | "upload">("url");
   const [paperUrl, setPaperUrl] = useState("");
+  const [repoPath, setRepoPath] = useState("");
   const [fileName, setFileName] = useState("");
   const [phases, setPhases] = useState<Phase[]>(INITIAL_PHASES);
   const [modules, setModules] = useState<GeneratedModule[]>([]);
@@ -256,11 +260,15 @@ export default function PaperToCodePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  /* Simulated pipeline — replace with real WebSocket / API calls */
+  /* Run the end-to-end paper-to-code pipeline */
   const runPipeline = useCallback(async () => {
     const source = mode === "url" ? paperUrl.trim() : fileName;
     if (!source) {
       setError(mode === "url" ? "Please enter a paper URL or arXiv ID" : "Please upload a PDF");
+      return;
+    }
+    if (!repoPath.trim()) {
+      setError("Please specify a target repository path");
       return;
     }
 
@@ -270,37 +278,27 @@ export default function PaperToCodePage() {
     setPaperTitle("");
     setPhases(INITIAL_PHASES.map((p) => ({ ...p, status: "pending", detail: undefined, duration: undefined })));
 
-    const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
-
     try {
-      // Start the from-paper pipeline via POST
-      const res = await fetch(`${API_BASE}/api/from-paper`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source, provider: "openrouter" }),
+      const response = await runFromPaper({
+        paperSource: source,
+        sourceType: mode === "url" ? "arxiv" : "pdf",
+        repoPath: repoPath.trim(),
       });
 
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`Pipeline failed: ${body}`);
-      }
-
-      const data = await res.json();
-
-      // Update phases based on response
+      // Update phases based on response data
       setPhases((prev) =>
         prev.map((p) => ({
           ...p,
           status: "completed" as PhaseStatus,
-          duration: data.phase_durations?.[p.id] ?? undefined,
+          duration: response.phase_durations?.[p.id] ?? undefined,
         }))
       );
 
-      setPaperTitle(data.paper_title || source);
+      setPaperTitle(response.paper_title || source);
 
-      if (data.modules) {
+      if (response.modules) {
         setModules(
-          data.modules.map((m: Record<string, unknown>, i: number) => ({
+          response.modules.map((m: Record<string, unknown>, i: number) => ({
             id: String(m.id || `mod-${i}`),
             path: String(m.path || m.id || `module_${i}.py`),
             lines: Number(m.lines || m.estimated_lines || 0),
@@ -323,7 +321,7 @@ export default function PaperToCodePage() {
     } finally {
       setIsRunning(false);
     }
-  }, [mode, paperUrl, fileName]);
+  }, [mode, paperUrl, fileName, repoPath]);
 
   const handleFileDrop = useCallback(
     (e: React.DragEvent) => {
@@ -370,35 +368,48 @@ export default function PaperToCodePage() {
         </div>
       </div>
 
-      {/* Input Section */}
-      <div className="rounded-2xl border border-gray-800 bg-gradient-to-b from-gray-900/80 to-gray-950/80 p-6 backdrop-blur-sm">
-        {/* Mode tabs */}
-        <div className="flex gap-1 rounded-lg bg-gray-800/50 p-1 w-fit">
-          <button
-            onClick={() => setMode("url")}
-            className={cls(
-              "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all",
-              mode === "url"
-                ? "bg-brand-600 text-white shadow-sm"
-                : "text-gray-400 hover:text-gray-200"
-            )}
-          >
-            <Link2 size={15} /> URL / arXiv ID
-          </button>
-          <button
-            onClick={() => setMode("upload")}
-            className={cls(
-              "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all",
-              mode === "upload"
-                ? "bg-brand-600 text-white shadow-sm"
-                : "text-gray-400 hover:text-gray-200"
-            )}
-          >
-            <Upload size={15} /> Upload PDF
-          </button>
-        </div>
+       {/* Input Section */}
+       <div className="rounded-2xl border border-gray-800 bg-gradient-to-b from-gray-900/80 to-gray-950/80 p-6 backdrop-blur-sm">
+         {/* Mode tabs */}
+         <div className="flex gap-1 rounded-lg bg-gray-800/50 p-1 w-fit">
+           <button
+             onClick={() => setMode("url")}
+             className={cls(
+               "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all",
+               mode === "url"
+                 ? "bg-brand-600 text-white shadow-sm"
+                 : "text-gray-400 hover:text-gray-200"
+             )}
+           >
+             <Link2 size={15} /> URL / arXiv ID
+           </button>
+           <button
+             onClick={() => setMode("upload")}
+             className={cls(
+               "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all",
+               mode === "upload"
+                 ? "bg-brand-600 text-white shadow-sm"
+                 : "text-gray-400 hover:text-gray-200"
+             )}
+           >
+             <Upload size={15} /> Upload PDF
+           </button>
+         </div>
 
-        {/* URL input */}
+         {/* Repository path input */}
+         <div className="mt-5">
+           <input
+             type="text"
+             value={repoPath}
+             onChange={(e) => setRepoPath(e.target.value)}
+             placeholder="/path/to/your/repository  or  ./my-project"
+             disabled={isRunning}
+             className="w-full rounded-xl border border-gray-700 bg-gray-950/80 px-5 py-3.5 font-mono text-sm text-gray-200 placeholder-gray-600 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500/50 disabled:opacity-50 transition-colors"
+             onKeyDown={(e) => e.key === "Enter" && runPipeline()}
+           />
+         </div>
+
+         {/* URL input */}
         {mode === "url" && (
           <div className="mt-5">
             <input
