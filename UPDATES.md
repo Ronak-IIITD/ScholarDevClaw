@@ -2,7 +2,38 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-07
+**Last updated:** 2026-05-08
+
+### 2026-05-08 (Validation Healing Loop + UI Completion)
+**Summary:** Implemented automatic patch healing and completed the PaperToCode UI flow.
+
+**What changed:**
+
+1. **Validation → Healing feedback loop:**
+   - Added `heal_patch()` method to `PatchGenerator` that uses LLM to fix failed patches
+   - Modified `ValidationRunner.run()` to attempt healing on test failures (max 2 attempts)
+   - Healing logic analyzes validation errors and attempts to fix code issues
+   - Updated `/from-paper` endpoint to pass `mapping_result` to validation runner
+   - All 40 validation runner tests pass ✅
+
+2. **PaperToCode UI completion:**
+   - Added repository path input field to `PaperToCodePage.tsx`
+   - Integrated with `/from-paper` API endpoint using new `runFromPaper` helper
+   - Updated API layer (`api.ts`) with proper Authorization header handling
+   - UI now collects `paperSource`, `sourceType`, and `repoPath` for the endpoint
+   - Frontend builds successfully ✅
+
+3. **CI fixes (2026-05-07):**
+   - Fixed Python lint errors (mixedCase field names in `FromPaperResponse`)
+   - Fixed TypeScript type errors in phase context interfaces
+   - All CI checks now passing ✅
+
+**Verification:**
+- `cd core && python -m pytest tests/unit/test_validation_runner.py -q` ✅ (40 passed)
+- `cd agent && bun run build` ✅ (compiles without errors)
+- `cd web && npm run build` ✅ (frontend builds successfully)
+
+---
 
 ### 2026-05-07 (TypeScript Bridge Fix)
 **Summary:** Fixed TypeScript build errors and bridge payload handling.
