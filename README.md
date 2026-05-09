@@ -1,17 +1,26 @@
 # ScholarDevClaw v2 🚀
 
-**Autonomous Research-to-Code AI Agent for All Developers**
+<!-- SEO Meta -->
+<!-- ScholarDevClaw: Research-to-Code AI Agent for Machine Learning and Software Engineering -->
+<!-- Keywords: AI code generation, ML paper implementation, arxiv, research automation, automated code review, patch generation, benchmarking -->
 
-ScholarDevClaw is an open-source research-to-code AI agent that analyzes your codebase, discovers relevant ML papers and implementations, and generates validated code improvements automatically.
-If you search for **ScholarDevClaw**, this repository and landing page are the canonical project sources.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
+[![arXiv](https://img.shields.io/badge/arXiv-research-b31b1b.svg)](https://arxiv.org/)
 
-## 🌟 What's New in v2
+**ScholarDevClaw** is an autonomous research-to-code AI agent that transforms machine learning research papers into production-ready code implementations.
 
-- **Multi-Language Support**: Python, JavaScript/TypeScript, Go, Rust, Java, and more
-- **Real-Time Research**: arXiv API integration for live paper search
-- **Web Research**: GitHub, Papers with Code, Stack Overflow search
-- **Smart Matching**: Automatically matches research to your code patterns
-- **Flexible Deployment**: Self-hosted or cloud
+## 🌟 Key Features
+
+- **AI-Powered Research Analysis**: Automatically analyzes arXiv papers and extracts algorithms
+- **Code Generation**: Transforms research into production-ready implementations
+- **Multi-Language Support**: Python, JavaScript/TypeScript, Go, Rust, Java
+- **Benchmark Automation**: Real performance testing with PyTorch benchmarks
+- **Validation Loop**: Automatic patch healing with retry mechanism
+- **Smart Mapping**: AST-based code-to-research matching
+- **Web Research**: Integrates GitHub, Papers with Code, Stack Overflow
+- **Flexible Deployment**: CLI, TUI, REST API, or TypeScript agent
 
 ## 🚀 Quick Start
 
