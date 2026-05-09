@@ -88,7 +88,7 @@ This will:
 
 ```bash
 # Generate the integration patch
-python -m scholardevclaw.cli generate /path/to/your/repo rmsnorm --output-dir ./integration-patch
+python -m scholardevclaw.cli generate /path/to/your/repo rmsnorm --use-specs --output-dir ./integration-patch
 ```
 
 This will:
@@ -125,7 +125,7 @@ python -m scholardevclaw.cli analyze .
 python -m scholardevclaw.cli map . rmsnorm
 
 # 3. Generate patch
-python -m scholardevclaw.cli generate . rmsnorm --output-dir ./rmsnorm-integration
+python -m scholardevclaw.cli generate . rmsnorm --use-specs --output-dir ./rmsnorm-integration
 
 # 4. The patch creates:
 #    - rmsnorm-integration/rmsnorm.py (new module)

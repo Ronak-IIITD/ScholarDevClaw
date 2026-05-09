@@ -14,6 +14,8 @@ if (!process.env.SCHOLARDEVCLAW_CORS_ORIGINS) {
 }
 
 export const config = {
+  // NOTE: OpenClaw integration is planned for future phases.
+  // Currently, ScholarDevClaw operates independently using the Python core.
   openclaw: {
     token: process.env.OPENCLAW_TOKEN || '',
     apiUrl: process.env.OPENCLAW_API_URL || 'http://localhost:3000',

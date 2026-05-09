@@ -135,7 +135,9 @@ class PipelineRunStatus(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# In-memory state (single-server; for multi-server use Redis/Convex)
+# In-memory state (single-server only - one active run at a time)
+# For multi-server deployments, use Redis/Convex for state persistence
+# See: https://github.com/Ronak-IIITD/ScholarDevClaw/issues for roadmap
 # ---------------------------------------------------------------------------
 
 _current_run: PipelineRunStatus | None = None
