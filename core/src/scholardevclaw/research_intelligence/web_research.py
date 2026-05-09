@@ -224,6 +224,9 @@ class WebResearchEngine:
         # Search Papers with Code
         results["papers_with_code"] = await self.search_papers_with_code(query, max_results)
 
+        # Search Stack Overflow
+        results["stackoverflow"] = await self.search_stackoverflow(query, max_results)
+
         # Search blogs (requires search engine API)
         # results["blog_posts"] = await self.search_blogs(query, max_results)
 

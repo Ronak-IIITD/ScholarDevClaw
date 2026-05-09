@@ -1,7 +1,7 @@
 """
 Tree-sitter based multi-language code analyzer
 
-Provides AST parsing for 10+ languages using tree-sitter parsers.
+Provides AST parsing for 6 languages using tree-sitter parsers.
 Uses real AST walking to extract functions, classes, methods, imports,
 decorators, parameters, return types, and visibility across Python,
 JavaScript, TypeScript, Go, Rust, and Java.
