@@ -20,6 +20,7 @@ produce unified diffs.
 
 from __future__ import annotations
 
+import ast
 import logging
 import re
 import textwrap
@@ -1211,9 +1212,7 @@ class PatchGenerator:
             paper_reference=paper_reference,
         )
 
-    def heal_patch(
-        self, patch: Patch, validation_result: ValidationResult, mapping_result: dict
-    ) -> Patch:
+    def heal_patch(self, patch: Patch, validation_result: Any, mapping_result: dict) -> Patch:
         """
         Attempt to heal a failed patch by analyzing validation errors and fixing the code.
 
