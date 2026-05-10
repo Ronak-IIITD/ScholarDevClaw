@@ -2,42 +2,34 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-09
+**Last updated:** 2026-05-10
 
-### 2026-05-09 (Hardening + Dependency Upgrades)
-**Summary:** Security hardening, healing loop tests, and dependency upgrades.
+### 2026-05-10 (Final Hardening + CI Fixes)
+**Summary:** Security hardening completed and CI pipeline fixed.
 
 **What changed:**
 
-1. **Security Hardening:**
+1. **Security Hardening (completed):**
    - Added `RequestSizeMiddleware` to limit request body size to 10 MB (prevents large payload DoS)
    - Applied globally to all API endpoints
+   - Added 3 tests for the Validation → Healing feedback loop
+   - Updated dependencies to latest secure versions
 
-2. **Test Coverage:**
-   - Added 3 tests for the Validation → Healing feedback loop:
-     - `test_healing_succeeds_on_retry` — verifies healing recovers from test failures
-     - `test_healing_fails_and_reports` — verifies proper failure when healing doesn't fix the issue
-     - `test_healing_skipped_when_tests_pass` — verifies healing is not invoked unnecessarily
-
-3. **Dependency Upgrades:**
-   - `fastapi`: 0.104.0 → 0.111.0
-   - `uvicorn`: 0.24.0 → 0.30.0
-   - `pydantic`: 2.5.0 → 2.7.0
-   - `httpx`: 0.25.0 → 0.27.0
-   - `pytest`: 7.4.0 → 8.0.0
-   - `ruff`: 0.1.0 → 0.4.0
-   - `mypy`: 1.7.0 → 1.10.0
-   - `lxml`: 4.9.0 → 5.0.0
-   - `typer`: 0.9.0 → 0.12.0
+2. **CI Pipeline Fixes:**
+   - Fixed lint error in request size middleware (removed unused Response import)
+   - Fixed formatting error with `ruff format`
+   - All checks now passing
 
 **Verification:**
-- 1483 tests pass (3 new) ✅
+- 1483 tests pass (3 new healing tests) ✅
 - Ruff clean ✅
+- Ruff format clean ✅
 - TypeScript builds ✅
+- All CI checks passing ✅
 
 ---
 
-### 2026-05-09 (GitHub SEO + Documentation Polish)
+### 2026-05-09 (Hardening + Dependency Upgrades)
 **Summary:** Enhanced repository discoverability and documentation.
 
 **What changed:**
