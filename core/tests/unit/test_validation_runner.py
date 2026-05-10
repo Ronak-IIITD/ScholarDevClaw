@@ -10,6 +10,7 @@ Covers:
   - ValidationRunner._run_training_test() — with torch, without torch
   - ValidationRunner.run_simple_benchmark()
   - BenchmarkRunner.compare_implementations() — both succeed, one fails
+  - ValidationRunner.run() — healing loop on test failure
 """
 
 from __future__ import annotations
@@ -595,3 +596,82 @@ class TestBenchmarkRunner:
             result = runner.compare_implementations("impl1", "impl2", {})
 
         assert "error" in result
+
+# =========================================================================
+# ValidationRunner.run() — Healing Loop
+# =========================================================================
+
+
+class TestValidationRunnerHealing:
+    """Tests for the Validation -> Healing feedback loop."""
+
+    def test_healing_succeeds_on_retry(self, tmp_path):
+        """When first test run fails but healed patch passes, validation succeeds."""
+        runner = ValidationRunner(tmp_path)
+        failed_test = ValidationResult(passed=False, stage="tests", logs="1 failed", error=None)
+        passed_test = ValidationResult(passed=True, stage="tests")
+        benchmark = ValidationResult(passed=True, stage="benchmark", comparison={"speedup": 1.1})
+
+        call_count = 0
+
+        def _test_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return failed_test
+            return passed_test
+
+        with (
+            patch.object(
+                runner,
+                "_validate_patch_artifacts",
+                return_value=ValidationResult(passed=True, stage="artifacts"),
+            ),
+            patch.object(runner, "_run_tests", side_effect=_test_side_effect),
+            patch.object(runner, "_run_benchmark", return_value=benchmark),
+        ):
+            result = runner.run({}, str(tmp_path))
+
+        assert result.passed is True
+        assert result.stage == "benchmark"
+
+    def test_healing_fails_and_reports(self, tmp_path):
+        """When healing does not fix the issue, validation still fails."""
+        runner = ValidationRunner(tmp_path)
+        failed_test = ValidationResult(
+            passed=False, stage="tests", logs="ImportError", error="Module not found"
+        )
+
+        with (
+            patch.object(
+                runner,
+                "_validate_patch_artifacts",
+                return_value=ValidationResult(passed=True, stage="artifacts"),
+            ),
+            patch.object(runner, "_run_tests", return_value=failed_test),
+        ):
+            result = runner.run({}, str(tmp_path))
+
+        assert result.passed is False
+        assert result.stage == "tests"
+
+    def test_healing_skipped_when_tests_pass(self, tmp_path):
+        """Healing should not be attempted when tests pass on first run."""
+        runner = ValidationRunner(tmp_path)
+        passed_test = ValidationResult(passed=True, stage="tests")
+        benchmark = ValidationResult(passed=True, stage="benchmark", comparison={"speedup": 1.0})
+
+        with (
+            patch.object(
+                runner,
+                "_validate_patch_artifacts",
+                return_value=ValidationResult(passed=True, stage="artifacts"),
+            ),
+            patch.object(runner, "_run_tests", return_value=passed_test),
+            patch.object(runner, "_run_benchmark", return_value=benchmark),
+        ):
+            result = runner.run({}, str(tmp_path))
+
+        assert result.passed is True
+        assert result.stage == "benchmark"
+
