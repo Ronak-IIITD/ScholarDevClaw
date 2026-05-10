@@ -22,6 +22,7 @@ from ..validation.runner import ValidationRunner
 from .docs import setup_docs_routes, setup_exception_handlers, setup_openapi
 from .metrics_middleware import setup_metrics
 from .rate_limit_middleware import setup_rate_limiting
+from .request_size_middleware import RequestSizeMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ setup_docs_routes(app)
 setup_exception_handlers(app)
 setup_metrics(app)
 setup_rate_limiting(app)
+app.add_middleware(RequestSizeMiddleware, max_size=10 * 1024 * 1024)  # 10 MB
 
 # Dashboard routes (specs, pipeline run, WebSocket)
 from .routes.dashboard import router as dashboard_router  # noqa: E402
