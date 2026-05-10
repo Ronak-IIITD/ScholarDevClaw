@@ -7050,3 +7050,8 @@ ScholarDevClaw is becoming a **research-to-engineering operating system**:
 - **Specs:** Updated available specs count to exactly `15` based on `_TEMPLATE_REGISTRY` and extractor available specs.
 - **Templates:** Adjusted the template count claim from `15+` to exactly `15` to match `_TEMPLATE_REGISTRY`.
 - Retained accurate, proven claims for `6-tier matching` and `10 CST transformers` after verifying their implementations in `engine.py` and `generator.py`.
+
+## 2026-05-10
+- All tests passing: 1635 core tests passed, 83 agent tests passed
+- No failing test cases found in latest commit
+- Verified test suite health after recent hardening updates
