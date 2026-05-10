@@ -597,6 +597,7 @@ class TestBenchmarkRunner:
 
         assert "error" in result
 
+
 # =========================================================================
 # ValidationRunner.run() — Healing Loop
 # =========================================================================
@@ -674,4 +675,3 @@ class TestValidationRunnerHealing:
 
         assert result.passed is True
         assert result.stage == "benchmark"
-
