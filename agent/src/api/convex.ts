@@ -158,11 +158,16 @@ export class ConvexClientWrapper {
     });
   }
 
-  async incrementRetry(id: string): Promise<number> {
-    const result = await this.callMutation<{ retryCount: number }>('integrations:incrementRetry', {
+  async saveLog(id: string, message: string): Promise<void> {
+    await this.callMutation('integrations:saveLog', {
       id,
+      message,
+      timestamp: Date.now(),
     });
-    return result.retryCount;
+  }
+
+  async listLogs(id: string): Promise<any[]> {
+    return await this.callQuery('integrations:getLogs', { id });
   }
 
   async waitForApproval(id: string, phase: number): Promise<boolean> {

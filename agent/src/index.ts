@@ -377,15 +377,21 @@ async function run(): Promise<void> {
   const orch = await getOrchestrator();
   logger.info('Agent starting in heartbeat mode. Polling Convex for pending work...');
 
+  let pollingInterval = 10000; // Default 10s
   while (true) {
     try {
-      await orch.processPendingWork();
+      const workProcessed = await orch.processPendingWork();
+      if (workProcessed) {
+        pollingInterval = 2000; // Aggressive 2s when work is active
+      } else {
+        pollingInterval = 10000; // Back to 10s when idle
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       logger.error('Error during heartbeat processPendingWork', { error: message });
+      pollingInterval = 10000;
     }
-    // Poll every 10 seconds
-    await new Promise(resolve => setTimeout(resolve, 10000));
+    await new Promise(resolve => setTimeout(resolve, pollingInterval));
   }
 }
 

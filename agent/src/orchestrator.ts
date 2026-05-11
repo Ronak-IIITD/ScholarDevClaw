@@ -104,6 +104,8 @@ export class ScholarDevClawOrchestrator {
       retryCount,
     });
 
+    await this.logAndConvex(`Starting integration: ${repoUrl}`, integrationId);
+
     // SECURITY: Sanitize contextOverrides to prevent prototype pollution
     const safeOverrides: Partial<OrchestrationContext> = {};
     if (options.contextOverrides) {
@@ -139,6 +141,7 @@ export class ScholarDevClawOrchestrator {
     try {
       if (startPhase <= 1) {
         logger.info('Starting Phase 1...');
+        await this.logAndConvex('Starting Phase 1: Repository Analysis', integrationId);
         await this.updateExternalPhase(integrationId, 1, 'phase1_analyzing');
         const result = await Phase1.executePhase1(this.bridge, context);
         if (!result.success || !result.data) {
@@ -176,6 +179,7 @@ export class ScholarDevClawOrchestrator {
           throw new Error('Cannot run Phase 2 without phase1 repo analysis context');
         }
         logger.info('Starting Phase 2...');
+        await this.logAndConvex('Starting Phase 2: Research Extraction', integrationId);
         await this.updateExternalPhase(integrationId, 2, 'phase2_extracting');
         const result = await Phase2.executePhase2(this.bridge, {
           ...context,
@@ -216,6 +220,7 @@ export class ScholarDevClawOrchestrator {
           throw new Error('Cannot run Phase 3 without phase1+phase2 context');
         }
         logger.info('Starting Phase 3...');
+        await this.logAndConvex('Starting Phase 3: Mapping Specification', integrationId);
         await this.updateExternalPhase(integrationId, 3, 'phase3_mapping');
         const result = await Phase3.executePhase3(this.bridge, {
           ...context,
@@ -275,6 +280,7 @@ export class ScholarDevClawOrchestrator {
           throw new Error('Cannot run Phase 4 without phase3 mapping context');
         }
         logger.info('Starting Phase 4...');
+        await this.logAndConvex('Starting Phase 4: Patch Generation', integrationId);
         await this.updateExternalPhase(integrationId, 4, 'phase4_patching');
         const result = await Phase4.executePhase4(this.bridge, {
           ...context,
@@ -318,6 +324,7 @@ export class ScholarDevClawOrchestrator {
           throw new Error('Cannot run Phase 5 without phase4 patch context');
         }
         logger.info('Starting Phase 5...');
+        await this.logAndConvex('Starting Phase 5: Validation', integrationId);
         await this.updateExternalPhase(integrationId, 5, 'phase5_validating');
         const result = await Phase5.executePhase5(this.bridge, {
           ...context,
@@ -382,6 +389,7 @@ export class ScholarDevClawOrchestrator {
           throw new Error('Cannot run Phase 6 without phase5 validation context');
         }
         logger.info('Starting Phase 6...');
+        await this.logAndConvex('Starting Phase 6: Final Reporting', integrationId);
         await this.updateExternalPhase(integrationId, 6, 'phase6_reporting');
         const result = await Phase6.executePhase6({
           ...context,
@@ -492,8 +500,8 @@ export class ScholarDevClawOrchestrator {
     return true;
   }
 
-  async processPendingWork(): Promise<void> {
-    const localPending = await this.runStore.listByStatus(['pending', 'running', 'awaiting_approval']);
+  async processPendingWork(): Promise<boolean> {
+    let workProcessed = false;
     for (const snapshot of localPending) {
       logger.info('Resuming local pending run', {
         runId: snapshot.runId,
@@ -834,10 +842,22 @@ export class ScholarDevClawOrchestrator {
     return phases.length ? Math.max(...phases) : 0;
   }
 
-  private generateRunId(): string {
-    const stamp = Date.now().toString(36);
-    const random = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-    return `run-${stamp}-${random}`;
+  private async logAndConvex(message: string, integrationId?: string, level: 'info' | 'warn' | 'error' = 'info', meta?: any): Promise<void> {
+    const logMethod = {
+      info: () => logger.info(message, meta),
+      warn: () => logger.warn(message, meta),
+      error: () => logger.error(message, meta),
+    }[level];
+
+    logMethod();
+
+    if (integrationId && this.convex) {
+      try {
+        await this.convex.saveLog(integrationId, `[${level.toUpperCase()}] ${message}`);
+      } catch (e) {
+        logger.error('Failed to save log to Convex', { error: e });
+      }
+    }
   }
 
   private async saveSnapshot(args: {
