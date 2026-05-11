@@ -84,7 +84,7 @@ export class ScholarDevClawOrchestrator {
   async runIntegration(input: IntegrationCreate, options: RunIntegrationOptions = {}): Promise<void> {
     const { repoUrl, paperUrl, paperPdfPath, mode } = input;
     const executionMode = (mode || config.execution.defaultMode) as ExecutionMode;
-    const runId = options.runId || this.generateRunId();
+    const runId = options.runId || `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
     const startPhase = options.startPhase || 1;
     const existingSnapshot = options.runId ? await this.runStore.get(options.runId) : null;
     const retryCount = options.retryCount ?? existingSnapshot?.retryCount ?? 0;
@@ -502,6 +502,7 @@ export class ScholarDevClawOrchestrator {
 
   async processPendingWork(): Promise<boolean> {
     let workProcessed = false;
+    const localPending = await this.runStore.listByStatus(['pending', 'running', 'awaiting_approval']);
     for (const snapshot of localPending) {
       logger.info('Resuming local pending run', {
         runId: snapshot.runId,
@@ -519,7 +520,7 @@ export class ScholarDevClawOrchestrator {
     }
 
     if (!this.convex) {
-      return;
+      return workProcessed;
     }
 
     const statuses: Array<
@@ -575,6 +576,8 @@ export class ScholarDevClawOrchestrator {
         );
       }
     }
+
+    return workProcessed;
   }
 
   private phaseResultsFromIntegration(integration: Integration): Record<number, unknown> {
@@ -781,7 +784,7 @@ export class ScholarDevClawOrchestrator {
     });
 
     if (integrationId && this.convex) {
-      await this.convex.incrementRetry(integrationId);
+      await this.convex.saveLog(integrationId, `[WARN] Failed with ${errorMessage} after ${retryCount} retries`);
     }
 
     await this.saveSnapshot({

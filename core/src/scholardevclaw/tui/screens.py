@@ -1634,3 +1634,101 @@ class ProductScreen(ModalScreen[None]):
 
     def _refresh_status(self) -> None:
         self.query_one("#product-status", Static).update(self._status)
+
+
+class RepoMapScreen(ModalScreen[None]):
+    """TUI-Native Repo Mapping: shows which files will be affected."""
+
+    BINDINGS = [
+        ("escape", "dismiss", "Close"),
+        ("ctrl+q", "dismiss", "Close"),
+    ]
+
+    DEFAULT_CSS = """
+    RepoMapScreen {
+        align: center middle;
+        background: $background 88%;
+    }
+
+    RepoMapScreen #map-container {
+        width: 80;
+        height: 80%;
+        background: $surface;
+        border: thick $primary;
+        padding: 1;
+    }
+
+    RepoMapScreen #map-header {
+        text-style: bold;
+        content-align: center middle;
+        height: 3;
+    }
+
+    RepoMapScreen .section-header {
+        text-style: bold;
+        color: $accent;
+        margin-top: 1;
+    }
+
+    RepoMapScreen .file-path {
+        margin-left: 2;
+        color: $text;
+    }
+
+    RepoMapScreen .file-new {
+        color: $success;
+    }
+
+    RepoMapScreen .file-modified {
+        color: $warning;
+    }
+
+    RepoMapScreen #map-close {
+        width: 20;
+        margin-top: 1;
+        align: center middle;
+    }
+    """
+
+    def __init__(
+        self,
+        new_files: list[str] | None = None,
+        modified_files: list[str] | None = None,
+        confidence: float = 0.0,
+        repo_path: str = "",
+    ) -> None:
+        super().__init__()
+        self._new_files = new_files or []
+        self._modified_files = modified_files or []
+        self._confidence = confidence
+        self._repo_path = repo_path
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="map-container"):
+            yield Static("Repository Mapping", id="map-header")
+            yield Static(f"Repository: {self._repo_path or 'N/A'}", classes="file-path")
+            yield Static(f"Confidence: {self._confidence:.0%}", classes="file-path")
+
+            yield Static("────────────────────────────────", classes="file-path")
+
+            yield Static("Files to Create", classes="section-header")
+            yield Static("────────────────", classes="file-path")
+            if self._new_files:
+                for f in self._new_files:
+                    yield Static(f"  + {f}", classes="file-new")
+            else:
+                yield Static("  (none)", classes="file-path")
+
+            yield Static("Files to Modify", classes="section-header")
+            yield Static("─────────────────", classes="file-path")
+            if self._modified_files:
+                for f in self._modified_files:
+                    yield Static(f"  ~ {f}", classes="file-modified")
+            else:
+                yield Static("  (none)", classes="file-path")
+
+            yield Static("", classes="file-path")
+            yield Button("Close", id="map-close", variant="primary")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss()

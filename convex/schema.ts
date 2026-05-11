@@ -61,9 +61,38 @@ export default defineSchema({
   integrationLogs: defineTable({
     integrationId: v.id("integrations"),
     message: v.string(),
-    level: v.optional(v.string()), // "info", "warn", "error"
+    level: v.optional(v.string()),
     timestamp: v.number(),
   })
     .index("by_integration", ["integrationId"])
     .index("by_timestamp", ["integrationId", "timestamp"]),
+
+  paperLibrary: defineTable({
+    paperId: v.string(),
+    paperTitle: v.string(),
+    paperUrl: v.optional(v.string()),
+    arxivId: v.optional(v.string()),
+    algorithmName: v.optional(v.string()),
+    analysisDate: v.number(),
+    integrationCount: v.number(),
+    lastUsed: v.number(),
+    notes: v.optional(v.string()),
+    repoPath: v.optional(v.string()),
+  })
+    .index("by_analysis_date", ["analysisDate"])
+    .index("by_algo_name", ["algorithmName"]),
+
+  sessionHistory: defineTable({
+    integrationId: v.id("integrations"),
+    action: v.string(),
+    status: v.string(),
+    repoPath: v.string(),
+    specName: v.optional(v.string()),
+    duration: v.number(),
+    createdAt: v.number(),
+    summary: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+  })
+    .index("by_integration", ["integrationId"])
+    .index("by_created", ["createdAt"]),
 });

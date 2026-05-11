@@ -223,3 +223,92 @@ export const saveLog = mutation({
     });
   },
 });
+
+export const savePaperToLibrary = mutation({
+  args: {
+    authKey: v.string(),
+    paperTitle: v.string(),
+    paperUrl: v.optional(v.string()),
+    arxivId: v.optional(v.string()),
+    algorithmName: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    repoPath: v.optional(v.string()),
+  },
+  handler: async ({ db }, args) => {
+    requireAuth(args.authKey);
+
+    const paperId = args.arxivId || args.paperUrl || args.paperTitle;
+    const now = Date.now();
+
+    await db.insert("paperLibrary", {
+      paperId,
+      paperTitle: args.paperTitle,
+      paperUrl: args.paperUrl,
+      arxivId: args.arxivId,
+      algorithmName: args.algorithmName,
+      analysisDate: now,
+      integrationCount: 0,
+      lastUsed: now,
+      notes: args.notes,
+      repoPath: args.repoPath,
+    });
+  },
+});
+
+export const incrementPaperIntegrationCount = mutation({
+  args: {
+    authKey: v.string(),
+    id: v.id("paperLibrary"),
+  },
+  handler: async ({ db }, args) => {
+    requireAuth(args.authKey);
+
+    const doc = await db.get(args.id);
+    if (!doc) return;
+
+    await db.patch(args.id, {
+      integrationCount: (doc.integrationCount || 0) + 1,
+      lastUsed: Date.now(),
+    });
+  },
+});
+
+export const deletePaperFromLibrary = mutation({
+  args: {
+    authKey: v.string(),
+    id: v.id("paperLibrary"),
+  },
+  handler: async ({ db }, args) => {
+    requireAuth(args.authKey);
+    await db.delete(args.id);
+  },
+});
+
+export const saveSessionToHistory = mutation({
+  args: {
+    authKey: v.string(),
+    integrationId: v.id("integrations"),
+    action: v.string(),
+    status: v.string(),
+    repoPath: v.string(),
+    specName: v.optional(v.string()),
+    duration: v.number(),
+    summary: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+  },
+  handler: async ({ db }, args) => {
+    requireAuth(args.authKey);
+
+    await db.insert("sessionHistory", {
+      integrationId: args.integrationId,
+      action: args.action,
+      status: args.status,
+      repoPath: args.repoPath,
+      specName: args.specName,
+      duration: args.duration,
+      createdAt: Date.now(),
+      summary: args.summary,
+      errorMessage: args.errorMessage,
+    });
+  },
+});

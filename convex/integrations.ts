@@ -103,3 +103,58 @@ export const getLogs = query({
     return await query.take(limit);
   },
 });
+
+export const listPaperLibrary = query({
+  args: {
+    authKey: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async ({ db }, args) => {
+    requireAuth(args.authKey);
+    const limit = args.limit || 100;
+    return await db
+      .query("paperLibrary")
+      .order("desc")
+      .take(limit);
+  },
+});
+
+export const getPaperByArxivId = query({
+  args: {
+    authKey: v.string(),
+    arxivId: v.string(),
+  },
+  handler: async ({ db }, args) => {
+    requireAuth(args.authKey);
+    return await db
+      .query("paperLibrary")
+      .withIndex("by_algo_name", (q) => q.eq("algorithmName", ""))
+      .filter((q) => q.eq(q.field("arxivId"), args.arxivId))
+      .first();
+  },
+});
+
+export const listSessionHistory = query({
+  args: {
+    authKey: v.string(),
+    integrationId: v.optional(v.id("integrations")),
+    limit: v.optional(v.number()),
+  },
+  handler: async ({ db }, args) => {
+    requireAuth(args.authKey);
+    const limit = args.limit || 50;
+
+    if (args.integrationId) {
+      return await db
+        .query("sessionHistory")
+        .withIndex("by_integration", (q) => q.eq("integrationId", args.integrationId!))
+        .order("desc")
+        .take(limit);
+    }
+
+    return await db
+      .query("sessionHistory")
+      .order("desc")
+      .take(limit);
+  },
+});

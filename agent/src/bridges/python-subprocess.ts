@@ -10,6 +10,17 @@ export interface PhaseResult {
   error?: string;
 }
 
+export interface BridgeOptions {
+  /** Enable local-only mode - runs Python CLI directly without API server */
+  localOnly?: boolean;
+  /** Path to Python executable */
+  pythonPath?: string;
+  /** Path to the core module */
+  corePath?: string;
+  /** Timeout in ms for subprocess operations */
+  timeout?: number;
+}
+
 export interface RepoAnalysisResult {
   repoName: string;
   architecture: {
@@ -112,10 +123,22 @@ export interface ValidationResult {
 export class PythonSubprocessBridge {
   private pythonCmd: string;
   private corePath: string;
+  private localOnly: boolean;
+  private timeout: number;
 
-  constructor(pythonCmd: string = 'python3', corePath: string = '../core') {
-    this.pythonCmd = pythonCmd;
-    this.corePath = corePath;
+  constructor(pythonCmd: string = 'python3', corePath: string = '../core', options?: BridgeOptions) {
+    this.pythonCmd = options?.pythonPath || pythonCmd;
+    this.corePath = options?.corePath || corePath;
+    this.localOnly = options?.localOnly ?? false;
+    this.timeout = options?.timeout ?? 120000;
+
+    if (this.localOnly) {
+      logger.info('Local-only mode enabled - running Python CLI directly');
+      const coreDir = pathResolve(dirname(fileURLToPath(import.meta.url)), this.corePath);
+      if (!existsSync(coreDir)) {
+        logger.warn(`Core directory not found at ${coreDir}. Run from the agent/ directory.`);
+      }
+    }
   }
 
   private getCoreWorkingDirectory(): string {
@@ -144,8 +167,13 @@ export class PythonSubprocessBridge {
         promiseResolve(result);
       };
 
-      const proc = spawn(this.pythonCmd, ['-m', modulePath, ...args], {
-        cwd: this.getCoreWorkingDirectory(),
+      const cmd = this.pythonCmd;
+      const procArgs = ['-m', modulePath, ...args];
+      const workDir = this.getCoreWorkingDirectory();
+
+      logger.debug('Running Python module', { cmd, args: procArgs, cwd: workDir });
+      const proc = spawn(cmd, procArgs, {
+        cwd: workDir,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -328,6 +356,28 @@ async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
     try {
       const result = await this.runPythonModule('scholardevclaw.cli', ['--version']);
       return result.success;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Check if running in local-only mode (no API server needed) */
+  isLocalOnly(): boolean {
+    return this.localOnly;
+  }
+
+  /** Set or disable local-only mode */
+  setLocalOnly(enabled: boolean): void {
+    this.localOnly = enabled;
+    logger.info(`Local-only mode ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /** Auto-detect if we should use local mode */
+  static async detectLocalMode(pythonCmd: string = 'python3'): Promise<boolean> {
+    try {
+      const bridge = new PythonSubprocessBridge(pythonCmd);
+      const healthy = await bridge.healthCheck();
+      return healthy;
     } catch {
       return false;
     }
