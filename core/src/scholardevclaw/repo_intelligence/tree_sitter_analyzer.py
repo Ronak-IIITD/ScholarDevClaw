@@ -203,6 +203,65 @@ class TreeSitterAnalyzer:
 
         languages = self.detect_languages()
 
+        # Warn if no languages detected despite repo files existing
+        if not languages:
+            if self.repo_path.exists():
+                all_files = sum(
+                    1
+                    for _ in self.repo_path.rglob("*")
+                    if _.is_file() and not self._should_ignore(_)
+                )
+                if all_files > 0:
+                    logger.warning(
+                        "No known languages detected in repo with %d files. "
+                        "Only extensions for Python(.py), JS(.js), TS(.ts), Go(.go), Rust(.rs), Java(.java) are recognized. "
+                        "Falling back to extension-based detection.",
+                        all_files,
+                    )
+                    # Fallback: detect by common extensions not in LANGUAGE_CONFIGS
+                    ext_to_lang = {
+                        ".py": "python",
+                        ".js": "javascript",
+                        ".mjs": "javascript",
+                        ".cjs": "javascript",
+                        ".ts": "typescript",
+                        ".tsx": "typescript",
+                        ".mts": "typescript",
+                        ".go": "go",
+                        ".rs": "rust",
+                        ".java": "java",
+                        ".rb": "ruby",
+                        ".php": "php",
+                        ".c": "c",
+                        ".cpp": "cpp",
+                        ".h": "c",
+                        ".hpp": "cpp",
+                        ".cs": "csharp",
+                        ".swift": "swift",
+                        ".kt": "kotlin",
+                        ".scala": "scala",
+                        ".r": "r",
+                        ".lua": "lua",
+                        ".sh": "bash",
+                        ".pl": "perl",
+                        ".pm": "perl",
+                        ".sql": "sql",
+                        ".tsql": "sql",
+                    }
+                    for f in self.repo_path.rglob("*"):
+                        if f.is_file() and not self._should_ignore(f):
+                            ext = f.suffix.lower()
+                            if ext in ext_to_lang:
+                                lang = ext_to_lang[ext]
+                                if lang not in languages:
+                                    languages.append(lang)
+                        if len(languages) >= 5:  # cap at 5
+                            break
+                    if languages:
+                        logger.info("Fallback detection found languages: %s", languages)
+            else:
+                logger.warning("Repository path does not exist: %s", self.repo_path)
+
         # Collect stats
         language_stats = []
         for lang in languages:

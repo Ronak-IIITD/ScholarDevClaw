@@ -428,8 +428,9 @@ class ScholarDevClawApp(App[None]):
     }
 
     #side-pane {
-        width: 1fr;
-        min-width: 36;
+        width: 2fr;
+        min-width: 48;
+        max-width: 60;
         height: 1fr;
     }
 
@@ -3232,7 +3233,7 @@ class ScholarDevClawApp(App[None]):
             if key == "dir":
                 return "set_dir", {"directory": value}
 
-        if head in {"help", "clear", "quit", "setup", "providers", "status"}:
+        if head in {"help", "clear", "quit", "setup", "providers", "status", "models"}:
             return head, {}
 
         if head == "chat":
@@ -3974,6 +3975,49 @@ class ScholarDevClawApp(App[None]):
             self._append_output(f"Providers: {self._supported_provider_names()}")
             self._append_output("Use `setup` to configure credentials and model IDs.")
             return
+        if action == "models":
+            provider = self._provider
+            self._append_output(f"Models for provider: {provider}", "accent")
+            # Show the current model and known models for this provider
+            current_model = self._model or DEFAULT_MODELS.get(
+                SUPPORTED_TUI_PROVIDERS.get(provider), "N/A"
+            )
+            self._append_output(f"Current model: {current_model}", "info")
+            self._append_output(f"Set model with: `set model <model-id>`", "info")
+            # Try to fetch available models from the provider
+            if provider == "openrouter":
+                self._append_output("Fetching available models from OpenRouter...", "info")
+                try:
+                    import httpx
+
+                    resp = httpx.get("https://openrouter.ai/api/v1/models", timeout=10.0)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        models = data.get("data", data) if isinstance(data, dict) else data
+                        if isinstance(models, list):
+                            count = min(len(models), 30)
+                            self._append_output(
+                                f"Available models (showing {count}/{len(models)}):", "accent"
+                            )
+                            for m in models[:30]:
+                                model_id = m.get("id", "") if isinstance(m, dict) else str(m)
+                                self._append_output(f"  - {model_id}", "info")
+                            if len(models) > 30:
+                                self._append_output(f"  ... and {len(models) - 30} more")
+                        else:
+                            self._append_output(
+                                "Found models endpoint but unexpected format", "warning"
+                            )
+                    else:
+                        self._append_output(
+                            f"Failed to fetch models: HTTP {resp.status_code}", "warning"
+                        )
+                except Exception as e:
+                    self._append_output(f"Error fetching models: {e}", "warning")
+            else:
+                self._append_output(f"Auto-fetch not implemented for '{provider}'", "info")
+                self._append_output("Set model manually with: `set model <model-id>`", "info")
+            return
         if action == "status":
             self._append_output(f"Mode: {self._mode}")
             self._append_output(f"Provider: {self._provider}")
@@ -4040,7 +4084,7 @@ class ScholarDevClawApp(App[None]):
             # Find last failed validate run and re-run it
             last_run_id = None
             last_run_data = None
-            for artifact in reversed(self._run_artifacts or []):
+            for artifact in reversed(self._recent_run_artifacts or []):
                 if artifact.action == "validate" and artifact.status == "Failed":
                     last_run_id = artifact.run_id
                     last_run_data = artifact
