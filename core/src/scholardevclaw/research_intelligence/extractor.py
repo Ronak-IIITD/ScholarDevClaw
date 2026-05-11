@@ -1287,6 +1287,64 @@ class ResearchExtractor:
             return self._extract_from_known_paper(source)
 
     # ------------------------------------------------------------------
+    # Multi-paper extraction and synthesis
+    # ------------------------------------------------------------------
+
+    def extract_multiple(self, sources: list[str], source_type: str = "arxiv") -> dict:
+        """Extract and merge specs from multiple research papers.
+
+        Args:
+            sources: List of paper identifiers (arXiv IDs or PDF paths)
+            source_type: Type of sources ("arxiv" or "pdf")
+
+        Returns:
+            A merged research spec combining all input papers.
+
+        Example:
+            extractor = ResearchExtractor()
+            merged = extractor.extract_multiple(
+                ["1910.07467", "2005.14165"],
+                source_type="arxiv"
+            )
+        """
+        specs = []
+        errors = []
+
+        for i, source in enumerate(sources):
+            try:
+                logger.info("Extracting spec from source %d/%d: %s", i + 1, len(sources), source)
+                spec = self.extract(source, source_type)
+                if spec:
+                    specs.append(spec)
+                    logger.info("Successfully extracted spec from %s", source)
+                else:
+                    errors.append(f"Source {source}: returned empty spec")
+            except ResearchExtractionError as e:
+                errors.append(f"Source {source}: {str(e)}")
+                logger.warning("Failed to extract from %s: %s", source, e)
+            except Exception as e:
+                errors.append(f"Source {source}: unexpected error: {str(e)}")
+                logger.warning("Unexpected error extracting from %s: %s", source, e)
+
+        if not specs:
+            error_msg = "; ".join(errors) if errors else "No specs could be extracted"
+            raise ResearchExtractionError(
+                "Failed to extract any research specs",
+                source=", ".join(sources),
+                source_type=source_type + "(multi)",
+                reason="all_extractions_failed",
+                suggestion=f"Verify paper identifiers and try again.\nErrors: {error_msg}",
+            )
+
+        merged = _merge_specs(specs)
+        logger.info(
+            "Merged %d specs into one: %s",
+            len(specs),
+            merged.get("algorithm", {}).get("name", "unknown"),
+        )
+        return merged
+
+    # ------------------------------------------------------------------
     # PDF extraction — LLM-powered only (no fabricated fallback)
     # ------------------------------------------------------------------
 
@@ -1519,3 +1577,74 @@ def _spec_key(spec: dict[str, Any]) -> str:
         words = [w.lower() for w in title.split() if len(w) > 3]
         return "_".join(words[:2]) if words else ""
     return ""
+
+
+def _merge_specs(specs: list[dict]) -> dict:
+    """Merge multiple research specs into a single combined spec.
+
+    Args:
+        specs: List of individual research specs to merge.
+
+    Returns:
+        A merged spec combining algorithms, papers, and technical details.
+    """
+    if not specs:
+        return {}
+    if len(specs) == 1:
+        return specs[0]
+
+    merged = {
+        "paper": {
+            "title": " + ".join(
+                s.get("paper", {}).get("title", f"paper_{i}") for i, s in enumerate(specs)
+            ),
+            "authors": list(set(a for s in specs for a in s.get("paper", {}).get("authors", []))),
+            "arxiv": ", ".join(
+                s.get("paper", {}).get("arxiv", "")
+                for s in specs
+                if s.get("paper", {}).get("arxiv")
+            ),
+            "year": min(int(s.get("paper", {}).get("year", 9999)) for s in specs),
+            "_references": [
+                {
+                    "title": s.get("paper", {}).get("title", f"source_{i}"),
+                    "arxiv": s.get("paper", {}).get("arxiv", ""),
+                    "authors": s.get("paper", {}).get("authors", []),
+                }
+                for i, s in enumerate(specs)
+            ],
+        },
+        "algorithm": {
+            "name": " + ".join(
+                s.get("algorithm", {}).get("name", f"algo_{i}") for i, s in enumerate(specs)
+            ),
+            "category": specs[0].get("algorithm", {}).get("category", ""),
+            "description": "\n".join(
+                s.get("algorithm", {}).get("description", "")
+                for s in specs
+                if s.get("algorithm", {}).get("description")
+            ),
+            "implementation_notes": "\n---\n".join(
+                s.get("algorithm", {}).get("implementation_notes", "")
+                for s in specs
+                if s.get("algorithm", {}).get("implementation_notes")
+            ),
+            "components": list(
+                set(c for s in specs for c in s.get("algorithm", {}).get("components", []))
+            ),
+            "equations": list(
+                set(e for s in specs for e in s.get("algorithm", {}).get("equations", []))
+            ),
+            "parameters": {
+                k: v for s in specs for k, v in s.get("algorithm", {}).get("parameters", {}).items()
+            },
+            "_sources": [
+                {
+                    "title": s.get("paper", {}).get("title", f"source_{i}"),
+                    "algorithm": s.get("algorithm", {}).get("name", f"algo_{i}"),
+                }
+                for i, s in enumerate(specs)
+            ],
+        },
+    }
+    return merged

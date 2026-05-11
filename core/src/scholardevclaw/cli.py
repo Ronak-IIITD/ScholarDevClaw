@@ -2033,6 +2033,62 @@ def cmd_specs(args):
         print("Categories:\n")
         for category, specs in sorted(categories.items()):
             print(f"  {category}: {len(specs)} specs")
+
+
+def cmd_synthesize(args):
+    """Synthesize a merged spec from multiple research papers"""
+    from scholardevclaw.research_intelligence.extractor import ResearchExtractor
+
+    if not args.papers:
+        print("Error: At least one paper identifier is required", file=sys.stderr)
+        print("Usage: scholardevclaw synthesize arxiv:ID1 arxiv:ID2 [--repo PATH]", file=sys.stderr)
+        sys.exit(1)
+
+    source_type = "arxiv"
+    sources = []
+    for paper in args.papers:
+        if paper.startswith("arxiv:") or paper.startswith("arXiv:"):
+            sources.append(paper.split(":", 1)[1].strip())
+        elif paper.lower().endswith(".pdf"):
+            sources.append(paper)
+            source_type = "pdf"
+        else:
+            # Assume it's an arXiv ID
+            sources.append(paper)
+
+    print(f"Synthesizing {len(sources)} paper(s)...")
+    print("-" * 60)
+
+    try:
+        extractor = ResearchExtractor()
+        merged_spec = extractor.extract_multiple(sources, source_type=source_type)
+
+        print("\n✓ Synthesis complete!\n")
+        print(f"Combined algorithm: {merged_spec.get('algorithm', {}).get('name', 'N/A')}")
+        print(f"Sources: {len(merged_spec.get('algorithm', {}).get('_sources', []))}")
+        print(f"Components: {len(merged_spec.get('algorithm', {}).get('components', []))}")
+        print(f"Equations: {len(merged_spec.get('algorithm', {}).get('equations', []))}")
+        print(f"Paper references:")
+        for ref in merged_spec.get("paper", {}).get("_references", []):
+            arxiv = ref.get("arxiv", "")
+            print(
+                f"  - {ref.get('title', 'N/A')} (arXiv: {arxiv})"
+                if arxiv
+                else f"  - {ref.get('title', 'N/A')}"
+            )
+
+        if args.output_json:
+            import json
+
+            print(json.dumps(merged_spec, indent=2))
+        else:
+            print(
+                f"\nDescription: {merged_spec.get('algorithm', {}).get('description', '')[:300]}..."
+            )
+
+    except Exception as e:
+        print(f"Error during synthesis: {e}", file=sys.stderr)
+        sys.exit(1)
     else:
         specs = extractor.list_available_specs()
         print(f"Available specs ({len(specs)} total):")
@@ -3902,6 +3958,16 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     # specs
     p_specs = subparsers.add_parser("specs", help="List paper specifications")
     p_specs.add_argument("--list", action="store_true", help="Detailed list")
+
+    # synthesize
+    p_synthesize = subparsers.add_parser(
+        "synthesize",
+        help="Synthesize a merged spec from multiple research papers",
+        description="Extract and merge specs from multiple papers (arXiv IDs or PDFs)",
+    )
+    p_synthesize.add_argument("papers", nargs="+", help="Paper IDs (e.g., arxiv:1910.07467)")
+    p_synthesize.add_argument("--repo", type=str, default=".", help="Repository path for context")
+    p_synthesize.add_argument("--json", dest="output_json", action="store_true", help="Output JSON")
     p_specs.add_argument("--categories", action="store_true", help="Show categories")
 
     # planner
@@ -4195,6 +4261,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "integrate": cmd_integrate,
         "tui": cmd_tui,
         "specs": cmd_specs,
+        "synthesize": cmd_synthesize,
         "planner": cmd_planner,
         "critic": cmd_critic,
         "context": cmd_context,

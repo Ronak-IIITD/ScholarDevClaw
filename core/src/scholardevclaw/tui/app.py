@@ -3151,6 +3151,22 @@ class ScholarDevClawApp(App[None]):
         if head == "inspect":
             return "inspect", {}
 
+        if head == "retry":
+            action_type = "retry_validate"  # default retry action
+            result: dict[str, Any] = {}
+            if len(parts) >= 2:
+                sub = parts[1].strip().lower()
+                if sub == "validate":
+                    action_type = "retry_validate"
+                elif sub == "benchmark":
+                    action_type = "retry_benchmark"
+                elif sub == "full":
+                    action_type = "retry_full"
+                else:
+                    # treat as a free-form fix description
+                    result["fix_description"] = " ".join(parts[1:])
+            return action_type, result
+
         if head == "run" and len(parts) >= 2:
             subcommand = parts[1].strip().lower()
             if subcommand == "show":
@@ -4017,6 +4033,32 @@ class ScholarDevClawApp(App[None]):
                 self._set_status(f"Run #{run_id} events (last {limit})", "info")
             else:
                 self._set_status(f"Run #{run_id} events", "info")
+            return
+        if action == "retry_validate":
+            fix_desc = request.get("fix_description", "")
+            self._append_output(f"Retrying validation: {fix_desc or 're-running tests'}", "accent")
+            # Find last failed validate run and re-run it
+            last_run_id = None
+            last_run_data = None
+            for artifact in reversed(self._run_artifacts or []):
+                if artifact.action == "validate" and artifact.status == "Failed":
+                    last_run_id = artifact.run_id
+                    last_run_data = artifact
+                    break
+            if last_run_id is not None and last_run_data is not None:
+                repo_path = last_run_data.repo_path
+                spec = last_run_data.spec
+                self._append_output(
+                    f"Re-validating {repo_path} (previous run #{last_run_id})", "info"
+                )
+                # Trigger re-run with validate action
+                self._execute_action_request(
+                    "validate", {"repo_path": repo_path, "spec": spec, "fix_description": fix_desc}
+                )
+            else:
+                self._append_output("No previous failed validation run found to retry", "warning")
+                self._context_hints = ["validate ./repo", "analyze ./repo"]
+                self._update_command_meta()
             return
         if action == "paper_workflow":
             self._open_paper_workflow(str(request.get("source", "") or ""))
