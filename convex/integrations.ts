@@ -85,3 +85,21 @@ export const listApprovals = query({
       .collect();
   },
 });
+
+export const getLogs = query({
+  args: {
+    authKey: v.string(),
+    integrationId: v.id("integrations"),
+    limit: v.optional(v.number()),
+  },
+  handler: async ({ db }, args) => {
+    requireAuth(args.authKey);
+    let query = db
+      .query("integrationLogs")
+      .withIndex("by_integration", (q) => q.eq("integrationId", args.integrationId))
+      .order("asc");
+    
+    const limit = args.limit || 500;
+    return await query.take(limit);
+  },
+});

@@ -203,3 +203,23 @@ export const createApproval = mutation({
     });
   },
 });
+
+export const saveLog = mutation({
+  args: {
+    authKey: v.string(),
+    id: v.id("integrations"),
+    message: v.string(),
+    level: v.optional(v.string()),
+    timestamp: v.number(),
+  },
+  handler: async ({ db }, args) => {
+    requireAuth(args.authKey);
+
+    await db.insert("integrationLogs", {
+      integrationId: args.id,
+      message: args.message,
+      level: args.level || "info",
+      timestamp: args.timestamp,
+    });
+  },
+});

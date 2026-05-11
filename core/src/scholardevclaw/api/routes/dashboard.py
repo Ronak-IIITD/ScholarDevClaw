@@ -601,6 +601,57 @@ async def _run_pipeline_async(
 
 
 # ---------------------------------------------------------------------------
+# SSE endpoint for real-time log streaming
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pipeline/stream/{run_id}")
+async def pipeline_stream(run_id: str):
+    """SSE endpoint for streaming pipeline logs in real-time.
+
+    Connect to this endpoint to receive Server-Sent Events with:
+    - Phase transitions
+    - Log messages
+    - Validation results
+    - Completion status
+
+    The client should handle reconnection with the Last-Event-ID header.
+    """
+    # Import here to avoid circular imports
+    from fastapi.responses import StreamingResponse
+
+    async def event_generator():
+        # Send initial connection event
+        yield f"event: connected\ndata: {json.dumps({'run_id': run_id, 'status': 'connected'})}\n\n"
+
+        # In a real implementation, this would poll the pipeline state
+        # or subscribe to a message queue for real-time updates.
+        # For now, we emit a periodic heartbeat.
+        import asyncio
+
+        try:
+            while True:
+                # Check if run exists and get status
+                global _current_run
+                if _current_run and _current_run.run_id == run_id:
+                    yield f"event: status\ndata: {json.dumps({'run_id': run_id, 'status': _current_run.status, 'current_phase': _current_run.current_phase})}\n\n"
+
+                await asyncio.sleep(2)  # Heartbeat every 2 seconds
+        except asyncio.CancelledError:
+            yield f"event: closed\ndata: {json.dumps({'run_id': run_id, 'reason': 'connection_closed'})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # WebSocket endpoint
 # ---------------------------------------------------------------------------
 

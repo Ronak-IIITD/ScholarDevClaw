@@ -57,4 +57,13 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_integration", ["integrationId"]),
+
+  integrationLogs: defineTable({
+    integrationId: v.id("integrations"),
+    message: v.string(),
+    level: v.optional(v.string()), // "info", "warn", "error"
+    timestamp: v.number(),
+  })
+    .index("by_integration", ["integrationId"])
+    .index("by_timestamp", ["integrationId", "timestamp"]),
 });
