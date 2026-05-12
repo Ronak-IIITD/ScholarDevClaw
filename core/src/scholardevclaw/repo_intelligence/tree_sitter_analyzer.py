@@ -7,10 +7,13 @@ decorators, parameters, return types, and visibility across Python,
 JavaScript, TypeScript, Go, Rust, and Java.
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Tree-sitter language configurations
 LANGUAGE_CONFIGS = {

@@ -3983,7 +3983,7 @@ class ScholarDevClawApp(App[None]):
                 SUPPORTED_TUI_PROVIDERS.get(provider), "N/A"
             )
             self._append_output(f"Current model: {current_model}", "info")
-            self._append_output(f"Set model with: `set model <model-id>`", "info")
+            self._append_output("Set model with: `set model <model-id>`", "info")
             # Try to fetch available models from the provider
             if provider == "openrouter":
                 self._append_output("Fetching available models from OpenRouter...", "info")

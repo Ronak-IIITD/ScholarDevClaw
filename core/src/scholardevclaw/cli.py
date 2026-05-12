@@ -2068,7 +2068,7 @@ def cmd_synthesize(args):
         print(f"Sources: {len(merged_spec.get('algorithm', {}).get('_sources', []))}")
         print(f"Components: {len(merged_spec.get('algorithm', {}).get('components', []))}")
         print(f"Equations: {len(merged_spec.get('algorithm', {}).get('equations', []))}")
-        print(f"Paper references:")
+        print("Paper references:")
         for ref in merged_spec.get("paper", {}).get("_references", []):
             arxiv = ref.get("arxiv", "")
             print(
