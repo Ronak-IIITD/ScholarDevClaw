@@ -764,7 +764,20 @@ async def health():
         "status": "ok",
         "version": SCHEMA_VERSION,
         "spec_count": len(PAPER_SPECS),
+        "yolo_mode": os.environ.get("SCHOLARDEVCLAW_YOLO_MODE", "").lower() in ("true", "1", "yes"),
     }
+
+
+@app.get(
+    "/yolo-mode",
+    tags=["status"],
+    summary="YOLO mode status",
+    description="Check if YOLO mode is active",
+)
+async def yolo_mode():
+    """Return the current YOLO mode status from the environment."""
+    is_active = os.environ.get("SCHOLARDEVCLAW_YOLO_MODE", "").lower() in ("true", "1", "yes")
+    return {"yoloMode": is_active}
 
 
 @app.get(

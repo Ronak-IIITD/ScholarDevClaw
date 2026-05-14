@@ -2179,6 +2179,13 @@ class ScholarDevClawApp(App[None]):
             session_tokens=self._session_input_tokens + self._session_output_tokens,
             last_tokens=self._last_total_tokens,
         )
+        # Sync yolo mode from environment variable
+        yolo_enabled = os.environ.get("SCHOLARDEVCLAW_YOLO_MODE", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        status_bar.set_yolo_mode(yolo_enabled)
 
     def _set_phase(self, phase: str) -> None:
         try:

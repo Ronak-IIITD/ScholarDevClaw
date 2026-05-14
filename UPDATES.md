@@ -4,6 +4,68 @@
 
 **Last updated:** 2026-05-14
 
+### 2026-05-14 (YOLO Mode + Hard Destructive Gate)
+**Summary:** Implemented YOLO mode and Hard Destructive Gate across the full stack.
+
+**What changed:**
+
+1. **Core: Destructive Operation Detection (Check A):**
+   - Added `_is_script_destructive()` function in `core/src/scholardevclaw/validation/runner.py` with patterns for dangerous operations (rm -rf /, dd if=... of=/dev/sd, curl|bash, wget|bash, fork bombs)
+   - Integrated destructive check into `_run_bench_script()` — blocks execution and returns `None` when matched
+   - Reads environment variable `SCHOLARDEVCLAW_YOLO_MODE` to skip destructive checks when YOLO mode is active
+
+2. **Convex Schema Update:**
+   - Added `yoloMode?: boolean` field to `Integration` interface in `agent/src/api/convex.ts`
+   - Added `yoloMode?: boolean` to `IntegrationCreate` interface for creation payload
+
+3. **TypeScript Orchestrator Pre-execution Hook:**
+   - Added `yoloMode?: boolean` to `OrchestrationContext` type
+   - Extracts `yoloMode` from integration input or snapshot on resume
+   - Sets `process.env.SCHOLARDEVCLAW_YOLO_MODE` for Python core consumption
+   - Modified `waitForApproval()` to skip approval gate when yoloMode is true (Check B bypass)
+   - Updated context sanitization allowed keys to include `yoloMode`
+
+4. **CLI Flag Parsing:**
+   - Added `--yolo` flag support to `agent/src/index.ts` — sets `yoloMode: true` on IntegrationCreate
+
+5. **System Prompt Injection:**
+   - Created `agent/src/prompts/system.ts` with dynamic system prompt builder
+   - `buildSessionHeader()` generates YOLO mode warning banner for system prompts
+   - `buildSystemPrompt()` injects session header into base prompt
+   - `getYoloModeFromEnv()` reads orchestrator-set environment variable
+
+6. **TUI Banner:**
+   - Added `set_yolo_mode()` method to `StatusBar` widget in `core/src/scholardevclaw/tui/widgets.py`
+   - StatusBar displays persistent red/yellow YOLO mode banner when active
+   - TUI app reads env var in `_sync_status_bar()` to toggle the banner
+
+7. **Web Dashboard Banner:**
+   - Added `/yolo-mode` API endpoint to `core/src/scholardevclaw/api/server.py`
+   - Extended `/health` endpoint to return `yolo_mode` field
+   - DashboardPage reads yolo mode from health API and shows a glowing red/orange banner
+
+**Changes Summary:**
+
+| Component | File(s) | Change |
+|-----------|---------|--------|
+| Validation Runner | `core/src/scholardevclaw/validation/runner.py` | Added `_is_script_destructive()` + env var bypass |
+| Convex Schema | `agent/src/api/convex.ts` | Added `yoloMode` to `Integration` + `IntegrationCreate` |
+| Orchestrator | `agent/src/orchestrator.ts` | Added yoloMode context, env var, approval gate bypass |
+| CLI | `agent/src/index.ts` | Added `--yolo` flag parsing |
+| System Prompt | `agent/src/prompts/system.ts` (new) | Dynamic prompt builder with session header |
+| StatusBar Widget | `core/src/scholardevclaw/tui/widgets.py` | YOLO banner display |
+| TUI App | `core/src/scholardevclaw/tui/app.py` | Env var reading in status sync |
+| API Server | `core/src/scholardevclaw/api/server.py` | `/yolo-mode` endpoint + health field |
+| Web Dashboard | `web/src/pages/DashboardPage.tsx` | YOLO banner from health API |
+
+**Verification:**
+- ✅ `cd core && pytest -q` (1645 passed, 4 skipped)
+- ✅ `cd agent && npx tsc --noEmit` (0 errors)
+- ✅ Destructive check correctly blocks dangerous patterns (`rm -rf /`) and passes safe scripts
+- ✅ Environment variable toggle correctly enables/disables YOLO mode bypass
+- ✅ Orchestrator pre-execution hook skips approval gates in YOLO mode
+- ✅ Web dashboard displays YOLO banner when health endpoint returns yolo_mode: true
+
 ### 2026-05-14 (Hardening Doc — P0 Checklist: Discussions, Social Preview, Repo Polish)
 **Summary:** Enabled GitHub Discussions, created social preview image, updated repo description/topics, verified release workflow.
 

@@ -32,6 +32,7 @@ type OrchestrationContext = {
   repoPath: string;
   paperSource: string;
   sourceType: 'pdf' | 'arxiv';
+  yoloMode?: boolean;
   repoAnalysis?: RepoAnalysisResult;
   researchSpec?: ResearchSpecResult;
   mapping?: MappingResult;
@@ -90,9 +91,26 @@ export class ScholarDevClawOrchestrator {
     const retryCount = options.retryCount ?? existingSnapshot?.retryCount ?? 0;
 
     let integrationId = options.integrationId;
+    // Reconstruct IntegrationCreate from existing snapshot fields if available
+    const snapshotInput: IntegrationCreate | undefined = existingSnapshot
+      ? {
+          repoUrl: existingSnapshot.repoUrl,
+          paperUrl: existingSnapshot.paperUrl,
+          paperPdfPath: existingSnapshot.paperPdfPath,
+          mode: existingSnapshot.mode,
+        }
+      : undefined;
+    const integrationInput = snapshotInput ?? input;
     if (!integrationId && this.convex) {
-      integrationId = await this.convex.createIntegration(input);
+      integrationId = await this.convex.createIntegration(integrationInput);
     }
+
+    // Determine yolo mode from context (if resuming) or input (if new)
+    const yoloMode = existingSnapshot
+      ? (existingSnapshot.context?.yoloMode as boolean | undefined) ?? false
+      : (input.yoloMode ?? false);
+    // Expose yolo mode to Python core via environment variable
+    process.env.SCHOLARDEVCLAW_YOLO_MODE = yoloMode ? 'true' : '';
 
     logger.info('Starting integration', {
       runId,
@@ -102,6 +120,7 @@ export class ScholarDevClawOrchestrator {
       mode: executionMode,
       startPhase,
       retryCount,
+      yoloMode,
     });
 
     await this.logAndConvex(`Starting integration: ${repoUrl}`, integrationId);
@@ -109,7 +128,7 @@ export class ScholarDevClawOrchestrator {
     // SECURITY: Sanitize contextOverrides to prevent prototype pollution
     const safeOverrides: Partial<OrchestrationContext> = {};
     if (options.contextOverrides) {
-      const allowedKeys = new Set<string>(['repoPath', 'paperSource', 'sourceType', 'repoAnalysis', 'researchSpec', 'mapping', 'patch', 'validation']);
+      const allowedKeys = new Set<string>(['repoPath', 'paperSource', 'sourceType', 'yoloMode', 'repoAnalysis', 'researchSpec', 'mapping', 'patch', 'validation']);
       for (const [key, value] of Object.entries(options.contextOverrides)) {
         if (allowedKeys.has(key) && key !== '__proto__' && key !== 'constructor' && key !== 'prototype') {
           (safeOverrides as Record<string, unknown>)[key] = value;
@@ -121,6 +140,7 @@ export class ScholarDevClawOrchestrator {
       repoPath: repoUrl,
       paperSource: paperUrl || paperPdfPath || '',
       sourceType: paperUrl ? 'arxiv' as const : 'pdf' as const,
+      yoloMode,
       ...safeOverrides,
     };
 
@@ -621,6 +641,12 @@ export class ScholarDevClawOrchestrator {
     reason?: string,
     guardrailReasons?: string[],
   ): Promise<void> {
+    // Check B: skip approval gate in YOLO mode
+    if (context.yoloMode) {
+      logger.info(`YOLO mode active - skipping approval gate for Phase ${phase}`);
+      return;
+    }
+
     logger.info(`Waiting for approval after Phase ${phase}...`, { runId });
 
     await this.saveSnapshot({

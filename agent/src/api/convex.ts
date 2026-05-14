@@ -25,6 +25,7 @@ export interface Integration {
   paperPdfPath?: string;
   status: IntegrationStatus;
   mode: ExecutionMode;
+  yoloMode?: boolean;
   currentPhase: number;
   phase1Result?: unknown;
   phase2Result?: unknown;
@@ -47,6 +48,7 @@ export interface IntegrationCreate {
   paperUrl?: string;
   paperPdfPath?: string;
   mode?: ExecutionMode;
+  yoloMode?: boolean;
 }
 
 export interface Approval {

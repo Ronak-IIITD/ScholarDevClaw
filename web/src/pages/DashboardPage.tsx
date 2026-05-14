@@ -14,12 +14,20 @@ import {
   Terminal,
 } from "lucide-react";
 
+type HealthResponse = {
+  status: string;
+  version: string;
+  spec_count: number;
+  yolo_mode?: boolean;
+};
+
 export default function DashboardPage() {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
   const [pipeline, setPipeline] = useState<PipelineRunStatus | null>(null);
   const [demoLaunching, setDemoLaunching] = useState(false);
   const [demoError, setDemoError] = useState("");
+  const [yoloMode, setYoloMode] = useState(false);
   const {
     connected,
     liveSteps,
@@ -31,7 +39,13 @@ export default function DashboardPage() {
   useEffect(() => {
     Promise.all([
       getHealth()
-        .then(() => setHealthy(true))
+        .then((data: unknown) => {
+          const healthData = data as HealthResponse;
+          setHealthy(true);
+          if (healthData.yolo_mode) {
+            setYoloMode(true);
+          }
+        })
         .catch(() => setHealthy(false)),
       getSpecs()
         .then(setSpecs)
@@ -71,6 +85,19 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-12 pb-12 animate-fade-in">
+      {/* YOLO Mode Banner */}
+      {yoloMode && (
+        <div className="relative overflow-hidden rounded-[2rem] border border-red-500/30 bg-red-900/20 p-4 md:p-6 text-center shadow-[0_0_40px_rgba(255,0,0,0.15)]">
+          <div className="absolute top-0 right-0 -mt-20 -mr-20 h-40 w-40 rounded-full bg-red-500/30 blur-[80px] pointer-events-none" />
+          <p className="font-bold text-yellow-300 text-lg md:text-xl tracking-wider uppercase">
+            ⚠ YOLO MODE ACTIVE — Destructive checks disabled
+          </p>
+          <p className="text-red-200/70 text-sm mt-1">
+            No approval gates will be enforced. All operations proceed autonomously.
+          </p>
+        </div>
+      )}
+
       {/* Hero Section */}
       <div className="relative overflow-hidden rounded-[2.5rem] border border-white/5 bg-gradient-to-b from-gray-900 to-black p-10 md:p-14 shadow-2xl">
         {/* Abstract glow effects */}

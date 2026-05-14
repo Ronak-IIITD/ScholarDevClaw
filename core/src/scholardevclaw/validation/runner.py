@@ -15,12 +15,40 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+
+# Patterns that indicate potentially destructive operations in scripts
+_DESTRUCTIVE_PATTERNS = [
+    r"rm\s+-rf\s+/",  # Matches rm -rf / and similar
+    r"dd\s+if=.*of=/dev/sd[^ ]",  # dd if=... of=/dev/sd...
+    r"curl\s+[^|]*\|\s*bash",  # curl ... | bash
+    r"wget\s+[^|]*\|\s*bash",  # wget ... | bash
+    r":\(\)\{.*\|\:\)",  # Fork bomb pattern
+    # Additional patterns can be added as needed
+]
+
+
+def _is_script_destructive(script: str) -> bool:
+    """Check if the script matches any destructive pattern.
+
+    If the SCHOLARDEVCLAW_YOLO_MODE environment variable is set to 'true',
+    destructive checks are disabled and this function always returns False.
+    """
+    yolo_mode = os.environ.get("SCHOLARDEVCLAW_YOLO_MODE", "").lower() in ("true", "1", "yes")
+    if yolo_mode:
+        _logger.debug("YOLO mode active - skipping destructive check")
+        return False
+    for pattern in _DESTRUCTIVE_PATTERNS:
+        if re.search(pattern, script, re.IGNORECASE):
+            return True
+    return False
+
 
 from scholardevclaw.patch_generation.generator import PatchGenerator
 
@@ -82,11 +110,16 @@ def _run_bench_script(
     *,
     cwd: str | Path | None = None,
     timeout: int = 120,
-) -> dict | None:
+) -> dict[str, float] | None:
     """Run *script* in a fresh Python subprocess and parse its JSON output.
 
     Returns the parsed dict on success, ``None`` on any failure.
     """
+    # Check A: Destructive Operation Detection (runs before every subprocess)
+    if _is_script_destructive(script):
+        _logger.warning("Blocking destructive script: %s", script[:100])
+        return None
+
     try:
         result = subprocess.run(
             [sys.executable, "-c", script],
@@ -103,7 +136,28 @@ def _run_bench_script(
             if line.startswith("{"):
                 payload = json.loads(line)
                 if isinstance(payload, dict):
-                    return cast(dict[Any, Any], payload)
+                    return cast(dict[str, float], payload)
+        return None
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+        return None
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode != 0:
+            return None
+        # The script must print a single JSON object on its last line.
+        for line in reversed(result.stdout.strip().splitlines()):
+            line = line.strip()
+            if line.startswith("{"):
+                payload = json.loads(line)
+                if isinstance(payload, dict):
+                    return cast(dict[str, Any], payload)
         return None
     except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
         return None
@@ -637,7 +691,7 @@ class ValidationRunner:
                 )
 
                 passed = True
-                details: dict[str, object] = {"algorithm": algorithm_key}
+                details: dict[str, Any] = {"algorithm": algorithm_key}
 
                 if algorithm_key == "gelu":
                     values = [-1.0, -0.1, 0.0, 0.5, 1.25]

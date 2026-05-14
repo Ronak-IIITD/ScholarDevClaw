@@ -209,6 +209,11 @@ class StatusBar(Static):
         self._step_text = ""
         self._start_time = 0.0
         self._level = "info"
+        self._yolo_mode = False
+        self._refresh_display()
+
+    def set_yolo_mode(self, enabled: bool) -> None:
+        self._yolo_mode = enabled
         self._refresh_display()
 
     def set_context(
@@ -270,6 +275,23 @@ class StatusBar(Static):
         if len(directory_value) > 40:
             directory_value = f"…{directory_value[-39:]}"
 
+        lines: list[str] = []
+
+        # YOLO mode banner
+        if self._yolo_mode:
+            lines.append(
+                "[bold yellow on red]╔════════════════════════════════════════════════╗[/]"
+            )
+            lines.append(
+                "[bold yellow on red]║         YOLO MODE ACTIVE                        ║[/]"
+            )
+            lines.append(
+                "[bold yellow on red]║  Destructive checks are DISABLED               ║[/]"
+            )
+            lines.append(
+                "[bold yellow on red]╚════════════════════════════════════════════════╝[/]"
+            )
+
         parts = [
             f"MODE: {self._mode}",
             f"PROVIDER: {self._provider}",
@@ -295,8 +317,8 @@ class StatusBar(Static):
         if self._start_time:
             tail.append(f"{time.perf_counter() - self._start_time:.1f}s")
 
-        suffix = f"   {' | '.join(tail)}" if tail else ""
-        self.update("   ".join(parts) + suffix)
+        lines.append("   ".join(parts) + (f"   {' | '.join(tail)}" if tail else ""))
+        self.update("\n".join(lines))
 
     @staticmethod
     def _format_tokens(value: int) -> str:

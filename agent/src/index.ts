@@ -298,6 +298,7 @@ async function run(): Promise<void> {
     const paperPdfPath = getArg('--paper-pdf');
     const mode = getArg('--mode') as 'step_approval' | 'autonomous' | undefined;
     const cmd = getArg('--command') || 'integrate';
+    const yolo = hasFlag('--yolo');
 
     if (cmd === 'search') {
       const query = getArg('--query') || getArg('--q');
@@ -326,6 +327,7 @@ async function run(): Promise<void> {
     if (paperUrl) integrationInput.paperUrl = paperUrl;
     if (paperPdfPath) integrationInput.paperPdfPath = paperPdfPath;
     if (mode) integrationInput.mode = mode;
+    if (yolo) integrationInput.yoloMode = true;
 
     if (cmd !== 'integrate') {
       const bridge = new PythonSubprocessBridge(config.python.subprocessCommand);
