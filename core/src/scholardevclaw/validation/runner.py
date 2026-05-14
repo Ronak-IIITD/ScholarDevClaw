@@ -580,7 +580,8 @@ class ValidationRunner:
             else None
         )
         loss_change = (
-            ((float(new.loss) - float(baseline.loss)) / max(abs(float(baseline.loss)), 1e-9)) * 100.0
+            ((float(new.loss) - float(baseline.loss)) / max(abs(float(baseline.loss)), 1e-9))
+            * 100.0
             if baseline.loss is not None
             else None
         )
@@ -615,7 +616,10 @@ class ValidationRunner:
 
         expected_path = _BENCHMARK_EXPECTED_ROOT / expected_name
         if not expected_path.exists():
-            return {"status": "skipped", "reason": f"Missing expected benchmark file {expected_name}"}
+            return {
+                "status": "skipped",
+                "reason": f"Missing expected benchmark file {expected_name}",
+            }
 
         try:
             import tempfile
@@ -759,7 +763,11 @@ class ValidationRunner:
                 )
             )
             total_changed_lines += len(
-                [line for line in diff_lines if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]
+                [
+                    line
+                    for line in diff_lines
+                    if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+                ]
             )
 
         score = 5
@@ -1058,9 +1066,7 @@ class ValidationRunner:
         # Aggregate results
         total = len(results)
         passed_count = sum(1 for r in results if r["passed"])
-        avg_duration = (
-            sum(float(r.get("duration", 0.0) or 0.0) for r in results) / max(total, 1)
-        )
+        avg_duration = sum(float(r.get("duration", 0.0) or 0.0) for r in results) / max(total, 1)
         all_passed = all(bool(r.get("passed", False)) for r in results)
 
         logs = f"Ran {total} benchmark(s): {passed_count} passed, {total - passed_count} failed. Avg duration: {avg_duration:.2f}s"

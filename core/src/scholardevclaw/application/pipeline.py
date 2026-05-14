@@ -1399,7 +1399,9 @@ def run_validate(
             checks.append(
                 {
                     "name": "numerical_correctness",
-                    "status": "pass" if numerical.get("status") == "passed" else numerical.get("status"),
+                    "status": "pass"
+                    if numerical.get("status") == "passed"
+                    else numerical.get("status"),
                     "value": numerical.get("details") or numerical.get("reason"),
                 }
             )
@@ -1407,7 +1409,9 @@ def run_validate(
             checks.append(
                 {
                     "name": "regression_snapshot",
-                    "status": "pass" if regression.get("status") == "passed" else regression.get("status"),
+                    "status": "pass"
+                    if regression.get("status") == "passed"
+                    else regression.get("status"),
                     "value": {
                         "removed_symbols": regression.get("removed_symbols", []),
                         "signature_changes": regression.get("signature_changes", []),

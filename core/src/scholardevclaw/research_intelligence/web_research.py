@@ -360,7 +360,9 @@ class WebResearchEngine:
 
             data = _parse_json_response(response)
             if data is None:
-                logger.info("Papers with Code endpoint returned non-JSON content for query '%s'", query)
+                logger.info(
+                    "Papers with Code endpoint returned non-JSON content for query '%s'", query
+                )
                 return []
             resources = []
 
@@ -472,13 +474,17 @@ class WebResearchEngine:
                 continue
             repositories.append(
                 {
-                    "name": str(item.get("name") or item.get("repository") or url.rsplit("/", 1)[-1]),
+                    "name": str(
+                        item.get("name") or item.get("repository") or url.rsplit("/", 1)[-1]
+                    ),
                     "owner": str(item.get("owner") or ""),
                     "url": url,
                     "description": str(item.get("description") or ""),
                     "stars": int(item.get("stars") or item.get("star_count") or 0),
                     "language": str(item.get("language") or ""),
-                    "topics": item.get("topics", []) if isinstance(item.get("topics"), list) else [],
+                    "topics": item.get("topics", [])
+                    if isinstance(item.get("topics"), list)
+                    else [],
                 }
             )
         return repositories

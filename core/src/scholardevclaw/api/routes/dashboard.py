@@ -298,7 +298,9 @@ async def pipeline_demo():
     try:
         repo_path = _resolve_demo_repo()
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to prepare demo repository: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Failed to prepare demo repository: {exc}"
+        ) from exc
 
     configured_specs = [
         item.strip()

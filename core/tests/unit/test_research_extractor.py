@@ -74,7 +74,12 @@ def test_search_by_keyword_uses_semantic_search_when_enabled(monkeypatch):
         def search(self, query: str, top_k: int = 5):
             return [
                 {
-                    "paper": {"title": "RoFormer", "authors": [], "arxiv": "2104.09864", "year": 2021},
+                    "paper": {
+                        "title": "RoFormer",
+                        "authors": [],
+                        "arxiv": "2104.09864",
+                        "year": 2021,
+                    },
                     "algorithm": {
                         "name": "RoPE",
                         "category": "position_encoding",

@@ -47,7 +47,9 @@ def test_run_case_scores_identical_ast_as_full_match(tmp_path: Path):
         candidate_hints=["rmsnorm.py"],
     )
 
-    result = run_case(case, candidate_factory=lambda _: CandidateArtifact({"rmsnorm.py": expected_source}))
+    result = run_case(
+        case, candidate_factory=lambda _: CandidateArtifact({"rmsnorm.py": expected_source})
+    )
 
     assert result.status == "matched"
     assert result.score == 1.0
@@ -72,7 +74,9 @@ def test_run_case_scores_symbol_overlap_as_partial(tmp_path: Path):
     )
 
     candidate_source = "class SwiGLU:\n    def __init__(self):\n        self.enabled = True\n"
-    result = run_case(case, candidate_factory=lambda _: CandidateArtifact({"swiglu.py": candidate_source}))
+    result = run_case(
+        case, candidate_factory=lambda _: CandidateArtifact({"swiglu.py": candidate_source})
+    )
 
     assert result.status == "partial"
     assert result.score == 0.5

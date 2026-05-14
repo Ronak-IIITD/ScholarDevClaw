@@ -142,8 +142,8 @@ jobs:
               payload = candidate
               break
           assert payload is not None, "demo did not emit a trailing JSON payload"
-          assert payload["results"], "demo produced no results"
-          assert payload["results"][0]["spec"] == "rmsnorm"
+           assert payload["specs"], "demo produced no results"
+           assert payload["specs"][0]["spec"] == "rmsnorm"
           PY
 
   benchmark-regression:

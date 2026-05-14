@@ -1998,7 +1998,9 @@ class ResearchExtractor:
                 spec["_reference_implementations"] = reference.get("repositories", [])
                 spec["_reference_source"] = reference.get("source", "reference_lookup")
         except Exception as exc:
-            logger.debug("Reference implementation lookup failed for %s: %s", arxiv_id or title, exc)
+            logger.debug(
+                "Reference implementation lookup failed for %s: %s", arxiv_id or title, exc
+            )
 
     def list_available_specs(self) -> list[str]:
         return list(self.specs.keys())

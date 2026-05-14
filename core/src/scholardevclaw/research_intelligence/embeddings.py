@@ -85,11 +85,15 @@ class EmbeddingIndex:
         try:
             from sentence_transformers import SentenceTransformer
 
-            self._model = SentenceTransformer(model_name, cache_folder=str(self.cache_dir / "models"))
+            self._model = SentenceTransformer(
+                model_name, cache_folder=str(self.cache_dir / "models")
+            )
             self.dimension = self._model.get_sentence_embedding_dimension() or dimension
             self._backend = "sentence-transformers"
         except Exception as exc:
-            logger.info("Semantic search model unavailable, falling back to hash embeddings: %s", exc)
+            logger.info(
+                "Semantic search model unavailable, falling back to hash embeddings: %s", exc
+            )
 
     @property
     def backend(self) -> str:
