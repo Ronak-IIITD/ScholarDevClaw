@@ -365,7 +365,7 @@ class TestTemplateRegistry:
         assert "cosine" in content.lower()
 
     def test_all_15_templates_exist(self):
-        assert len(_TEMPLATE_REGISTRY) == 15
+        assert len(_TEMPLATE_REGISTRY) == 18
 
 
 # =========================================================================

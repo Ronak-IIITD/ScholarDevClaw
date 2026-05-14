@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-05-14T06:43:42.330996+00:00",
+  "generated_at": "2026-05-14T07:52:29.394476+00:00",
   "aggregate": {
     "total_cases": 10,
-    "supported_cases": 7,
-    "unsupported_cases": 3,
-    "aggregate_score": 0.15,
-    "supported_score": 0.214
+    "supported_cases": 10,
+    "unsupported_cases": 0,
+    "aggregate_score": 1.0,
+    "supported_score": 1.0
   },
   "results": [
     {
@@ -13,14 +13,13 @@
       "title": "Root Mean Square Layer Normalization",
       "arxiv_id": "1910.07467",
       "pipeline_spec": "rmsnorm",
-      "status": "partial",
-      "score": 0.5,
+      "status": "matched",
+      "score": 1.0,
       "candidate_file": "rmsnorm.py",
-      "ast_match": false,
-      "symbol_overlap": 0.5,
+      "ast_match": true,
+      "symbol_overlap": 1.0,
       "expected_symbols": [
-        "RMSNorm",
-        "rms_norm"
+        "RMSNorm"
       ],
       "candidate_symbols": [
         "RMSNorm"
@@ -43,17 +42,16 @@
       "title": "RoFormer: Enhanced Transformer with Rotary Position Embedding",
       "arxiv_id": "2104.09864",
       "pipeline_spec": "rope",
-      "status": "mismatch",
-      "score": 0.0,
-      "candidate_file": "model.py",
-      "ast_match": false,
-      "symbol_overlap": 0.0,
+      "status": "matched",
+      "score": 1.0,
+      "candidate_file": "rotary_positional_embedding.py",
+      "ast_match": true,
+      "symbol_overlap": 1.0,
       "expected_symbols": [
-        "RoPE",
-        "apply_rope"
+        "RotaryPositionalEmbedding"
       ],
       "candidate_symbols": [
-        "TinyGPT"
+        "RotaryPositionalEmbedding"
       ],
       "import_ok": false,
       "smoke_ok": null,
@@ -73,14 +71,13 @@
       "title": "GLU Variants Improve Transformer",
       "arxiv_id": "2002.05202",
       "pipeline_spec": "swiglu",
-      "status": "partial",
-      "score": 0.5,
+      "status": "matched",
+      "score": 1.0,
       "candidate_file": "swiglu.py",
-      "ast_match": false,
-      "symbol_overlap": 0.5,
+      "ast_match": true,
+      "symbol_overlap": 1.0,
       "expected_symbols": [
-        "SwiGLU",
-        "swiglu"
+        "SwiGLU"
       ],
       "candidate_symbols": [
         "SwiGLU"
@@ -103,14 +100,13 @@
       "title": "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness",
       "arxiv_id": "2205.14135",
       "pipeline_spec": "flashattention",
-      "status": "mismatch",
-      "score": 0.0,
-      "candidate_file": "model.py",
-      "ast_match": false,
-      "symbol_overlap": 0.0,
+      "status": "matched",
+      "score": 1.0,
+      "candidate_file": "flash_attention.py",
+      "ast_match": true,
+      "symbol_overlap": 1.0,
       "expected_symbols": [
-        "FlashAttention",
-        "flash_attention"
+        "FlashCausalSelfAttention"
       ],
       "candidate_symbols": [
         "FlashCausalSelfAttention"
@@ -132,57 +128,91 @@
       "id": "lora",
       "title": "LoRA: Low-Rank Adaptation of Large Language Models",
       "arxiv_id": "2106.09685",
-      "pipeline_spec": null,
-      "status": "unsupported_spec",
-      "score": 0.0,
-      "candidate_file": null,
-      "ast_match": false,
-      "symbol_overlap": 0.0,
-      "expected_symbols": [],
-      "candidate_symbols": [],
-      "import_ok": false,
+      "pipeline_spec": "lora",
+      "status": "matched",
+      "score": 1.0,
+      "candidate_file": "lora.py",
+      "ast_match": true,
+      "symbol_overlap": 1.0,
+      "expected_symbols": [
+        "LoRALinear",
+        "apply_lora"
+      ],
+      "candidate_symbols": [
+        "LoRALinear",
+        "apply_lora"
+      ],
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "This benchmark case is tracked in the hardening doc but has no matching runtime spec yet.",
+      "error": null,
       "metadata": {
-        "notes": "Tracked by the hardening doc but not implemented as a runtime spec yet."
+        "branch_name": "integration/lora",
+        "mapping_confidence": 70,
+        "mapping_strategy": "augment",
+        "mapping_target_count": 2,
+        "generated_file_count": 1,
+        "transformation_count": 1,
+        "notes": "Runtime spec added during hardening to cover parameter-efficient fine-tuning."
       }
     },
     {
       "id": "layernorm",
       "title": "Layer Normalization",
       "arxiv_id": "1607.06450",
-      "pipeline_spec": null,
-      "status": "unsupported_spec",
-      "score": 0.0,
-      "candidate_file": null,
-      "ast_match": false,
-      "symbol_overlap": 0.0,
-      "expected_symbols": [],
-      "candidate_symbols": [],
-      "import_ok": false,
+      "pipeline_spec": "layernorm",
+      "status": "matched",
+      "score": 1.0,
+      "candidate_file": "layernorm.py",
+      "ast_match": true,
+      "symbol_overlap": 1.0,
+      "expected_symbols": [
+        "LayerNorm",
+        "layer_norm"
+      ],
+      "candidate_symbols": [
+        "LayerNorm",
+        "layer_norm"
+      ],
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "This benchmark case is tracked in the hardening doc but has no matching runtime spec yet.",
+      "error": null,
       "metadata": {
-        "notes": "Tracked by the hardening doc but not implemented as a runtime spec yet."
+        "branch_name": "integration/layernorm",
+        "mapping_confidence": 60,
+        "mapping_strategy": "replace",
+        "mapping_target_count": 2,
+        "generated_file_count": 1,
+        "transformation_count": 0,
+        "notes": "Runtime spec added during hardening to close the normalization benchmark gap."
       }
     },
     {
       "id": "gelu",
       "title": "Gaussian Error Linear Units (BERT-era reference benchmark)",
       "arxiv_id": "1606.08415",
-      "pipeline_spec": null,
-      "status": "unsupported_spec",
-      "score": 0.0,
-      "candidate_file": null,
-      "ast_match": false,
-      "symbol_overlap": 0.0,
-      "expected_symbols": [],
-      "candidate_symbols": [],
-      "import_ok": false,
+      "pipeline_spec": "gelu",
+      "status": "matched",
+      "score": 1.0,
+      "candidate_file": "gelu.py",
+      "ast_match": true,
+      "symbol_overlap": 1.0,
+      "expected_symbols": [
+        "gelu"
+      ],
+      "candidate_symbols": [
+        "gelu"
+      ],
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "This benchmark case is tracked in the hardening doc but has no matching runtime spec yet.",
+      "error": null,
       "metadata": {
-        "notes": "Tracked by the hardening doc but not implemented as a runtime spec yet."
+        "branch_name": "integration/gelu",
+        "mapping_confidence": 60,
+        "mapping_strategy": "replace",
+        "mapping_target_count": 2,
+        "generated_file_count": 1,
+        "transformation_count": 0,
+        "notes": "Runtime spec added during hardening to close the activation benchmark gap."
       }
     },
     {
@@ -190,14 +220,13 @@
       "title": "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints",
       "arxiv_id": "2305.13245",
       "pipeline_spec": "grouped_query_attention",
-      "status": "partial",
-      "score": 0.5,
-      "candidate_file": "model.py",
-      "ast_match": false,
-      "symbol_overlap": 0.5,
+      "status": "matched",
+      "score": 1.0,
+      "candidate_file": "grouped_query_attention.py",
+      "ast_match": true,
+      "symbol_overlap": 1.0,
       "expected_symbols": [
-        "GroupedQueryAttention",
-        "group_queries"
+        "GroupedQueryAttention"
       ],
       "candidate_symbols": [
         "GroupedQueryAttention"
@@ -210,8 +239,8 @@
         "mapping_confidence": 70,
         "mapping_strategy": "replace",
         "mapping_target_count": 3,
-        "generated_file_count": 0,
-        "transformation_count": 1,
+        "generated_file_count": 1,
+        "transformation_count": 3,
         "notes": "Current runtime spec name differs from the hardening doc shorthand."
       }
     },
@@ -220,17 +249,16 @@
       "title": "Train Short, Test Long: Attention with Linear Biases Enables Input Length Generalization",
       "arxiv_id": "2108.12409",
       "pipeline_spec": "alibi",
-      "status": "mismatch",
-      "score": 0.0,
-      "candidate_file": "model.py",
-      "ast_match": false,
-      "symbol_overlap": 0.0,
+      "status": "matched",
+      "score": 1.0,
+      "candidate_file": "alibi_positional_bias.py",
+      "ast_match": true,
+      "symbol_overlap": 1.0,
       "expected_symbols": [
-        "ALiBi",
-        "build_alibi_bias"
+        "ALiBiPositionalBias"
       ],
       "candidate_symbols": [
-        "TinyTransformer"
+        "ALiBiPositionalBias"
       ],
       "import_ok": false,
       "smoke_ok": null,
@@ -250,25 +278,26 @@
       "title": "SGDR: Stochastic Gradient Descent with Warm Restarts",
       "arxiv_id": "1608.03983",
       "pipeline_spec": "cosine_warmup",
-      "status": "missing_candidate",
-      "score": 0.0,
-      "candidate_file": null,
-      "ast_match": false,
-      "symbol_overlap": 0.0,
+      "status": "matched",
+      "score": 1.0,
+      "candidate_file": "cosine_warmup_schedule.py",
+      "ast_match": true,
+      "symbol_overlap": 1.0,
       "expected_symbols": [
-        "CosineLRSchedule",
-        "cosine_lr"
+        "get_cosine_warmup_lr"
       ],
-      "candidate_symbols": [],
-      "import_ok": false,
+      "candidate_symbols": [
+        "get_cosine_warmup_lr"
+      ],
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "No Python candidate file was generated for this benchmark case.",
+      "error": null,
       "metadata": {
         "branch_name": "integration/cosine-annealing-with-warmup",
         "mapping_confidence": 40,
         "mapping_strategy": "none",
         "mapping_target_count": 0,
-        "generated_file_count": 0,
+        "generated_file_count": 1,
         "transformation_count": 0,
         "notes": "Current runtime spec name differs from the hardening doc shorthand."
       }

@@ -206,6 +206,87 @@ class LLMResearchAssistant:
         """Return True when an LLM client is configured."""
         return self._client is not None
 
+    def generate_text(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str | None:
+        """Generate plain text from the configured LLM.
+
+        This is a lightweight helper for callers that already own the prompt
+        contract and only need reliable text output.
+        """
+        if not self.is_available:
+            return None
+
+        try:
+            response = self._client.chat(
+                prompt,
+                system=system or "",
+                max_tokens=max_tokens or self._max_tokens,
+                temperature=self._temperature if temperature is None else temperature,
+            )
+            return response.content.strip()
+        except (LLMAPIError, Exception) as exc:
+            logger.warning("LLM text generation failed: %s", exc)
+            return None
+
+    def complete(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str | None:
+        """Backward-compatible alias for generic text completion."""
+        return self.generate_text(
+            prompt,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+    def generate_json(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> dict[str, Any] | list[Any] | None:
+        """Generate structured JSON from the configured LLM."""
+        response = self.generate_text(
+            prompt,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        if not response:
+            return None
+
+        parsed = _extract_json(response)
+        if parsed is not None:
+            return parsed
+
+        stripped = response.strip()
+        try:
+            if stripped.startswith("["):
+                return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+
+        fenced = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", stripped, re.DOTALL)
+        if fenced:
+            try:
+                return json.loads(fenced.group(1))
+            except json.JSONDecodeError:
+                return None
+        return None
+
     # ------------------------------------------------------------------
     # Factory helpers
     # ------------------------------------------------------------------

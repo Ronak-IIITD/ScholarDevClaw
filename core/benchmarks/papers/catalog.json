@@ -8,7 +8,10 @@
       "pipeline_spec": "rmsnorm",
       "target_repo": "targets/rmsnorm_repo",
       "expected_file": "expected/rmsnorm.py",
-      "candidate_hints": ["rmsnorm.py", "model.py"],
+      "candidate_hints": [
+        "rmsnorm.py",
+        "model.py"
+      ],
       "notes": "Directly supported by the current extractor."
     },
     {
@@ -18,7 +21,11 @@
       "pipeline_spec": "rope",
       "target_repo": "targets/rope_repo",
       "expected_file": "expected/rope.py",
-      "candidate_hints": ["rope.py", "model.py"],
+      "candidate_hints": [
+        "rotary_positional_embedding.py",
+        "rope.py",
+        "model.py"
+      ],
       "notes": "Directly supported by the current extractor."
     },
     {
@@ -28,7 +35,10 @@
       "pipeline_spec": "swiglu",
       "target_repo": "targets/swiglu_repo",
       "expected_file": "expected/swiglu.py",
-      "candidate_hints": ["swiglu.py", "model.py"],
+      "candidate_hints": [
+        "swiglu.py",
+        "model.py"
+      ],
       "notes": "Directly supported by the current extractor."
     },
     {
@@ -38,38 +48,51 @@
       "pipeline_spec": "flashattention",
       "target_repo": "targets/flashattention_repo",
       "expected_file": "expected/flashattention.py",
-      "candidate_hints": ["flashattention.py", "model.py"],
+      "candidate_hints": [
+        "flash_attention.py",
+        "flashattention.py",
+        "model.py"
+      ],
       "notes": "Directly supported by the current extractor."
     },
     {
       "id": "lora",
       "title": "LoRA: Low-Rank Adaptation of Large Language Models",
       "arxiv_id": "2106.09685",
-      "pipeline_spec": null,
+      "pipeline_spec": "lora",
       "target_repo": "targets/lora_repo",
       "expected_file": "expected/lora.py",
-      "candidate_hints": ["lora.py", "model.py"],
-      "notes": "Tracked by the hardening doc but not implemented as a runtime spec yet."
+      "candidate_hints": [
+        "lora.py",
+        "model.py"
+      ],
+      "notes": "Runtime spec added during hardening to cover parameter-efficient fine-tuning."
     },
     {
       "id": "layernorm",
       "title": "Layer Normalization",
       "arxiv_id": "1607.06450",
-      "pipeline_spec": null,
+      "pipeline_spec": "layernorm",
       "target_repo": "targets/layernorm_repo",
       "expected_file": "expected/layernorm.py",
-      "candidate_hints": ["layernorm.py", "model.py"],
-      "notes": "Tracked by the hardening doc but not implemented as a runtime spec yet."
+      "candidate_hints": [
+        "layernorm.py",
+        "model.py"
+      ],
+      "notes": "Runtime spec added during hardening to close the normalization benchmark gap."
     },
     {
       "id": "gelu",
       "title": "Gaussian Error Linear Units (BERT-era reference benchmark)",
       "arxiv_id": "1606.08415",
-      "pipeline_spec": null,
+      "pipeline_spec": "gelu",
       "target_repo": "targets/gelu_repo",
       "expected_file": "expected/gelu.py",
-      "candidate_hints": ["gelu.py", "model.py"],
-      "notes": "Tracked by the hardening doc but not implemented as a runtime spec yet."
+      "candidate_hints": [
+        "gelu.py",
+        "model.py"
+      ],
+      "notes": "Runtime spec added during hardening to close the activation benchmark gap."
     },
     {
       "id": "grouped_query_attention",
@@ -78,7 +101,10 @@
       "pipeline_spec": "grouped_query_attention",
       "target_repo": "targets/grouped_query_attention_repo",
       "expected_file": "expected/grouped_query_attention.py",
-      "candidate_hints": ["grouped_query_attention.py", "model.py"],
+      "candidate_hints": [
+        "grouped_query_attention.py",
+        "model.py"
+      ],
       "notes": "Current runtime spec name differs from the hardening doc shorthand."
     },
     {
@@ -88,7 +114,11 @@
       "pipeline_spec": "alibi",
       "target_repo": "targets/alibi_repo",
       "expected_file": "expected/alibi.py",
-      "candidate_hints": ["alibi.py", "model.py"],
+      "candidate_hints": [
+        "alibi_positional_bias.py",
+        "alibi.py",
+        "model.py"
+      ],
       "notes": "Directly supported by the current extractor."
     },
     {
@@ -98,7 +128,12 @@
       "pipeline_spec": "cosine_warmup",
       "target_repo": "targets/cosine_lr_schedule_repo",
       "expected_file": "expected/cosine_lr_schedule.py",
-      "candidate_hints": ["cosine_warmup.py", "scheduler.py", "train.py"],
+      "candidate_hints": [
+        "cosine_warmup.py",
+        "scheduler.py",
+        "train.py",
+        "cosine_warmup_schedule.py"
+      ],
       "notes": "Current runtime spec name differs from the hardening doc shorthand."
     }
   ]

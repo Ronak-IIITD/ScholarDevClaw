@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getHealth, getSpecs, getPipelineStatus } from "@/lib/api";
+import { getHealth, getSpecs, getPipelineStatus, startDemoRun } from "@/lib/api";
+import { usePipelineWs } from "@/hooks/usePipelineWs";
 import type { SpecSummary, PipelineRunStatus } from "@/types/api";
 import StatusBadge from "@/components/StatusBadge";
 import {
@@ -17,6 +18,15 @@ export default function DashboardPage() {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
   const [pipeline, setPipeline] = useState<PipelineRunStatus | null>(null);
+  const [demoLaunching, setDemoLaunching] = useState(false);
+  const [demoError, setDemoError] = useState("");
+  const {
+    connected,
+    liveSteps,
+    pipelineStatus,
+    totalSeconds,
+    reset,
+  } = usePipelineWs();
 
   useEffect(() => {
     Promise.all([
@@ -33,6 +43,31 @@ export default function DashboardPage() {
   }, []);
 
   const categories = [...new Set(specs.map((s) => s.category))];
+  const displayStatus =
+    pipelineStatus !== "idle" ? pipelineStatus : pipeline?.status ?? "idle";
+  const displaySteps = useMemo(
+    () =>
+      (liveSteps.length > 0 ? liveSteps : pipeline?.steps ?? []).slice().sort((a, b) =>
+        (a.sequence ?? 0) - (b.sequence ?? 0)
+      ),
+    [liveSteps, pipeline?.steps]
+  );
+  const recentSteps = displaySteps.slice(-5);
+  const displaySeconds = totalSeconds > 0 ? totalSeconds : pipeline?.total_seconds ?? 0;
+
+  const handleDemo = useCallback(async () => {
+    setDemoLaunching(true);
+    setDemoError("");
+    reset();
+    try {
+      const result = await startDemoRun();
+      setPipeline(result);
+    } catch (error) {
+      setDemoError(String(error));
+    } finally {
+      setDemoLaunching(false);
+    }
+  }, [reset]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-12 pb-12 animate-fade-in">
@@ -73,9 +108,70 @@ export default function DashboardPage() {
               <Activity size={18} className="text-gray-400" />
               View Active Pipeline
             </Link>
+            <button
+              type="button"
+              onClick={handleDemo}
+              disabled={demoLaunching || displayStatus === "running"}
+              className="flex items-center gap-2 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-8 py-4 font-medium text-emerald-100 hover:bg-emerald-400/15 transition-all backdrop-blur-md hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+            >
+              <Terminal size={18} className="text-emerald-300" />
+              {demoLaunching ? "Launching Demo..." : "Run nanoGPT Demo"}
+            </button>
           </div>
         </div>
       </div>
+
+      {(displayStatus !== "idle" || demoError) && (
+        <div className="rounded-3xl border border-white/5 bg-gray-900/35 p-6 backdrop-blur-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium tracking-wide text-gray-400">Live Demo Feed</p>
+              <p className="mt-1 text-lg font-semibold text-white">
+                {pipeline?.repo_path || "Demo pipeline"}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <StatusBadge status={displayStatus} size="md" />
+              <span className={`text-xs ${connected ? "text-emerald-400" : "text-amber-400"}`}>
+                {connected ? "WebSocket live" : "Reconnecting feed"}
+              </span>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto]">
+            <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+              <div className="space-y-3">
+                {recentSteps.length > 0 ? (
+                  recentSteps.map((step) => (
+                    <div
+                      key={`${step.step}-${step.sequence ?? 0}`}
+                      className="flex items-center justify-between gap-3 rounded-xl bg-white/5 px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-white">{step.step}</p>
+                        <p className="text-xs text-gray-400">
+                          {typeof step.duration_seconds === "number"
+                            ? `${step.duration_seconds.toFixed(2)}s`
+                            : "pending"}
+                        </p>
+                      </div>
+                      <StatusBadge status={step.status} size="sm" />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-400">
+                    Waiting for pipeline events from the demo run.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-white/5 bg-black/30 p-4 text-right">
+              <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Elapsed</p>
+              <p className="mt-2 text-3xl font-bold text-white">{displaySeconds.toFixed(1)}s</p>
+              {demoError && <p className="mt-3 text-sm text-red-400">{demoError}</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

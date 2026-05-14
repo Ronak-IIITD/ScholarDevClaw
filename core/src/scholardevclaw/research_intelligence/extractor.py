@@ -14,7 +14,10 @@ This module provides the :class:`ResearchExtractor` which:
 
 from __future__ import annotations
 
+import copy
+import json
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,10 +31,40 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ARXIV_ID_RE = re.compile(r"(?:arxiv:)?(\d{4}\.\d{4,5}(?:v\d+)?)", re.IGNORECASE)
+
 
 def _is_allowed_arxiv_url(url: str) -> bool:
     parsed = urlparse(url)
     return parsed.scheme == "https" and (parsed.hostname or "").lower() == "export.arxiv.org"
+
+
+def _is_semantic_search_enabled() -> bool:
+    raw = os.environ.get("USE_SEMANTIC_SEARCH") or os.environ.get(
+        "SCHOLARDEVCLAW_USE_SEMANTIC_SEARCH",
+        "",
+    )
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_arxiv_id(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    if text.endswith(".pdf"):
+        text = text[:-4]
+    match = _ARXIV_ID_RE.search(text)
+    return match.group(1) if match else text.removeprefix("arxiv:").strip()
+
+
+def _looks_like_arxiv_id(value: str) -> bool:
+    return bool(_ARXIV_ID_RE.search(value.strip()))
+
+
+def _dynamic_spec_cache_dir() -> Path:
+    path = Path.home() / ".scholardevclaw" / "dynamic_specs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +179,79 @@ PAPER_SPECS: dict[str, dict] = {
             "max_benchmark_time": 300,
         },
     },
+    "layernorm": {
+        "paper": {
+            "title": "Layer Normalization",
+            "authors": ["Jimmy Lei Ba", "Jamie Ryan Kiros", "Geoffrey E. Hinton"],
+            "arxiv": "1607.06450",
+            "year": 2016,
+        },
+        "algorithm": {
+            "name": "LayerNorm",
+            "replaces": "Ad-hoc normalization blocks",
+            "description": "Mean-centering and variance normalization across the hidden dimension.",
+            "formula": "(x - mean(x)) / sqrt(var(x) + eps) * gamma + beta",
+            "category": "normalization",
+        },
+        "implementation": {
+            "module_name": "LayerNorm",
+            "parent_class": "nn.Module",
+            "parameters": ["normalized_shape", "eps"],
+            "forward_signature": "(x: Tensor) -> Tensor",
+        },
+        "changes": {
+            "type": "replace",
+            "target_patterns": ["nn.LayerNorm", "layer_norm", "self.norm"],
+            "replacement": "LayerNorm",
+            "insertion_points": ["Residual blocks", "Normalization helpers"],
+            "expected_benefits": [
+                "Reusable normalization primitive",
+                "Stable residual scaling",
+            ],
+        },
+        "validation": {
+            "test_type": "unit_test",
+            "metrics": ["numerical_correctness"],
+            "max_benchmark_time": 120,
+        },
+    },
     # --- Activation / FFN ---
+    "gelu": {
+        "paper": {
+            "title": "Gaussian Error Linear Units (GELUs)",
+            "authors": ["Dan Hendrycks", "Kevin Gimpel"],
+            "arxiv": "1606.08415",
+            "year": 2016,
+        },
+        "algorithm": {
+            "name": "GELU",
+            "replaces": "Approximate or placeholder activation blocks",
+            "description": "Gaussian Error Linear Unit activation used in BERT-style feed-forward networks.",
+            "formula": "0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))",
+            "category": "activation",
+        },
+        "implementation": {
+            "module_name": "gelu",
+            "parent_class": "N/A",
+            "parameters": ["value"],
+            "forward_signature": "(value: float) -> float",
+        },
+        "changes": {
+            "type": "replace",
+            "target_patterns": ["nn.GELU", "GELU", "self.gelu"],
+            "replacement": "gelu",
+            "insertion_points": ["Feed-forward modules", "Activation helpers"],
+            "expected_benefits": [
+                "Reference GELU approximation",
+                "Consistent feed-forward activation behavior",
+            ],
+        },
+        "validation": {
+            "test_type": "unit_test",
+            "metrics": ["numerical_correctness"],
+            "max_benchmark_time": 120,
+        },
+    },
     "swiglu": {
         "paper": {
             "title": "GLU Variants Improve Transformer",
@@ -320,6 +425,42 @@ PAPER_SPECS: dict[str, dict] = {
             "test_type": "training_comparison",
             "metrics": ["loss", "perplexity", "memory_usage"],
             "max_benchmark_time": 300,
+        },
+    },
+    "lora": {
+        "paper": {
+            "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+            "authors": ["Edward J. Hu", "Yelong Shen", "Phillip Wallis", "et al."],
+            "arxiv": "2106.09685",
+            "year": 2021,
+        },
+        "algorithm": {
+            "name": "LoRA",
+            "replaces": "Directly fine-tuning dense projection layers",
+            "description": "Injects low-rank trainable adapters alongside frozen base weights.",
+            "formula": "W x + scale * (B(Ax))",
+            "category": "adaptation",
+        },
+        "implementation": {
+            "module_name": "LoRALinear",
+            "parent_class": "nn.Module",
+            "parameters": ["in_features", "out_features", "rank", "alpha"],
+            "forward_signature": "(x: Tensor) -> Tensor",
+        },
+        "changes": {
+            "type": "augment",
+            "target_patterns": ["nn.Linear", "Linear(", "self.proj"],
+            "replacement": "LoRALinear",
+            "insertion_points": ["Projection layers", "Adapter modules"],
+            "expected_benefits": [
+                "Parameter-efficient fine-tuning",
+                "Frozen base model weights",
+            ],
+        },
+        "validation": {
+            "test_type": "unit_test",
+            "metrics": ["numerical_correctness", "adapter_shapes"],
+            "max_benchmark_time": 180,
         },
     },
     # --- Positional encoding ---
@@ -818,6 +959,239 @@ def _fetch_arxiv_papers(
     return entries
 
 
+def _fetch_arxiv_record(arxiv_id: str) -> dict[str, Any] | None:
+    """Fetch basic metadata for a single arXiv paper."""
+    clean_id = _normalize_arxiv_id(arxiv_id)
+    if not clean_id:
+        return None
+
+    try:
+        import httpx
+
+        url = f"https://export.arxiv.org/api/query?id_list={clean_id}"
+        if not _is_allowed_arxiv_url(url):
+            return None
+
+        @retry(max_attempts=2, base_delay=1.0, max_delay=10.0)
+        def _fetch_record() -> httpx.Response:
+            return httpx.get(url, timeout=5.0, follow_redirects=False)
+
+        resp = _fetch_record()
+        if resp.status_code != 200:
+            return None
+    except Exception as exc:
+        logger.debug("arXiv record fetch failed for %s: %s", arxiv_id, exc)
+        return None
+
+    xml = resp.text
+    entry_match = re.search(r"<entry>(.*?)</entry>", xml, re.DOTALL)
+    if not entry_match:
+        return None
+    entry_xml = entry_match.group(1)
+
+    title_m = re.search(r"<title[^>]*>(.*?)</title>", entry_xml, re.DOTALL)
+    summary_m = re.search(r"<summary[^>]*>(.*?)</summary>", entry_xml, re.DOTALL)
+    published_m = re.search(r"<published>(.*?)</published>", entry_xml)
+    authors = re.findall(r"<name>(.*?)</name>", entry_xml)
+
+    title = re.sub(r"\s+", " ", title_m.group(1)).strip() if title_m else ""
+    abstract = re.sub(r"\s+", " ", summary_m.group(1)).strip() if summary_m else ""
+    published = published_m.group(1).strip() if published_m else ""
+    year = 2024
+    if published:
+        year_match = re.match(r"(\d{4})", published)
+        if year_match:
+            year = int(year_match.group(1))
+
+    return {
+        "title": title,
+        "abstract": abstract,
+        "authors": authors,
+        "arxiv_id": clean_id,
+        "published": published,
+        "year": year,
+        "pdf_url": f"https://export.arxiv.org/pdf/{clean_id}.pdf",
+    }
+
+
+def _fetch_arxiv_pdf_text(arxiv_id: str, max_pages: int = 20) -> str | None:
+    """Download the arXiv PDF temporarily and extract its text."""
+    clean_id = _normalize_arxiv_id(arxiv_id)
+    if not clean_id:
+        return None
+
+    try:
+        import tempfile
+
+        import httpx
+
+        url = f"https://export.arxiv.org/pdf/{clean_id}.pdf"
+        if not _is_allowed_arxiv_url(url):
+            return None
+
+        @retry(max_attempts=2, base_delay=1.0, max_delay=10.0)
+        def _fetch_pdf() -> httpx.Response:
+            return httpx.get(url, timeout=20.0, follow_redirects=False)
+
+        resp = _fetch_pdf()
+        if resp.status_code != 200:
+            return None
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as handle:
+            handle.write(resp.content)
+            handle.flush()
+            return _read_pdf_text(handle.name, max_pages=max_pages)
+    except Exception as exc:
+        logger.debug("arXiv PDF text fetch failed for %s: %s", arxiv_id, exc)
+        return None
+
+
+def _dynamic_spec_cache_path(arxiv_id: str) -> Path:
+    clean_id = _normalize_arxiv_id(arxiv_id)
+    return _dynamic_spec_cache_dir() / f"{clean_id.replace('/', '_')}.json"
+
+
+def _load_dynamic_spec_from_cache(arxiv_id: str) -> dict[str, Any] | None:
+    path = _dynamic_spec_cache_path(arxiv_id)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.debug("Failed to read cached dynamic spec for %s: %s", arxiv_id, exc)
+        return None
+    spec = payload.get("spec")
+    return spec if isinstance(spec, dict) else None
+
+
+def _save_dynamic_spec_to_cache(arxiv_id: str, spec: dict[str, Any]) -> None:
+    path = _dynamic_spec_cache_path(arxiv_id)
+    payload = {
+        "arxiv_id": _normalize_arxiv_id(arxiv_id),
+        "spec": spec,
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _title_to_algorithm_name(title: str) -> str:
+    head = re.split(r"[:\-–|]", title, maxsplit=1)[0].strip()
+    if head:
+        return head[:80]
+    return "Dynamic Research Spec"
+
+
+def _title_to_module_name(title: str) -> str:
+    words = re.findall(r"[A-Za-z0-9]+", title)
+    if not words:
+        return "DynamicResearchSpec"
+    return "".join(word.capitalize() for word in words[:5])
+
+
+def _infer_dynamic_spec_from_record(record: dict[str, Any]) -> dict[str, Any]:
+    title = str(record.get("title", "") or "").strip()
+    abstract = str(record.get("abstract", "") or "").strip()
+    text = f"{title} {abstract}".lower()
+
+    categories = [
+        (
+            "normalization",
+            ("rmsnorm", "normalization", "layer norm", "layernorm", "norm"),
+            ["LayerNorm", "nn.LayerNorm", "norm"],
+            "LayerNorm",
+            ["Block class", "Model class"],
+            ["loss", "perplexity", "tokens_per_second"],
+        ),
+        (
+            "attention",
+            ("attention", "query", "key", "value", "flash"),
+            ["Attention", "CausalSelfAttention", "self.c_attn"],
+            "Standard Attention",
+            ["Attention class", "Block class"],
+            ["loss", "memory_usage", "tokens_per_second"],
+        ),
+        (
+            "activation",
+            ("activation", "gelu", "swish", "silu", "glu", "feedforward", "mlp"),
+            ["MLP", "FeedForward", "nn.GELU", "activation"],
+            "GELU / baseline MLP",
+            ["MLP class", "FeedForward class"],
+            ["loss", "perplexity"],
+        ),
+        (
+            "position_encoding",
+            ("position", "positional", "rope", "rotary", "alibi", "embedding"),
+            ["self.wpe", "positional", "embedding"],
+            "Positional Embedding",
+            ["Model class", "Attention class"],
+            ["loss", "perplexity"],
+        ),
+        (
+            "optimizer",
+            ("optimizer", "adam", "adamw", "schedule", "learning rate", "warmup"),
+            ["optimizer", "learning_rate", "scheduler", "StepLR"],
+            "Baseline optimizer or scheduler",
+            ["training loop", "optimizer setup"],
+            ["loss"],
+        ),
+        (
+            "architecture",
+            ("expert", "moe", "mixture", "transformer", "block", "router"),
+            ["Transformer", "Block", "Module", "router"],
+            "Baseline model block",
+            ["Model class", "Block class"],
+            ["loss", "perplexity"],
+        ),
+    ]
+
+    selected = categories[-1]
+    best_score = -1
+    for candidate in categories:
+        score = sum(1 for token in candidate[1] if token in text)
+        if score > best_score:
+            best_score = score
+            selected = candidate
+
+    category, _, target_patterns, replaces, insertion_points, metrics = selected
+    algorithm_name = _title_to_algorithm_name(title or record.get("arxiv_id", "Unknown Paper"))
+
+    return {
+        "paper": {
+            "title": title,
+            "authors": record.get("authors", []),
+            "arxiv": record.get("arxiv_id", ""),
+            "year": record.get("year", 2024),
+            "abstract": abstract,
+            "pdf_url": record.get("pdf_url", ""),
+        },
+        "algorithm": {
+            "name": algorithm_name,
+            "category": category,
+            "replaces": replaces,
+            "description": abstract[:400] or f"Heuristically extracted spec for {algorithm_name}.",
+            "formula": "",
+        },
+        "implementation": {
+            "module_name": _title_to_module_name(algorithm_name),
+            "parent_class": "nn.Module",
+            "parameters": [],
+        },
+        "changes": {
+            "type": "augment" if category in {"architecture", "optimizer"} else "replace",
+            "target_patterns": target_patterns,
+            "replacement": algorithm_name,
+            "insertion_points": insertion_points,
+            "expected_benefits": [
+                "Derived from arXiv abstract via heuristic extraction",
+            ],
+        },
+        "validation": {
+            "test_type": "training_comparison",
+            "metrics": metrics,
+            "max_benchmark_time": 300,
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # ResearchExtractor
 # ---------------------------------------------------------------------------
@@ -838,10 +1212,57 @@ class ResearchExtractor:
         self,
         llm_assistant: LLMResearchAssistant | None = None,
     ) -> None:
-        # Deep copy the seed data so each instance has its own mutable registry
-        self.specs: dict[str, dict] = {k: dict(v) for k, v in PAPER_SPECS.items()}
+        self.specs: dict[str, dict] = copy.deepcopy(PAPER_SPECS)
         self._arxiv_client = None
         self._llm = llm_assistant
+        self._semantic_index: Any | None = None
+        self._semantic_index_dirty = True
+
+    def _register_spec(self, spec: dict[str, Any], *, preferred_key: str | None = None) -> str:
+        key = preferred_key or _spec_key(spec)
+        if not key:
+            key = f"dynamic_spec_{len(self.specs) + 1}"
+        self.specs[key] = spec
+        self._semantic_index_dirty = True
+        return key
+
+    def _format_search_result(
+        self,
+        name: str,
+        spec: dict[str, Any],
+        *,
+        score: float | None = None,
+        source: str | None = None,
+    ) -> dict[str, Any]:
+        paper = spec.get("paper", {})
+        algorithm = spec.get("algorithm", {})
+        result = {
+            "name": name,
+            "title": paper.get("title", ""),
+            "authors": paper.get("authors", []),
+            "arxiv": paper.get("arxiv", ""),
+            "year": paper.get("year", 2024),
+            "category": algorithm.get("category", ""),
+            "replaces": algorithm.get("replaces", ""),
+            "description": algorithm.get("description", ""),
+        }
+        if score is not None:
+            result["score"] = round(score, 6)
+        if source is not None:
+            result["source"] = source
+        return result
+
+    def _get_semantic_index(self):
+        if not _is_semantic_search_enabled():
+            return None
+
+        if self._semantic_index is None or self._semantic_index_dirty:
+            from .embeddings import EmbeddingIndex
+
+            self._semantic_index = EmbeddingIndex()
+            self._semantic_index.index(list(self.specs.values()))
+            self._semantic_index_dirty = False
+        return self._semantic_index
 
     def _get_arxiv_client(self):
         """Lazy load arxiv client"""
@@ -986,6 +1407,29 @@ class ResearchExtractor:
 
     def _search_local(self, query: str, max_results: int = 10) -> list[dict]:
         """Search across all fields in the local spec registry."""
+        semantic_index = self._get_semantic_index()
+        if semantic_index is not None:
+            try:
+                semantic_matches = semantic_index.search(query, top_k=max_results)
+                if semantic_matches:
+                    formatted: list[dict[str, Any]] = []
+                    for match in semantic_matches:
+                        score = float(match.get("_semantic_score", 0.0))
+                        name = _spec_key(match)
+                        if name in self.specs:
+                            formatted.append(
+                                self._format_search_result(
+                                    name,
+                                    self.specs[name],
+                                    score=score,
+                                    source="semantic_search",
+                                )
+                            )
+                    if formatted:
+                        return formatted[:max_results]
+            except Exception as exc:
+                logger.warning("Semantic spec search failed, falling back to keywords: %s", exc)
+
         query_lower = query.lower()
         query_words = set(query_lower.split())
         results: list[dict] = []
@@ -1011,18 +1455,7 @@ class ResearchExtractor:
 
             # Check for any word match or substring match
             if query_lower in searchable or any(w in searchable for w in query_words):
-                results.append(
-                    {
-                        "name": name,
-                        "title": paper.get("title", ""),
-                        "authors": paper.get("authors", []),
-                        "arxiv": paper.get("arxiv", ""),
-                        "year": paper.get("year", 2024),
-                        "category": algorithm.get("category", ""),
-                        "replaces": algorithm.get("replaces", ""),
-                        "description": algorithm.get("description", ""),
-                    }
-                )
+                results.append(self._format_search_result(name, spec, source="keyword_search"))
 
                 if len(results) >= max_results:
                     break
@@ -1048,8 +1481,8 @@ class ResearchExtractor:
             # Normalization
             "norm": ["rmsnorm", "preln_transformer", "qknorm"],
             "normalization": ["rmsnorm", "preln_transformer", "qknorm"],
-            "layer": ["rmsnorm", "preln_transformer"],
-            "layernorm": ["rmsnorm", "preln_transformer", "qknorm"],
+            "layer": ["layernorm", "rmsnorm", "preln_transformer"],
+            "layernorm": ["layernorm", "rmsnorm", "preln_transformer", "qknorm"],
             "batchnorm": ["rmsnorm"],
             "rms": ["rmsnorm"],
             # Attention
@@ -1065,13 +1498,16 @@ class ResearchExtractor:
             "multihead": ["grouped_query_attention"],
             "flash": ["flashattention", "flashattention2"],
             "kv_cache": ["grouped_query_attention"],
+            "lora": ["lora"],
+            "adapter": ["lora"],
+            "linear": ["lora"],
             # Activation / FFN
-            "mlp": ["swiglu", "geglu", "mistral"],
-            "feedforward": ["swiglu", "geglu", "mistral"],
-            "gelu": ["swiglu", "geglu"],
+            "mlp": ["gelu", "swiglu", "geglu", "mistral"],
+            "feedforward": ["gelu", "swiglu", "geglu", "mistral"],
+            "gelu": ["gelu", "swiglu", "geglu"],
             "relu": ["swiglu", "geglu"],
-            "activation": ["swiglu", "geglu"],
-            "ffn": ["swiglu", "geglu", "mistral"],
+            "activation": ["gelu", "swiglu", "geglu"],
+            "ffn": ["gelu", "swiglu", "geglu", "mistral"],
             # Positional encoding
             "position": ["rope", "alibi"],
             "positional": ["rope", "alibi"],
@@ -1264,7 +1700,7 @@ class ResearchExtractor:
 
             key = _spec_key(spec)
             if key and key not in self.specs:
-                self.specs[key] = spec
+                self._register_spec(spec, preferred_key=key)
                 logger.info("Auto-registered arXiv spec '%s' (%s)", key, title)
                 return spec
 
@@ -1383,7 +1819,7 @@ class ResearchExtractor:
                     # Register the new spec so subsequent lookups find it
                     key = _spec_key(spec)
                     if key:
-                        self.specs[key] = spec
+                        self._register_spec(spec, preferred_key=key)
                         logger.info("LLM-extracted spec registered as '%s'", key)
                     return spec
             except Exception as exc:
@@ -1422,27 +1858,57 @@ class ResearchExtractor:
         2. Fetch the abstract from arXiv and use the LLM.
         3. Return a structured extraction error when unavailable/unsupported.
         """
-        arxiv_id_clean = arxiv_id.strip().lower()
+        arxiv_id_clean = _normalize_arxiv_id(arxiv_id)
 
         # Step 1: check local registry
         for key, spec in self.specs.items():
             if key in arxiv_id_clean or spec["paper"].get("arxiv", "") in arxiv_id_clean:
                 return spec
 
-        # Step 2: fetch abstract and try LLM extraction
+        cached_spec = _load_dynamic_spec_from_cache(arxiv_id_clean)
+        if cached_spec is not None:
+            self._register_spec(cached_spec)
+            return cached_spec
+
+        record = _fetch_arxiv_record(arxiv_id_clean)
+        if record is None:
+            raise ResearchExtractionError(
+                "Could not fetch arXiv metadata for extraction",
+                source=arxiv_id,
+                source_type="arxiv",
+                reason="arxiv_metadata_unavailable",
+                suggestion=(
+                    "Confirm the arXiv identifier is valid and reachable via export.arxiv.org, "
+                    "then retry."
+                ),
+            )
+
+        # Step 2: fetch abstract / PDF text and try LLM extraction
         if self._llm is not None and self._llm.is_available:
-            abstract = _fetch_arxiv_abstract(arxiv_id)
+            abstract = record.get("abstract") or _fetch_arxiv_abstract(arxiv_id_clean)
             if abstract:
                 try:
+                    enriched_text = abstract
+                    pdf_text = _fetch_arxiv_pdf_text(arxiv_id_clean, max_pages=12)
+                    if pdf_text:
+                        enriched_text = f"{abstract}\n\n{pdf_text[:12000]}"
                     extracted = self._llm.extract_paper_spec(
-                        abstract,
-                        paper_title=f"arXiv:{arxiv_id}",
+                        enriched_text,
+                        paper_title=record.get("title") or f"arXiv:{arxiv_id_clean}",
                     )
                     if extracted is not None:
                         spec = _extracted_spec_to_dict(extracted)
+                        spec.setdefault("paper", {})
+                        spec["paper"].setdefault("title", record.get("title", ""))
+                        spec["paper"].setdefault("authors", record.get("authors", []))
+                        spec["paper"].setdefault("arxiv", arxiv_id_clean)
+                        spec["paper"].setdefault("year", record.get("year", 2024))
+                        spec["paper"].setdefault("abstract", record.get("abstract", ""))
+                        self._attach_reference_implementations(spec)
                         key = _spec_key(spec)
                         if key:
-                            self.specs[key] = spec
+                            self._register_spec(spec, preferred_key=key)
+                            _save_dynamic_spec_to_cache(arxiv_id_clean, spec)
                             logger.info(
                                 "LLM-extracted arXiv spec registered as '%s'",
                                 key,
@@ -1461,27 +1927,11 @@ class ResearchExtractor:
                         ),
                     ) from exc
 
-            raise ResearchExtractionError(
-                "Could not fetch arXiv abstract for extraction",
-                source=arxiv_id,
-                source_type="arxiv",
-                reason="arxiv_abstract_unavailable",
-                suggestion=(
-                    "Confirm the arXiv identifier is valid and reachable via export.arxiv.org, "
-                    "then retry."
-                ),
-            )
-
-        raise ResearchExtractionError(
-            "No local spec match and LLM extraction is unavailable for arXiv source",
-            source=arxiv_id,
-            source_type="arxiv",
-            reason="llm_unavailable",
-            suggestion=(
-                "Configure SCHOLARDEVCLAW_API_PROVIDER and provider credentials, or use one of "
-                "the known specs from 'scholardevclaw specs'."
-            ),
-        )
+        spec = _infer_dynamic_spec_from_record(record)
+        self._attach_reference_implementations(spec)
+        self._register_spec(spec)
+        _save_dynamic_spec_to_cache(arxiv_id_clean, spec)
+        return spec
 
     def _extract_from_known_paper(self, paper_name: str) -> dict:
         paper_lower = paper_name.lower().replace("-", "").replace("_", "").replace(" ", "")
@@ -1518,7 +1968,37 @@ class ResearchExtractor:
 """
 
     def get_spec(self, name: str) -> dict | None:
-        return self.specs.get(name.lower())
+        normalized = name.lower().strip()
+        spec = self.specs.get(normalized)
+        if spec is not None:
+            return spec
+        if _looks_like_arxiv_id(name):
+            try:
+                return self._extract_from_arxiv(name)
+            except ResearchExtractionError:
+                return None
+        return None
+
+    def _attach_reference_implementations(self, spec: dict[str, Any]) -> None:
+        paper = spec.get("paper", {})
+        arxiv_id = str(paper.get("arxiv", "") or "").strip()
+        title = str(paper.get("title", "") or "").strip()
+        if not arxiv_id and not title:
+            return
+
+        try:
+            from scholardevclaw.research_intelligence.web_research import SyncWebResearchEngine
+
+            engine = SyncWebResearchEngine()
+            reference = engine.lookup_paper_with_code_by_arxiv(
+                arxiv_id or title,
+                paper_title=title or None,
+            )
+            if reference:
+                spec["_reference_implementations"] = reference.get("repositories", [])
+                spec["_reference_source"] = reference.get("source", "reference_lookup")
+        except Exception as exc:
+            logger.debug("Reference implementation lookup failed for %s: %s", arxiv_id or title, exc)
 
     def list_available_specs(self) -> list[str]:
         return list(self.specs.keys())

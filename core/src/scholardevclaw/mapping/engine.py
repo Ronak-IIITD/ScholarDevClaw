@@ -21,12 +21,13 @@ with existing callers in ``pipeline.py``, ``cli.py``, ``server.py``,
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -540,66 +541,97 @@ class MappingEngine:
             return targets
 
         try:
-            # Build a concise element summary for the LLM
-            element_lines: list[str] = []
-            for i, el in enumerate(elements):
-                el_name = _el_attr(el, "name", "")
-                el_type = _el_attr(el, "type", "")
-                el_file = _el_attr(el, "file", "")
-                el_line = _el_attr(el, "line", 0)
-                el_parent = _el_attr(el, "parent_class")
-                parent_str = f" (in {el_parent})" if el_parent else ""
-                element_lines.append(f"{i}: {el_type} {el_name}{parent_str} at {el_file}:{el_line}")
-
-            element_summary = "\n".join(element_lines[:200])  # cap to avoid token blow-up
-
             spec_name = self.research_spec.get("algorithm", {}).get("name", replacement)
             spec_replaces = self.research_spec.get("algorithm", {}).get("replaces", "")
             spec_category = self.research_spec.get("algorithm", {}).get("category", "")
-
+            repo_analysis = {
+                "elements": [
+                    {
+                        "index": i,
+                        "name": _el_attr(el, "name", ""),
+                        "type": _el_attr(el, "type", ""),
+                        "file": _el_attr(el, "file", ""),
+                        "line": _el_attr(el, "line", 0),
+                        "parent_class": _el_attr(el, "parent_class"),
+                        "snippet": str(_el_attr(el, "code_snippet", "") or "")[:160],
+                    }
+                    for i, el in enumerate(elements[:200])
+                ]
+            }
+            paper_spec = {
+                "algorithm": {
+                    "name": spec_name,
+                    "replaces": spec_replaces,
+                    "category": spec_category,
+                },
+                "changes": {
+                    "target_patterns": target_patterns,
+                    "replacement": replacement,
+                },
+            }
+            system = (
+                "You are a code mapping engine. Given a paper spec and a codebase, identify "
+                "the EXACT file paths and line ranges to modify. Return JSON only."
+            )
             prompt = (
-                "You are a code mapping assistant. Given a list of code elements from a "
-                "repository and a research spec, identify which elements should be modified.\n\n"
-                f"Research spec: {spec_name}\n"
-                f"Replaces: {spec_replaces}\n"
-                f"Category: {spec_category}\n"
-                f"Target patterns: {target_patterns}\n"
-                f"Replacement: {replacement}\n\n"
-                f"Code elements:\n{element_summary}\n\n"
-                "Return a JSON array of objects with keys: "
-                '"index" (element index from the list above), '
-                '"reason" (short explanation of why this element matches).\n'
-                "Only include elements that are semantically related to the spec. "
-                "Return an empty array [] if nothing matches."
+                f"Paper: {json.dumps(paper_spec, ensure_ascii=True)}\n"
+                f"Codebase analysis: {json.dumps(repo_analysis, ensure_ascii=True)}\n\n"
+                'Return JSON with the shape {"targets": [{"index": <int>, "file": <str>, '
+                '"start_line": <int>, "end_line": <int>, "reason": <str>, "confidence": <0-1>}]}.\n'
+                "Only use file paths and line numbers that already appear in the supplied codebase analysis. "
+                "Confidence below 0.7 means the mapping is uncertain. Return an empty targets array when nothing matches."
             )
 
-            # Use analyse_code which returns a CodeAnalysis with raw_response
-            analysis = self.llm_assistant.analyse_code(prompt)
-            raw = getattr(analysis, "raw_response", "")
+            matches: list[dict[str, Any]] = []
+            if hasattr(self.llm_assistant, "generate_json"):
+                payload = self.llm_assistant.generate_json(
+                    prompt,
+                    system=system,
+                    max_tokens=2048,
+                    temperature=0.0,
+                )
+                if isinstance(payload, dict):
+                    raw_targets = payload.get("targets", [])
+                    if isinstance(raw_targets, list):
+                        matches = [match for match in raw_targets if isinstance(match, dict)]
+                elif isinstance(payload, list):
+                    matches = [match for match in payload if isinstance(match, dict)]
 
-            # Extract JSON array from the response
-            matches = self._parse_llm_matches(raw)
+            if not matches:
+                analysis = self.llm_assistant.analyse_code(
+                    prompt,
+                    focus="Return JSON only with mapping targets and confidence scores.",
+                )
+                raw = getattr(analysis, "raw_response", "")
+                matches = self._parse_llm_matches(raw)
 
             for match in matches:
                 idx = match.get("index")
                 reason = match.get("reason", "LLM semantic match")
+                confidence = float(match.get("confidence", 0.5))
                 if idx is None or not isinstance(idx, int):
                     continue
                 if idx < 0 or idx >= len(elements):
                     continue
 
                 el = elements[idx]
+                start_line = int(match.get("start_line") or _el_attr(el, "line", 0))
+                end_line = int(match.get("end_line") or start_line)
                 targets.append(
                     self._make_insertion_point(
                         file=_el_attr(el, "file", ""),
-                        line=_el_attr(el, "line", 0),
+                        line=start_line,
                         current_code=_el_attr(el, "name", ""),
                         replacement=replacement,
                         component_type=_el_attr(el, "type", ""),
                         match_tier="llm_semantic",
                         pattern=", ".join(target_patterns),
                         parent_class=_el_attr(el, "parent_class"),
-                        extra_context={"llm_reason": reason},
+                        extra_context={
+                            "llm_reason": reason,
+                            "llm_confidence": confidence,
+                            "end_line": end_line,
+                        },
                     )
                 )
 
@@ -619,20 +651,55 @@ class MappingEngine:
         if not raw:
             return []
 
+        parsed_object = None
+        try:
+            parsed_object = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            parsed_object = None
+        if isinstance(parsed_object, dict):
+            targets = parsed_object.get("targets", [])
+            if isinstance(targets, list):
+                return [item for item in targets if isinstance(item, dict)]
+        if isinstance(parsed_object, list):
+            return [item for item in parsed_object if isinstance(item, dict)]
+
         # Try to find a JSON array in the response
         # Handle ```json ... ``` fenced blocks
+        fenced_object = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+        if fenced_object:
+            try:
+                payload = json.loads(fenced_object.group(1))
+                targets = payload.get("targets", []) if isinstance(payload, dict) else []
+                if isinstance(targets, list):
+                    return [item for item in targets if isinstance(item, dict)]
+            except (json.JSONDecodeError, ValueError, AttributeError):
+                pass
         fenced = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", raw, re.DOTALL)
         if fenced:
             try:
-                return json.loads(fenced.group(1))
+                payload = json.loads(fenced.group(1))
+                if isinstance(payload, list):
+                    return cast(list[dict[str, Any]], payload)
             except (json.JSONDecodeError, ValueError):
+                pass
+
+        brace = re.search(r"\{.*\}", raw, re.DOTALL)
+        if brace:
+            try:
+                payload = json.loads(brace.group(0))
+                targets = payload.get("targets", []) if isinstance(payload, dict) else []
+                if isinstance(targets, list) and targets:
+                    return [item for item in targets if isinstance(item, dict)]
+            except (json.JSONDecodeError, ValueError, AttributeError):
                 pass
 
         # Try to find a bare JSON array
         bracket = re.search(r"\[.*?\]", raw, re.DOTALL)
         if bracket:
             try:
-                return json.loads(bracket.group(0))
+                payload = json.loads(bracket.group(0))
+                if isinstance(payload, list):
+                    return cast(list[dict[str, Any]], payload)
             except (json.JSONDecodeError, ValueError):
                 pass
 
@@ -726,9 +793,18 @@ class MappingEngine:
         if not validation.passed:
             return "manual_review"
 
+        for target in targets:
+            if target.context.get("match_tier") != "llm_semantic":
+                continue
+            try:
+                if float(target.context.get("llm_confidence", 1.0)) < 0.7:
+                    return "manual_review"
+            except (TypeError, ValueError):
+                return "manual_review"
+
         changes = self.research_spec.get("changes", {})
         change_type = changes.get("type", "replace")
-        return change_type
+        return str(change_type)
 
     # ------------------------------------------------------------------
     # Confidence scoring
@@ -749,6 +825,12 @@ class MappingEngine:
         fuzzy_count = sum(1 for t in targets if t.context.get("match_tier", "").startswith("fuzzy"))
         import_count = sum(1 for t in targets if t.context.get("match_tier") == "import")
         llm_count = sum(1 for t in targets if t.context.get("match_tier") == "llm_semantic")
+        llm_low_confidence_count = sum(
+            1
+            for t in targets
+            if t.context.get("match_tier") == "llm_semantic"
+            and float(t.context.get("llm_confidence", 1.0)) < 0.7
+        )
         error_count = sum(1 for i in validation.issues if i.severity == "error")
 
         awards = {
@@ -772,6 +854,7 @@ class MappingEngine:
         return {
             "version": "1",
             "total": int(total),
+            "approval_required": bool(total < 70 or llm_low_confidence_count > 0),
             "base": int(base),
             "awards": {k: int(v) for k, v in awards.items()},
             "penalties": {k: int(v) for k, v in penalties.items()},
@@ -781,6 +864,7 @@ class MappingEngine:
                 "fuzzy": int(fuzzy_count),
                 "import": int(import_count),
                 "llm_semantic": int(llm_count),
+                "llm_low_confidence": int(llm_low_confidence_count),
                 "validation_errors": int(error_count),
             },
         }

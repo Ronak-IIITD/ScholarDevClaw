@@ -26,6 +26,8 @@ _CODE_EXTRACT_ALLOWED_HOSTS = {
     "raw.githubusercontent.com",
 }
 
+_ARXIV_ID_RE = re.compile(r"(?:arxiv:)?(\d{4}\.\d{4,5}(?:v\d+)?)", re.IGNORECASE)
+
 
 def _is_private_or_reserved_ip(ip: Any) -> bool:
     return any(
@@ -102,6 +104,21 @@ def _is_allowed_fixed_source_url(url: str) -> bool:
     if host not in allowed_hosts:
         return False
     return _validate_public_host(host)
+
+
+def _parse_json_response(response: Any) -> Any | None:
+    content_type = str(response.headers.get("content-type", "")).lower()
+    if "json" not in content_type:
+        return None
+    try:
+        return response.json()
+    except Exception:
+        return None
+
+
+def _normalize_arxiv_id(value: str) -> str:
+    match = _ARXIV_ID_RE.search(value.strip())
+    return match.group(1) if match else value.strip().removeprefix("arxiv:")
 
 
 async def _safe_get(
@@ -341,7 +358,10 @@ class WebResearchEngine:
             if response.status_code != 200:
                 return []
 
-            data = response.json()
+            data = _parse_json_response(response)
+            if data is None:
+                logger.info("Papers with Code endpoint returned non-JSON content for query '%s'", query)
+                return []
             resources = []
 
             for item in data.get("results", []):
@@ -359,6 +379,109 @@ class WebResearchEngine:
         except Exception as e:
             logger.warning("Papers with Code search error: %s", e)
             return []
+
+    async def lookup_paper_with_code_by_arxiv(
+        self,
+        arxiv_id: str,
+        *,
+        paper_title: str | None = None,
+        max_results: int = 5,
+    ) -> dict[str, Any] | None:
+        """Resolve implementation references for an arXiv paper.
+
+        The historic Papers with Code API endpoint is attempted first. When it no
+        longer returns JSON, the method falls back to GitHub repository discovery.
+        """
+        clean_id = _normalize_arxiv_id(arxiv_id)
+        if not clean_id:
+            return None
+
+        if self.client:
+            try:
+                response = await _safe_get(
+                    self.client,
+                    "https://paperswithcode.com/api/v1/papers/",
+                    params={"arxiv_id": clean_id},
+                )
+                if response.status_code == 200:
+                    payload = _parse_json_response(response)
+                    if isinstance(payload, dict):
+                        repositories = self._extract_reference_repositories(payload)
+                        if repositories:
+                            return {
+                                "arxiv_id": clean_id,
+                                "title": paper_title or payload.get("title", ""),
+                                "source": "papers_with_code_api",
+                                "repositories": repositories[:max_results],
+                            }
+            except Exception as exc:
+                logger.info("Papers with Code arXiv lookup failed for %s: %s", clean_id, exc)
+
+        if not self.client:
+            return None
+
+        search_queries = [paper_title, clean_id, f"{paper_title or clean_id} {clean_id}"]
+        repositories: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+
+        for query in [item for item in search_queries if item]:
+            repos = await self.search_github(str(query), max_results=max_results)
+            for repo in repos:
+                if repo.url in seen_urls:
+                    continue
+                seen_urls.add(repo.url)
+                repositories.append(
+                    {
+                        "name": repo.name,
+                        "owner": repo.owner,
+                        "url": repo.url,
+                        "description": repo.description,
+                        "stars": repo.stars,
+                        "language": repo.language,
+                        "topics": repo.topics,
+                    }
+                )
+            if len(repositories) >= max_results:
+                break
+
+        if not repositories:
+            return None
+
+        return {
+            "arxiv_id": clean_id,
+            "title": paper_title or "",
+            "source": "github_search_fallback",
+            "repositories": repositories[:max_results],
+        }
+
+    def _extract_reference_repositories(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        repositories: list[dict[str, Any]] = []
+        candidates = []
+        for key in ("repositories", "repository", "official", "code", "implementations", "results"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                candidates.extend(value)
+            elif isinstance(value, dict):
+                candidates.append(value)
+
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url") or item.get("repo_url") or item.get("html_url") or "").strip()
+            if not url:
+                continue
+            repositories.append(
+                {
+                    "name": str(item.get("name") or item.get("repository") or url.rsplit("/", 1)[-1]),
+                    "owner": str(item.get("owner") or ""),
+                    "url": url,
+                    "description": str(item.get("description") or ""),
+                    "stars": int(item.get("stars") or item.get("star_count") or 0),
+                    "language": str(item.get("language") or ""),
+                    "topics": item.get("topics", []) if isinstance(item.get("topics"), list) else [],
+                }
+            )
+        return repositories
 
     async def search_stackoverflow(self, query: str, max_results: int = 5) -> list[WebResource]:
         """Search Stack Overflow for relevant discussions"""
@@ -703,6 +826,21 @@ class SyncWebResearchEngine:
         return self.loop.run_until_complete(
             self.async_engine.find_implementation_references(
                 paper_title, algorithm_name, language=language, max_results=max_results
+            )
+        )
+
+    def lookup_paper_with_code_by_arxiv(
+        self,
+        arxiv_id: str,
+        *,
+        paper_title: str | None = None,
+        max_results: int = 5,
+    ) -> dict[str, Any] | None:
+        return self.loop.run_until_complete(
+            self.async_engine.lookup_paper_with_code_by_arxiv(
+                arxiv_id,
+                paper_title=paper_title,
+                max_results=max_results,
             )
         )
 

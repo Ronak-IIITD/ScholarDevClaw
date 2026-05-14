@@ -78,7 +78,13 @@ dependencies = [
 [project.optional-dependencies]
 arxiv = ["arxiv>=1.4.0"]
 torch = ["torch>=2.0.0"]
-ml = ["torch>=2.0.0", "transformers>=4.35.0", "datasets>=2.14.0"]
+ml = [
+    "torch>=2.0.0",
+    "transformers>=4.35.0",
+    "datasets>=2.14.0",
+    "sentence-transformers>=3.0.0",
+    "faiss-cpu>=1.8.0",
+]
 tui = ["textual>=0.82.0"]
 security = ["bandit>=1.7.0", "semgrep>=1.0.0"]
 crypto = ["cryptography>=42.0.0"]

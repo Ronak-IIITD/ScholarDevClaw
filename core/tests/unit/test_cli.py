@@ -14,6 +14,7 @@ import scholardevclaw.cli as cli
     [
         ("analyze", ["scholardevclaw", "analyze", "/tmp/repo"], "cmd_analyze"),
         ("search", ["scholardevclaw", "search", "rmsnorm"], "cmd_search"),
+        ("extract", ["scholardevclaw", "extract", "arxiv:2410.12345"], "cmd_extract"),
         ("kb", ["scholardevclaw", "kb", "stats"], "cmd_kb"),
         ("ingest", ["scholardevclaw", "ingest", "arxiv:1706.03762"], "cmd_ingest"),
         (

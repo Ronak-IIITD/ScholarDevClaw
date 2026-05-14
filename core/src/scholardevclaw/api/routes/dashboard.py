@@ -16,6 +16,7 @@ import hmac
 import json
 import logging
 import os
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -132,6 +133,39 @@ class PipelineRunStatus(BaseModel):
     started_at: float = 0.0
     finished_at: float = 0.0
     total_seconds: float = 0.0
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[5]
+
+
+def _resolve_demo_repo() -> Path:
+    configured = os.environ.get("SCHOLARDEVCLAW_DEMO_REPO", "").strip()
+    if configured:
+        repo_path = Path(configured).expanduser().resolve()
+        if repo_path.exists() and repo_path.is_dir():
+            return repo_path
+
+    repo_path = _project_root() / "test_repos" / "nanogpt"
+    if repo_path.exists():
+        return repo_path
+
+    repo_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "https://github.com/karpathy/nanoGPT.git",
+            str(repo_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return repo_path
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +287,46 @@ async def pipeline_run(request: PipelineRunRequest):
     return _current_run
 
 
+@router.post("/demo", response_model=PipelineRunStatus)
+async def pipeline_demo():
+    """Run the default nanoGPT demo pipeline with no user input."""
+    global _current_run
+
+    if _current_run and _current_run.status == "running":
+        raise HTTPException(status_code=409, detail="A pipeline run is already in progress")
+
+    try:
+        repo_path = _resolve_demo_repo()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to prepare demo repository: {exc}") from exc
+
+    configured_specs = [
+        item.strip()
+        for item in os.environ.get("SCHOLARDEVCLAW_DEMO_SPECS", "rmsnorm").split(",")
+        if item.strip()
+    ]
+    spec_names = configured_specs or ["rmsnorm"]
+    run_id = str(uuid.uuid4())[:8]
+    _current_run = PipelineRunStatus(
+        run_id=run_id,
+        status="running",
+        repo_path=str(repo_path),
+        spec_names=spec_names,
+        started_at=time.time(),
+    )
+
+    asyncio.create_task(
+        _run_pipeline_async(
+            run_id=run_id,
+            repo_path=str(repo_path),
+            spec_names=spec_names,
+            skip_validate=False,
+            output_dir=None,
+        )
+    )
+    return _current_run
+
+
 async def _run_pipeline_async(
     run_id: str,
     repo_path: str,
@@ -270,7 +344,7 @@ async def _run_pipeline_async(
 
     def _require_ok(step: str, result: Any) -> dict[str, Any]:
         if result.ok:
-            return result.payload
+            return cast(dict[str, Any], result.payload)
         raise RuntimeError(f"{step} failed: {result.error or 'Unknown error'}")
 
     def _add_step(
@@ -634,7 +708,8 @@ async def pipeline_stream(run_id: str):
                 # Check if run exists and get status
                 global _current_run
                 if _current_run and _current_run.run_id == run_id:
-                    yield f"event: status\ndata: {json.dumps({'run_id': run_id, 'status': _current_run.status, 'current_phase': _current_run.current_phase})}\n\n"
+                    current_phase = len(_current_run.steps)
+                    yield f"event: status\ndata: {json.dumps({'run_id': run_id, 'status': _current_run.status, 'current_phase': current_phase})}\n\n"
 
                 await asyncio.sleep(2)  # Heartbeat every 2 seconds
         except asyncio.CancelledError:

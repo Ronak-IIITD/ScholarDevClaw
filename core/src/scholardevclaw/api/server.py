@@ -758,7 +758,13 @@ def _select_training_loop(analysis: RepoAnalysis) -> dict[str, Any] | None:
 )
 async def health():
     """Basic health check endpoint."""
-    return {"status": "ok"}
+    from scholardevclaw.research_intelligence.extractor import PAPER_SPECS
+
+    return {
+        "status": "ok",
+        "version": SCHEMA_VERSION,
+        "spec_count": len(PAPER_SPECS),
+    }
 
 
 @app.get(

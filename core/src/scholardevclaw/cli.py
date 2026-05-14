@@ -44,6 +44,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -149,6 +150,21 @@ def _create_code_orchestrator(
     )
 
 
+def _create_cli_llm_assistant() -> Any | None:
+    provider = os.environ.get("SCHOLARDEVCLAW_API_PROVIDER", "").strip().lower()
+    model = os.environ.get("SCHOLARDEVCLAW_API_MODEL", "").strip()
+    if not provider or provider == "auto":
+        return None
+
+    try:
+        from scholardevclaw.llm.research_assistant import LLMResearchAssistant
+
+        assistant = LLMResearchAssistant.create(provider=provider, model=model or None)
+        return assistant if assistant.is_available else None
+    except Exception:
+        return None
+
+
 def _print_compatibility_report(payload: dict, expected_type: str, *, stderr: bool = False) -> None:
     report = evaluate_payload_compatibility(payload, expected_types={expected_type})
     stream = sys.stderr if stderr else sys.stdout
@@ -174,13 +190,13 @@ def _build_mapping_result(repo_path: Path, spec_name: str) -> tuple[dict, dict]:
     analyzer = TreeSitterAnalyzer(repo_path)
     analysis = analyzer.analyze()
 
-    extractor = ResearchExtractor()
+    extractor = ResearchExtractor(llm_assistant=_create_cli_llm_assistant())
     spec = extractor.get_spec(spec_name)
     if spec is None:
         raise ValueError(
             "What failed: mapping spec resolution. "
             f"Why: Unknown spec '{spec_name}' was not found. "
-            "Fix: run `scholardevclaw specs --list` and pick a valid spec name."
+            "Fix: run `scholardevclaw specs --list`, or pass an arXiv identifier like `arxiv:2410.12345`."
         )
 
     engine = MappingEngine(analysis.__dict__, spec)
@@ -304,8 +320,8 @@ def cmd_search(args):
     # Search local paper specs
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
-    extractor = ResearchExtractor()
-    local_results = extractor.search_by_keyword(query, max_results=10)
+    extractor = ResearchExtractor(llm_assistant=_create_cli_llm_assistant())
+    local_results = extractor.search_by_keyword(query, max_results=10, include_arxiv=args.arxiv)
     results["local_specs"] = local_results or []
 
     if not output_json and local_results:
@@ -363,6 +379,10 @@ def cmd_search(args):
 
             engine = SyncWebResearchEngine()
             web_results = engine.search_all(query, args.language, args.max_results)
+            if re.match(r"^(?:arxiv:)?\d{4}\.\d{4,5}(?:v\d+)?$", query.strip(), re.IGNORECASE):
+                reference = engine.lookup_paper_with_code_by_arxiv(query.strip())
+                if reference:
+                    web_results["paper_reference"] = [reference]
             results["web_results"] = web_results or {}
 
             if not output_json:
@@ -382,6 +402,71 @@ def cmd_search(args):
 
     if output_json:
         print(json.dumps(results, indent=2))
+
+
+def _detect_extract_source_type(source: str, requested: str | None = None) -> str:
+    if requested and requested != "auto":
+        return requested
+    trimmed = source.strip()
+    if trimmed.lower().endswith(".pdf"):
+        return "pdf"
+    if re.match(r"^(?:arxiv:)?\d{4}\.\d{4,5}(?:v\d+)?$", trimmed, re.IGNORECASE):
+        return "arxiv"
+    return "paper"
+
+
+def cmd_extract(args):
+    """Extract a research specification from a paper source."""
+    source = str(getattr(args, "source", "") or "").strip()
+    if not source:
+        print("Error: extract source must not be empty", file=sys.stderr)
+        sys.exit(1)
+
+    if getattr(args, "provider", None):
+        os.environ["SCHOLARDEVCLAW_API_PROVIDER"] = args.provider
+    if getattr(args, "model", None):
+        os.environ["SCHOLARDEVCLAW_API_MODEL"] = args.model
+
+    source_type = _detect_extract_source_type(source, getattr(args, "source_type", None))
+    from scholardevclaw.research_intelligence.extractor import (
+        ResearchExtractionError,
+        ResearchExtractor,
+    )
+
+    extractor = ResearchExtractor(llm_assistant=_create_cli_llm_assistant())
+
+    try:
+        spec = extractor.extract(source, source_type)
+    except ResearchExtractionError as exc:
+        if args.output_json:
+            print(json.dumps(exc.to_error_metadata(), indent=2))
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    output_path: Path | None = None
+    if getattr(args, "output_file", None):
+        output_path = Path(args.output_file).expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+
+    if args.output_json:
+        print(json.dumps(spec, indent=2))
+        return
+
+    paper = spec.get("paper", {})
+    algorithm = spec.get("algorithm", {})
+    print(f"Extracted spec from {source_type}: {source}")
+    print("-" * 50)
+    print(f"Title: {paper.get('title', 'Unknown')}")
+    print(f"Algorithm: {algorithm.get('name', 'Unknown')}")
+    print(f"Category: {algorithm.get('category', 'unknown')}")
+    print(f"Replaces: {algorithm.get('replaces', '')}")
+    if paper.get("arxiv"):
+        print(f"arXiv: {paper['arxiv']}")
+    if algorithm.get("description"):
+        print(f"Description: {algorithm['description'][:240]}")
+    if output_path is not None:
+        print(f"Saved: {output_path}")
 
 
 def cmd_kb(args):
@@ -3654,6 +3739,23 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_search.add_argument("--max-results", type=int, default=10, help="Maximum results")
     p_search.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # extract
+    p_extract = subparsers.add_parser(
+        "extract",
+        help="Extract a dynamic spec from arXiv, PDF, or paper identifier",
+    )
+    p_extract.add_argument("source", help="Paper source (e.g. arxiv:2410.12345 or ./paper.pdf)")
+    p_extract.add_argument(
+        "--source-type",
+        choices=["auto", "arxiv", "pdf", "paper"],
+        default="auto",
+        help="Override source type detection",
+    )
+    p_extract.add_argument("--provider", help="LLM provider for dynamic extraction")
+    p_extract.add_argument("--model", help="LLM model for dynamic extraction")
+    p_extract.add_argument("--output-file", help="Write the extracted spec JSON to this path")
+    p_extract.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # ingest
     p_ingest = subparsers.add_parser(
         "ingest",
@@ -4247,6 +4349,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     commands = {
         "analyze": cmd_analyze,
         "search": cmd_search,
+        "extract": cmd_extract,
         "kb": cmd_kb,
         "ingest": cmd_ingest,
         "understand": cmd_understand,

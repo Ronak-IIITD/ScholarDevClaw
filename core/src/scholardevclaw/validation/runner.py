@@ -10,6 +10,8 @@ No hardcoded fake numbers — every metric comes from a real measurement.
 from __future__ import annotations
 
 import ast
+import difflib
+import importlib.util
 import json
 import logging
 import os
@@ -18,10 +20,35 @@ import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 from scholardevclaw.patch_generation.generator import PatchGenerator
 
 _logger = logging.getLogger(__name__)
+
+_BENCHMARK_EXPECTED_ROOT = Path(__file__).resolve().parents[3] / "benchmarks" / "expected"
+_ALGORITHM_EXPECTED_FILES = {
+    "alibi": "alibi.py",
+    "cosine_warmup": "cosine_lr_schedule.py",
+    "flashattention": "flashattention.py",
+    "gelu": "gelu.py",
+    "grouped_query_attention": "grouped_query_attention.py",
+    "layernorm": "layernorm.py",
+    "lora": "lora.py",
+    "rmsnorm": "rmsnorm.py",
+    "rope": "rope.py",
+    "swiglu": "swiglu.py",
+}
+_ALGORITHM_KEY_ALIASES = {
+    "cosine_annealing_with_warmup": "cosine_warmup",
+    "cosine_lr_schedule": "cosine_warmup",
+    "flash_attention": "flashattention",
+    "flash_attention_2": "flashattention",
+    "grouped_query_attention": "grouped_query_attention",
+    "groupedqueryattention": "grouped_query_attention",
+    "gaussian_error_linear_units_gelus": "gelu",
+    "low_rank_adaptation_of_large_language_models": "lora",
+}
 
 
 @dataclass
@@ -74,7 +101,9 @@ def _run_bench_script(
         for line in reversed(result.stdout.strip().splitlines()):
             line = line.strip()
             if line.startswith("{"):
-                return json.loads(line)
+                payload = json.loads(line)
+                if isinstance(payload, dict):
+                    return cast(dict[Any, Any], payload)
         return None
     except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
         return None
@@ -122,7 +151,9 @@ def _run_bench_script_in_docker(
         for line in reversed(result.stdout.strip().splitlines()):
             line = line.strip()
             if line.startswith("{"):
-                return json.loads(line)
+                payload = json.loads(line)
+                if isinstance(payload, dict):
+                    return cast(dict[Any, Any], payload)
         return None
     except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
         return None
@@ -374,7 +405,7 @@ class ValidationRunner:
                 except Exception:
                     _logger.warning("Could not create LLM assistant for healing")
 
-                generator = PatchGenerator(repo_path, llm_assistant=llm_assistant)
+                generator = PatchGenerator(Path(repo_path), llm_assistant=llm_assistant)
                 healed_patch_obj = generator.heal_patch(
                     patch_obj, test_result, mapping_result or {}
                 )
@@ -414,6 +445,39 @@ class ValidationRunner:
             return test_result
 
         benchmark_result = self._run_benchmark()
+        if self._patch_has_artifacts(patch):
+            use_torch = self._check_torch_available()
+            baseline_metrics = self._run_training_test(use_variant=False, use_torch=use_torch)
+            new_metrics = self._run_training_test(use_variant=True, use_torch=use_torch)
+
+            comparison = (
+                dict(benchmark_result.comparison)
+                if isinstance(benchmark_result.comparison, dict)
+                else {}
+            )
+            metrics_comparison = self._build_metrics_comparison(baseline_metrics, new_metrics)
+            if metrics_comparison:
+                comparison.update(metrics_comparison)
+
+            numerical_result = self._run_numerical_correctness(patch)
+            regression_result = self._run_regression_snapshot(patch)
+            diff_readability = self._score_diff_readability(patch)
+
+            comparison["numerical_correctness"] = numerical_result
+            comparison["regression_snapshot"] = regression_result
+            comparison["diff_readability"] = diff_readability
+
+            benchmark_result.baseline_metrics = baseline_metrics
+            benchmark_result.new_metrics = new_metrics
+            benchmark_result.comparison = comparison
+
+            if numerical_result.get("status") == "failed":
+                benchmark_result.passed = False
+                benchmark_result.stage = "numerical_correctness"
+            elif regression_result.get("status") == "failed":
+                benchmark_result.passed = False
+                benchmark_result.stage = "regression_snapshot"
+
         if policy_warning:
             benchmark_result.logs = "\n".join(
                 part for part in (policy_warning, benchmark_result.logs) if part
@@ -424,6 +488,293 @@ class ValidationRunner:
             )
 
         return benchmark_result
+
+    def _patch_has_artifacts(self, patch: dict[str, object] | None) -> bool:
+        if not isinstance(patch, dict):
+            return False
+        return bool(patch.get("new_files") or patch.get("transformations"))
+
+    def _normalize_algorithm_key(self, value: str) -> str:
+        normalized = "".join(ch.lower() if ch.isalnum() else "_" for ch in value).strip("_")
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+        return _ALGORITHM_KEY_ALIASES.get(normalized, normalized)
+
+    def _extract_algorithm_key(self, patch: dict[str, object]) -> str | None:
+        candidates = [
+            str(patch.get("algorithm_name", "") or ""),
+            str(patch.get("algorithm", "") or ""),
+            str(patch.get("spec", "") or ""),
+            str(patch.get("paper_reference", "") or "").replace("arXiv:", ""),
+        ]
+        research_spec = patch.get("research_spec")
+        if isinstance(research_spec, dict):
+            algorithm = research_spec.get("algorithm")
+            paper = research_spec.get("paper")
+            if isinstance(algorithm, dict):
+                candidates.append(str(algorithm.get("name", "") or ""))
+            if isinstance(paper, dict):
+                candidates.append(str(paper.get("arxiv", "") or ""))
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            normalized = self._normalize_algorithm_key(candidate)
+            if normalized in _ALGORITHM_EXPECTED_FILES:
+                return normalized
+        return None
+
+    def _candidate_sources_from_patch(self, patch: dict[str, object]) -> dict[str, str]:
+        sources: dict[str, str] = {}
+        raw_new_files = patch.get("new_files", [])
+        if not isinstance(raw_new_files, list):
+            raw_new_files = []
+        for entry in raw_new_files:
+            if not isinstance(entry, dict):
+                continue
+            path = str(entry.get("path", "") or "")
+            content = str(entry.get("content", "") or "")
+            if path.endswith(".py") and content:
+                sources[path] = content
+        raw_transformations = patch.get("transformations", [])
+        if not isinstance(raw_transformations, list):
+            raw_transformations = []
+        for entry in raw_transformations:
+            if not isinstance(entry, dict):
+                continue
+            path = str(entry.get("file", "") or "")
+            content = str(entry.get("modified", "") or "")
+            if path.endswith(".py") and content:
+                sources[path] = content
+        return sources
+
+    def _load_module_from_source(self, source: str, module_name: str, tmp_dir: Path) -> object:
+        module_path = tmp_dir / f"{module_name}.py"
+        module_path.write_text(source)
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to load module spec for {module_name}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _load_module_from_path(self, module_path: Path, module_name: str) -> object:
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to load module spec for {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _build_metrics_comparison(
+        self,
+        baseline: Metrics | None,
+        new: Metrics | None,
+    ) -> dict[str, float]:
+        if baseline is None or new is None:
+            return {}
+
+        speedup = (
+            float(new.tokens_per_second) / max(float(baseline.tokens_per_second), 1e-9)
+            if baseline.tokens_per_second
+            else None
+        )
+        loss_change = (
+            ((float(new.loss) - float(baseline.loss)) / max(abs(float(baseline.loss)), 1e-9)) * 100.0
+            if baseline.loss is not None
+            else None
+        )
+        result: dict[str, float] = {}
+        if speedup is not None:
+            result["speedup"] = round(speedup, 4)
+        if loss_change is not None:
+            result["loss_change"] = round(loss_change, 4)
+        return result
+
+    def _run_numerical_correctness(self, patch: dict[str, object]) -> dict[str, object]:
+        algorithm_key = self._extract_algorithm_key(patch)
+        if not algorithm_key:
+            return {"status": "skipped", "reason": "No algorithm key could be inferred"}
+
+        expected_name = _ALGORITHM_EXPECTED_FILES.get(algorithm_key)
+        if not expected_name:
+            return {"status": "skipped", "reason": f"No reference benchmark for {algorithm_key}"}
+
+        candidate_sources = self._candidate_sources_from_patch(patch)
+        if not candidate_sources:
+            return {"status": "skipped", "reason": "No Python patch artifacts available"}
+
+        candidate_source = None
+        for path, source in candidate_sources.items():
+            basename = Path(path).name
+            if algorithm_key in basename.replace("-", "_"):
+                candidate_source = source
+                break
+        if candidate_source is None:
+            candidate_source = next(iter(candidate_sources.values()))
+
+        expected_path = _BENCHMARK_EXPECTED_ROOT / expected_name
+        if not expected_path.exists():
+            return {"status": "skipped", "reason": f"Missing expected benchmark file {expected_name}"}
+
+        try:
+            import tempfile
+
+            with tempfile.TemporaryDirectory(prefix="sdc-validation-") as tmpdir:
+                tmp_path = Path(tmpdir)
+                candidate_module = self._load_module_from_source(
+                    candidate_source,
+                    f"candidate_{algorithm_key}",
+                    tmp_path,
+                )
+                expected_module = self._load_module_from_path(
+                    expected_path,
+                    f"expected_{algorithm_key}",
+                )
+
+                passed = True
+                details: dict[str, object] = {"algorithm": algorithm_key}
+
+                if algorithm_key == "gelu":
+                    values = [-1.0, -0.1, 0.0, 0.5, 1.25]
+                    deltas = []
+                    candidate_fn = getattr(candidate_module, "gelu", None)
+                    expected_fn = getattr(expected_module, "gelu", None)
+                    if not callable(candidate_fn) or not callable(expected_fn):
+                        return {"status": "skipped", "reason": "GELU function not available"}
+                    for value in values:
+                        deltas.append(abs(float(candidate_fn(value)) - float(expected_fn(value))))
+                    max_delta = max(deltas) if deltas else 0.0
+                    passed = max_delta <= 1e-6
+                    details["max_delta"] = max_delta
+                elif algorithm_key == "layernorm":
+                    values = [1.0, 2.0, 3.0]
+                    candidate_fn = getattr(candidate_module, "layer_norm", None)
+                    expected_fn = getattr(expected_module, "layer_norm", None)
+                    if not callable(candidate_fn) or not callable(expected_fn):
+                        return {"status": "skipped", "reason": "layer_norm function not available"}
+                    got = [float(v) for v in candidate_fn(values)]
+                    want = [float(v) for v in expected_fn(values)]
+                    max_delta = max(abs(a - b) for a, b in zip(got, want))
+                    passed = max_delta <= 1e-6
+                    details["max_delta"] = max_delta
+                elif algorithm_key == "lora":
+                    inputs = [1.0, 2.0]
+                    base = [0.1, 0.2]
+                    down = [[0.5, 0.1], [0.2, 0.4]]
+                    up = [[0.3, 0.7], [0.6, 0.2]]
+                    candidate_fn = getattr(candidate_module, "apply_lora", None)
+                    expected_fn = getattr(expected_module, "apply_lora", None)
+                    if not callable(candidate_fn) or not callable(expected_fn):
+                        return {"status": "skipped", "reason": "apply_lora function not available"}
+                    got = [float(v) for v in candidate_fn(inputs, base, down, up)]
+                    want = [float(v) for v in expected_fn(inputs, base, down, up)]
+                    max_delta = max(abs(a - b) for a, b in zip(got, want))
+                    passed = max_delta <= 1e-6
+                    details["max_delta"] = max_delta
+                else:
+                    return {
+                        "status": "skipped",
+                        "reason": f"No numerical comparator implemented for {algorithm_key}",
+                    }
+
+                return {
+                    "status": "passed" if passed else "failed",
+                    "passed": passed,
+                    "details": details,
+                }
+        except Exception as exc:
+            return {"status": "failed", "passed": False, "error": str(exc)}
+
+    def _signature_snapshot(self, source: str) -> dict[str, tuple[str, ...]]:
+        tree = ast.parse(source)
+        snapshot: dict[str, tuple[str, ...]] = {}
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                snapshot[f"fn:{node.name}"] = tuple(arg.arg for arg in node.args.args)
+            elif isinstance(node, ast.ClassDef):
+                snapshot[f"class:{node.name}"] = tuple()
+        return snapshot
+
+    def _run_regression_snapshot(self, patch: dict[str, object]) -> dict[str, object]:
+        transformations = patch.get("transformations", []) if isinstance(patch, dict) else []
+        if not isinstance(transformations, list) or not transformations:
+            return {"status": "skipped", "reason": "No file transformations to compare"}
+
+        removed_symbols: list[str] = []
+        signature_changes: list[str] = []
+        checked_files: list[str] = []
+
+        for entry in transformations:
+            if not isinstance(entry, dict):
+                continue
+            path = str(entry.get("file", "") or "")
+            original = str(entry.get("original", "") or "")
+            modified = str(entry.get("modified", "") or "")
+            if not path.endswith(".py") or not original or not modified:
+                continue
+            checked_files.append(path)
+            try:
+                before = self._signature_snapshot(original)
+                after = self._signature_snapshot(modified)
+            except SyntaxError as exc:
+                return {"status": "failed", "passed": False, "error": f"{path}: {exc}"}
+
+            for symbol, signature in before.items():
+                if symbol not in after:
+                    removed_symbols.append(f"{path}:{symbol}")
+                    continue
+                if signature != after[symbol]:
+                    signature_changes.append(f"{path}:{symbol}")
+
+        passed = not removed_symbols and not signature_changes
+        return {
+            "status": "passed" if passed else "failed",
+            "passed": passed,
+            "files_checked": checked_files,
+            "removed_symbols": removed_symbols,
+            "signature_changes": signature_changes,
+        }
+
+    def _score_diff_readability(self, patch: dict[str, object]) -> dict[str, object]:
+        transformations = patch.get("transformations", []) if isinstance(patch, dict) else []
+        if not isinstance(transformations, list) or not transformations:
+            return {"score": 5, "source": "heuristic", "rationale": "No transformed files"}
+
+        total_changed_lines = 0
+        changed_files = 0
+        for entry in transformations:
+            if not isinstance(entry, dict):
+                continue
+            original = str(entry.get("original", "") or "")
+            modified = str(entry.get("modified", "") or "")
+            if not original and not modified:
+                continue
+            changed_files += 1
+            diff_lines = list(
+                difflib.unified_diff(
+                    original.splitlines(),
+                    modified.splitlines(),
+                    lineterm="",
+                )
+            )
+            total_changed_lines += len(
+                [line for line in diff_lines if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]
+            )
+
+        score = 5
+        if changed_files > 5 or total_changed_lines > 220:
+            score = 2
+        elif changed_files > 3 or total_changed_lines > 140:
+            score = 3
+        elif changed_files > 2 or total_changed_lines > 80:
+            score = 4
+
+        rationale = (
+            f"{changed_files} file(s) touched, {total_changed_lines} changed line(s). "
+            "Higher scores indicate smaller, more targeted diffs."
+        )
+        return {"score": score, "source": "heuristic", "rationale": rationale}
 
     def _enforce_execution_policy(self) -> ValidationResult | None:
         mode = (
@@ -707,8 +1058,10 @@ class ValidationRunner:
         # Aggregate results
         total = len(results)
         passed_count = sum(1 for r in results if r["passed"])
-        avg_duration = sum(r.get("duration", 0) for r in results) / max(total, 1)
-        all_passed = all(r["passed"] for r in results)
+        avg_duration = (
+            sum(float(r.get("duration", 0.0) or 0.0) for r in results) / max(total, 1)
+        )
+        all_passed = all(bool(r.get("passed", False)) for r in results)
 
         logs = f"Ran {total} benchmark(s): {passed_count} passed, {total - passed_count} failed. Avg duration: {avg_duration:.2f}s"
 

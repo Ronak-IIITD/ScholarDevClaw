@@ -71,6 +71,33 @@ def test_pipeline_run_conflict_when_already_running(monkeypatch):
         setattr(dashboard, "_current_run", None)
 
 
+def test_demo_run_uses_default_spec_and_repo(monkeypatch, tmp_path):
+    server, dashboard = _load_server(monkeypatch)
+    client = TestClient(server.app)
+
+    scheduled: list[dict[str, object]] = []
+
+    class DummyRunner:
+        def __call__(self, **kwargs):
+            scheduled.append(kwargs)
+            return object()
+
+    monkeypatch.setattr(dashboard, "_resolve_demo_repo", lambda: tmp_path)
+    monkeypatch.setattr(dashboard, "_run_pipeline_async", DummyRunner())
+    monkeypatch.setattr(dashboard.asyncio, "create_task", lambda coro: None)
+
+    resp = client.post("/api/demo")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["status"] == "running"
+    assert payload["repo_path"] == str(tmp_path)
+    assert payload["spec_names"] == ["rmsnorm"]
+    assert scheduled
+    assert scheduled[0]["repo_path"] == str(tmp_path)
+    assert scheduled[0]["spec_names"] == ["rmsnorm"]
+
+
 def test_validate_output_dir_requires_repo_subpath(monkeypatch, tmp_path):
     _, dashboard = _load_server(monkeypatch)
     repo = tmp_path / "repo"

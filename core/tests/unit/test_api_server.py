@@ -85,6 +85,19 @@ def test_request_id_generated_when_missing(monkeypatch):
     assert resp.headers["x-request-id"]
 
 
+def test_health_payload_includes_version_and_spec_count(monkeypatch):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    resp = client.get("/health")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["status"] == "ok"
+    assert "version" in payload
+    assert isinstance(payload["spec_count"], int)
+
+
 def test_request_id_echoes_incoming_header(monkeypatch):
     server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
     client = TestClient(server.app)
@@ -385,6 +398,7 @@ def test_research_extract_unknown_arxiv_returns_structured_422(monkeypatch):
     assert detail["error"] == "extraction_failed"
     assert detail["source_type"] == "arxiv"
     assert detail["reason"] in {
+        "arxiv_metadata_unavailable",
         "llm_unavailable",
         "arxiv_abstract_unavailable",
         "llm_extraction_failed",

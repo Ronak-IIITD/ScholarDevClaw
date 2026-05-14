@@ -21,12 +21,13 @@ produce unified diffs.
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import re
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import libcst as cst
 from libcst import CSTTransformer, parse_module
@@ -353,6 +354,8 @@ class GenericRenameTransformer(CSTTransformer):
 
 _TRANSFORMER_REGISTRY: dict[str, Any] = {
     "rmsnorm": lambda orig, repl: RMSNormTransformer(orig, repl),
+    "layernorm": lambda orig, repl: GenericRenameTransformer(orig, repl),
+    "gelu": lambda orig, repl: GenericRenameTransformer(orig, repl),
     "swiglu": lambda orig, repl: SwiGLUTransformer(),
     "geglu": lambda orig, repl: GEGLUTransformer(),
     "flashattention": lambda orig, repl: FlashAttentionTransformer(),
@@ -362,7 +365,62 @@ _TRANSFORMER_REGISTRY: dict[str, Any] = {
     "preln_transformer": lambda orig, repl: PreLNTransformer(),
     "rope": lambda orig, repl: RoPETransformer(),
     "alibi": lambda orig, repl: ALiBiTransformer(),
+    "lora": lambda orig, repl: GenericRenameTransformer(orig, repl),
 }
+
+
+_ALGORITHM_KEY_ALIASES: dict[str, str] = {
+    "rms_norm": "rmsnorm",
+    "root_mean_square_layer_normalization": "rmsnorm",
+    "gaussian_error_linear_units_gelus": "gelu",
+    "grouped_query_attention": "grouped_query_attention",
+    "groupedqueryattention": "grouped_query_attention",
+    "flash_attention": "flashattention",
+    "flash_attention_2": "flashattention2",
+    "cosine_annealing_with_warmup": "cosine_warmup",
+    "cosine_lr_schedule": "cosine_warmup",
+    "low_rank_adaptation_of_large_language_models": "lora",
+}
+
+_ARXIV_TO_ALGORITHM_KEY: dict[str, str] = {
+    "1606.08415": "gelu",
+    "1607.06450": "layernorm",
+    "1608.03983": "cosine_warmup",
+    "1910.07467": "rmsnorm",
+    "2002.05202": "swiglu",
+    "2104.09864": "rope",
+    "2106.09685": "lora",
+    "2108.12409": "alibi",
+    "2205.14135": "flashattention",
+    "2305.13245": "grouped_query_attention",
+}
+
+
+def _normalize_algorithm_key(value: str) -> str:
+    key = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return _ALGORITHM_KEY_ALIASES.get(key, key)
+
+
+def _resolve_algorithm_key(spec: dict[str, Any]) -> str:
+    algorithm = spec.get("algorithm", {})
+    paper = spec.get("paper", {})
+
+    for candidate in (
+        str(spec.get("_spec_key", "") or ""),
+        str(algorithm.get("name", "") or ""),
+        str(algorithm.get("replaces", "") or ""),
+    ):
+        normalized = _normalize_algorithm_key(candidate)
+        if normalized in _TEMPLATE_REGISTRY or normalized in _TRANSFORMER_REGISTRY:
+            return normalized
+
+    arxiv_id = str(paper.get("arxiv", "") or "").strip()
+    if arxiv_id:
+        normalized_arxiv = arxiv_id.replace("arxiv:", "").strip()
+        if normalized_arxiv in _ARXIV_TO_ALGORITHM_KEY:
+            return _ARXIV_TO_ALGORITHM_KEY[normalized_arxiv]
+
+    return _normalize_algorithm_key(str(algorithm.get("name", "") or ""))
 
 
 def _get_transformer(algorithm: str, original: str, replacement: str) -> CSTTransformer:
@@ -371,14 +429,14 @@ def _get_transformer(algorithm: str, original: str, replacement: str) -> CSTTran
     Falls back to :class:`GenericRenameTransformer` when no specialised
     transformer is registered.
     """
-    key = algorithm.lower().replace("-", "").replace(" ", "_")
+    key = _normalize_algorithm_key(algorithm)
     factory = _TRANSFORMER_REGISTRY.get(key)
     if factory is not None:
-        return factory(original, replacement)
+        return cast(CSTTransformer, factory(original, replacement))
     # Try matching by prefix (e.g. "flash_attention_2" matches "flashattention")
     for reg_key, factory_fn in _TRANSFORMER_REGISTRY.items():
         if key.startswith(reg_key) or reg_key.startswith(key):
-            return factory_fn(original, replacement)
+            return cast(CSTTransformer, factory_fn(original, replacement))
     return GenericRenameTransformer(original, replacement)
 
 
@@ -432,6 +490,55 @@ def _template_rmsnorm(spec: dict) -> str:
                 norm = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
                 return norm * self.weight
     ''')
+
+
+def _template_layernorm(spec: dict) -> str:
+    return textwrap.dedent("""\
+        import math
+
+        EXPECTED_SYMBOLS = ("LayerNorm", "layer_norm")
+
+
+        def layer_norm(values, eps=1e-5):
+            mean = sum(values) / max(len(values), 1)
+            variance = sum((value - mean) ** 2 for value in values) / max(len(values), 1)
+            denom = math.sqrt(variance + eps)
+            return [(value - mean) / denom for value in values]
+
+
+        class LayerNorm:
+            def __call__(self, values):
+                return layer_norm(values)
+    """)
+
+
+def _template_gelu(spec: dict) -> str:
+    return textwrap.dedent("""\
+        import math
+
+        EXPECTED_SYMBOLS = ("gelu",)
+
+
+        def gelu(value):
+            return 0.5 * value * (1.0 + math.tanh(0.7978845608 * (value + 0.044715 * value**3)))
+    """)
+
+
+def _template_lora(spec: dict) -> str:
+    return textwrap.dedent("""\
+        EXPECTED_SYMBOLS = ("LoRALinear", "apply_lora")
+
+
+        def apply_lora(inputs, base, down, up):
+            projected = [sum(value * weight for value, weight in zip(inputs, row)) for row in down]
+            update = [sum(value * weight for value, weight in zip(projected, row)) for row in up]
+            return [base_value + delta for base_value, delta in zip(base, update)]
+
+
+        class LoRALinear:
+            def __call__(self, inputs, base, down, up):
+                return apply_lora(inputs, base, down, up)
+    """)
 
 
 def _template_swiglu(spec: dict) -> str:
@@ -1112,6 +1219,8 @@ def _template_mistral(spec: dict) -> str:
 # Template registry
 _TEMPLATE_REGISTRY: dict[str, Any] = {
     "rmsnorm": _template_rmsnorm,
+    "layernorm": _template_layernorm,
+    "gelu": _template_gelu,
     "swiglu": _template_swiglu,
     "geglu": _template_geglu,
     "flashattention": _template_flashattention,
@@ -1122,6 +1231,7 @@ _TEMPLATE_REGISTRY: dict[str, Any] = {
     "rope": _template_rope,
     "alibi": _template_alibi,
     "lion": _template_lion,
+    "lora": _template_lora,
     "weight_decay_fused": _template_weight_decay_fused,
     "cosine_warmup": _template_cosine_warmup,
     "dropout_variants": _template_dropout_variants,
@@ -1131,6 +1241,8 @@ _TEMPLATE_REGISTRY: dict[str, Any] = {
 # Algorithm name → canonical file name
 _ALGORITHM_FILE_NAMES: dict[str, str] = {
     "rmsnorm": "rmsnorm.py",
+    "layernorm": "layernorm.py",
+    "gelu": "gelu.py",
     "swiglu": "swiglu.py",
     "geglu": "geglu.py",
     "flashattention": "flash_attention.py",
@@ -1141,6 +1253,7 @@ _ALGORITHM_FILE_NAMES: dict[str, str] = {
     "rope": "rotary_positional_embedding.py",
     "alibi": "alibi_positional_bias.py",
     "lion": "lion_optimizer.py",
+    "lora": "lora.py",
     "weight_decay_fused": "decoupled_weight_decay.py",
     "cosine_warmup": "cosine_warmup_schedule.py",
     "dropout_variants": "dropout_variants.py",
@@ -1190,7 +1303,7 @@ class PatchGenerator:
     def generate(self, mapping_result: dict) -> Patch:
         spec = mapping_result.get("research_spec", {})
 
-        new_files = self._create_new_files(spec)
+        new_files = self._create_new_files(spec, mapping_result=mapping_result)
         transformations = self._create_transformations(mapping_result)
 
         algorithm_name = spec.get("algorithm", {}).get("name", "research")
@@ -1313,11 +1426,14 @@ Validation errors:
 Please fix the code to resolve these errors. Return ONLY the fixed code without any explanation or markdown formatting.
 """
         try:
+            assistant = self.llm_assistant
+            if assistant is None:
+                return code
             # Use the LLM assistant to generate fixed code
-            if hasattr(self.llm_assistant, "generate_text"):
-                fixed_code = self.llm_assistant.generate_text(prompt)
-            elif hasattr(self.llm_assistant, "complete"):
-                fixed_code = self.llm_assistant.complete(prompt)
+            if hasattr(assistant, "generate_text"):
+                fixed_code = assistant.generate_text(prompt)
+            elif hasattr(assistant, "complete"):
+                fixed_code = assistant.complete(prompt)
             else:
                 logger.warning("LLM assistant doesn't have a known text generation method")
                 return code
@@ -1340,13 +1456,17 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
     # New file creation
     # ------------------------------------------------------------------
 
-    def _create_new_files(self, spec: dict) -> list[NewFile]:
+    def _create_new_files(
+        self,
+        spec: dict,
+        *,
+        mapping_result: dict[str, Any] | None = None,
+    ) -> list[NewFile]:
         """Create standalone implementation files for the algorithm."""
         new_files: list[NewFile] = []
 
         algorithm_name = spec.get("algorithm", {}).get("name", "").lower()
-        # Normalise to registry key form
-        key = algorithm_name.replace("-", "").replace(" ", "_")
+        key = _resolve_algorithm_key(spec)
 
         template_fn = _TEMPLATE_REGISTRY.get(key)
         file_name = _ALGORITHM_FILE_NAMES.get(key)
@@ -1357,7 +1477,7 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
             logger.info("Generated template for %s → %s", algorithm_name, file_name)
         elif self.llm_assistant is not None:
             # LLM-powered fallback for unknown algorithms
-            synthesised = self._synthesise_with_llm(spec)
+            synthesised = self._synthesise_with_llm(spec, mapping_result=mapping_result)
             if synthesised is not None:
                 new_files.append(synthesised)
         else:
@@ -1368,7 +1488,72 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
 
         return new_files
 
-    def _synthesise_with_llm(self, spec: dict) -> NewFile | None:
+    def _strip_code_fences(self, text: str) -> str:
+        stripped = text.strip()
+        fenced = re.search(r"```(?:python)?\s*(.*?)\s*```", stripped, re.DOTALL)
+        if fenced:
+            return fenced.group(1).strip()
+        return stripped
+
+    def _collect_target_file_contexts(
+        self,
+        mapping_result: dict[str, Any] | None,
+        *,
+        limit: int = 3,
+    ) -> list[dict[str, str]]:
+        contexts: list[dict[str, str]] = []
+        if not isinstance(mapping_result, dict):
+            return contexts
+
+        seen: set[str] = set()
+        for target in mapping_result.get("targets", []):
+            if not isinstance(target, dict):
+                continue
+            relative = str(target.get("file", "") or "").strip()
+            if not relative or relative in seen:
+                continue
+            file_path = (self.repo_path / relative).resolve()
+            try:
+                file_path.relative_to(self.repo_path.resolve())
+            except ValueError:
+                continue
+            if not file_path.exists():
+                continue
+            try:
+                content = file_path.read_text()
+            except OSError:
+                continue
+            seen.add(relative)
+            contexts.append({"path": relative, "content": content[:8000]})
+            if len(contexts) >= limit:
+                break
+        return contexts
+
+    def _summarise_reference_implementations(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+        repositories = spec.get("_reference_implementations", [])
+        if not isinstance(repositories, list):
+            return []
+        summary: list[dict[str, Any]] = []
+        for repo in repositories[:5]:
+            if not isinstance(repo, dict):
+                continue
+            summary.append(
+                {
+                    "name": str(repo.get("name", "") or ""),
+                    "owner": str(repo.get("owner", "") or ""),
+                    "url": str(repo.get("url", "") or ""),
+                    "description": str(repo.get("description", "") or "")[:240],
+                    "stars": int(repo.get("stars", 0) or 0),
+                }
+            )
+        return summary
+
+    def _synthesise_with_llm(
+        self,
+        spec: dict,
+        *,
+        mapping_result: dict[str, Any] | None = None,
+    ) -> NewFile | None:
         """Use the LLM assistant to synthesise an implementation file."""
         if self.llm_assistant is None:
             return None
@@ -1376,66 +1561,131 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
         algorithm = spec.get("algorithm", {})
         algo_name = algorithm.get("name", "Unknown")
         paper = spec.get("paper", {})
+        target_files = self._collect_target_file_contexts(mapping_result)
+        reference_repos = self._summarise_reference_implementations(spec)
 
-        # Build a code context string describing what we need
-        code_context = (
-            f"Generate a complete, production-quality Python module implementing "
-            f"the '{algo_name}' algorithm.\n\n"
-            f"Paper: {paper.get('title', 'N/A')}\n"
-            f"arXiv: {paper.get('arxiv', 'N/A')}\n"
-            f"Description: {algorithm.get('description', 'N/A')}\n"
-            f"Formula: {algorithm.get('formula', 'N/A')}\n"
-            f"Replaces: {algorithm.get('replaces', 'N/A')}\n"
-            f"Category: {algorithm.get('category', 'N/A')}\n\n"
-            f"Requirements:\n"
-            f"- Must be a standalone Python module with proper docstrings\n"
-            f"- Use PyTorch (torch, torch.nn) if it's a neural network component\n"
-            f"- Include type hints\n"
-            f"- Include paper reference in module docstring\n"
+        prompt_payload = {
+            "paper": {
+                "title": paper.get("title", "N/A"),
+                "arxiv": paper.get("arxiv", "N/A"),
+                "authors": paper.get("authors", []),
+            },
+            "algorithm": {
+                "name": algo_name,
+                "description": algorithm.get("description", "N/A"),
+                "formula": algorithm.get("formula", "N/A"),
+                "replaces": algorithm.get("replaces", "N/A"),
+                "category": algorithm.get("category", "N/A"),
+            },
+            "changes": spec.get("changes", {}),
+            "reference_implementations": reference_repos,
+            "target_file_contexts": target_files,
+        }
+        system = (
+            "You are a patch synthesis engine. Produce only Python source code for the requested "
+            "file. Do not include explanations, markdown fences, or commentary."
+        )
+        prompt = (
+            "Generate the modified Python file content for integrating this research technique.\n\n"
+            f"{json.dumps(prompt_payload, indent=2)}\n\n"
+            "Requirements:\n"
+            "- Use the target file context as the primary integration surface.\n"
+            "- Preserve existing public function and method signatures unless the paper explicitly requires new parameters.\n"
+            "- Do not introduce dependencies that are not already present in the file context or standard library.\n"
+            "- Use the reference implementation metadata only as an anchor, not as license-incompatible verbatim source.\n"
+            "- Return only the final Python file content."
         )
 
         try:
-            plan = self.llm_assistant.generate_implementation_plan(
-                paper_spec=spec,
-                code_context=code_context,
-                language="python",
-            )
-            if plan is not None and plan.steps:
-                # Extract code blocks from plan steps
-                code_blocks: list[str] = []
-                for step in plan.steps:
-                    code = step.get("code", "")
-                    if code:
-                        code_blocks.append(code)
-
-                if code_blocks:
-                    content = "\n\n".join(code_blocks)
-                    file_name = _safe_new_file_name(
-                        algo_name.lower().replace(" ", "_").replace("-", "_") + ".py"
+            generated = None
+            if hasattr(self.llm_assistant, "generate_text"):
+                generated = self.llm_assistant.generate_text(
+                    prompt,
+                    system=system,
+                    max_tokens=4096,
+                    temperature=0.0,
+                )
+            elif hasattr(self.llm_assistant, "generate_implementation_plan"):
+                plan = self.llm_assistant.generate_implementation_plan(
+                    paper_spec=spec,
+                    code_context=prompt,
+                    language="python",
+                )
+                if plan is not None and getattr(plan, "steps", None):
+                    code_blocks = [
+                        step.get("code", "")
+                        for step in plan.steps
+                        if isinstance(step, dict) and step.get("code")
+                    ]
+                    if code_blocks:
+                        generated = "\n\n".join(code_blocks)
+            if generated:
+                content = self._strip_code_fences(generated)
+                try:
+                    ast.parse(content)
+                except SyntaxError:
+                    logger.warning("LLM synthesis returned invalid Python for %s", algo_name)
+                else:
+                    file_name = _ALGORITHM_FILE_NAMES.get(
+                        _resolve_algorithm_key(spec),
+                        _safe_new_file_name(
+                            algo_name.lower().replace(" ", "_").replace("-", "_") + ".py"
+                        ),
                     )
                     logger.info("LLM synthesised implementation for %s → %s", algo_name, file_name)
                     return NewFile(path=file_name, content=content)
-
-            # Fallback: use analyse_code to generate a stub
-            analysis = self.llm_assistant.analyse_code(
-                code_context,
-                focus=f"Generate a complete implementation of {algo_name}",
-            )
-            if analysis is not None and analysis.improvement_opportunities:
-                content = f'"""\n{algo_name}\n\nPaper: {paper.get("title", "N/A")}\narXiv: {paper.get("arxiv", "N/A")}\n"""\n\n'
-                for opp in analysis.improvement_opportunities:
-                    desc = opp.get("description", "")
-                    if desc:
-                        content += f"# {desc}\n"
-                file_name = _safe_new_file_name(
-                    algo_name.lower().replace(" ", "_").replace("-", "_") + ".py"
-                )
-                return NewFile(path=file_name, content=content)
 
         except Exception:
             logger.warning("LLM synthesis failed for %s", algo_name, exc_info=True)
 
         return None
+
+    def _rewrite_file_with_llm(
+        self,
+        *,
+        source: str,
+        file_path: str,
+        spec: dict[str, Any],
+        target: dict[str, Any],
+    ) -> str | None:
+        if self.llm_assistant is None:
+            return None
+
+        system = (
+            "You are a patch generator. Rewrite the provided file to integrate the research "
+            "technique. Return only the full modified file content."
+        )
+        prompt_payload = {
+            "paper": spec.get("paper", {}),
+            "algorithm": spec.get("algorithm", {}),
+            "changes": spec.get("changes", {}),
+            "reference_implementations": self._summarise_reference_implementations(spec),
+            "target": target,
+        }
+        prompt = (
+            f"Target file: {file_path}\n"
+            f"Patch request: {json.dumps(prompt_payload, indent=2)}\n\n"
+            "Constraints:\n"
+            "- Preserve existing public function and method signatures unless the paper requires new parameters.\n"
+            "- Do not add new third-party dependencies.\n"
+            "- Use the file content below as the full context.\n"
+            "- Return only the modified file content.\n\n"
+            f"{source}"
+        )
+        generated = self.llm_assistant.generate_text(
+            prompt,
+            system=system,
+            max_tokens=4096,
+            temperature=0.0,
+        )
+        if not generated:
+            return None
+        rewritten = self._strip_code_fences(generated)
+        try:
+            ast.parse(rewritten)
+        except SyntaxError:
+            return None
+        return rewritten
 
     # ------------------------------------------------------------------
     # Transformations
@@ -1477,6 +1727,15 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
                         replacement,
                         spec.get("algorithm", {}).get("name", ""),
                     )
+                    if modified == original and self.llm_assistant is not None:
+                        llm_modified = self._rewrite_file_with_llm(
+                            source=original,
+                            file_path=str(target.get("file", "model.py")),
+                            spec=spec,
+                            target=target,
+                        )
+                        if llm_modified:
+                            modified = llm_modified
 
                     if modified != original:
                         transformations.append(

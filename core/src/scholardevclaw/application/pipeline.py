@@ -1274,7 +1274,14 @@ def run_generate(
         payload = {
             "spec": spec_name,
             "algorithm": spec.get("algorithm", {}).get("name", "Unknown"),
+            "algorithm_name": getattr(
+                patch,
+                "algorithm_name",
+                spec.get("algorithm", {}).get("name", "Unknown"),
+            ),
+            "paper_reference": getattr(patch, "paper_reference", ""),
             "branch_name": patch.branch_name,
+            "research_spec": spec,
             "new_files": [{"path": f.path, "content": f.content} for f in patch.new_files],
             "transformations": [
                 {
@@ -1355,9 +1362,15 @@ def run_validate(
     ) -> dict[str, Any]:
         speedup = None
         loss_change = None
+        numerical = None
+        regression = None
+        diff_readability = None
         if comparison:
             speedup = comparison.get("speedup")
             loss_change = comparison.get("loss_change")
+            numerical = comparison.get("numerical_correctness")
+            regression = comparison.get("regression_snapshot")
+            diff_readability = comparison.get("diff_readability")
 
         checks: list[dict[str, Any]] = [
             {
@@ -1382,6 +1395,34 @@ def run_validate(
                     "value": float(loss_change),
                 }
             )
+        if isinstance(numerical, dict):
+            checks.append(
+                {
+                    "name": "numerical_correctness",
+                    "status": "pass" if numerical.get("status") == "passed" else numerical.get("status"),
+                    "value": numerical.get("details") or numerical.get("reason"),
+                }
+            )
+        if isinstance(regression, dict):
+            checks.append(
+                {
+                    "name": "regression_snapshot",
+                    "status": "pass" if regression.get("status") == "passed" else regression.get("status"),
+                    "value": {
+                        "removed_symbols": regression.get("removed_symbols", []),
+                        "signature_changes": regression.get("signature_changes", []),
+                    },
+                }
+            )
+        if isinstance(diff_readability, dict):
+            score = diff_readability.get("score")
+            checks.append(
+                {
+                    "name": "diff_readability",
+                    "status": "pass" if isinstance(score, int) and score >= 4 else "warn",
+                    "value": diff_readability,
+                }
+            )
 
         highlights: list[str] = []
         if passed:
@@ -1392,6 +1433,12 @@ def run_validate(
             highlights.append(f"Speedup: {float(speedup):.3f}x")
         if loss_change is not None:
             highlights.append(f"Loss change: {float(loss_change):.3f}%")
+        if isinstance(numerical, dict):
+            highlights.append(f"Numerical correctness: {numerical.get('status', 'unknown')}")
+        if isinstance(regression, dict):
+            highlights.append(f"Regression snapshot: {regression.get('status', 'unknown')}")
+        if isinstance(diff_readability, dict):
+            highlights.append(f"Diff readability score: {diff_readability.get('score', 'n/a')}/5")
 
         return {
             "version": "1.0",

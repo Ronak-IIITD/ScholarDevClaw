@@ -31,6 +31,18 @@ updates:
     commit-message:
       prefix: "chore(deps)"
 
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - typescript
+    commit-message:
+      prefix: "chore(deps)"
+
   - package-ecosystem: github-actions
     directory: /.github/workflows
     schedule:
