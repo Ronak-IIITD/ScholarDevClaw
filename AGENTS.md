@@ -206,6 +206,12 @@ Typical branch names:
 
 ## 11) Quick File Map by Concern
 
+Launch assets:
+
+- README.md
+- demo.tape
+- demo.gif
+
 Repo analysis:
 
 - core/src/scholardevclaw/repo_intelligence/tree_sitter_analyzer.py
@@ -223,6 +229,12 @@ Mapping and patch generation:
 Validation:
 
 - core/src/scholardevclaw/validation/runner.py
+
+Benchmark harness:
+
+- core/benchmarks/runner.py
+- core/benchmarks/report.py
+- core/benchmarks/benchmark_report.json
 
 Unified workflows:
 

@@ -1,0 +1,277 @@
+{
+  "generated_at": "2026-05-14T06:43:42.330996+00:00",
+  "aggregate": {
+    "total_cases": 10,
+    "supported_cases": 7,
+    "unsupported_cases": 3,
+    "aggregate_score": 0.15,
+    "supported_score": 0.214
+  },
+  "results": [
+    {
+      "id": "rmsnorm",
+      "title": "Root Mean Square Layer Normalization",
+      "arxiv_id": "1910.07467",
+      "pipeline_spec": "rmsnorm",
+      "status": "partial",
+      "score": 0.5,
+      "candidate_file": "rmsnorm.py",
+      "ast_match": false,
+      "symbol_overlap": 0.5,
+      "expected_symbols": [
+        "RMSNorm",
+        "rms_norm"
+      ],
+      "candidate_symbols": [
+        "RMSNorm"
+      ],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "Candidate import failed: No module named 'torch'",
+      "metadata": {
+        "branch_name": "integration/rmsnorm",
+        "mapping_confidence": 60,
+        "mapping_strategy": "replace",
+        "mapping_target_count": 1,
+        "generated_file_count": 1,
+        "transformation_count": 0,
+        "notes": "Directly supported by the current extractor."
+      }
+    },
+    {
+      "id": "rope",
+      "title": "RoFormer: Enhanced Transformer with Rotary Position Embedding",
+      "arxiv_id": "2104.09864",
+      "pipeline_spec": "rope",
+      "status": "mismatch",
+      "score": 0.0,
+      "candidate_file": "model.py",
+      "ast_match": false,
+      "symbol_overlap": 0.0,
+      "expected_symbols": [
+        "RoPE",
+        "apply_rope"
+      ],
+      "candidate_symbols": [
+        "TinyGPT"
+      ],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "Candidate import failed: No module named 'torch'",
+      "metadata": {
+        "branch_name": "integration/rope",
+        "mapping_confidence": 60,
+        "mapping_strategy": "replace",
+        "mapping_target_count": 1,
+        "generated_file_count": 1,
+        "transformation_count": 1,
+        "notes": "Directly supported by the current extractor."
+      }
+    },
+    {
+      "id": "swiglu",
+      "title": "GLU Variants Improve Transformer",
+      "arxiv_id": "2002.05202",
+      "pipeline_spec": "swiglu",
+      "status": "partial",
+      "score": 0.5,
+      "candidate_file": "swiglu.py",
+      "ast_match": false,
+      "symbol_overlap": 0.5,
+      "expected_symbols": [
+        "SwiGLU",
+        "swiglu"
+      ],
+      "candidate_symbols": [
+        "SwiGLU"
+      ],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "Candidate import failed: No module named 'torch'",
+      "metadata": {
+        "branch_name": "integration/swiglu",
+        "mapping_confidence": 70,
+        "mapping_strategy": "replace",
+        "mapping_target_count": 2,
+        "generated_file_count": 1,
+        "transformation_count": 2,
+        "notes": "Directly supported by the current extractor."
+      }
+    },
+    {
+      "id": "flashattention",
+      "title": "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness",
+      "arxiv_id": "2205.14135",
+      "pipeline_spec": "flashattention",
+      "status": "mismatch",
+      "score": 0.0,
+      "candidate_file": "model.py",
+      "ast_match": false,
+      "symbol_overlap": 0.0,
+      "expected_symbols": [
+        "FlashAttention",
+        "flash_attention"
+      ],
+      "candidate_symbols": [
+        "FlashCausalSelfAttention"
+      ],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "Candidate import failed: No module named 'torch'",
+      "metadata": {
+        "branch_name": "integration/flashattention",
+        "mapping_confidence": 70,
+        "mapping_strategy": "replace",
+        "mapping_target_count": 2,
+        "generated_file_count": 1,
+        "transformation_count": 2,
+        "notes": "Directly supported by the current extractor."
+      }
+    },
+    {
+      "id": "lora",
+      "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+      "arxiv_id": "2106.09685",
+      "pipeline_spec": null,
+      "status": "unsupported_spec",
+      "score": 0.0,
+      "candidate_file": null,
+      "ast_match": false,
+      "symbol_overlap": 0.0,
+      "expected_symbols": [],
+      "candidate_symbols": [],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "This benchmark case is tracked in the hardening doc but has no matching runtime spec yet.",
+      "metadata": {
+        "notes": "Tracked by the hardening doc but not implemented as a runtime spec yet."
+      }
+    },
+    {
+      "id": "layernorm",
+      "title": "Layer Normalization",
+      "arxiv_id": "1607.06450",
+      "pipeline_spec": null,
+      "status": "unsupported_spec",
+      "score": 0.0,
+      "candidate_file": null,
+      "ast_match": false,
+      "symbol_overlap": 0.0,
+      "expected_symbols": [],
+      "candidate_symbols": [],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "This benchmark case is tracked in the hardening doc but has no matching runtime spec yet.",
+      "metadata": {
+        "notes": "Tracked by the hardening doc but not implemented as a runtime spec yet."
+      }
+    },
+    {
+      "id": "gelu",
+      "title": "Gaussian Error Linear Units (BERT-era reference benchmark)",
+      "arxiv_id": "1606.08415",
+      "pipeline_spec": null,
+      "status": "unsupported_spec",
+      "score": 0.0,
+      "candidate_file": null,
+      "ast_match": false,
+      "symbol_overlap": 0.0,
+      "expected_symbols": [],
+      "candidate_symbols": [],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "This benchmark case is tracked in the hardening doc but has no matching runtime spec yet.",
+      "metadata": {
+        "notes": "Tracked by the hardening doc but not implemented as a runtime spec yet."
+      }
+    },
+    {
+      "id": "grouped_query_attention",
+      "title": "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints",
+      "arxiv_id": "2305.13245",
+      "pipeline_spec": "grouped_query_attention",
+      "status": "partial",
+      "score": 0.5,
+      "candidate_file": "model.py",
+      "ast_match": false,
+      "symbol_overlap": 0.5,
+      "expected_symbols": [
+        "GroupedQueryAttention",
+        "group_queries"
+      ],
+      "candidate_symbols": [
+        "GroupedQueryAttention"
+      ],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "Candidate import failed: No module named 'torch'",
+      "metadata": {
+        "branch_name": "integration/grouped-query-attention",
+        "mapping_confidence": 70,
+        "mapping_strategy": "replace",
+        "mapping_target_count": 3,
+        "generated_file_count": 0,
+        "transformation_count": 1,
+        "notes": "Current runtime spec name differs from the hardening doc shorthand."
+      }
+    },
+    {
+      "id": "alibi",
+      "title": "Train Short, Test Long: Attention with Linear Biases Enables Input Length Generalization",
+      "arxiv_id": "2108.12409",
+      "pipeline_spec": "alibi",
+      "status": "mismatch",
+      "score": 0.0,
+      "candidate_file": "model.py",
+      "ast_match": false,
+      "symbol_overlap": 0.0,
+      "expected_symbols": [
+        "ALiBi",
+        "build_alibi_bias"
+      ],
+      "candidate_symbols": [
+        "TinyTransformer"
+      ],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "Candidate import failed: No module named 'torch'",
+      "metadata": {
+        "branch_name": "integration/alibi",
+        "mapping_confidence": 60,
+        "mapping_strategy": "replace",
+        "mapping_target_count": 1,
+        "generated_file_count": 1,
+        "transformation_count": 1,
+        "notes": "Directly supported by the current extractor."
+      }
+    },
+    {
+      "id": "cosine_lr_schedule",
+      "title": "SGDR: Stochastic Gradient Descent with Warm Restarts",
+      "arxiv_id": "1608.03983",
+      "pipeline_spec": "cosine_warmup",
+      "status": "missing_candidate",
+      "score": 0.0,
+      "candidate_file": null,
+      "ast_match": false,
+      "symbol_overlap": 0.0,
+      "expected_symbols": [
+        "CosineLRSchedule",
+        "cosine_lr"
+      ],
+      "candidate_symbols": [],
+      "import_ok": false,
+      "smoke_ok": null,
+      "error": "No Python candidate file was generated for this benchmark case.",
+      "metadata": {
+        "branch_name": "integration/cosine-annealing-with-warmup",
+        "mapping_confidence": 40,
+        "mapping_strategy": "none",
+        "mapping_target_count": 0,
+        "generated_file_count": 0,
+        "transformation_count": 0,
+        "notes": "Current runtime spec name differs from the hardening doc shorthand."
+      }
+    }
+  ]
+}

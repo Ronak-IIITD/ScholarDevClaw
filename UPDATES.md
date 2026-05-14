@@ -2,7 +2,42 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-10
+**Last updated:** 2026-05-14
+
+### 2026-05-14 (Hardening Doc Phase 1 + Phase 2 Kickoff)
+**Summary:** Started executing the hardening launch document with real launch assets and a runnable eval harness baseline.
+
+**What changed:**
+
+1. **Phase 1 launch surface:**
+   - Rewrote `README.md` around the hardening doc structure: hero tagline, immediate demo visual, 3-line quick start, plain-English value prop, architecture, language support, and community CTA.
+   - Added root-level `demo.tape` as the reproducible terminal recording source.
+   - Generated and committed `demo.gif` from the real `scholardevclaw demo --spec rmsnorm --skip-validate` output so the README now has an above-the-fold demo artifact.
+
+2. **Phase 2 benchmark harness:**
+   - Added `core/benchmarks/` with a runnable benchmark package: `runner.py`, `report.py`, synthetic target repos, expected reference implementations, and a hardening-doc-aligned benchmark catalog.
+   - Added root `Makefile` targets: `make benchmark` and `make bench-report`.
+   - Generated `core/benchmarks/benchmark_report.json` and `core/benchmarks/benchmark_summary.md` as the first measured baseline.
+
+3. **Benchmark baseline and gap visibility:**
+   - Current benchmark baseline is **0.150 aggregate** across 10 tracked hardening-doc cases.
+   - 7 cases map to current runtime specs; 3 cases (`lora`, `layernorm`, `gelu`) are now explicitly tracked as unsupported gaps instead of being invisible.
+   - Partial matches today: `rmsnorm`, `swiglu`, `grouped_query_attention`.
+
+4. **Agent handbook updates:**
+   - Updated `AGENTS.md` quick file map to include launch assets and benchmark harness entry points.
+
+**Verification:**
+- `cd core && pytest -q` ✅ (`1639 passed, 4 skipped`)
+- `cd core && pytest tests/unit/test_benchmark_runner.py -q` ✅ (`4 passed`)
+- `cd core && ruff check src tests benchmarks` ✅
+- `cd core && python -m scholardevclaw.cli demo --spec rmsnorm --skip-validate --output-dir /tmp/sdc-smoke-out` ✅
+- `make benchmark` ✅
+- `make bench-report` ✅
+- `cd core && mypy --follow-imports silent benchmarks/runner.py benchmarks/report.py` ✅
+
+**Notes:**
+- Full-repo `mypy` still reports a large pre-existing backlog outside this task; no new benchmark-package type errors remain under targeted checking.
 
 ### 2026-05-10 (Final Hardening + CI Fixes)
 **Summary:** Security hardening completed and CI pipeline fixed.
