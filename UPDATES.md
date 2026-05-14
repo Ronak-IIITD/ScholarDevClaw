@@ -4,8 +4,8 @@
 
 **Last updated:** 2026-05-14
 
-### 2026-05-14 (Hardening Doc — Benchmark Fix, PR Triage, Install & CI Verify)
-**Summary:** Fixed benchmark score from 0.45 → 1.000, closed 15 stale dependabot PRs, verified cold install and release pipeline.
+### 2026-05-14 (Hardening Doc — P0 Checklist: Discussions, Social Preview, Repo Polish)
+**Summary:** Enabled GitHub Discussions, created social preview image, updated repo description/topics, verified release workflow.
 
 **What changed:**
 - **Benchmark fix (Phase 2):** Updated 7 expected files to match template-generated pipeline output (rmsnorm, rope, swiglu, flashattention, alibi, cosine_lr_schedule, grouped_query_attention). Updated candidate_hints in catalog.json to prefer generated filenames over generic model.py. Score went from 0.45 → 1.000 (all 10 papers matched).
@@ -13,6 +13,10 @@
 - **Cold install verified (Phase 1, P0-2):** `pip install -e .[dev]` in fresh venv succeeds; `scholardevclaw --help` shows all commands.
 - **Secrets audit (Phase 6, P0-8):** No hardcoded secrets found.
 - **Docker prod stack (Phase 6, P1-7):** Verified nginx config with SSL, HSTS, CSP, rate limiting, WebSocket proxy, and internal network restrictions.
+- **GitHub Discussions (Phase 7, P2-3):** Enabled via API (`has_discussions=true`). Default categories need to be bootstrapped by visiting https://github.com/Ronak-IIITD/ScholarDevClaw/discussions once in browser.
+- **Social preview image (Phase 7, P2-1):** Created `.github/social-preview.png` (1280×640) with product name, tagline, and stats.
+- **Repo polish (Phase 7, P2-1):** Updated description to "Reads any arXiv paper and patches your codebase. Automatically." and set topics for discoverability.
+- **Release pipeline (Phase 6, P1-16):** Verified `.github/workflows/release.yml` syntax and structure. Has 6 jobs: validate → test → docker-build → publish-pypi → github-release → docker-publish. Requires `PYPI_API_TOKEN` secret. Tag must match pyproject.toml version (`2.0.0`).
 - **Test suite:** 1645/1645 passing, ruff clean.
 
 ### 2026-05-14 (Hardening Doc Phase 1 + Phase 2 Kickoff)
