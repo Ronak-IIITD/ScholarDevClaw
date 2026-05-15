@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from scholardevclaw.patch_generation.generator import PatchGenerator
+
 # Patterns that indicate potentially destructive operations in scripts
 _DESTRUCTIVE_PATTERNS = [
     r"rm\s+-rf\s+/",  # Matches rm -rf / and similar
@@ -49,8 +51,6 @@ def _is_script_destructive(script: str) -> bool:
             return True
     return False
 
-
-from scholardevclaw.patch_generation.generator import PatchGenerator
 
 _logger = logging.getLogger(__name__)
 
