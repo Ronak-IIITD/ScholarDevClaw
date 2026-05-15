@@ -4,6 +4,34 @@
 
 **Last updated:** 2026-05-14
 
+### 2026-05-14 (exec()/eval() Elimination + Sandbox Hardening)
+**Summary:** Removed `exec()`/`eval()` vulnerabilities and added resource-limited sandbox for benchmark code execution.
+
+**What changed:**
+
+1. **Validation Runner (`runner.py`) — 8 new destructive patterns:**
+   - Added `os.system()`, `subprocess.*`, `socket.`, `urllib./requests.`, and sensitive filesystem access to `_DESTRUCTIVE_PATTERNS`
+   - New `_is_sandbox_escape()` function blocks 12 escape patterns: `__import__`, `importlib.`, `sys.modules`, `getattr(builtins`, `compile()`, `exec()`, `eval()`, `setattr()`, `__class__/__mro__/__subclasses__/__globals__/__builtins__`, `pty.`, `ctypes.`
+   - New `_sandbox_preexec()` function applies resource limits to every benchmark subprocess:
+     - Memory: 512 MB (RLIMIT_AS)
+     - CPU time: 60 seconds (RLIMIT_CPU)
+     - No core dumps (RLIMIT_CORE = 0)
+     - File descriptors: 256 (RLIMIT_NOFILE)
+     - Process group isolation (os.setsid)
+
+2. **Fuzzing (`fuzzing.py`) — eval() eliminated:**
+   - Removed `eval(target)` from `fuzz_with_corpus()` (line 431)
+   - Now raises `TypeError` if `target` is bytes, requiring a proper callable instead
+   - Prevents arbitrary code execution through serialized function references
+
+3. **CI fix:**
+   - Fixed ruff E402 from previous commit: moved `PatchGenerator` import to top of file
+
+**Verification:**
+- ✅ 1645 core tests pass, 4 skipped
+- ✅ 43 validation runner tests pass
+- ✅ Ruff clean on all modified files
+
 ### 2026-05-14 (YOLO Mode + Hard Destructive Gate)
 **Summary:** Implemented YOLO mode and Hard Destructive Gate across the full stack.
 

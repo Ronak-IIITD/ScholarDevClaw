@@ -428,10 +428,14 @@ class FuzzerManager:
 
             try:
                 if isinstance(target, bytes):
-                    target_func = eval(target)
-                    target_func(mutated)
-                else:
-                    target(mutated)
+                    # SECURITY: Never eval() arbitrary bytes.
+                    # If you need to serialize function references, use
+                    # module_path + function_name and import them safely.
+                    raise TypeError(
+                        "fuzz_with_corpus: target must be a callable, not bytes. "
+                        "Pass the actual function object instead of serialized code."
+                    )
+                target(mutated)
 
             except Exception as e:
                 crashes.append({"input": mutated.hex()[:100], "error": str(e)})

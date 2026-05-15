@@ -32,7 +32,29 @@ _DESTRUCTIVE_PATTERNS = [
     r"curl\s+[^|]*\|\s*bash",  # curl ... | bash
     r"wget\s+[^|]*\|\s*bash",  # wget ... | bash
     r":\(\)\{.*\|\:\)",  # Fork bomb pattern
+    r"os\.system\s*\(",  # os.system() call
+    r"subprocess\.(call|run|Popen|check_output|check_call)\s*\(",  # subprocess calls
+    r"socket\.",  # network socket access
+    r"urllib\.|requests\.",  # HTTP client libraries
+    r"open\s*\(['\"]/(?:etc|proc|sys|dev|run)/",  # sensitive filesystem access
     # Additional patterns can be added as needed
+]
+
+# Patterns that indicate attempts to bypass the sandbox
+_SANDBOX_ESCAPE_PATTERNS = [
+    r"__import__\s*\(",  # dynamic import
+    r"importlib\.",  # import library
+    r"sys\.modules",  # module manipulation
+    r"getattr\s*\(\s*builtins",  # access builtins
+    r"os\.environ",  # environment variable access
+    r"__class__|__mro__|__subclasses__|__globals__|__builtins__",  # Python introspection for sandbox escape
+    r"compile\s*\(",  # compile code objects
+    r"exec\s*\(",  # execute code objects
+    r"eval\s*\(",  # evaluate code objects
+    r"setattr\s*\(",  # set attributes dynamically
+    r"del\s+os\b|del\s+sys\b|del\s+builtins\b",  # module deletion
+    r"pty\.",  # pseudo-terminal access
+    r"ctypes\.",  # C extension access
 ]
 
 
@@ -50,6 +72,51 @@ def _is_script_destructive(script: str) -> bool:
         if re.search(pattern, script, re.IGNORECASE):
             return True
     return False
+
+
+def _is_sandbox_escape(script: str) -> bool:
+    """Check if the script contains patterns that attempt to escape the sandbox."""
+    yolo_mode = os.environ.get("SCHOLARDEVCLAW_YOLO_MODE", "").lower() in ("true", "1", "yes")
+    if yolo_mode:
+        _logger.debug("YOLO mode active - skipping sandbox escape check")
+        return False
+    for pattern in _SANDBOX_ESCAPE_PATTERNS:
+        if re.search(pattern, script, re.IGNORECASE):
+            return True
+    return False
+
+
+def _sandbox_preexec() -> None:
+    """Apply resource limits and process isolation before executing a benchmark script.
+
+    This function is designed to run in the child process via preexec_fn.
+    It sets:
+    - Memory limit: 512 MB (RLIMIT_AS)
+    - CPU time limit: 60 seconds (RLIMIT_CPU)
+    - Process group isolation (os.setsid)
+    - No core dumps (RLIMIT_CORE = 0)
+    - File descriptor limit: 256 (RLIMIT_NOFILE)
+    """
+    try:
+        import resource
+
+        # Memory limit: 512 MB virtual memory
+        resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+
+        # CPU time limit: 60 seconds
+        resource.setrlimit(resource.RLIMIT_CPU, (60, 60))
+
+        # No core dumps
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+        # File descriptor limit
+        resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
+
+        # Process group isolation
+        os.setsid()
+    except (ImportError, ValueError, OSError) as e:
+        # Resource limits may not be available on all platforms
+        _logger.warning("Could not set resource limits: %s", e)
 
 
 _logger = logging.getLogger(__name__)
@@ -111,13 +178,24 @@ def _run_bench_script(
     cwd: str | Path | None = None,
     timeout: int = 120,
 ) -> dict[str, float] | None:
-    """Run *script* in a fresh Python subprocess and parse its JSON output.
+    """Run *script* in a fresh, sandboxed Python subprocess and parse its JSON output.
 
     Returns the parsed dict on success, ``None`` on any failure.
+
+    Security hardening:
+    - Check A: Destructive operation detection (blocks known dangerous patterns)
+    - Sandbox escape detection (blocks eval/exec/__import__/compile etc.)
+    - Resource limits: 512 MB memory, 60 s CPU, no core dumps, 256 file descriptors
+    - Process group isolation via os.setsid
     """
-    # Check A: Destructive Operation Detection (runs before every subprocess)
+    # Check A: Destructive Operation Detection
     if _is_script_destructive(script):
         _logger.warning("Blocking destructive script: %s", script[:100])
+        return None
+
+    # Check B: Sandbox Escape Detection
+    if _is_sandbox_escape(script):
+        _logger.warning("Blocking sandbox escape attempt: %s", script[:100])
         return None
 
     try:
@@ -127,6 +205,7 @@ def _run_bench_script(
             capture_output=True,
             text=True,
             timeout=timeout,
+            preexec_fn=_sandbox_preexec,
         )
         if result.returncode != 0:
             return None
@@ -137,27 +216,6 @@ def _run_bench_script(
                 payload = json.loads(line)
                 if isinstance(payload, dict):
                     return cast(dict[str, float], payload)
-        return None
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
-        return None
-
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", script],
-            cwd=str(cwd) if cwd else None,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        if result.returncode != 0:
-            return None
-        # The script must print a single JSON object on its last line.
-        for line in reversed(result.stdout.strip().splitlines()):
-            line = line.strip()
-            if line.startswith("{"):
-                payload = json.loads(line)
-                if isinstance(payload, dict):
-                    return cast(dict[str, Any], payload)
         return None
     except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
         return None
