@@ -63,7 +63,7 @@ export class HealthChecker {
 
   runAllChecks(): SystemHealth {
     const results: HealthStatus[] = [];
-    
+
     for (const name of this.checks.keys()) {
       results.push(this.runCheck(name));
     }
@@ -113,29 +113,135 @@ export class HealthChecker {
     };
   }
 
-  private checkEventLoop(): HealthStatus {
-    // NOTE: Event loop lag check is inherently async but the HealthChecker
-    // interface expects synchronous returns. We return a synchronous estimate
-    // based on hrtime instead of using setImmediate which would return a Promise.
+  // --- Event loop lag measurement (async-tracked, sync-reported) ---
+  private _lastEventLoopLagMs = -1;
+  private _eventLoopCheckCount = 0;
+  private _measuringEventLoop = false;
+
+  private _measureEventLoopLag(): void {
+    if (this._measuringEventLoop) return;
+    this._measuringEventLoop = true;
+
     const start = process.hrtime.bigint();
-    // Synchronous busy-wait approximation (minimal overhead)
-    const lagMs = 0; // Actual lag requires async; report 0 for sync check
-    const healthy = true; // Assume healthy in sync context
+    setImmediate(() => {
+      const elapsed = Number(process.hrtime.bigint() - start) / 1e6; // ms
+      // Exponential moving average to smooth outliers
+      if (this._lastEventLoopLagMs < 0) {
+        this._lastEventLoopLagMs = elapsed;
+      } else {
+        this._lastEventLoopLagMs = this._lastEventLoopLagMs * 0.7 + elapsed * 0.3;
+      }
+      this._measuringEventLoop = false;
+    });
+  }
+
+  private checkEventLoop(): HealthStatus {
+    // Trigger a fresh measurement each time this is called
+    this._measureEventLoopLag();
+    this._eventLoopCheckCount++;
+
+    // Report the most recent measurement (will be -1 on first call, improving over time)
+    const lagMs = this._lastEventLoopLagMs < 0 ? 0 : Math.round(this._lastEventLoopLagMs * 10) / 10;
+
+    // Thresholds: <10ms good, <50ms warning, >50ms degraded
+    const healthy = this._lastEventLoopLagMs < 0 || lagMs < 50;
+    const isWarning = lagMs >= 10 && lagMs < 50;
+    const isDegraded = lagMs >= 50;
+
+    let message: string;
+    if (this._lastEventLoopLagMs < 0) {
+      message = 'Event loop: calibrating (measurements start on next call)';
+    } else if (isDegraded) {
+      message = `Event loop lag: ${lagMs.toFixed(1)}ms [DEGRADED]`;
+    } else if (isWarning) {
+      message = `Event loop lag: ${lagMs.toFixed(1)}ms [WARNING]`;
+    } else {
+      message = `Event loop lag: ${lagMs.toFixed(1)}ms`;
+    }
 
     return {
       name: 'event_loop',
       healthy,
-      message: `Event loop check: synchronous (async lag measurement unavailable)`,
-      details: { lagMs },
+      message,
+      details: { lagMs: this._lastEventLoopLagMs < 0 ? null : lagMs, checkCount: this._eventLoopCheckCount },
       timestamp: new Date().toISOString(),
     };
   }
 
+  // --- Python bridge connectivity check ---
+  private _bridgeHealthChecked = false;
+  private _bridgeHealthy = false;
+  private _bridgeMessage = 'Not yet checked';
+  private _bridgeDetails: Record<string, unknown> = {};
+
+  private async _checkPythonBridgeAsync(): Promise<void> {
+    const httpMode = (process.env.CORE_BRIDGE_MODE || 'http') !== 'subprocess';
+    const coreUrl = process.env.CORE_API_URL || 'http://localhost:8000';
+
+    if (httpMode) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3000);
+        const resp = await fetch(`${coreUrl}/health`, { signal: controller.signal });
+        clearTimeout(timer);
+
+        if (resp.ok) {
+          const data = (await resp.json()) as Record<string, unknown>;
+          this._bridgeHealthy = true;
+          this._bridgeMessage = `Python bridge healthy (HTTP ${coreUrl}, v${data.version ?? '?'})`;
+          this._bridgeDetails = { mode: 'http', status: resp.status, ...data };
+        } else {
+          this._bridgeHealthy = false;
+          this._bridgeMessage = `Python bridge returned ${resp.status} (${coreUrl})`;
+          this._bridgeDetails = { mode: 'http', status: resp.status };
+        }
+      } catch (err: unknown) {
+        this._bridgeHealthy = false;
+        this._bridgeMessage = `Python bridge unreachable (${coreUrl}): ${err instanceof Error ? err.message : String(err)}`;
+        this._bridgeDetails = { mode: 'http' };
+      }
+    } else {
+      // Subprocess mode: check if a Python process exists and is responsive
+      // We can't easily test the subprocess synchronously, so check if Python is available on PATH
+      try {
+        const { spawnSync } = await import('child_process');
+        const pythonCmd = process.env.PYTHON_COMMAND || 'python3';
+        const result = spawnSync(pythonCmd, ['-c', 'import sys; print(sys.version)'], {
+          timeout: 3000,
+          encoding: 'utf8',
+        });
+
+        if (result.status === 0 && result.stdout) {
+          this._bridgeHealthy = true;
+          this._bridgeMessage = `Python bridge available (${pythonCmd}: ${result.stdout.trim().split('\n')[0]})`;
+          this._bridgeDetails = { mode: 'subprocess', pythonVersion: result.stdout.trim() };
+        } else {
+          this._bridgeHealthy = false;
+          this._bridgeMessage = `Python command failed (${pythonCmd}): ${result.stderr?.trim() || result.error?.message || 'unknown error'}`;
+          this._bridgeDetails = { mode: 'subprocess', exitCode: result.status };
+        }
+      } catch (err: unknown) {
+        this._bridgeHealthy = false;
+        this._bridgeMessage = `Python bridge check failed: ${err instanceof Error ? err.message : String(err)}`;
+        this._bridgeDetails = { mode: 'subprocess' };
+      }
+    }
+    this._bridgeHealthChecked = true;
+  }
+
   private checkPythonBridge(): HealthStatus {
+    // Trigger async check (results appear on next call)
+    void this._checkPythonBridgeAsync();
+
+    const details = this._bridgeDetails;
     return {
       name: 'python_bridge',
-      healthy: true,
-      message: 'Python bridge available',
+      healthy: this._bridgeHealthChecked ? this._bridgeHealthy : true, // First call: assume healthy until verified
+      message: this._bridgeHealthChecked ? this._bridgeMessage : 'Python bridge: checking (async)...',
+      details: {
+        ...details,
+        checked: this._bridgeHealthChecked,
+      },
       timestamp: new Date().toISOString(),
     };
   }

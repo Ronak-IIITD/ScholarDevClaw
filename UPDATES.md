@@ -4,6 +4,27 @@
 
 **Last updated:** 2026-05-14
 
+### 2026-05-14 (Agent Health Checks Hardening)
+**Summary:** Replaced synthetic health checks with real async measurements in the TypeScript agent.
+
+**What changed:**
+
+1. **Event loop lag (`health.ts`):**
+   - Removed hardcoded `lagMs: 0` and `healthy: true`
+   - Now uses `setImmediate` + `process.hrtime.bigint()` to measure actual event loop lag
+   - Exponential moving average (0.7/0.3) to smooth outliers
+   - Reports three states: good (<10ms), warning (10-50ms), degraded (>50ms)
+   - First call reports "calibrating", subsequent calls report measured lag
+
+2. **Python bridge check (`health.ts`):**
+   - Removed hardcoded `healthy: true` with no actual check
+   - HTTP mode: fetches `${CORE_API_URL}/health` with 3s timeout, reports status and version
+   - Subprocess mode: runs `python3 -c "import sys; print(sys.version)"` via spawnSync, verifies exit code
+   - Reports unreachable/error states with actionable messages
+
+3. **Tests (`health.test.ts`):**
+   - Added 13 new tests covering memory, event loop, bridge, liveness, and readiness probes
+
 ### 2026-05-14 (exec()/eval() Elimination + Sandbox Hardening)
 **Summary:** Removed `exec()`/`eval()` vulnerabilities and added resource-limited sandbox for benchmark code execution.
 
