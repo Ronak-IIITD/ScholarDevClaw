@@ -2,7 +2,26 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-14
+**Last updated:** 2026-05-16
+
+### 2026-05-16 (Convex Schema Hardening)
+**Summary:** Replaced all `v.any()` in Convex schema with typed schemas matching TypeScript phase contracts.
+
+**What changed:**
+
+1. **`convex/schema.ts` — 9 typed phase result schemas:**
+   - Phase 1: `phase1ResultSchema` (repoName, architecture.models, architecture.trainingLoop, testSuite)
+   - Phase 2: `phase2ResultSchema` (paper, algorithm, implementation, changes)
+   - Phase 3: `phase3ResultSchema` (targets[], strategy, confidence)
+   - Phase 4: `phase4ResultSchema` (newFiles[], transformations[], branchName)
+   - Phase 5: `phase5ResultSchema` (passed, stage, baselineMetrics, newMetrics, comparison, logs, error)
+   - Phase 6: `phase6ResultSchema` (summary, diff, metadata)
+   - validationRuns: `metricsSchema`, `comparisonSchema` replace 3x `v.any()`
+
+2. **Contract enforcement:**
+   - Convex now rejects writes that don't match the expected shape
+   - Catches contract drift at the persistence layer instead of silently accepting malformed data
+   - `savePhaseResult` mutation still accepts any result — Convex validates against schema at write time
 
 ### 2026-05-14 (Agent Health Checks Hardening)
 **Summary:** Replaced synthetic health checks with real async measurements in the TypeScript agent.
