@@ -4,6 +4,26 @@
 
 **Last updated:** 2026-05-16
 
+### 2026-05-16 (Web Research Retry + Backoff + Rate Limit Handling)
+**Summary:** Added exponential backoff with jitter to all external web research API calls (GitHub, arXiv, Papers with Code, Stack Overflow).
+
+**What changed:**
+
+1. **`web_research.py` — `_safe_get` now includes retry logic:**
+   - 3 retries with exponential backoff + jitter (base * 2^(attempt-1) * random[0.5, 1.5])
+   - Honours `Retry-After` header on 429 rate limit responses (capped at 30s)
+   - Retries on 5xx server errors
+   - Retries on connection errors (TimeoutError, OSError)
+   - Returns immediately on 2xx/3xx/4xx (except 429)
+   - Logs retry attempts with attempt count and delay
+
+2. **Tests (`test_web_research_security.py`):**
+   - `test_compute_backoff_increases_exponentially` — verifies exponential growth bounds
+   - `test_safe_get_returns_immediately_on_success` — no retries on 200
+   - `test_safe_get_retries_on_server_error` — retries on 500 until success
+   - `test_safe_get_gives_up_after_max_retries` — exhausts retries and returns last response
+   - `test_safe_get_rejects_blocked_url` — ValueError for non-allowed URLs
+
 ### 2026-05-16 (Convex Schema Hardening)
 **Summary:** Replaced all `v.any()` in Convex schema with typed schemas matching TypeScript phase contracts.
 

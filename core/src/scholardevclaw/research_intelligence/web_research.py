@@ -7,7 +7,9 @@ from multiple sources including arXiv, GitHub, technical blogs, and Papers with 
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
 import re
 import socket
 from dataclasses import dataclass, field
@@ -128,16 +130,99 @@ async def _safe_get(
     params: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
     timeout: float = 5.0,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
 ) -> Any:
+    """Perform an HTTP GET request with validation, retry, and exponential backoff.
+
+    - Validates the URL against an allowlist of trusted hosts.
+    - Retries transient failures (5xx, 429, connection errors) with exponential backoff + jitter.
+    - Honours the ``Retry-After`` header on 429 responses (capped at 30 s).
+    - Returns the first successful response; raises after all retries are exhausted.
+    """
     if not _is_allowed_fixed_source_url(url):
         raise ValueError(f"Blocked outbound URL: {url}")
-    return await client.get(
-        url,
-        params=params,
-        headers=headers,
-        timeout=timeout,
-        follow_redirects=False,
-    )
+
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = await client.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+                follow_redirects=False,
+            )
+
+            # Success — return immediately
+            if response.status_code < 500 and response.status_code != 429:
+                return response
+
+            # Rate limit — honour Retry-After header (capped)
+            if response.status_code == 429:
+                retry_after = int(response.headers.get("Retry-After", 0))
+                retry_after = min(retry_after, 30)
+                if attempt < max_retries and retry_after > 0:
+                    logger.info(
+                        "Rate limited at %s — waiting %d s (attempt %d/%d)",
+                        url,
+                        retry_after,
+                        attempt,
+                        max_retries,
+                    )
+                    await asyncio.sleep(retry_after)
+                    continue
+
+            # Server error — retry with backoff
+            if response.status_code >= 500 and attempt < max_retries:
+                delay = _compute_backoff(attempt, base_delay)
+                logger.warning(
+                    "Server error %d at %s — retrying in %.1f s (attempt %d/%d)",
+                    response.status_code,
+                    url,
+                    delay,
+                    attempt,
+                    max_retries,
+                )
+                await asyncio.sleep(delay)
+                continue
+
+            # Exhausted retries or non-retryable status
+            return response
+
+        except (TimeoutError, OSError) as exc:
+            last_exc = exc
+            if attempt < max_retries:
+                delay = _compute_backoff(attempt, base_delay)
+                logger.warning(
+                    "Connection error at %s — retrying in %.1f s (attempt %d/%d): %s",
+                    url,
+                    delay,
+                    attempt,
+                    max_retries,
+                    exc,
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.warning(
+                    "Connection error at %s — all retries exhausted (%d): %s",
+                    url,
+                    max_retries,
+                    exc,
+                )
+                raise
+
+    # Should not reach here, but if it does, return last response or raise
+    if last_exc:
+        raise last_exc
+    raise RuntimeError(f"Unexpected retry loop exit for {url}")
+
+
+def _compute_backoff(attempt: int, base_delay: float) -> float:
+    """Exponential backoff with jitter: base * 2^(attempt-1) * random(0.5, 1.5)."""
+    delay = base_delay * (2 ** (attempt - 1))
+    jitter = random.uniform(0.5, 1.5)
+    return delay * jitter
 
 
 try:
