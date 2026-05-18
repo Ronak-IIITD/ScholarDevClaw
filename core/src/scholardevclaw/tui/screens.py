@@ -209,24 +209,153 @@ class WelcomeScreen(ModalScreen[None]):
 
 
 class HelpOverlay(ModalScreen[None]):
-    BINDINGS = [("escape", "dismiss", "Dismiss"), ("enter", "dismiss", "Dismiss")]
+    def __init__(self, context: dict[str, Any] | None = None) -> None:
+        super().__init__()
+        self.context = context or {}
+
+    BINDINGS = [
+        ("escape", "dismiss", "Dismiss"),
+        ("enter", "dismiss", "Dismiss"),
+        ("f1", "dismiss", "Dismiss"),
+    ]
 
     DEFAULT_CSS = """
     HelpOverlay {
         align: left top;
-        background: $background 80%;
+        background: $background 85%;
+        layer: overlay;
     }
 
     HelpOverlay > Vertical {
-        width: 100%;
+        width: 90%;
         height: auto;
+        max-height: 90vh;
         padding: 1 2;
     }
     """
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static(HELP_TEXT)
+            yield Static(self._generate_help_text(), id="help-content")
+
+    def _generate_help_text(self) -> str:
+        """Generate contextual help text based on current app state."""
+        lines = ["ScholarDevClaw TUI Help", "=" * 50, ""]
+
+        # Global shortcuts
+        lines.extend(
+            [
+                "GLOBAL SHORTCUTS",
+                "--------------",
+                "F1, Ctrl+H, ?  -> Show this help",
+                "Ctrl+C         -> Cancel current task",
+                "Ctrl+K         -> Clear output",
+                "Ctrl+I         -> Focus inspector",
+                "Tab            -> Autocomplete",
+                "Up/Down        -> Command history",
+                "Enter          -> Execute command",
+                "Esc            -> Dismiss suggestions/popups",
+                "",
+            ]
+        )
+
+        # Context-specific help
+        if self.context:
+            screen = self.context.get("screen", "unknown")
+            mode = self.context.get("mode", "analyze")
+            provider = self.context.get("provider", "setup")
+
+            lines.extend(
+                [
+                    f"CURRENT CONTEXT",
+                    f"---------------",
+                    f"Screen: {screen}",
+                    f"Mode: {mode}",
+                    f"Provider: {provider}",
+                    "",
+                ]
+            )
+
+            # Screen-specific help
+            if screen == "command_palette":
+                lines.extend(
+                    [
+                        "COMMAND PALETTE",
+                        "---------------",
+                        "Start typing to filter commands",
+                        "Enter -> Run selected command",
+                        "Esc   -> Close palette",
+                        "",
+                    ]
+                )
+            elif screen == "provider_setup":
+                lines.extend(
+                    [
+                        "PROVIDER SETUP",
+                        "--------------",
+                        "Ctrl+S -> Save settings",
+                        "Ctrl+N -> Next model preset",
+                        "Ctrl+P -> Previous model preset",
+                        "Ctrl+U -> Apply selected preset",
+                        "Esc    -> Skip setup",
+                        "",
+                    ]
+                )
+
+        # Mode-specific help
+        lines.extend(
+            [
+                "MODES",
+                "-----",
+                ":analyze  -> Repository analysis mode",
+                ":search   -> Research search mode",
+                ":edit     -> Code editing mode",
+                "",
+            ]
+        )
+
+        # Common workflows
+        lines.extend(
+            [
+                "COMMON WORKFLOWS",
+                "----------------",
+                "paper <source>          -> Start paper-to-code workflow",
+                "from-paper <source>     -> Start from paper source",
+                "/ask <question>       -> Ask questions about repo",
+                "/run analyze <repo>   -> Full analysis workflow",
+                "/run generate <repo> <spec> -> Generate implementation",
+                "",
+            ]
+        )
+
+        # Inspector help (if available)
+        if self.context.get("inspector_available"):
+            lines.extend(
+                [
+                    "INSPECTOR SHORTCUTS",
+                    "-------------------",
+                    "j/k           -> Navigate events",
+                    "Enter/Space   -> Select event",
+                    "r             -> Rerun test",
+                    "s             -> Show source",
+                    "e             -> Show events",
+                    "",
+                ]
+            )
+
+        lines.extend(
+            [
+                "TIPS",
+                "----",
+                "• Use Tab for command and path completion",
+                "• Press Up/Down to navigate command history",
+                "• Type 'help' at any prompt to see this help",
+                "• Workflow progress shown in phase tracker",
+                "• Check status bar for current state and hints",
+            ]
+        )
+
+        return "\n".join(lines)
 
 
 class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):

@@ -384,6 +384,8 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+k", "clear_screen", "Clear"),
         ("ctrl+i", "focus_inspector", "Inspector"),
         ("ctrl+h", "show_help", "Help"),
+        ("f1", "show_help", "Help"),
+        ("?", "show_help", "Help"),
         ("escape", "handle_escape", "ESC"),
         ("ctrl+p", "open_paper_ingestion", "Paper"),
         ("ctrl+u", "open_understanding", "Understanding"),
@@ -510,6 +512,16 @@ class ScholarDevClawApp(App[None]):
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
             self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
+
+    def _get_current_screen_name(self) -> str:
+        """Get the name of the currently active screen."""
+        try:
+            active_screen = self.screen_stack[-1] if self.screen_stack else None
+            if active_screen:
+                return active_screen.__class__.__name__.replace("Screen", "").lower()
+        except Exception:
+            pass
+        return "unknown"
 
     def compose(self) -> ComposeResult:
         yield Static("ScholarDevClaw", id="header")
@@ -4663,7 +4675,13 @@ class ScholarDevClawApp(App[None]):
         self._set_status("Screen cleared", "accent")
 
     def action_show_help(self) -> None:
-        self.push_screen(HelpOverlay())
+        context = {
+            "screen": self._get_current_screen_name(),
+            "mode": self._mode,
+            "provider": self._provider,
+            "inspector_available": self._inspector_run_id is not None,
+        }
+        self.push_screen(HelpOverlay(context))
 
     def action_open_command_palette(self) -> None:
         self.push_screen(CommandPalette(), self._on_command_palette_result)
