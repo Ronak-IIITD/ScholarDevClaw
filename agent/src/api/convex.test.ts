@@ -72,7 +72,7 @@ describe('ConvexClientWrapper auth and approval semantics', () => {
     });
 
     const pending = client.waitForApproval('integration-id', 3);
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTime(5000);
 
     await expect(pending).resolves.toBe(true);
   });
@@ -92,7 +92,7 @@ describe('ConvexClientWrapper auth and approval semantics', () => {
     });
 
     const pending = client.waitForApproval('integration-id', 2);
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTime(5000);
 
     await expect(pending).resolves.toBe(false);
   });
@@ -112,7 +112,7 @@ describe('ConvexClientWrapper auth and approval semantics', () => {
     });
 
     const pending = client.waitForApproval('integration-id', 2);
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTime(5000);
 
     await expect(pending).resolves.toBe(false);
   });

@@ -260,6 +260,7 @@ class HelpOverlay(ModalScreen[None]):
         )
 
         # Context-specific help
+        screen = "unknown"
         if self.context:
             screen = self.context.get("screen", "unknown")
             mode = self.context.get("mode", "analyze")
@@ -267,8 +268,8 @@ class HelpOverlay(ModalScreen[None]):
 
             lines.extend(
                 [
-                    f"CURRENT CONTEXT",
-                    f"---------------",
+                    "CURRENT CONTEXT",
+                    "---------------",
                     f"Screen: {screen}",
                     f"Mode: {mode}",
                     f"Provider: {provider}",
@@ -276,31 +277,31 @@ class HelpOverlay(ModalScreen[None]):
                 ]
             )
 
-            # Screen-specific help
-            if screen == "command_palette":
-                lines.extend(
-                    [
-                        "COMMAND PALETTE",
-                        "---------------",
-                        "Start typing to filter commands",
-                        "Enter -> Run selected command",
-                        "Esc   -> Close palette",
-                        "",
-                    ]
-                )
-            elif screen == "provider_setup":
-                lines.extend(
-                    [
-                        "PROVIDER SETUP",
-                        "--------------",
-                        "Ctrl+S -> Save settings",
-                        "Ctrl+N -> Next model preset",
-                        "Ctrl+P -> Previous model preset",
-                        "Ctrl+U -> Apply selected preset",
-                        "Esc    -> Skip setup",
-                        "",
-                    ]
-                )
+        # Screen-specific help
+        if screen == "command_palette":
+            lines.extend(
+                [
+                    "COMMAND PALETTE",
+                    "---------------",
+                    "Start typing to filter commands",
+                    "Enter -> Run selected command",
+                    "Esc   -> Close palette",
+                    "",
+                ]
+            )
+        elif screen == "provider_setup":
+            lines.extend(
+                [
+                    "PROVIDER SETUP",
+                    "--------------",
+                    "Ctrl+S -> Save settings",
+                    "Ctrl+N -> Next model preset",
+                    "Ctrl+P -> Previous model preset",
+                    "Ctrl+U -> Apply selected preset",
+                    "Esc    -> Skip setup",
+                    "",
+                ]
+            )
 
         # Mode-specific help
         lines.extend(
@@ -329,7 +330,7 @@ class HelpOverlay(ModalScreen[None]):
         )
 
         # Inspector help (if available)
-        if self.context.get("inspector_available"):
+        if self.context and self.context.get("inspector_available"):
             lines.extend(
                 [
                     "INSPECTOR SHORTCUTS",
@@ -337,23 +338,9 @@ class HelpOverlay(ModalScreen[None]):
                     "j/k           -> Navigate events",
                     "Enter/Space   -> Select event",
                     "r             -> Rerun test",
-                    "s             -> Show source",
-                    "e             -> Show events",
                     "",
                 ]
             )
-
-        lines.extend(
-            [
-                "TIPS",
-                "----",
-                "• Use Tab for command and path completion",
-                "• Press Up/Down to navigate command history",
-                "• Type 'help' at any prompt to see this help",
-                "• Workflow progress shown in phase tracker",
-                "• Check status bar for current state and hints",
-            ]
-        )
 
         return "\n".join(lines)
 
