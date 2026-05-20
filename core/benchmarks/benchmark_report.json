@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-14T07:52:29.394476+00:00",
+  "generated_at": "2026-05-20T09:09:02.775495+00:00",
   "aggregate": {
     "total_cases": 10,
     "supported_cases": 10,
@@ -24,9 +24,9 @@
       "candidate_symbols": [
         "RMSNorm"
       ],
-      "import_ok": false,
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "Candidate import failed: No module named 'torch'",
+      "error": null,
       "metadata": {
         "branch_name": "integration/rmsnorm",
         "mapping_confidence": 60,
@@ -53,9 +53,9 @@
       "candidate_symbols": [
         "RotaryPositionalEmbedding"
       ],
-      "import_ok": false,
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "Candidate import failed: No module named 'torch'",
+      "error": null,
       "metadata": {
         "branch_name": "integration/rope",
         "mapping_confidence": 60,
@@ -82,9 +82,9 @@
       "candidate_symbols": [
         "SwiGLU"
       ],
-      "import_ok": false,
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "Candidate import failed: No module named 'torch'",
+      "error": null,
       "metadata": {
         "branch_name": "integration/swiglu",
         "mapping_confidence": 70,
@@ -111,9 +111,9 @@
       "candidate_symbols": [
         "FlashCausalSelfAttention"
       ],
-      "import_ok": false,
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "Candidate import failed: No module named 'torch'",
+      "error": null,
       "metadata": {
         "branch_name": "integration/flashattention",
         "mapping_confidence": 70,
@@ -231,9 +231,9 @@
       "candidate_symbols": [
         "GroupedQueryAttention"
       ],
-      "import_ok": false,
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "Candidate import failed: No module named 'torch'",
+      "error": null,
       "metadata": {
         "branch_name": "integration/grouped-query-attention",
         "mapping_confidence": 70,
@@ -260,9 +260,9 @@
       "candidate_symbols": [
         "ALiBiPositionalBias"
       ],
-      "import_ok": false,
+      "import_ok": true,
       "smoke_ok": null,
-      "error": "Candidate import failed: No module named 'torch'",
+      "error": null,
       "metadata": {
         "branch_name": "integration/alibi",
         "mapping_confidence": 60,

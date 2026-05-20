@@ -113,7 +113,16 @@ def _load_module(module_path: Path, module_name: str) -> Any:
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load module spec for {module_path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError as e:
+        # Identify if the failure is due to a missing top-level dependency (e.g., torch)
+        missing_mod = getattr(e, "name", str(e))
+        if missing_mod == "torch":
+            raise ImportError(
+                f"Missing required dependency 'torch'. Please run 'pip install -e \".[ml]\"' in the core directory. Original error: {e}"
+            ) from e
+        raise e
     return module
 
 
@@ -176,7 +185,9 @@ def generate_candidate_artifact(case: BenchmarkCase) -> CandidateArtifact:
     return CandidateArtifact(sources=sources, metadata=metadata)
 
 
-def _choose_candidate_source(case: BenchmarkCase, sources: dict[str, str]) -> tuple[str | None, str | None]:
+def _choose_candidate_source(
+    case: BenchmarkCase, sources: dict[str, str]
+) -> tuple[str | None, str | None]:
     if not sources:
         return None, None
 
@@ -200,7 +211,9 @@ def _choose_candidate_source(case: BenchmarkCase, sources: dict[str, str]) -> tu
     return first_path, normalized[first_path]
 
 
-def evaluate_candidate_artifact(case: BenchmarkCase, artifact: CandidateArtifact) -> BenchmarkResult:
+def evaluate_candidate_artifact(
+    case: BenchmarkCase, artifact: CandidateArtifact
+) -> BenchmarkResult:
     expected_source = case.expected_file.read_text()
     expected_symbols = _top_level_symbols(expected_source)
     candidate_path, candidate_source = _choose_candidate_source(case, artifact.sources)
@@ -361,7 +374,9 @@ def run_benchmarks(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the ScholarDevClaw benchmark harness.")
-    parser.add_argument("--case", action="append", default=[], help="Run only the named benchmark id.")
+    parser.add_argument(
+        "--case", action="append", default=[], help="Run only the named benchmark id."
+    )
     parser.add_argument(
         "--output",
         default=str(DEFAULT_REPORT_PATH),
