@@ -1,7 +1,7 @@
 """
-FlashAttention: Fast and Memory-Efficient Exact Attention
+FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness
 
-Integrated from "FlashAttention"
+Integrated from "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness"
 by  (2022)
 
 Paper: arXiv:2205.14135
@@ -14,14 +14,16 @@ import torch.nn.functional as F
 
 EXPECTED_SYMBOLS = ("FlashCausalSelfAttention",)
 
+
 class FlashCausalSelfAttention(nn.Module):
     """
     FlashAttention-based causal self-attention.
 
-    Implementation uses PyTorch's scaled_dot_product_attention (SDPA) 
+    Implementation uses PyTorch's scaled_dot_product_attention (SDPA)
     which dispatches to FlashAttention or Memory-Efficient Attention kernels
     depending on hardware and tensor shapes.
     """
+
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
@@ -40,7 +42,7 @@ class FlashCausalSelfAttention(nn.Module):
         B, T, C = x.size()
 
         # 1. Linear projection to Q, K, V
-        qkv = self.c_attn(x) # [B, T, 3*C]
+        qkv = self.c_attn(x)  # [B, T, 3*C]
         q, k, v = qkv.split(self.n_embd, dim=2)
 
         # 2. Reshape for Multi-Head Attention: [B, T, C] -> [B, T, H, D] -> [B, H, T, D]
@@ -51,7 +53,9 @@ class FlashCausalSelfAttention(nn.Module):
         # 3. Efficient Attention using SDPA
         # is_causal=True enforces the causal mask automatically
         y = F.scaled_dot_product_attention(
-            q, k, v,
+            q,
+            k,
+            v,
             attn_mask=None,
             dropout_p=self.dropout_p if self.training else 0.0,
             is_causal=True,

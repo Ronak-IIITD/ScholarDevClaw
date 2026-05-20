@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-05-20T09:42:10.793800+00:00",
+  "generated_at": "2026-05-20T10:48:46.106859+00:00",
   "aggregate": {
     "total_cases": 10,
     "supported_cases": 10,
     "unsupported_cases": 0,
-    "aggregate_score": 0.9,
-    "supported_score": 0.9
+    "aggregate_score": 1.0,
+    "supported_score": 1.0
   },
   "results": [
     {
@@ -100,10 +100,10 @@
       "title": "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness",
       "arxiv_id": "2205.14135",
       "pipeline_spec": "flashattention",
-      "status": "partial",
-      "score": 0.5,
+      "status": "matched",
+      "score": 1.0,
       "candidate_file": "flash_attention.py",
-      "ast_match": false,
+      "ast_match": true,
       "symbol_overlap": 1.0,
       "expected_symbols": [
         "FlashCausalSelfAttention"
@@ -129,10 +129,10 @@
       "title": "LoRA: Low-Rank Adaptation of Large Language Models",
       "arxiv_id": "2106.09685",
       "pipeline_spec": "lora",
-      "status": "partial",
-      "score": 0.5,
+      "status": "matched",
+      "score": 1.0,
       "candidate_file": "lora.py",
-      "ast_match": false,
+      "ast_match": true,
       "symbol_overlap": 1.0,
       "expected_symbols": [
         "LoRALinear",

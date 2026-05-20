@@ -10,8 +10,10 @@ Paper: arXiv:2106.09685
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 EXPECTED_SYMBOLS = ("LoRALinear", "apply_lora")
+
 
 class LoRALinear(nn.Module):
     """
@@ -20,7 +22,15 @@ class LoRALinear(nn.Module):
     Wraps a base linear layer and applies a low-rank update:
     y = Wx + (BA)x = (W + BA)x
     """
-    def __init__(self, in_features: int, out_features: int, r: int = 8, lora_alpha: float = 32.0, lora_dropout: float = 0.05):
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        r: int = 8,
+        lora_alpha: float = 32.0,
+        lora_dropout: float = 0.05,
+    ):
         super().__init__()
         self.r = r
         self.lora_alpha = lora_alpha
@@ -49,6 +59,7 @@ class LoRALinear(nn.Module):
 
         return result + (lora_update * self.scaling)
 
+
 def apply_lora(model: nn.Module, target_layer: str, r: int = 8, lora_alpha: float = 32.0):
     """
     Injects LoRA layers into a pre-trained model.
@@ -61,7 +72,9 @@ def apply_lora(model: nn.Module, target_layer: str, r: int = 8, lora_alpha: floa
             bias = module.bias.data.clone() if module.bias is not None else None
 
             # Replace with LoRALinear
-            new_layer = LoRALinear(module.in_features, module.out_features, r=r, lora_alpha=lora_alpha)
+            new_layer = LoRALinear(
+                module.in_features, module.out_features, r=r, lora_alpha=lora_alpha
+            )
             new_layer.base_weight.data = weight
 
             # Patch the module into the parent's dict

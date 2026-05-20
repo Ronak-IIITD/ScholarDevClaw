@@ -47,7 +47,7 @@
       "arxiv_id": "2205.14135",
       "pipeline_spec": "flashattention",
       "target_repo": "targets/flashattention_repo",
-      "expected_file": "expected/flashattention.py",
+      "expected_file": "expected/flash_attention.py",
       "candidate_hints": [
         "flash_attention.py",
         "flashattention.py",
