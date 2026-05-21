@@ -14,14 +14,16 @@ import torch.nn.functional as F
 
 EXPECTED_SYMBOLS = ("FlashCausalSelfAttention",)
 
+
 class FlashCausalSelfAttention(nn.Module):
     """
     FlashAttention-based causal self-attention.
 
-    Implementation uses PyTorch's scaled_dot_product_attention (SDPA) 
+    Implementation uses PyTorch's scaled_dot_product_attention (SDPA)
     which dispatches to FlashAttention or Memory-Efficient Attention kernels
     depending on hardware and tensor shapes.
     """
+
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
@@ -40,7 +42,7 @@ class FlashCausalSelfAttention(nn.Module):
         B, T, C = x.size()
 
         # 1. Linear projection to Q, K, V
-        qkv = self.c_attn(x) # [B, T, 3*C]
+        qkv = self.c_attn(x)  # [B, T, 3*C]
         q, k, v = qkv.split(self.n_embd, dim=2)
 
         # 2. Reshape for Multi-Head Attention: [B, T, C] -> [B, T, H, D] -> [B, H, T, D]
@@ -51,7 +53,9 @@ class FlashCausalSelfAttention(nn.Module):
         # 3. Efficient Attention using SDPA
         # is_causal=True enforces the causal mask automatically
         y = F.scaled_dot_product_attention(
-            q, k, v,
+            q,
+            k,
+            v,
             attn_mask=None,
             dropout_p=self.dropout_p if self.training else 0.0,
             is_causal=True,
@@ -62,3 +66,40 @@ class FlashCausalSelfAttention(nn.Module):
 
         # 5. Final projection and residual dropout
         return self.resid_dropout(self.c_proj(y))
+
+
+def smoke_test(candidate_module) -> bool:
+    """
+    Basic smoke test for FlashAttention implementation.
+    Returns True if the candidate module passes basic checks.
+    """
+    try:
+        import torch
+        import torch.nn as nn
+
+        # Check that the candidate module has the expected attributes
+        assert hasattr(candidate_module, "FlashCausalSelfAttention")
+
+        # Create a dummy config
+        class DummyConfig:
+            n_embd = 8
+            n_head = 2
+            dropout = 0.1
+            bias = False
+
+        config = DummyConfig()
+        attn = candidate_module.FlashCausalSelfAttention(config)
+
+        # Test forward pass
+        batch_size, seq_len = 2, 4
+        x = torch.randn(batch_size, seq_len, config.n_embd)  # [batch, seq, n_embd]
+        output = attn(x)
+        assert output.shape == (batch_size, seq_len, config.n_embd), (
+            f"Expected output shape ({batch_size}, {seq_len}, {config.n_embd}), got {output.shape}"
+        )
+
+        return True
+    except Exception as e:
+        # Optionally log the error for debugging
+        # print(f"FlashAttention smoke test failed: {e}")
+        return False

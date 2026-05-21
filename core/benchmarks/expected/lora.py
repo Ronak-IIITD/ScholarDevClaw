@@ -10,8 +10,10 @@ Paper: arXiv:2106.09685
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 EXPECTED_SYMBOLS = ("LoRALinear", "apply_lora")
+
 
 class LoRALinear(nn.Module):
     """
@@ -20,7 +22,15 @@ class LoRALinear(nn.Module):
     Wraps a base linear layer and applies a low-rank update:
     y = Wx + (BA)x = (W + BA)x
     """
-    def __init__(self, in_features: int, out_features: int, r: int = 8, lora_alpha: float = 32.0, lora_dropout: float = 0.05):
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        r: int = 8,
+        lora_alpha: float = 32.0,
+        lora_dropout: float = 0.05,
+    ):
         super().__init__()
         self.r = r
         self.lora_alpha = lora_alpha
@@ -49,11 +59,13 @@ class LoRALinear(nn.Module):
 
         return result + (lora_update * self.scaling)
 
+
 def apply_lora(model: nn.Module, target_layer: str, r: int = 8, lora_alpha: float = 32.0):
     """
     Injects LoRA layers into a pre-trained model.
     Replaces existing nn.Linear layers matching target_layer name with LoRALinear.
     """
+    new_layer = None
     for name, module in model.named_modules():
         if isinstance(module, nn.Linear) and target_layer in name:
             # Extract weight and bias
@@ -61,7 +73,9 @@ def apply_lora(model: nn.Module, target_layer: str, r: int = 8, lora_alpha: floa
             bias = module.bias.data.clone() if module.bias is not None else None
 
             # Replace with LoRALinear
-            new_layer = LoRALinear(module.in_features, module.out_features, r=r, lora_alpha=lora_alpha)
+            new_layer = LoRALinear(
+                module.in_features, module.out_features, r=r, lora_alpha=lora_alpha
+            )
             new_layer.base_weight.data = weight
 
             # Patch the module into the parent's dict
@@ -69,3 +83,44 @@ def apply_lora(model: nn.Module, target_layer: str, r: int = 8, lora_alpha: floa
             child_name = name.split(".")[-1]
             parent = model.get_submodule(parent_name) if parent_name else model
             setattr(parent, child_name, new_layer)
+
+
+def smoke_test(candidate_module) -> bool:
+    """
+    Basic smoke test for LoRA implementation.
+    Returns True if the candidate module passes basic checks.
+    """
+    try:
+        import torch
+        import torch.nn as nn
+
+        # Check that the candidate module has the expected attributes
+        assert hasattr(candidate_module, "LoRALinear")
+        assert hasattr(candidate_module, "apply_lora")
+
+        # Test LoRALinear forward pass
+        in_features, out_features = 4, 8
+        lora_layer = candidate_module.LoRALinear(in_features, out_features, r=2, lora_alpha=4.0)
+        x = torch.randn(2, 3, in_features)  # [batch, seq, in_features]
+        output = lora_layer(x)
+        assert output.shape == (2, 3, out_features), (
+            f"Expected output shape (2, 3, {out_features}), got {output.shape}"
+        )
+
+        # Test apply_lora function
+        model = nn.Linear(in_features, out_features)
+        # Replace the linear layer with LoRA
+        candidate_module.apply_lora(model, target_layer="", r=2, lora_alpha=4.0)
+        # Check that the model's linear layer has been replaced with LoRALinear
+        # Note: apply_lora replaces modules matching target_layer in their name.
+        # Since we passed target_layer='', it will match all linear layers.
+        # We expect the model to now be a LoRALinear instance.
+        assert isinstance(model, candidate_module.LoRALinear), (
+            "Model was not replaced with LoRALinear"
+        )
+
+        return True
+    except Exception as e:
+        # Optionally log the error for debugging
+        # print(f"LoRA smoke test failed: {e}")
+        return False

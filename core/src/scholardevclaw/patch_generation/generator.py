@@ -1658,7 +1658,17 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
         }
         system = (
             "You are a patch synthesis engine. Produce only Python source code for the requested "
-            "file. Do not include explanations, markdown fences, or commentary."
+            "file. Do not include explanations, markdown fences, or commentary.\n\n"
+            "Implementation Guidelines for Machine Learning:\n"
+            "- Implement as a proper `torch.nn.Module` subclass when applicable.\n"
+            "- Use `torch.nn.functional` for operations where appropriate (e.g., F.linear, F.scaled_dot_product_attention).\n"
+            "- Handle device and dtype properly (e.g., using `x.device`, `x.dtype` for tensor creation).\n"
+            "- Initialize parameters with Kaiming/Xavier initialization where relevant.\n"
+            "- Include dropout layers if the original paper includes them.\n"
+            "- Ensure vectorized operations and avoid Python loops over tensor dimensions.\n"
+            "- Preserve the input/output interface (signature) of the original component.\n"
+            "- Add docstrings explaining the implementation and citing the paper.\n"
+            "- Do not introduce external dependencies beyond PyTorch and standard library."
         )
         prompt = (
             "Generate the modified Python file content for integrating this research technique.\n\n"
@@ -1728,7 +1738,17 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
 
         system = (
             "You are a patch generator. Rewrite the provided file to integrate the research "
-            "technique. Return only the full modified file content."
+            "technique. Return only the full modified file content.\n\n"
+            "Implementation Guidelines for Machine Learning:\n"
+            "- Implement as a proper `torch.nn.Module` subclass when applicable.\n"
+            "- Use `torch.nn.functional` for operations where appropriate (e.g., F.linear, F.scaled_dot_product_attention).\n"
+            "- Handle device and dtype properly (e.g., using `x.device`, `x.dtype` for tensor creation).\n"
+            "- Initialize parameters with Kaiming/Xavier initialization where relevant.\n"
+            "- Include dropout layers if the original paper includes them.\n"
+            "- Ensure vectorized operations and avoid Python loops over tensor dimensions.\n"
+            "- Preserve the input/output interface (signature) of the original component.\n"
+            "- Add docstrings explaining the implementation and citing the paper.\n"
+            "- Do not introduce external dependencies beyond PyTorch and standard library."
         )
         prompt_payload = {
             "paper": spec.get("paper", {}),

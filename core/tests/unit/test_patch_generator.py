@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -45,6 +45,7 @@ from scholardevclaw.patch_generation.generator import (
     Transformation,
     _get_transformer,
 )
+from scholardevclaw.llm.research_assistant import LLMResearchAssistant
 
 # =========================================================================
 # Dataclass tests
@@ -460,7 +461,7 @@ class TestCreateNewFiles:
         llm = SimpleNamespace(
             generate_implementation_plan=lambda **kw: plan,
         )
-        gen = PatchGenerator(tmp_path, llm_assistant=cast(object, llm))
+        gen = PatchGenerator(tmp_path, llm_assistant=cast(LLMResearchAssistant | None, llm))
         spec = {"algorithm": {"name": "MyAlgo"}, "paper": {"title": "T"}}
         files = gen._create_new_files(spec)
         assert len(files) == 1
@@ -471,7 +472,7 @@ class TestCreateNewFiles:
         llm = SimpleNamespace(
             generate_implementation_plan=lambda **kw: plan,
         )
-        gen = PatchGenerator(tmp_path, llm_assistant=cast(object, llm))
+        gen = PatchGenerator(tmp_path, llm_assistant=cast(LLMResearchAssistant | None, llm))
         spec = {"algorithm": {"name": "../../evil\\name"}, "paper": {"title": "T"}}
         files = gen._create_new_files(spec)
         assert len(files) == 1
