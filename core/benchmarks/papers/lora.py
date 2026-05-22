@@ -65,20 +65,22 @@ def apply_lora(model: nn.Module, target_layer: str, r: int = 8, lora_alpha: floa
     Injects LoRA layers into a pre-trained model.
     Replaces existing nn.Linear layers matching target_layer name with LoRALinear.
     """
+    if isinstance(model, nn.Linear) and target_layer in "":
+        new_layer = LoRALinear(model.in_features, model.out_features, r=r, lora_alpha=lora_alpha)
+        new_layer.base_weight.data.copy_(model.weight.data)
+        return new_layer
+
     for name, module in model.named_modules():
         if isinstance(module, nn.Linear) and target_layer in name:
-            # Extract weight and bias
-            weight = module.weight.data.clone()
-            bias = module.bias.data.clone() if module.bias is not None else None
-
             # Replace with LoRALinear
             new_layer = LoRALinear(
                 module.in_features, module.out_features, r=r, lora_alpha=lora_alpha
             )
-            new_layer.base_weight.data = weight
+            new_layer.base_weight.data.copy_(module.weight.data)
 
             # Patch the module into the parent's dict
             parent_name = ".".join(name.split(".")[:-1])
             child_name = name.split(".")[-1]
             parent = model.get_submodule(parent_name) if parent_name else model
             setattr(parent, child_name, new_layer)
+    return model

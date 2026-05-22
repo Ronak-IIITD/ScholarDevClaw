@@ -65,24 +65,25 @@ def apply_lora(model: nn.Module, target_layer: str, r: int = 8, lora_alpha: floa
     Injects LoRA layers into a pre-trained model.
     Replaces existing nn.Linear layers matching target_layer name with LoRALinear.
     """
-    new_layer = None
+    if isinstance(model, nn.Linear) and target_layer in "":
+        new_layer = LoRALinear(model.in_features, model.out_features, r=r, lora_alpha=lora_alpha)
+        new_layer.base_weight.data.copy_(model.weight.data)
+        return new_layer
+
     for name, module in model.named_modules():
         if isinstance(module, nn.Linear) and target_layer in name:
-            # Extract weight and bias
-            weight = module.weight.data.clone()
-            bias = module.bias.data.clone() if module.bias is not None else None
-
             # Replace with LoRALinear
             new_layer = LoRALinear(
                 module.in_features, module.out_features, r=r, lora_alpha=lora_alpha
             )
-            new_layer.base_weight.data = weight
+            new_layer.base_weight.data.copy_(module.weight.data)
 
             # Patch the module into the parent's dict
             parent_name = ".".join(name.split(".")[:-1])
             child_name = name.split(".")[-1]
             parent = model.get_submodule(parent_name) if parent_name else model
             setattr(parent, child_name, new_layer)
+    return model
 
 
 def smoke_test(candidate_module) -> bool:
@@ -110,13 +111,17 @@ def smoke_test(candidate_module) -> bool:
         # Test apply_lora function
         model = nn.Linear(in_features, out_features)
         # Replace the linear layer with LoRA
-        candidate_module.apply_lora(model, target_layer="", r=2, lora_alpha=4.0)
+        model = candidate_module.apply_lora(model, target_layer="", r=2, lora_alpha=4.0)
         # Check that the model's linear layer has been replaced with LoRALinear
         # Note: apply_lora replaces modules matching target_layer in their name.
         # Since we passed target_layer='', it will match all linear layers.
         # We expect the model to now be a LoRALinear instance.
         assert isinstance(model, candidate_module.LoRALinear), (
             "Model was not replaced with LoRALinear"
+        )
+        output = model(x)
+        assert output.shape == (2, 3, out_features), (
+            f"Expected output shape (2, 3, {out_features}), got {output.shape}"
         )
 
         return True

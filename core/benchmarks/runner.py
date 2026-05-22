@@ -22,6 +22,7 @@ if str(SRC_ROOT) not in sys.path:
 
 DEFAULT_CATALOG_PATH = BENCHMARK_ROOT / "papers" / "catalog.json"
 DEFAULT_REPORT_PATH = BENCHMARK_ROOT / "benchmark_report.json"
+BENCHMARK_HELPER_SYMBOLS = frozenset({"smoke_test"})
 
 
 class UnsupportedSpecError(RuntimeError):
@@ -95,15 +96,37 @@ def load_cases(catalog_path: Path = DEFAULT_CATALOG_PATH) -> list[BenchmarkCase]
     return cases
 
 
-def _ast_dump(source: str) -> str:
-    return ast.dump(ast.parse(source), include_attributes=False)
+def _filtered_module_ast(
+    source: str, excluded_symbols: set[str] | frozenset[str] | None = None
+) -> ast.Module:
+    tree = ast.parse(source)
+    if not excluded_symbols:
+        return tree
+
+    tree.body = [
+        node
+        for node in tree.body
+        if not (
+            isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in excluded_symbols
+        )
+    ]
+    return tree
 
 
-def _top_level_symbols(source: str) -> list[str]:
+def _ast_dump(source: str, excluded_symbols: set[str] | frozenset[str] | None = None) -> str:
+    return ast.dump(_filtered_module_ast(source, excluded_symbols), include_attributes=False)
+
+
+def _top_level_symbols(
+    source: str, excluded_symbols: set[str] | frozenset[str] | None = None
+) -> list[str]:
     tree = ast.parse(source)
     symbols: list[str] = []
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if excluded_symbols and node.name in excluded_symbols:
+                continue
             symbols.append(node.name)
     return sorted(symbols)
 
@@ -215,7 +238,9 @@ def evaluate_candidate_artifact(
     case: BenchmarkCase, artifact: CandidateArtifact
 ) -> BenchmarkResult:
     expected_source = case.expected_file.read_text()
-    expected_symbols = _top_level_symbols(expected_source)
+    expected_symbols = _top_level_symbols(
+        expected_source, excluded_symbols=BENCHMARK_HELPER_SYMBOLS
+    )
     candidate_path, candidate_source = _choose_candidate_source(case, artifact.sources)
 
     if not candidate_source:
@@ -231,7 +256,9 @@ def evaluate_candidate_artifact(
             metadata=dict(artifact.metadata),
         )
 
-    candidate_symbols = _top_level_symbols(candidate_source)
+    candidate_symbols = _top_level_symbols(
+        candidate_source, excluded_symbols=BENCHMARK_HELPER_SYMBOLS
+    )
     expected_set = set(expected_symbols)
     candidate_set = set(candidate_symbols)
     overlap = len(expected_set & candidate_set) / max(len(expected_set), 1)
@@ -244,7 +271,8 @@ def evaluate_candidate_artifact(
         status="mismatch",
         score=0.0,
         candidate_file=candidate_path,
-        ast_match=_ast_dump(expected_source) == _ast_dump(candidate_source),
+        ast_match=_ast_dump(expected_source, BENCHMARK_HELPER_SYMBOLS)
+        == _ast_dump(candidate_source, BENCHMARK_HELPER_SYMBOLS),
         symbol_overlap=round(overlap, 3),
         expected_symbols=expected_symbols,
         candidate_symbols=candidate_symbols,

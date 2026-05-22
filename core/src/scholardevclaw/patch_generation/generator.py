@@ -529,19 +529,20 @@ def _template_lora(spec: dict) -> str:
     return textwrap.dedent(f'''\
         """
         LoRA: Low-Rank Adaptation of Large Language Models
-        
+
         Integrated from "{paper.get("title", "LoRA: Low-Rank Adaptation of Large Language Models")}"
         by {", ".join(paper.get("authors", []))} ({paper.get("year", 2021)})
-        
+
         Paper: arXiv:{paper.get("arxiv", "2106.09685")}
         """
-        
+
         import torch
         import torch.nn as nn
         import torch.nn.functional as F
-        
+        import math
+
         EXPECTED_SYMBOLS = ("LoRALinear", "apply_lora")
-        
+
         class LoRALinear(nn.Module):
             """
             LoRA Linear Layer.
@@ -554,50 +555,53 @@ def _template_lora(spec: dict) -> str:
                 self.r = r
                 self.lora_alpha = lora_alpha
                 self.scaling = lora_alpha / r
-                
+
                 # Base frozen weight
                 self.base_weight = nn.Parameter(torch.randn(out_features, in_features))
-                
+
                 # Low-rank matrices A and B
                 self.lora_A = nn.Parameter(torch.randn(r, in_features))
                 self.lora_B = nn.Parameter(torch.zeros(out_features, r))
                 self.dropout = nn.Dropout(lora_dropout)
-                
+
                 # Initialize A with Kaiming-uniform and B as zeros to ensure identity start
                 nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
                 nn.init.zeros_(self.lora_B)
-                
+
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 # Main path: Wx
                 result = F.linear(x, self.base_weight)
-                
+
                 # LoRA path: (B @ A)x
                 # x must be [batch, seq, in_features]
                 x_dropped = self.dropout(x)
                 lora_update = (x_dropped @ self.lora_A.t()) @ self.lora_B.t()
-                
+
                 return result + (lora_update * self.scaling)
-        
+
         def apply_lora(model: nn.Module, target_layer: str, r: int = 8, lora_alpha: float = 32.0):
             """
             Injects LoRA layers into a pre-trained model.
             Replaces existing nn.Linear layers matching target_layer name with LoRALinear.
             """
+            if isinstance(model, nn.Linear) and target_layer in "":
+                new_layer = LoRALinear(model.in_features, model.out_features, r=r, lora_alpha=lora_alpha)
+                new_layer.base_weight.data.copy_(model.weight.data)
+                return new_layer
+
             for name, module in model.named_modules():
                 if isinstance(module, nn.Linear) and target_layer in name:
                     # Extract weight and bias
-                    weight = module.weight.data.clone()
-                    bias = module.bias.data.clone() if module.bias is not None else None
-                    
                     # Replace with LoRALinear
                     new_layer = LoRALinear(module.in_features, module.out_features, r=r, lora_alpha=lora_alpha)
-                    new_layer.base_weight.data = weight
-                    
+                    new_layer.base_weight.data.copy_(module.weight.data)
+
                     # Patch the module into the parent's dict
                     parent_name = ".".join(name.split(".")[:-1])
                     child_name = name.split(".")[-1]
                     parent = model.get_submodule(parent_name) if parent_name else model
                     setattr(parent, child_name, new_layer)
+            return model
         ''')
 
 
@@ -686,25 +690,25 @@ def _template_flashattention(spec: dict) -> str:
     return textwrap.dedent(f'''\
         """
         FlashAttention{version}: Fast and Memory-Efficient Exact Attention
-        
+
         Integrated from "{paper.get("title", "FlashAttention")}"
         by {", ".join(paper.get("authors", []))} ({paper.get("year", 2022)})
-        
+
         Paper: arXiv:{paper.get("arxiv", "2205.14135")}
         """
-        
+
         import math
         import torch
         import torch.nn as nn
         import torch.nn.functional as F
-        
+
         EXPECTED_SYMBOLS = ("FlashCausalSelfAttention",)
-        
+
         class FlashCausalSelfAttention(nn.Module):
             """
             FlashAttention{version}-based causal self-attention.
-            
-            Implementation uses PyTorch's scaled_dot_product_attention (SDPA) 
+
+            Implementation uses PyTorch's scaled_dot_product_attention (SDPA)
             which dispatches to FlashAttention or Memory-Efficient Attention kernels
             depending on hardware and tensor shapes.
             """
@@ -714,26 +718,26 @@ def _template_flashattention(spec: dict) -> str:
                 self.n_head = config.n_head
                 self.n_embd = config.n_embd
                 self.head_dim = config.n_embd // config.n_head
-                
+
                 # Combined QKV projection for efficiency
                 self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
                 self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
-                
+
                 self.dropout_p = config.dropout
                 self.resid_dropout = nn.Dropout(config.dropout)
-                
+
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 B, T, C = x.size()
-                
+
                 # 1. Linear projection to Q, K, V
                 qkv = self.c_attn(x) # [B, T, 3*C]
                 q, k, v = qkv.split(self.n_embd, dim=2)
-                
+
                 # 2. Reshape for Multi-Head Attention: [B, T, C] -> [B, T, H, D] -> [B, H, T, D]
                 q = q.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
                 k = k.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
                 v = v.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
-                
+
                 # 3. Efficient Attention using SDPA
                 # is_causal=True enforces the causal mask automatically
                 y = F.scaled_dot_product_attention(
@@ -742,10 +746,10 @@ def _template_flashattention(spec: dict) -> str:
                     dropout_p=self.dropout_p if self.training else 0.0,
                     is_causal=True,
                 )
-                
+
                 # 4. Reassemble heads: [B, H, T, D] -> [B, T, H, D] -> [B, T, C]
                 y = y.transpose(1, 2).contiguous().view(B, T, C)
-                
+
                 # 5. Final projection and residual dropout
                 return self.resid_dropout(self.c_proj(y))
     ''')

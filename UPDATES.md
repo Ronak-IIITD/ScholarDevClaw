@@ -2,7 +2,31 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-21
+**Last updated:** 2026-05-22
+
+### 2026-05-22 (Benchmark Regression + LoRA Smoke Fix)
+**Summary:** Restored benchmark parity after the new smoke-test scaffolding and fixed the generated LoRA runtime contract.
+
+**What changed:**
+1. **Benchmark comparison hardening (`core/benchmarks/runner.py`):**
+   - Added benchmark-helper filtering so `smoke_test` is excluded from top-level symbol overlap and AST matching.
+   - Kept strict implementation comparison while preventing benchmark-only helpers from downgrading scores.
+2. **LoRA template/runtime alignment (`core/src/scholardevclaw/patch_generation/generator.py`):**
+   - Added the missing `math` import required by LoRA weight initialization.
+   - Updated `apply_lora()` to return the wrapped model and correctly handle the root `nn.Linear` case.
+3. **Reference fixture alignment (`core/benchmarks/expected/lora.py`, `core/benchmarks/papers/lora.py`):**
+   - Matched the expected LoRA behavior to the generator contract.
+   - Extended the LoRA smoke path to run a forward pass after injection.
+4. **Regression coverage and artifacts:**
+   - Added a unit test proving `smoke_test` no longer affects AST or symbol scoring.
+   - Added template coverage for the LoRA root-replacement path.
+   - Regenerated `core/benchmarks/benchmark_report.json` and `core/benchmarks/benchmark_summary.md`; aggregate benchmark score is back to `1.000`.
+
+**Verification:**
+- `core/.venv/bin/pytest core/tests/unit/test_benchmark_runner.py -q`
+- `core/.venv/bin/pytest core/tests/unit/test_patch_generator.py -q`
+- `cd core && .venv/bin/python -m benchmarks.runner`
+- `cd core && .venv/bin/ruff check benchmarks/runner.py src/scholardevclaw/patch_generation/generator.py tests/unit/test_benchmark_runner.py tests/unit/test_patch_generator.py`
 
 ### 2026-05-21 (ML Patch Quality & Runtime Validation)
 **Summary:** Introduced "Implementation Guidelines" for LLM code generation and shifted benchmark validation from static AST matching to runtime smoke testing.

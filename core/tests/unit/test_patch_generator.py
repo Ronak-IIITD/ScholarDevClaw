@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -27,6 +27,7 @@ if str(SRC) not in sys.path:
 
 import libcst as cst
 
+from scholardevclaw.llm.research_assistant import LLMResearchAssistant
 from scholardevclaw.patch_generation.generator import (
     _TEMPLATE_REGISTRY,
     ALiBiTransformer,
@@ -45,7 +46,6 @@ from scholardevclaw.patch_generation.generator import (
     Transformation,
     _get_transformer,
 )
-from scholardevclaw.llm.research_assistant import LLMResearchAssistant
 
 # =========================================================================
 # Dataclass tests
@@ -339,6 +339,14 @@ class TestTemplateRegistry:
             {"paper": {"title": "T", "authors": ["A"]}, "algorithm": {"name": "FlashAttention"}}
         )
         assert "FlashCausalSelfAttention" in content
+
+    def test_lora_template_supports_root_linear_replacement(self):
+        fn = _TEMPLATE_REGISTRY["lora"]
+        content = fn({"paper": {"title": "T", "authors": ["A"]}, "algorithm": {}})
+        assert "import math" in content
+        assert 'if isinstance(model, nn.Linear) and target_layer in "":' in content
+        assert "return new_layer" in content
+        assert "return model" in content
 
     def test_gqa_template(self):
         fn = _TEMPLATE_REGISTRY["grouped_query_attention"]

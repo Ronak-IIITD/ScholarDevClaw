@@ -83,6 +83,41 @@ def test_run_case_scores_symbol_overlap_as_partial(tmp_path: Path):
     assert result.symbol_overlap == 0.5
 
 
+def test_run_case_ignores_smoke_test_for_ast_and_symbol_matching(tmp_path: Path):
+    expected_file = tmp_path / "expected.py"
+    expected_file.write_text(
+        "class FlashCausalSelfAttention:\n"
+        "    pass\n\n"
+        "def smoke_test(candidate_module):\n"
+        "    return hasattr(candidate_module, 'FlashCausalSelfAttention')\n"
+    )
+
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+
+    case = BenchmarkCase(
+        id="flash-demo",
+        title="Flash Demo",
+        arxiv_id="0000.00000",
+        pipeline_spec="flashattention",
+        target_repo=repo_path,
+        expected_file=expected_file,
+        candidate_hints=["flash_attention.py"],
+    )
+
+    candidate_source = "class FlashCausalSelfAttention:\n    pass\n"
+    result = run_case(
+        case,
+        candidate_factory=lambda _: CandidateArtifact({"flash_attention.py": candidate_source}),
+    )
+
+    assert result.status == "matched"
+    assert result.score == 1.0
+    assert result.ast_match is True
+    assert result.expected_symbols == ["FlashCausalSelfAttention"]
+    assert result.candidate_symbols == ["FlashCausalSelfAttention"]
+
+
 def test_run_benchmarks_writes_json_and_markdown_summary(tmp_path: Path):
     expected_file = tmp_path / "expected.py"
     expected_source = "def gelu(value):\n    return value\n"
