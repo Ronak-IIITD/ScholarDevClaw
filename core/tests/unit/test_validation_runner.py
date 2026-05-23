@@ -385,10 +385,30 @@ class TestValidationRunnerRun:
         runner = ValidationRunner(tmp_path)
         passed_test = ValidationResult(passed=True, stage="tests")
         benchmark = ValidationResult(passed=True, stage="benchmark", comparison={"speedup": 1.1})
+        mock_metrics = Metrics(
+            loss=0.5,
+            perplexity=1.65,
+            tokens_per_second=1000.0,
+            memory_mb=10.0,
+            runtime_seconds=1.0,
+        )
 
         with (
             patch.object(runner, "_run_tests", return_value=passed_test),
             patch.object(runner, "_run_benchmark", return_value=benchmark),
+            patch.object(runner, "_check_torch_available", return_value=False),
+            patch.object(runner, "_run_training_test", return_value=mock_metrics),
+            patch.object(
+                runner,
+                "_run_numerical_correctness",
+                return_value={"status": "skipped"},
+            ),
+            patch.object(
+                runner,
+                "_run_regression_snapshot",
+                return_value={"status": "skipped"},
+            ),
+            patch.object(runner, "_score_diff_readability", return_value={"score": 5}),
         ):
             result = runner.run(
                 {

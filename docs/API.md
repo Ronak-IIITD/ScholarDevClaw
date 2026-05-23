@@ -219,6 +219,17 @@ curl -X POST "$SDC_API/from-paper" \
   }'
 ```
 
+### `POST /from-paper/upload`
+
+Run the same paper-to-code flow starting from an uploaded PDF instead of an arXiv/URL source.
+
+```bash
+curl -X POST "$SDC_API/from-paper/upload" \
+  -H "Authorization: Bearer $SDC_TOKEN" \
+  -F "repoPath=/absolute/path/to/repo" \
+  -F "file=@/absolute/path/to/paper.pdf;type=application/pdf"
+```
+
 ## Dashboard API
 
 These routes are mounted under `/api`.

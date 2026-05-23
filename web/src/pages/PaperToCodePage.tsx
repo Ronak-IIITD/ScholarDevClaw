@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   Upload,
   Link2,
@@ -7,7 +7,6 @@ import {
   Map,
   Code2,
   FlaskConical,
-  Package,
   Sparkles,
   CheckCircle2,
   XCircle,
@@ -18,7 +17,11 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { runFromPaper } from "@/lib/api";
+import {
+  runFromPaper,
+  runFromPaperUpload,
+  type FromPaperResponse,
+} from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -27,12 +30,11 @@ import { runFromPaper } from "@/lib/api";
 /* ------------------------------------------------------------------ */
 
 type PhaseId =
-  | "ingest"
-  | "understand"
-  | "plan"
+  | "extract"
+  | "analyze"
+  | "map"
   | "generate"
-  | "execute"
-  | "scaffold";
+  | "validate";
 
 type PhaseStatus = "pending" | "running" | "completed" | "failed";
 
@@ -60,45 +62,38 @@ interface GeneratedModule {
 
 const INITIAL_PHASES: Phase[] = [
   {
-    id: "ingest",
-    label: "Ingest",
+    id: "extract",
+    label: "Extract",
     icon: FileText,
-    description: "Parse PDF, extract equations & algorithms",
+    description: "Read the paper source and extract a research spec",
     status: "pending",
   },
   {
-    id: "understand",
-    label: "Understand",
+    id: "analyze",
+    label: "Analyze",
     icon: Brain,
-    description: "Deep comprehension of paper concepts",
+    description: "Inspect the target repository structure",
     status: "pending",
   },
   {
-    id: "plan",
-    label: "Plan",
+    id: "map",
+    label: "Map",
     icon: Map,
-    description: "Decompose into implementation modules",
+    description: "Map the research spec to concrete code locations",
     status: "pending",
   },
   {
     id: "generate",
     label: "Generate",
     icon: Code2,
-    description: "Produce code for each module",
+    description: "Produce patch artifacts for the repository",
     status: "pending",
   },
   {
-    id: "execute",
+    id: "validate",
     label: "Validate",
     icon: FlaskConical,
-    description: "Run tests & score reproducibility",
-    status: "pending",
-  },
-  {
-    id: "scaffold",
-    label: "Product",
-    icon: Package,
-    description: "API, docs, CI & deployment scaffold",
+    description: "Run validation on the generated patch",
     status: "pending",
   },
 ];
@@ -114,6 +109,38 @@ function cls(...parts: (string | false | undefined | null)[]) {
 function formatDuration(s: number) {
   if (s < 60) return `${s.toFixed(1)}s`;
   return `${Math.floor(s / 60)}m ${(s % 60).toFixed(0)}s`;
+}
+
+function countLines(code: string) {
+  return code.split(/\r?\n/).length;
+}
+
+function buildArtifacts(response: FromPaperResponse): GeneratedModule[] {
+  const newFiles = response.patch?.newFiles || [];
+  const transformations = response.patch?.transformations || [];
+
+  return [
+    ...newFiles.map((file, index) => ({
+      id: `new-${index}-${file.path}`,
+      path: file.path,
+      lines: countLines(file.content),
+      description: "Generated file",
+      code: file.content,
+    })),
+    ...transformations.map((transformation, index) => ({
+      id: `transform-${index}-${transformation.file}`,
+      path: transformation.file,
+      lines: countLines(transformation.modified),
+      description: "Transformed file",
+      code: transformation.modified,
+    })),
+  ];
+}
+
+function getPaperTitle(response: FromPaperResponse, fallback: string) {
+  const paper = response.researchSpec?.paper as Record<string, unknown> | undefined;
+  const title = typeof paper?.title === "string" ? paper.title : "";
+  return title || fallback;
 }
 
 /* ------------------------------------------------------------------ */
@@ -251,6 +278,7 @@ export default function PaperToCodePage() {
   const [paperUrl, setPaperUrl] = useState("");
   const [repoPath, setRepoPath] = useState("");
   const [fileName, setFileName] = useState("");
+  const [paperFile, setPaperFile] = useState<File | null>(null);
   const [phases, setPhases] = useState<Phase[]>(INITIAL_PHASES);
   const [modules, setModules] = useState<GeneratedModule[]>([]);
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
@@ -262,7 +290,7 @@ export default function PaperToCodePage() {
 
   /* Run the end-to-end paper-to-code pipeline */
   const runPipeline = useCallback(async () => {
-    const source = mode === "url" ? paperUrl.trim() : fileName;
+    const source = mode === "url" ? paperUrl.trim() : paperFile?.name || fileName;
     if (!source) {
       setError(mode === "url" ? "Please enter a paper URL or arXiv ID" : "Please upload a PDF");
       return;
@@ -276,36 +304,45 @@ export default function PaperToCodePage() {
     setIsRunning(true);
     setModules([]);
     setPaperTitle("");
-    setPhases(INITIAL_PHASES.map((p) => ({ ...p, status: "pending", detail: undefined, duration: undefined })));
+    setExpandedModule(null);
+    setPhases(
+      INITIAL_PHASES.map((p, index) => ({
+        ...p,
+        status: index === 0 ? "running" : "pending",
+        detail: undefined,
+        duration: undefined,
+      }))
+    );
 
     try {
-      const response = await runFromPaper({
-        paperSource: source,
-        sourceType: mode === "url" ? "arxiv" : "pdf",
-        repoPath: repoPath.trim(),
-      });
+      const response =
+        mode === "upload" && paperFile
+          ? await runFromPaperUpload(paperFile, repoPath.trim())
+          : await runFromPaper({
+              paperSource: source,
+              sourceType: "arxiv",
+              repoPath: repoPath.trim(),
+            });
 
-      // Update phases based on response data
       setPhases((prev) =>
-        prev.map((p) => ({
-          ...p,
-          status: "completed" as PhaseStatus,
-          duration: response.phase_durations?.[p.id] ?? undefined,
-        }))
+        prev.map((p) => {
+          if (p.id === "validate") {
+            const validationPassed = response.validation?.passed !== false;
+            return {
+              ...p,
+              status: validationPassed ? "completed" : "failed",
+              detail: response.validation?.error || response.validation?.stage || p.description,
+            };
+          }
+          return { ...p, status: "completed" as PhaseStatus };
+        })
       );
 
-      setPaperTitle(response.paper_title || source);
+      setPaperTitle(getPaperTitle(response, source));
+      setModules(buildArtifacts(response));
 
-      if (response.modules) {
-        setModules(
-          response.modules.map((m: Record<string, unknown>, i: number) => ({
-            id: String(m.id || `mod-${i}`),
-            path: String(m.path || m.id || `module_${i}.py`),
-            lines: Number(m.lines || m.estimated_lines || 0),
-            description: String(m.description || ""),
-            code: m.code ? String(m.code) : undefined,
-          }))
-        );
+      if (response.validation?.passed === false && response.validation?.error) {
+        setError(response.validation.error);
       }
     } catch (err) {
       setError(String(err));
@@ -321,7 +358,7 @@ export default function PaperToCodePage() {
     } finally {
       setIsRunning(false);
     }
-  }, [mode, paperUrl, fileName, repoPath]);
+  }, [mode, paperFile, paperUrl, fileName, repoPath]);
 
   const handleFileDrop = useCallback(
     (e: React.DragEvent) => {
@@ -329,8 +366,12 @@ export default function PaperToCodePage() {
       setDragOver(false);
       const file = e.dataTransfer.files[0];
       if (file?.type === "application/pdf") {
+        setPaperFile(file);
         setFileName(file.name);
         setMode("upload");
+        setError("");
+      } else if (file) {
+        setError("Please upload a PDF file.");
       }
     },
     []
@@ -339,9 +380,15 @@ export default function PaperToCodePage() {
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) {
+      if (file?.type === "application/pdf") {
+        setPaperFile(file);
         setFileName(file.name);
         setMode("upload");
+        setError("");
+      } else if (file) {
+        setPaperFile(null);
+        setFileName("");
+        setError("Please upload a PDF file.");
       }
     },
     []
@@ -543,7 +590,7 @@ export default function PaperToCodePage() {
           <div className="flex items-center gap-3">
             <Code2 size={18} className="text-brand-400" />
             <h3 className="text-lg font-semibold text-white">
-              Generated Modules
+              Generated Artifacts
             </h3>
             <span className="rounded-full bg-brand-500/15 px-2.5 py-0.5 text-xs font-medium text-brand-300">
               {modules.length}

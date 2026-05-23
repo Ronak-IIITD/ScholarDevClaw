@@ -223,7 +223,9 @@ def test_cmd_generate_mapping_json_uses_mapping_payload(monkeypatch, tmp_path, c
         def generate(self, mapping):
             captured["mapping"] = mapping
             return SimpleNamespace(
-                new_files=[SimpleNamespace(path="rmsnorm.py", content="class RMSNorm:\n    pass\n")],
+                new_files=[
+                    SimpleNamespace(path="rmsnorm.py", content="class RMSNorm:\n    pass\n")
+                ],
                 transformations=[
                     SimpleNamespace(
                         file="model.py",

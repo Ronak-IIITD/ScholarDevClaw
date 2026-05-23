@@ -4,6 +4,28 @@
 
 **Last updated:** 2026-05-23
 
+### 2026-05-23 (Paper-to-Code PDF Upload Flow)
+**Summary:** Finished the missing PDF upload transport for the Paper-to-Code page and aligned the UI with the backend’s actual patch-generation response.
+
+**What changed:**
+1. **Multipart PDF upload endpoint (`core/src/scholardevclaw/api/server.py`):**
+   - Added `POST /from-paper/upload` for uploaded PDF documents.
+   - Shared the existing from-paper pipeline behind a helper so JSON and multipart requests follow the same extraction, mapping, patch generation, and validation path.
+   - Stored uploaded PDFs in a temporary file before extraction and added request-time validation for non-PDF or empty uploads.
+2. **Dashboard client + page (`web/src/lib/api.ts`, `web/src/pages/PaperToCodePage.tsx`):**
+   - The page now keeps the real `File` object instead of only the filename.
+   - Upload mode sends multipart form data to `/api/from-paper/upload`.
+   - The page now renders generated artifacts from the backend’s `patch` payload and derives the paper title from `researchSpec`, instead of expecting nonexistent `modules`, `paper_title`, and `phase_durations` fields.
+   - Phase labels were aligned to the real backend flow: extract, analyze, map, generate, validate.
+3. **Coverage and docs:**
+   - Added API tests for successful PDF upload and non-PDF rejection in `core/tests/unit/test_api_server.py`.
+   - Documented the upload endpoint in `docs/API.md`.
+
+**Verification:**
+- `cd core && .venv/bin/pytest tests/unit/test_api_server.py -q`
+- `cd core && .venv/bin/ruff check src/scholardevclaw/api/server.py tests/unit/test_api_server.py`
+- `cd web && npm run build`
+
 ### 2026-05-23 (Subprocess Bridge Payload Handoff)
 **Summary:** Fixed subprocess-mode patch generation and validation so phases 4 and 5 now carry real payloads instead of degrading to repo-plus-spec execution.
 
