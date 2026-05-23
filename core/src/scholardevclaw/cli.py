@@ -979,8 +979,119 @@ def _cmd_generate_legacy_specs(args) -> None:
         print(json.dumps(output, indent=2))
 
 
+def _load_json_payload(payload_path: str, *, label: str) -> dict[str, Any]:
+    path = Path(payload_path).expanduser().resolve()
+    if not path.exists() or not path.is_file():
+        raise ValueError(f"{label} JSON file not found: {path}")
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in {label} file '{path}': {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"Expected top-level JSON object in {label} file '{path}'")
+    return payload
+
+
+def _normalize_mapping_payload_for_patch(mapping: dict[str, Any]) -> dict[str, Any]:
+    raw_spec = mapping.get("research_spec") or mapping.get("researchSpec") or {}
+    research_spec = dict(raw_spec) if isinstance(raw_spec, dict) else {}
+    default_replacement = ""
+    if isinstance(research_spec.get("changes"), dict):
+        default_replacement = str(research_spec["changes"].get("replacement", "") or "")
+
+    targets: list[dict[str, Any]] = []
+    for raw_target in mapping.get("targets", []):
+        if not isinstance(raw_target, dict):
+            continue
+
+        raw_context = raw_target.get("context")
+        context = dict(raw_context) if isinstance(raw_context, dict) else {}
+        current_code = raw_target.get("current_code", raw_target.get("currentCode", ""))
+        if not current_code and isinstance(context.get("original"), str):
+            current_code = context["original"]
+
+        original = raw_target.get("original") or context.get("original") or current_code
+        replacement = (
+            raw_target.get("replacement") or context.get("replacement") or default_replacement
+        )
+
+        context.setdefault("original", original)
+        if replacement:
+            context.setdefault("replacement", replacement)
+
+        targets.append(
+            {
+                "file": str(raw_target.get("file", "") or ""),
+                "line": int(raw_target.get("line", 0) or 0),
+                "current_code": str(current_code or ""),
+                "replacement_required": bool(
+                    raw_target.get(
+                        "replacement_required", raw_target.get("replacementRequired", True)
+                    )
+                ),
+                "context": context,
+            }
+        )
+
+    return {
+        "targets": targets,
+        "strategy": str(mapping.get("strategy", "none") or "none"),
+        "confidence": int(mapping.get("confidence", 0) or 0),
+        "research_spec": research_spec,
+    }
+
+
+def _cmd_generate_from_mapping_payload(args) -> None:
+    path = Path(args.arg1)
+    if not path.exists():
+        print(f"Error: Repository not found: {args.arg1}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        mapping_payload = _load_json_payload(args.mapping_json, label="mapping")
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    from scholardevclaw.patch_generation.generator import PatchGenerator
+
+    mapping_result = _normalize_mapping_payload_for_patch(mapping_payload)
+    generator = PatchGenerator(path)
+    patch = generator.generate(mapping_result)
+
+    print(f"Generating patch from mapping payload in: {path}")
+    print("-" * 50)
+    print(f"Branch: {patch.branch_name}")
+    print(f"New files: {len(patch.new_files)}")
+    print(f"Transformations: {len(patch.transformations)}")
+
+    if args.output_json:
+        output = {
+            "branch_name": patch.branch_name,
+            "algorithm_name": patch.algorithm_name,
+            "paper_reference": patch.paper_reference,
+            "research_spec": mapping_result.get("research_spec", {}),
+            "new_files": [{"path": nf.path, "content": nf.content} for nf in patch.new_files],
+            "transformations": [
+                {
+                    "file": t.file,
+                    "original": t.original,
+                    "modified": t.modified,
+                    "changes": t.changes,
+                }
+                for t in patch.transformations
+            ],
+        }
+        print(json.dumps(output, indent=2))
+
+
 def cmd_generate(args):
     """Generate implementation artifacts from plan+understanding, or legacy spec patches."""
+    if getattr(args, "mapping_json", None):
+        _cmd_generate_from_mapping_payload(args)
+        return
     if getattr(args, "use_specs", False):
         print("Using legacy specs-based workflow for generate.")
         _cmd_generate_legacy_specs(args)
@@ -1846,7 +1957,16 @@ def cmd_validate(args):
     print(f"Validating repository: {args.repo_path}")
     print("-" * 50)
 
-    result = run_validate(args.repo_path)
+    patch_payload = None
+    patch_json = getattr(args, "patch_json", None)
+    if patch_json:
+        try:
+            patch_payload = _load_json_payload(patch_json, label="patch")
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    result = run_validate(args.repo_path, patch_payload)
     if not result.ok and not result.payload:
         print(f"Error: {result.error or 'Validation failed'}", file=sys.stderr)
         sys.exit(1)
@@ -3927,6 +4047,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         help="LLM model name for code generation",
     )
     p_generate.add_argument("--output-json", action="store_true", help="Output JSON")
+    p_generate.add_argument("--mapping-json", help=argparse.SUPPRESS)
     p_generate.add_argument(
         "--use-specs",
         action="store_true",
@@ -4046,6 +4167,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     # validate
     p_validate = subparsers.add_parser("validate", help="Validate tests and benchmark")
     p_validate.add_argument("repo_path", help="Path to repository")
+    p_validate.add_argument("--patch-json", help=argparse.SUPPRESS)
     p_validate.add_argument("--output-json", action="store_true", help="Output JSON")
     p_validate.add_argument(
         "--provider",

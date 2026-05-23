@@ -454,6 +454,7 @@ class ValidationRunner:
     def run(
         self, patch: dict, repo_path: str, mapping_result: dict | None = None
     ) -> ValidationResult:
+        patch = self._normalize_patch_payload(patch)
         artifact_result = self._validate_patch_artifacts(patch)
         if not artifact_result.passed:
             return artifact_result
@@ -605,6 +606,23 @@ class ValidationRunner:
         if not isinstance(patch, dict):
             return False
         return bool(patch.get("new_files") or patch.get("transformations"))
+
+    def _normalize_patch_payload(self, patch: dict[str, object] | None) -> dict[str, object]:
+        if not isinstance(patch, dict):
+            return {}
+
+        normalized = dict(patch)
+        if "new_files" not in normalized and isinstance(patch.get("newFiles"), list):
+            normalized["new_files"] = patch.get("newFiles", [])
+        if "branch_name" not in normalized and isinstance(patch.get("branchName"), str):
+            normalized["branch_name"] = patch.get("branchName", "")
+        if "algorithm_name" not in normalized and isinstance(patch.get("algorithmName"), str):
+            normalized["algorithm_name"] = patch.get("algorithmName", "")
+        if "paper_reference" not in normalized and isinstance(patch.get("paperReference"), str):
+            normalized["paper_reference"] = patch.get("paperReference", "")
+        if "research_spec" not in normalized and isinstance(patch.get("researchSpec"), dict):
+            normalized["research_spec"] = patch.get("researchSpec", {})
+        return normalized
 
     def _normalize_algorithm_key(self, value: str) -> str:
         normalized = "".join(ch.lower() if ch.isalnum() else "_" for ch in value).strip("_")

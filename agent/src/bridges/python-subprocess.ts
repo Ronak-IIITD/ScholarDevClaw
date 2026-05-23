@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { dirname, resolve as pathResolve } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../utils/logger.js';
@@ -80,6 +81,8 @@ export interface MappingResult {
   }>;
   strategy: string;
   confidence: number;
+  research_spec?: Record<string, unknown>;
+  researchSpec?: Record<string, unknown>;
 }
 
 export interface PatchResult {
@@ -94,6 +97,9 @@ export interface PatchResult {
     changes: unknown[];
   }>;
   branchName: string;
+  algorithmName?: string;
+  paperReference?: string;
+  researchSpec?: Record<string, unknown>;
 }
 
 export interface ValidationResult {
@@ -215,6 +221,21 @@ export class PythonSubprocessBridge {
     });
   }
 
+  private async withJsonPayloadFile<T>(
+    prefix: string,
+    payload: unknown,
+    callback: (payloadPath: string) => Promise<T>,
+  ): Promise<T> {
+    const payloadDir = mkdtempSync(pathResolve(tmpdir(), `${prefix}-`));
+    const payloadPath = pathResolve(payloadDir, 'payload.json');
+    writeFileSync(payloadPath, JSON.stringify(payload), 'utf8');
+    try {
+      return await callback(payloadPath);
+    } finally {
+      rmSync(payloadDir, { recursive: true, force: true });
+    }
+  }
+
   private parseJsonFromOutput(output: string): unknown | null {
     if (!output) {
       return {};
@@ -313,25 +334,28 @@ export class PythonSubprocessBridge {
     return { success: true, data: this.normalizeMapping(result.data) };
   }
 
-async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
+  async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
     logger.info('Generating patch');
     const mappingRecord = this.asRecord(mapping);
+    if (!mappingRecord) {
+      return { success: false, error: 'Patch generation requires a mapping payload object' };
+    }
+
     const path = repoPath || String(mappingRecord?.repoPath || mappingRecord?.root_path || '');
-    // Extract spec name from mapping for generate command
-    const targetsArray = Array.isArray(mappingRecord?.targets) ? mappingRecord.targets : [];
-    const firstTarget = this.asRecord(targetsArray[0]);
-    const specName = this.inferSpecName(
-      this.asRecord(mappingRecord?.research_spec)?.name ||
-      (firstTarget ? String(firstTarget.file || '') : '') ||
-      ''
+    if (!path) {
+      return { success: false, error: 'Patch generation requires a repository path' };
+    }
+
+    const result = await this.withJsonPayloadFile('sdc-generate', mappingRecord, (payloadPath) =>
+      this.runPythonModule('scholardevclaw.cli', [
+        'generate',
+        path,
+        '__mapping_payload__',
+        '--mapping-json',
+        payloadPath,
+        '--output-json',
+      ]),
     );
-    const result = await this.runPythonModule('scholardevclaw.cli', [
-      'generate',
-      path,
-      specName,
-      '--use-specs',
-      '--output-json',
-    ]);
     if (!result.success) {
       return result;
     }
@@ -340,12 +364,25 @@ async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
 
   async validate(patch: unknown, repoPath?: string): Promise<PhaseResult> {
     logger.info('Running validation');
-    const path = repoPath || String(this.asRecord(patch)?.repoPath || this.asRecord(patch)?.root_path || '');
-    const result = await this.runPythonModule('scholardevclaw.cli', [
-      'validate',
-      path,
-      '--output-json',
-    ]);
+    const patchRecord = this.asRecord(patch);
+    if (!patchRecord) {
+      return { success: false, error: 'Validation requires a patch payload object' };
+    }
+
+    const path = repoPath || String(patchRecord.repoPath || patchRecord.root_path || '');
+    if (!path) {
+      return { success: false, error: 'Validation requires a repository path' };
+    }
+
+    const result = await this.withJsonPayloadFile('sdc-validate', patchRecord, (payloadPath) =>
+      this.runPythonModule('scholardevclaw.cli', [
+        'validate',
+        path,
+        '--patch-json',
+        payloadPath,
+        '--output-json',
+      ]),
+    );
     if (!result.success) {
       return result;
     }
@@ -517,6 +554,8 @@ async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
         : [];
     const rawTransformations = Array.isArray(record.transformations) ? record.transformations : [];
 
+    const researchSpec = this.asRecord(record.researchSpec ?? record.research_spec) || undefined;
+
     return {
       newFiles: rawFiles.map((item) => {
         const file = this.asRecord(item) || {};
@@ -535,17 +574,56 @@ async generatePatch(mapping: unknown, repoPath?: string): Promise<PhaseResult> {
         };
       }),
       branchName: String(record.branchName || record.branch_name || ''),
+      ...(record.algorithmName || record.algorithm_name
+        ? { algorithmName: String(record.algorithmName || record.algorithm_name || '') }
+        : {}),
+      ...(record.paperReference || record.paper_reference
+        ? { paperReference: String(record.paperReference || record.paper_reference || '') }
+        : {}),
+      ...(researchSpec ? { researchSpec } : {}),
     };
   }
 
   private normalizeValidationResult(data: unknown): ValidationResult {
     const record = this.asRecord(data) || {};
+    const baselineMetrics =
+      this.asRecord(record.baselineMetrics) || this.asRecord(record.baseline_metrics) || undefined;
+    const newMetrics =
+      this.asRecord(record.newMetrics) || this.asRecord(record.new_metrics) || undefined;
+    const rawComparison = this.asRecord(record.comparison) || undefined;
+    const comparison = rawComparison
+      ? ({
+          ...rawComparison,
+          ...(rawComparison.loss_change !== undefined && rawComparison.lossChange === undefined
+            ? { lossChange: Number(rawComparison.loss_change) }
+            : {}),
+          ...(rawComparison.speedup !== undefined ? { speedup: Number(rawComparison.speedup) } : {}),
+          ...(rawComparison.passed !== undefined ? { passed: Boolean(rawComparison.passed) } : {}),
+        } as ValidationResult['comparison'])
+      : undefined;
+
     return {
       passed: Boolean(record.passed),
       stage: String(record.stage || ''),
-      baselineMetrics: this.asRecord(record.baselineMetrics) ? record.baselineMetrics as unknown as ValidationResult['baselineMetrics'] : undefined,
-      newMetrics: this.asRecord(record.newMetrics) ? record.newMetrics as unknown as ValidationResult['newMetrics'] : undefined,
-      comparison: this.asRecord(record.comparison) ? record.comparison as unknown as ValidationResult['comparison'] : undefined,
+      baselineMetrics: baselineMetrics
+        ? {
+            loss: Number(baselineMetrics.loss || 0),
+            perplexity: Number(baselineMetrics.perplexity || 0),
+            tokensPerSecond: Number(
+              baselineMetrics.tokensPerSecond ?? baselineMetrics.tokens_per_second ?? 0,
+            ),
+            memoryMb: Number(baselineMetrics.memoryMb ?? baselineMetrics.memory_mb ?? 0),
+          }
+        : undefined,
+      newMetrics: newMetrics
+        ? {
+            loss: Number(newMetrics.loss || 0),
+            perplexity: Number(newMetrics.perplexity || 0),
+            tokensPerSecond: Number(newMetrics.tokensPerSecond ?? newMetrics.tokens_per_second ?? 0),
+            memoryMb: Number(newMetrics.memoryMb ?? newMetrics.memory_mb ?? 0),
+          }
+        : undefined,
+      comparison,
       logs: String(record.logs || ''),
       error: record.error ? String(record.error) : undefined,
     };

@@ -381,6 +381,34 @@ class TestValidationRunnerRun:
         assert result.stage == "benchmark"
         assert "artifact ok" in result.logs
 
+    def test_run_accepts_camel_case_patch_payload(self, tmp_path):
+        runner = ValidationRunner(tmp_path)
+        passed_test = ValidationResult(passed=True, stage="tests")
+        benchmark = ValidationResult(passed=True, stage="benchmark", comparison={"speedup": 1.1})
+
+        with (
+            patch.object(runner, "_run_tests", return_value=passed_test),
+            patch.object(runner, "_run_benchmark", return_value=benchmark),
+        ):
+            result = runner.run(
+                {
+                    "newFiles": [{"path": "rmsnorm.py", "content": "class RMSNorm:\n    pass\n"}],
+                    "transformations": [],
+                    "branchName": "integration/rmsnorm",
+                    "algorithmName": "RMSNorm",
+                    "paperReference": "arXiv:1910.07467",
+                    "researchSpec": {
+                        "algorithm": {"name": "RMSNorm"},
+                        "paper": {"arxiv": "1910.07467"},
+                    },
+                },
+                str(tmp_path),
+            )
+
+        assert result.passed is True
+        assert result.stage == "benchmark"
+        assert "Validated 1 Python patch artifact(s)" in (result.logs or "")
+
     def test_tests_pass_no_error_runs_benchmark(self, tmp_path):
         """When tests pass (passed=True, no error), benchmark should run."""
         runner = ValidationRunner(tmp_path)

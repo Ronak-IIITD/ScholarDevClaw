@@ -144,6 +144,139 @@ def test_cmd_validate_exits_when_failed_and_payload_empty(monkeypatch, capsys):
     assert "Error: boom" in captured.err
 
 
+def test_cmd_validate_passes_patch_json_payload(monkeypatch, tmp_path):
+    import scholardevclaw.application.pipeline as pipeline
+
+    patch_payload = {
+        "newFiles": [{"path": "rmsnorm.py", "content": "class RMSNorm:\n    pass\n"}],
+        "transformations": [],
+        "branchName": "integration/rmsnorm",
+    }
+    patch_file = tmp_path / "patch.json"
+    patch_file.write_text(json.dumps(patch_payload), encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def _fake_run_validate(repo_path, patch=None, **_kwargs):
+        captured["repo_path"] = repo_path
+        captured["patch"] = patch
+        return SimpleNamespace(
+            ok=True,
+            payload={
+                "passed": True,
+                "stage": "benchmark",
+                "comparison": {},
+                "scorecard": {},
+                "logs": "",
+                "_meta": {"payload_type": "validation", "schema_version": "1.0.0"},
+            },
+            error=None,
+        )
+
+    monkeypatch.setattr(pipeline, "run_validate", _fake_run_validate)
+
+    args = SimpleNamespace(
+        repo_path="/tmp/repo",
+        patch_json=str(patch_file),
+        provider=None,
+        model="claude-sonnet-4-5",
+        output_json=False,
+    )
+
+    cli.cmd_validate(args)
+
+    assert captured["repo_path"] == "/tmp/repo"
+    assert captured["patch"] == patch_payload
+
+
+def test_cmd_generate_mapping_json_uses_mapping_payload(monkeypatch, tmp_path, capsys):
+    import scholardevclaw.patch_generation.generator as patch_generator_module
+
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    mapping_payload = {
+        "targets": [
+            {
+                "file": "model.py",
+                "line": 12,
+                "currentCode": "self.norm = nn.LayerNorm(dim)",
+                "replacementRequired": True,
+            }
+        ],
+        "strategy": "replace",
+        "confidence": 88,
+        "researchSpec": {
+            "algorithm": {"name": "RMSNorm"},
+            "paper": {"title": "Root Mean Square Layer Normalization", "arxiv": "1910.07467"},
+            "changes": {"replacement": "RMSNorm"},
+        },
+    }
+    mapping_file = tmp_path / "mapping.json"
+    mapping_file.write_text(json.dumps(mapping_payload), encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    class FakePatchGenerator:
+        def __init__(self, repo_root):
+            captured["repo_root"] = repo_root
+
+        def generate(self, mapping):
+            captured["mapping"] = mapping
+            return SimpleNamespace(
+                new_files=[SimpleNamespace(path="rmsnorm.py", content="class RMSNorm:\n    pass\n")],
+                transformations=[
+                    SimpleNamespace(
+                        file="model.py",
+                        original="self.norm = nn.LayerNorm(dim)",
+                        modified="self.norm = RMSNorm(dim)",
+                        changes=["replace"],
+                    )
+                ],
+                branch_name="integration/rmsnorm",
+                algorithm_name="RMSNorm",
+                paper_reference="arXiv:1910.07467",
+            )
+
+    monkeypatch.setattr(patch_generator_module, "PatchGenerator", FakePatchGenerator)
+
+    args = SimpleNamespace(
+        arg1=str(repo_path),
+        arg2="__mapping_payload__",
+        mapping_json=str(mapping_file),
+        output_json=True,
+        use_specs=False,
+        output_dir=None,
+        max_parallel=2,
+        provider=None,
+        model="claude-sonnet-4-5",
+    )
+
+    cli.cmd_generate(args)
+
+    assert captured["repo_root"] == repo_path
+    assert captured["mapping"] == {
+        "targets": [
+            {
+                "file": "model.py",
+                "line": 12,
+                "current_code": "self.norm = nn.LayerNorm(dim)",
+                "replacement_required": True,
+                "context": {
+                    "original": "self.norm = nn.LayerNorm(dim)",
+                    "replacement": "RMSNorm",
+                },
+            }
+        ],
+        "strategy": "replace",
+        "confidence": 88,
+        "research_spec": mapping_payload["researchSpec"],
+    }
+
+    output = capsys.readouterr().out
+    assert '"algorithm_name": "RMSNorm"' in output
+    assert '"research_spec": {' in output
+
+
 def test_cmd_integrate_failure_prints_guidance_and_exits(monkeypatch, capsys):
     import scholardevclaw.application.pipeline as pipeline
 

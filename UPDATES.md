@@ -2,7 +2,33 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-22
+**Last updated:** 2026-05-23
+
+### 2026-05-23 (Subprocess Bridge Payload Handoff)
+**Summary:** Fixed subprocess-mode patch generation and validation so phases 4 and 5 now carry real payloads instead of degrading to repo-plus-spec execution.
+
+**What changed:**
+1. **Subprocess bridge payload transport (`agent/src/bridges/python-subprocess.ts`):**
+   - `generatePatch()` now writes the full mapping payload to a temporary JSON file and invokes the CLI with `--mapping-json` instead of inferring a spec name from partial context.
+   - `validate()` now writes the actual patch payload to a temporary JSON file and invokes the CLI with `--patch-json` instead of validating the repo path alone.
+   - Normalization now preserves patch metadata (`algorithmName`, `paperReference`, `researchSpec`) and converts snake_case validation metrics/comparison fields into the camelCase shape expected by the agent.
+2. **CLI bridge entry points (`core/src/scholardevclaw/cli.py`):**
+   - Added internal `--mapping-json` support to `generate` for payload-based patch generation without recomputing mapping from a spec name.
+   - Added internal `--patch-json` support to `validate` so subprocess mode validates the actual generated patch payload.
+   - Added mapping payload normalization so bridge-generated camelCase target fields are converted into the patch generator’s expected structure.
+3. **Validation compatibility (`core/src/scholardevclaw/validation/runner.py`):**
+   - Validation now normalizes camelCase patch payloads (`newFiles`, `branchName`, `algorithmName`, `paperReference`, `researchSpec`) into the runner’s internal snake_case shape.
+   - This makes validation resilient to both HTTP-style and subprocess-style patch objects.
+4. **Regression coverage:**
+   - Added focused CLI tests in `core/tests/unit/test_cli.py`.
+   - Added camelCase patch compatibility coverage in `core/tests/unit/test_validation_runner.py`.
+   - Added dedicated subprocess bridge tests in `agent/src/bridges/python-subprocess.test.ts`.
+
+**Verification:**
+- `cd core && .venv/bin/pytest tests/unit/test_cli.py tests/unit/test_validation_runner.py -q`
+- `cd core && .venv/bin/ruff check src/scholardevclaw/cli.py src/scholardevclaw/validation/runner.py tests/unit/test_cli.py tests/unit/test_validation_runner.py`
+- `cd agent && bun test src/bridges/python-subprocess.test.ts`
+- `cd agent && bun run build`
 
 ### 2026-05-22 (Benchmark Regression + LoRA Smoke Fix)
 **Summary:** Restored benchmark parity after the new smoke-test scaffolding and fixed the generated LoRA runtime contract.
