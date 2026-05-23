@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -186,6 +187,139 @@ def test_patch_generate_repo_path_confinement(monkeypatch, tmp_path):
     )
 
     assert resp.status_code == 403
+
+
+def test_from_paper_upload_processes_pdf_file(monkeypatch, tmp_path):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    from scholardevclaw.mapping.engine import InsertionPoint, MappingResult
+    from scholardevclaw.patch_generation.generator import NewFile, Patch
+    from scholardevclaw.repo_intelligence.tree_sitter_analyzer import RepoAnalysis
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    class FakeExtractor:
+        seen_source = None
+        seen_source_type = None
+
+        def extract(self, source, source_type):
+            FakeExtractor.seen_source = source
+            FakeExtractor.seen_source_type = source_type
+            assert Path(source).exists()
+            assert Path(source).suffix.lower() == ".pdf"
+            assert Path(source).read_bytes().startswith(b"%PDF")
+            return {
+                "paper": {"title": "Uploaded PDF Paper", "authors": ["A"], "year": 2024},
+                "algorithm": {"name": "RMSNorm", "description": "replace layer norm"},
+                "implementation": {"moduleName": "RMSNorm", "parentClass": "nn.Module"},
+                "changes": {
+                    "type": "replace",
+                    "targetPattern": "LayerNorm",
+                    "insertionPoints": ["Block"],
+                    "replacement": "RMSNorm",
+                },
+            }
+
+    class FakeAnalyzer:
+        def __init__(self, repo_path):
+            self.repo_path = repo_path
+
+        def analyze(self):
+            return RepoAnalysis(
+                root_path=Path(self.repo_path),
+                languages=["python"],
+                language_stats=[],
+                elements=[],
+                imports=[],
+                entry_points=[],
+                dependencies={},
+                frameworks=[],
+                test_files=[],
+                patterns={},
+            )
+
+    class FakeMappingEngine:
+        def __init__(self, repo_analysis, research_spec):
+            self.research_spec = research_spec
+
+        def map(self):
+            return MappingResult(
+                targets=[
+                    InsertionPoint(
+                        file="model.py",
+                        line=5,
+                        current_code="LayerNorm",
+                        replacement_required=True,
+                        context={},
+                    )
+                ],
+                strategy="replace",
+                confidence=90,
+                research_spec=self.research_spec,
+            )
+
+    class FakePatchGenerator:
+        received_mapping = None
+
+        def __init__(self, repo_path, llm_assistant=None):
+            self.repo_path = repo_path
+
+        def generate(self, mapping):
+            FakePatchGenerator.received_mapping = mapping
+            return Patch(
+                new_files=[NewFile(path="rmsnorm.py", content="class RMSNorm:\n    pass\n")],
+                transformations=[],
+                branch_name="integration/rmsnorm",
+                algorithm_name="RMSNorm",
+                paper_reference="arXiv:1910.07467",
+            )
+
+    class FakeValidationRunner:
+        def __init__(self, repo_path):
+            self.repo_path = repo_path
+
+        def run(self, patch, repo_path, mapping_result=None):
+            return SimpleNamespace(passed=True, stage="benchmark", logs="ok", error=None)
+
+    monkeypatch.setattr(server, "ResearchExtractor", FakeExtractor)
+    monkeypatch.setattr(server, "TreeSitterAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(server, "MappingEngine", FakeMappingEngine)
+    monkeypatch.setattr(server, "PatchGenerator", FakePatchGenerator)
+    monkeypatch.setattr(server, "ValidationRunner", FakeValidationRunner)
+    monkeypatch.setattr(server, "_create_llm_assistant", lambda: None)
+
+    resp = client.post(
+        "/from-paper/upload",
+        data={"repoPath": str(repo)},
+        files={"file": ("paper.pdf", b"%PDF-1.4 fake pdf", "application/pdf")},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["researchSpec"]["paper"]["title"] == "Uploaded PDF Paper"
+    assert payload["patch"]["newFiles"][0]["path"] == "rmsnorm.py"
+    assert payload["validation"]["passed"] is True
+    assert FakeExtractor.seen_source_type == "pdf"
+    assert FakePatchGenerator.received_mapping["research_spec"]["algorithm"]["name"] == "RMSNorm"
+
+
+def test_from_paper_upload_rejects_non_pdf_file(monkeypatch, tmp_path):
+    server = _load_server(monkeypatch, SCHOLARDEVCLAW_DEV_MODE="true")
+    client = TestClient(server.app)
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    resp = client.post(
+        "/from-paper/upload",
+        data={"repoPath": str(repo)},
+        files={"file": ("paper.txt", b"plain text", "text/plain")},
+    )
+
+    assert resp.status_code == 400
+    assert "not a PDF" in resp.json()["detail"]
 
 
 def test_request_models_forbid_extra_fields(monkeypatch):

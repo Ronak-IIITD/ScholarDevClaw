@@ -1,12 +1,13 @@
 import hmac
 import logging
 import os
+import tempfile
 import uuid
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -254,6 +255,60 @@ class FromPaperResponse(BaseModel):
     validation: dict[str, Any]
     schema_version: str = Field(alias="schemaVersion")
     payload_type: str = Field(alias="payloadType")
+
+
+def _run_from_paper_pipeline(
+    repo_path: Path,
+    paper_source: str,
+    source_type: Literal["arxiv", "pdf"],
+) -> dict[str, Any]:
+    # 1. Extract research spec from paper
+    extractor = ResearchExtractor()
+    research_spec = extractor.extract(paper_source, source_type)
+
+    # 2. Analyze repository
+    analyzer = TreeSitterAnalyzer(repo_path)
+    repo_analysis = analyzer.analyze()
+
+    # 3. Map research spec to code
+    mapper = MappingEngine(asdict(repo_analysis), research_spec)
+    mapping = mapper.map()
+
+    # 4. Generate patch
+    llm_assistant = _create_llm_assistant()
+    generator = PatchGenerator(repo_path, llm_assistant=llm_assistant)
+    normalized_mapping = _normalize_mapping_for_patch(asdict(mapping))
+    patch = generator.generate(normalized_mapping)
+
+    # 5. Validate patch
+    runner = ValidationRunner(repo_path)
+    validation_result = runner.run(asdict(patch), str(repo_path), asdict(mapping))
+
+    return {
+        "researchSpec": research_spec,
+        "mapping": asdict(mapping),
+        "patch": {
+            "newFiles": [{"path": f.path, "content": f.content} for f in patch.new_files],
+            "transformations": [
+                {
+                    "file": t.file,
+                    "original": t.original,
+                    "modified": t.modified,
+                    "changes": t.changes,
+                }
+                for t in patch.transformations
+            ],
+            "branchName": patch.branch_name,
+        },
+        "validation": {
+            "passed": validation_result.passed,
+            "stage": validation_result.stage,
+            "logs": validation_result.logs,
+            "error": validation_result.error,
+        },
+        "schemaVersion": SCHEMA_VERSION,
+        "payloadType": "from-paper",
+    }
 
 
 class ModelEntry(BaseModel):
@@ -1075,55 +1130,11 @@ async def from_paper(request: FromPaperRequest, http_request: Request):
     try:
         user_id = getattr(http_request.state, "user_id", None)
         repo_path = _resolve_existing_repo_path(request.repo_path, user_id=user_id)
-
-        # 1. Extract research spec from paper
-        extractor = ResearchExtractor()
-        research_spec = extractor.extract(request.paper_source, request.source_type)
-
-        # 2. Analyze repository
-        analyzer = TreeSitterAnalyzer(repo_path)
-        repo_analysis = analyzer.analyze()
-
-        # 3. Map research spec to code
-        mapper = MappingEngine(asdict(repo_analysis), research_spec)
-        mapping = mapper.map()
-
-        # 4. Generate patch
-        llm_assistant = _create_llm_assistant()
-        generator = PatchGenerator(repo_path, llm_assistant=llm_assistant)
-        normalized_mapping = _normalize_mapping_for_patch(asdict(mapping))
-        patch = generator.generate(normalized_mapping)
-
-        # 5. Validate patch
-        runner = ValidationRunner(repo_path)
-        validation_result = runner.run(asdict(patch), str(repo_path), asdict(mapping))
-
-        # 6. Build response
-        response = {
-            "researchSpec": research_spec,
-            "mapping": mapping,
-            "patch": {
-                "newFiles": [{"path": f.path, "content": f.content} for f in patch.new_files],
-                "transformations": [
-                    {
-                        "file": t.file,
-                        "original": t.original,
-                        "modified": t.modified,
-                        "changes": t.changes,
-                    }
-                    for t in patch.transformations
-                ],
-                "branchName": patch.branch_name,
-            },
-            "validation": {
-                "passed": validation_result.passed,
-                "stage": validation_result.stage,
-                "logs": validation_result.logs,
-                "error": validation_result.error,
-            },
-            "schemaVersion": SCHEMA_VERSION,
-            "payloadType": "from-paper",
-        }
+        response = _run_from_paper_pipeline(
+            repo_path,
+            request.paper_source,
+            request.source_type,
+        )
         return FromPaperResponse.model_validate(response)
     except HTTPException:
         raise
@@ -1134,6 +1145,67 @@ async def from_paper(request: FromPaperRequest, http_request: Request):
             detail=(
                 "What failed: paper to code request. "
                 "Why: an unexpected internal error occurred while processing paper to code. "
+                "Fix: check server logs using X-Request-ID and retry."
+            ),
+        )
+
+
+@app.post(
+    "/from-paper/upload",
+    response_model=FromPaperResponse,
+    tags=["paper-to-code"],
+    summary="Paper to Code from uploaded PDF",
+    description="Generate code patches from an uploaded PDF for a given repository",
+)
+async def from_paper_upload(
+    http_request: Request,
+    repo_path: str = Form(..., alias="repoPath"),
+    paper_file: UploadFile = File(..., alias="file"),
+):
+    try:
+        user_id = getattr(http_request.state, "user_id", None)
+        resolved_repo_path = _resolve_existing_repo_path(repo_path, user_id=user_id)
+
+        filename = Path(paper_file.filename or "paper.pdf").name
+        if not filename.lower().endswith(".pdf") and paper_file.content_type not in {
+            "application/pdf",
+            "application/x-pdf",
+        }:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "What failed: uploaded paper validation. "
+                    "Why: the uploaded file is not a PDF. "
+                    "Fix: upload a file with a .pdf extension or application/pdf content type."
+                ),
+            )
+
+        contents = await paper_file.read()
+        if not contents:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "What failed: uploaded paper validation. "
+                    "Why: the uploaded PDF file is empty. "
+                    "Fix: upload a non-empty PDF document."
+                ),
+            )
+
+        with tempfile.TemporaryDirectory(prefix="sdc-from-paper-") as tmp_dir:
+            pdf_path = Path(tmp_dir) / filename
+            pdf_path.write_bytes(contents)
+            response = _run_from_paper_pipeline(resolved_repo_path, str(pdf_path), "pdf")
+
+        return FromPaperResponse.model_validate(response)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("from_paper_upload failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "What failed: uploaded paper to code request. "
+                "Why: an unexpected internal error occurred while processing the uploaded PDF. "
                 "Fix: check server logs using X-Request-ID and retry."
             ),
         )

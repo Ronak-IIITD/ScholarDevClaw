@@ -44,7 +44,9 @@ def build_markdown_summary(payload: dict[str, Any]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Render benchmark_report.json as Markdown.")
-    parser.add_argument("--input", default=str(DEFAULT_REPORT_PATH), help="Path to benchmark_report.json")
+    parser.add_argument(
+        "--input", default=str(DEFAULT_REPORT_PATH), help="Path to benchmark_report.json"
+    )
     parser.add_argument(
         "--output",
         default=str(DEFAULT_SUMMARY_PATH),
