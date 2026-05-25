@@ -2,7 +2,33 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-23
+**Last updated:** 2026-05-25
+
+### 2026-05-25 (Convex Phase Schema Hardening + Agent Contract Alignment)
+**Summary:** Tightened the remaining loose Convex phase-result contracts, aligned the agent’s persisted result types to the real bridge payloads, and fixed a phase 6 report schema mismatch that previously made Convex less compatible than the runtime bridges.
+
+**What changed:**
+1. **Shared Convex phase validators (`convex/phaseValidators.ts`, `convex/schema.ts`, `convex/integrations-mutations.ts`):**
+   - Extracted shared phase validators so the table schema and `savePhaseResult` mutation validate against the same payload definitions.
+   - Replaced the remaining loose `v.any()` phase surfaces with structured validators for repo dependencies/components, transformation change lists, validation comparison payloads, and report subtrees.
+   - Updated `savePhaseResult` to take a typed `{ payload: { field, result } }` object so field/result pairs are validated together instead of accepting any blob.
+2. **Agent payload normalization and typing (`agent/src/bridges/python-subprocess.ts`, `agent/src/api/convex.ts`, `agent/src/orchestrator.ts`):**
+   - Added structured TypeScript result types for persisted phase payloads and removed `unknown` from the Convex wrapper’s phase result API.
+   - Normalized subprocess mapping outputs to preserve target context, confidence breakdowns, and canonical research-spec payloads instead of leaving snake_case/raw extractor objects to drift into persistence.
+   - Normalized patch validation metadata (`schemaVersion`, `payloadType`) and tightened the orchestrator’s Convex handoff to use typed persisted phase results.
+3. **Phase 6 report contract fix (`agent/src/phases/phase6-report.ts`, `agent/src/phases/types.ts`):**
+   - Exported a concrete `Phase6Report` type and aligned `Phase6Context.report` to it.
+   - Fixed the persisted report contract to use the actual `diffPreview` field and full report structure (`whatChanged`, `why`, `observedImpact`, `testResults`, `recommendation`) instead of the stale `{ summary, diff, metadata }` schema.
+4. **Regression coverage (`agent/src/api/convex.test.ts`, `agent/src/bridges/python-subprocess.test.ts`):**
+   - Added a Convex client regression test covering the new nested phase result payload contract.
+   - Added subprocess bridge coverage for normalized mapping context, confidence breakdowns, canonicalized research specs, and validation metadata passthrough.
+
+**Verification:**
+- `cd agent && bun test src/api/convex.test.ts src/bridges/python-subprocess.test.ts src/phases/phase6-report.test.ts`
+- `cd agent && bun run build`
+
+**Notes:**
+- A standalone TypeScript check for `convex/*.ts` was not runnable in this checkout because `convex/_generated/server` is absent, so Convex’s generated type bindings are not available locally.
 
 ### 2026-05-23 (Paper-to-Code PDF Upload Flow)
 **Summary:** Finished the missing PDF upload transport for the Paper-to-Code page and aligned the UI with the backend’s actual patch-generation response.
@@ -52,8 +78,8 @@
 - `cd agent && bun test src/bridges/python-subprocess.test.ts`
 - `cd agent && bun run build`
 
-### 2026-05-23 (CI Failure Fixes — Ruff Format, Test Mock, Benchmark AST Revert)
-**Summary:** Fixed three CI failures: ruff formatting in test files, a test that failed due to incomplete mocking of the validation runner, and a benchmark regression caused by AST-affecting changes to expected benchmark files.
+### 2026-05-23 (CI Failure Fixes — Ruff Format, Test Mock, Benchmark AST Revert, python-multipart Dep)
+**Summary:** Fixed four CI/suite failures: ruff formatting in test files, a test that failed due to incomplete mocking of the validation runner, a benchmark regression caused by AST-affecting changes to expected benchmark files, and a missing `python-multipart` dependency for FastAPI file uploads.
 
 **What changed:**
 1. **Ruff formatting (`core/tests/unit/test_patch_generator.py`, `core/tests/unit/test_cli.py`):**
@@ -62,10 +88,12 @@
    - `test_run_accepts_camel_case_patch_payload` now properly mocks `_check_torch_available`, `_run_training_test`, `_run_numerical_correctness`, `_run_regression_snapshot`, and `_score_diff_readability` — preventing the test from running real benchmark subprocesses and failing when torch is unavailable.
 3. **Benchmark AST revert (`core/benchmarks/expected/*.py`, `core/benchmarks/papers/*.py`):**
    - Reverted N806 variable renames (`B,T,C` -> `b,t,c`) and F401 import removals from benchmark expected/papers files that changed the AST and caused benchmark AST matching failures (score dropped from 1.0 → 0.75 for 5 of 10 cases).
+4. **Missing dependency (`core/pyproject.toml`):**
+   - Added `python-multipart>=0.0.9` to the `product` extras — required by the new PDF upload endpoint (`UploadFile = File(...)`). Without it, importing the server module (and any test importing it) raises a `RuntimeError` at route definition time.
 
 **Verification:**
 - `cd core && ruff check src/ tests/ && ruff format --check src/ tests/`
-- `cd core && python -m pytest tests/unit/test_validation_runner.py tests/unit/test_cli.py tests/unit/test_patch_generator.py -q`
+- `cd core && python -m pytest tests/ -x -q --tb=short`
 
 ### 2026-05-22 (Benchmark Regression + LoRA Smoke Fix)
 **Summary:** Restored benchmark parity after the new smoke-test scaffolding and fixed the generated LoRA runtime contract.

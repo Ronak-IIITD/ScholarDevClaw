@@ -22,6 +22,169 @@ describe('PythonSubprocessBridge', () => {
     vi.restoreAllMocks();
   });
 
+  it('normalizes mapping context and snake_case research specs from CLI output', async () => {
+    const runSpy = vi
+      .spyOn(bridge as any, 'runPythonModule')
+      .mockResolvedValue({
+        success: true,
+        data: {
+          targets: [
+            {
+              file: 'model.py',
+              line: 42,
+              current_code: 'self.norm = LayerNorm(dim)',
+              replacement_required: true,
+              context: {
+                replacement: 'RMSNorm',
+                matched_pattern: 'LayerNorm',
+              },
+              original: 'LayerNorm',
+              replacement: 'RMSNorm',
+            },
+          ],
+          strategy: 'replace',
+          confidence: 91,
+          confidence_breakdown: {
+            total: 91,
+            counts: {
+              targets: 1,
+            },
+          },
+          research_spec: {
+            paper: {
+              title: 'Root Mean Square Layer Normalization',
+              authors: ['Biao Zhang', 'Rico Sennrich'],
+              arxiv: '1910.07467',
+              year: 2019,
+            },
+            algorithm: {
+              name: 'RMSNorm',
+              replaces: 'LayerNorm',
+              description: 'Norm without mean-centering.',
+            },
+            implementation: {
+              module_name: 'RMSNorm',
+              parent_class: 'nn.Module',
+              parameters: ['ndim', 'eps'],
+              code_template: 'class RMSNorm(nn.Module): ...',
+            },
+            changes: {
+              type: 'replace',
+              target_patterns: ['LayerNorm', 'nn.LayerNorm'],
+              insertion_points: ['Block class'],
+              replacement: 'RMSNorm',
+              expected_benefits: ['Improved throughput'],
+            },
+            validation: {
+              test_type: 'training_comparison',
+              metrics: ['loss', 'tokens_per_second'],
+            },
+          },
+        },
+      });
+
+    const result = await bridge.mapArchitecture(
+      { root_path: '/tmp/repo' },
+      { algorithm: { name: 'RMSNorm' } },
+    );
+
+    expect(runSpy).toHaveBeenCalledWith('scholardevclaw.cli', [
+      'map',
+      '/tmp/repo',
+      'rmsnorm',
+      '--output-json',
+    ]);
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      targets: [
+        {
+          file: 'model.py',
+          line: 42,
+          currentCode: 'self.norm = LayerNorm(dim)',
+          replacementRequired: true,
+          context: {
+            replacement: 'RMSNorm',
+            matched_pattern: 'LayerNorm',
+          },
+          original: 'LayerNorm',
+          replacement: 'RMSNorm',
+        },
+      ],
+      strategy: 'replace',
+      confidence: 91,
+      confidence_breakdown: {
+        total: 91,
+        counts: {
+          targets: 1,
+        },
+      },
+      research_spec: {
+        paper: {
+          title: 'Root Mean Square Layer Normalization',
+          authors: ['Biao Zhang', 'Rico Sennrich'],
+          arxiv: '1910.07467',
+          year: 2019,
+        },
+        algorithm: {
+          name: 'RMSNorm',
+          replaces: 'LayerNorm',
+          description: 'Norm without mean-centering.',
+          formula: undefined,
+        },
+        implementation: {
+          moduleName: 'RMSNorm',
+          parentClass: 'nn.Module',
+          parameters: ['ndim', 'eps'],
+          codeTemplate: 'class RMSNorm(nn.Module): ...',
+        },
+        changes: {
+          type: 'replace',
+          targetPattern: 'LayerNorm',
+          targetPatterns: ['LayerNorm', 'nn.LayerNorm'],
+          insertionPoints: ['Block class'],
+          replacement: 'RMSNorm',
+          expectedBenefits: ['Improved throughput'],
+        },
+        validation: {
+          test_type: 'training_comparison',
+          metrics: ['loss', 'tokens_per_second'],
+        },
+      },
+      researchSpec: {
+        paper: {
+          title: 'Root Mean Square Layer Normalization',
+          authors: ['Biao Zhang', 'Rico Sennrich'],
+          arxiv: '1910.07467',
+          year: 2019,
+        },
+        algorithm: {
+          name: 'RMSNorm',
+          replaces: 'LayerNorm',
+          description: 'Norm without mean-centering.',
+          formula: undefined,
+        },
+        implementation: {
+          moduleName: 'RMSNorm',
+          parentClass: 'nn.Module',
+          parameters: ['ndim', 'eps'],
+          codeTemplate: 'class RMSNorm(nn.Module): ...',
+        },
+        changes: {
+          type: 'replace',
+          targetPattern: 'LayerNorm',
+          targetPatterns: ['LayerNorm', 'nn.LayerNorm'],
+          insertionPoints: ['Block class'],
+          replacement: 'RMSNorm',
+          expectedBenefits: ['Improved throughput'],
+        },
+        validation: {
+          test_type: 'training_comparison',
+          metrics: ['loss', 'tokens_per_second'],
+        },
+      },
+    });
+  });
+
   it('passes the full mapping payload to CLI patch generation', async () => {
     const mappingPayload = {
       targets: [
@@ -84,7 +247,34 @@ describe('PythonSubprocessBridge', () => {
       branchName: 'integration/rmsnorm',
       algorithmName: 'RMSNorm',
       paperReference: 'arXiv:1910.07467',
-      researchSpec: mappingPayload.research_spec,
+      researchSpec: {
+        paper: {
+          title: 'Unknown',
+          authors: [],
+          arxiv: '1910.07467',
+          year: 0,
+        },
+        algorithm: {
+          name: 'RMSNorm',
+          replaces: undefined,
+          description: '',
+          formula: undefined,
+        },
+        implementation: {
+          moduleName: '',
+          parentClass: '',
+          parameters: [],
+          codeTemplate: null,
+        },
+        changes: {
+          type: 'replace',
+          targetPattern: '',
+          targetPatterns: [],
+          insertionPoints: [],
+          replacement: undefined,
+          expectedBenefits: [],
+        },
+      },
     });
   });
 
@@ -129,6 +319,8 @@ describe('PythonSubprocessBridge', () => {
               passed: true,
             },
             logs: 'ok',
+            schemaVersion: '2026-05-25',
+            payloadType: 'validation',
           },
         };
       });
@@ -171,6 +363,8 @@ describe('PythonSubprocessBridge', () => {
       },
       logs: 'ok',
       error: undefined,
+      schemaVersion: '2026-05-25',
+      payloadType: 'validation',
     });
   });
 });

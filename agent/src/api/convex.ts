@@ -1,4 +1,12 @@
 import { ConvexHttpClient } from 'convex/browser';
+import type {
+  MappingResult,
+  PatchResult,
+  RepoAnalysisResult,
+  ResearchSpecResult,
+  ValidationResult,
+} from '../bridges/python-subprocess.js';
+import type { Phase6Report } from '../phases/phase6-report.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 
@@ -18,6 +26,22 @@ export type IntegrationStatus =
 
 export type ExecutionMode = 'step_approval' | 'autonomous';
 
+export type PhaseResultField =
+  | 'phase1Result'
+  | 'phase2Result'
+  | 'phase3Result'
+  | 'phase4Result'
+  | 'phase5Result'
+  | 'phase6Result';
+
+export type PersistedPhaseResult =
+  | RepoAnalysisResult
+  | ResearchSpecResult
+  | MappingResult
+  | PatchResult
+  | ValidationResult
+  | Phase6Report;
+
 export interface Integration {
   _id: string;
   repoUrl: string;
@@ -27,12 +51,12 @@ export interface Integration {
   mode: ExecutionMode;
   yoloMode?: boolean;
   currentPhase: number;
-  phase1Result?: unknown;
-  phase2Result?: unknown;
-  phase3Result?: unknown;
-  phase4Result?: unknown;
-  phase5Result?: unknown;
-  phase6Result?: unknown;
+  phase1Result?: RepoAnalysisResult;
+  phase2Result?: ResearchSpecResult;
+  phase3Result?: MappingResult;
+  phase4Result?: PatchResult;
+  phase5Result?: ValidationResult;
+  phase6Result?: Phase6Report;
   confidence?: number;
   createdAt: number;
   updatedAt: number;
@@ -63,6 +87,25 @@ export interface Approval {
 export class ConvexClientWrapper {
   private client: ConvexHttpClient;
   private authKey: string;
+
+  private getPhaseResultField(phase: number): PhaseResultField {
+    switch (phase) {
+      case 1:
+        return 'phase1Result';
+      case 2:
+        return 'phase2Result';
+      case 3:
+        return 'phase3Result';
+      case 4:
+        return 'phase4Result';
+      case 5:
+        return 'phase5Result';
+      case 6:
+        return 'phase6Result';
+      default:
+        throw new Error(`Unsupported phase result field for phase ${phase}`);
+    }
+  }
 
   private getAuthArgs(): { authKey: string } {
     if (!this.authKey) {
@@ -134,12 +177,14 @@ export class ConvexClientWrapper {
     logger.info('Updated integration status', { id, status, phase, ...details });
   }
 
-  async savePhaseResult(id: string, phase: number, result: unknown): Promise<void> {
-    const field = `phase${phase}Result`;
+  async savePhaseResult(id: string, phase: number, result: PersistedPhaseResult): Promise<void> {
+    const field = this.getPhaseResultField(phase);
     await this.callMutation('integrations:savePhaseResult', {
       id,
-      field,
-      result,
+      payload: {
+        field,
+        result,
+      },
       updatedAt: Date.now(),
     });
   }

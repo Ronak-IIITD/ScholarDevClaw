@@ -1,5 +1,6 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { phaseResultPayloadSchema } from "./phaseValidators";
 
 const AUTH_ENV_KEY = "SCHOLARDEVCLAW_CONVEX_AUTH_KEY";
 
@@ -104,21 +105,20 @@ export const savePhaseResult = mutation({
   args: {
     authKey: v.string(),
     id: v.id("integrations"),
-    field: v.string(),
-    result: v.any(),
+    payload: phaseResultPayloadSchema,
     updatedAt: v.number(),
   },
   handler: async ({ db }, args) => {
     requireAuth(args.authKey);
 
-    if (!ALLOWED_PHASE_FIELDS.has(args.field)) {
-      throw new Error(`Disallowed field: ${args.field}`);
+    if (!ALLOWED_PHASE_FIELDS.has(args.payload.field)) {
+      throw new Error(`Disallowed field: ${args.payload.field}`);
     }
 
     const update: Record<string, unknown> = {
       updatedAt: args.updatedAt,
     };
-    update[args.field] = args.result;
+    update[args.payload.field] = args.payload.result;
 
     await db.patch(args.id, update);
   },

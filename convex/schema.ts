@@ -1,125 +1,15 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-
-// --- Phase 1: Repo Analysis ---
-const modelSchema = v.object({
-  name: v.string(),
-  file: v.string(),
-  line: v.number(),
-  parent: v.string(),
-  components: v.any(), // flexible — architecture-specific
-});
-
-const trainingLoopSchema = v.object({
-  file: v.string(),
-  line: v.number(),
-  optimizer: v.string(),
-  lossFn: v.string(),
-});
-
-const phase1ResultSchema = v.object({
-  repoName: v.string(),
-  architecture: v.object({
-    models: v.array(modelSchema),
-    trainingLoop: v.optional(trainingLoopSchema),
-  }),
-  dependencies: v.any(), // flexible — language-specific
-  testSuite: v.object({
-    runner: v.string(),
-    testFiles: v.array(v.string()),
-  }),
-});
-
-// --- Phase 2: Research Spec ---
-const phase2ResultSchema = v.object({
-  paper: v.object({
-    title: v.string(),
-    authors: v.array(v.string()),
-    arxiv: v.optional(v.string()),
-    year: v.number(),
-  }),
-  algorithm: v.object({
-    name: v.string(),
-    replaces: v.optional(v.string()),
-    description: v.string(),
-    formula: v.optional(v.string()),
-  }),
-  implementation: v.object({
-    moduleName: v.string(),
-    parentClass: v.string(),
-    parameters: v.array(v.string()),
-    codeTemplate: v.string(),
-  }),
-  changes: v.object({
-    type: v.string(),
-    targetPattern: v.string(),
-    insertionPoints: v.array(v.string()),
-  }),
-});
-
-// --- Phase 3: Mapping ---
-const mappingTargetSchema = v.object({
-  file: v.string(),
-  line: v.number(),
-  currentCode: v.string(),
-  replacementRequired: v.boolean(),
-});
-
-const phase3ResultSchema = v.object({
-  targets: v.array(mappingTargetSchema),
-  strategy: v.string(),
-  confidence: v.number(),
-});
-
-// --- Phase 4: Patch ---
-const newFileSchema = v.object({
-  path: v.string(),
-  content: v.string(),
-});
-
-const transformationSchema = v.object({
-  file: v.string(),
-  original: v.string(),
-  modified: v.string(),
-  changes: v.array(v.any()),
-});
-
-const phase4ResultSchema = v.object({
-  newFiles: v.array(newFileSchema),
-  transformations: v.array(transformationSchema),
-  branchName: v.string(),
-});
-
-// --- Phase 5: Validation ---
-const metricsSchema = v.object({
-  loss: v.number(),
-  perplexity: v.number(),
-  tokensPerSecond: v.number(),
-  memoryMb: v.number(),
-});
-
-const comparisonSchema = v.object({
-  lossChange: v.number(),
-  speedup: v.number(),
-  passed: v.boolean(),
-});
-
-const phase5ResultSchema = v.object({
-  passed: v.boolean(),
-  stage: v.string(),
-  baselineMetrics: v.optional(metricsSchema),
-  newMetrics: v.optional(metricsSchema),
-  comparison: v.optional(comparisonSchema),
-  logs: v.optional(v.string()),
-  error: v.optional(v.string()),
-});
-
-// --- Phase 6: Report ---
-const phase6ResultSchema = v.object({
-  summary: v.any(), // flexible — report format varies
-  diff: v.string(),
-  metadata: v.any(), // flexible
-});
+import {
+  metricsSchema,
+  phase1ResultSchema,
+  phase2ResultSchema,
+  phase3ResultSchema,
+  phase4ResultSchema,
+  phase5ResultSchema,
+  phase6ResultSchema,
+  structuredObjectSchema,
+} from "./phaseValidators";
 
 export default defineSchema({
   integrations: defineTable({
@@ -162,7 +52,7 @@ export default defineSchema({
     integrationId: v.id("integrations"),
     baselineMetrics: v.optional(metricsSchema),
     newMetrics: v.optional(metricsSchema),
-    comparison: v.optional(comparisonSchema),
+    comparison: v.optional(structuredObjectSchema),
     passed: v.boolean(),
     logs: v.string(),
     createdAt: v.number(),

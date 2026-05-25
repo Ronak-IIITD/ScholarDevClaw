@@ -57,6 +57,68 @@ describe('ConvexClientWrapper auth and approval semantics', () => {
     );
   });
 
+  it('wraps typed phase results in the savePhaseResult payload contract', async () => {
+    const client = new ConvexClientWrapper('https://deployment.example');
+
+    mutationMock.mockResolvedValueOnce(undefined);
+
+    await client.savePhaseResult('integration-id', 6, {
+      metadata: {
+        integrationId: 'integration-id',
+        repoUrl: '/repo',
+        paper: 'Attention Is All You Need',
+        algorithm: 'FlashAttention',
+        createdAt: '2026-05-25T00:00:00.000Z',
+      },
+      summary: {
+        status: 'completed',
+        confidence: 95,
+        changesMade: 2,
+        filesModified: ['src/model.py'],
+        newFiles: ['src/flash_attention.py'],
+      },
+      whatChanged: 'Replaced attention blocks.',
+      why: 'Improves throughput.',
+      observedImpact: {
+        metricsComparison: {
+          speedup: 1.2,
+          numerical_correctness: {
+            status: 'passed',
+          },
+        },
+        meetsExpectations: true,
+      },
+      riskNotes: [],
+      diffPreview: 'Modified: src/model.py',
+      testResults: {
+        unitTestsPassed: true,
+        benchmarkResults: {
+          speedup: 1.2,
+        },
+      },
+      recommendation: {
+        action: 'approve',
+        confidence: 95,
+        notes: 'Ready for integration.',
+      },
+    });
+
+    expect(mutationMock).toHaveBeenCalledWith(
+      'integrations:savePhaseResult',
+      expect.objectContaining({
+        id: 'integration-id',
+        payload: {
+          field: 'phase6Result',
+          result: expect.objectContaining({
+            diffPreview: 'Modified: src/model.py',
+            recommendation: expect.objectContaining({ action: 'approve' }),
+          }),
+        },
+        authKey: 'convex-secret',
+      }),
+    );
+  });
+
   it('waitForApproval only resolves true on explicit approved action for phase', async () => {
     vi.useFakeTimers();
     const client = new ConvexClientWrapper('https://deployment.example');

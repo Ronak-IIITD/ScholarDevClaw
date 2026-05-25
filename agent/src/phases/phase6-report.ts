@@ -1,7 +1,14 @@
 import { logger } from '../utils/logger.js';
+import type {
+  MappingResult,
+  PatchResult,
+  ResearchSpecResult,
+  StructuredObject,
+  ValidationResult,
+} from '../bridges/python-subprocess.js';
 import type { Phase6Context, PhaseResult } from './types.js';
 
-interface Report {
+export interface Phase6Report {
   metadata: {
     integrationId: string;
     repoUrl: string;
@@ -19,14 +26,14 @@ interface Report {
   whatChanged: string;
   why: string;
   observedImpact: {
-    metricsComparison: unknown;
+    metricsComparison: StructuredObject;
     meetsExpectations: boolean;
   };
   riskNotes: string[];
   diffPreview: string;
   testResults: {
     unitTestsPassed: boolean;
-    benchmarkResults: unknown;
+    benchmarkResults: StructuredObject;
   };
   recommendation: {
     action: 'approve' | 'review' | 'reject';
@@ -37,7 +44,7 @@ interface Report {
 
 export async function executePhase6(
   context: Phase6Context
-): Promise<PhaseResult<Report>> {
+): Promise<PhaseResult<Phase6Report>> {
   logger.info('=== Phase 6: Report Generation ===');
 
   try {
@@ -60,7 +67,7 @@ export async function executePhase6(
   }
 }
 
-function generateReport(context: Phase6Context): Report {
+function generateReport(context: Phase6Context): Phase6Report {
   const { repoAnalysis, researchSpec, mapping, patch, validation } = context;
   
   const algorithmName = researchSpec?.algorithm?.name || 'Unknown';
@@ -101,62 +108,75 @@ function generateReport(context: Phase6Context): Report {
   };
 }
 
-function generateWhatChanged(mapping: any, spec: any): string {
+function generateWhatChanged(mapping: MappingResult | undefined, spec: ResearchSpecResult | undefined): string {
   const algorithmName = spec?.algorithm?.name || 'the research';
   const targetPattern = spec?.changes?.targetPattern || 'components';
   
   return `This integration applies ${algorithmName} by replacing ${targetPattern} in the codebase.`;
 }
 
-function generateWhy(spec: any): string {
+function generateWhy(spec: ResearchSpecResult | undefined): string {
   const algorithmName = spec?.algorithm?.name || 'The technique';
   const benefits = spec?.changes?.expectedBenefits?.join(', ') || 'improved performance';
   
   return `${algorithmName} offers ${benefits}.`;
 }
 
-function generateRiskNotes(validation: any, mapping: any): string[] {
+function generateRiskNotes(
+  validation: ValidationResult | undefined,
+  mapping: MappingResult | undefined,
+): string[] {
   const notes: string[] = [];
+  const speedup = validation?.comparison?.speedup;
+  const lossChange = validation?.comparison?.lossChange;
+  const mappingConfidence = mapping?.confidence;
   
-  if (validation?.comparison?.speedup < 1.0) {
+  if (typeof speedup === 'number' && speedup < 1.0) {
     notes.push('Performance regression detected - review required');
   }
   
-  if (validation?.comparison?.lossChange > 5) {
+  if (typeof lossChange === 'number' && lossChange > 5) {
     notes.push('Significant loss change observed - verify model quality');
   }
   
-  if (mapping?.confidence < 70) {
+  if (typeof mappingConfidence === 'number' && mappingConfidence < 70) {
     notes.push('Low mapping confidence - manual review recommended');
   }
   
   return notes;
 }
 
-function generateDiffPreview(patch: any): string {
+function generateDiffPreview(patch: PatchResult | undefined): string {
   if (!patch) return 'No patch generated';
   
   const lines: string[] = [];
   
   if (patch.newFiles?.length) {
-    lines.push(`New files: ${patch.newFiles.map((f: any) => f.path).join(', ')}`);
+    lines.push(`New files: ${patch.newFiles.map((f) => f.path).join(', ')}`);
   }
   
   if (patch.transformations?.length) {
-    lines.push(`Modified: ${patch.transformations.map((t: any) => t.file).join(', ')}`);
+    lines.push(`Modified: ${patch.transformations.map((t) => t.file).join(', ')}`);
   }
   
   return lines.join('\n') || 'No changes';
 }
 
-function generateRecommendationAction(validation: any): 'approve' | 'review' | 'reject' {
+function generateRecommendationAction(
+  validation: ValidationResult | undefined,
+): 'approve' | 'review' | 'reject' {
   if (!validation) return 'review';
   if (!validation.passed) return 'reject';
-  if (validation.comparison?.speedup < 1.05) return 'review';
+  if (typeof validation.comparison?.speedup === 'number' && validation.comparison.speedup < 1.05) {
+    return 'review';
+  }
   return 'approve';
 }
 
-function generateRecommendationNotes(validation: any, spec: any): string {
+function generateRecommendationNotes(
+  validation: ValidationResult | undefined,
+  spec: ResearchSpecResult | undefined,
+): string {
   const algorithmName = spec?.algorithm?.name || 'The integration';
   
   if (!validation) {
