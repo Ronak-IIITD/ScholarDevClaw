@@ -5,6 +5,7 @@ import type {
   PatchResult,
   ValidationResult,
 } from '../bridges/python-subprocess.js';
+import type { Phase6Report } from './phase6-report.js';
 
 export interface Phase {
   id: number;
@@ -47,11 +48,7 @@ export interface Phase5Context extends Phase4Context {
 
 export interface Phase6Context extends Phase5Context {
   validation?: ValidationResult;
-  report?: {
-    metadata: unknown;
-    summary: unknown;
-    diff: string;
-  };
+  report?: Phase6Report;
 }
 
 export interface PhaseResult<T> {

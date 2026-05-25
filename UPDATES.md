@@ -2,7 +2,33 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-23
+**Last updated:** 2026-05-25
+
+### 2026-05-25 (Convex Phase Schema Hardening + Agent Contract Alignment)
+**Summary:** Tightened the remaining loose Convex phase-result contracts, aligned the agent’s persisted result types to the real bridge payloads, and fixed a phase 6 report schema mismatch that previously made Convex less compatible than the runtime bridges.
+
+**What changed:**
+1. **Shared Convex phase validators (`convex/phaseValidators.ts`, `convex/schema.ts`, `convex/integrations-mutations.ts`):**
+   - Extracted shared phase validators so the table schema and `savePhaseResult` mutation validate against the same payload definitions.
+   - Replaced the remaining loose `v.any()` phase surfaces with structured validators for repo dependencies/components, transformation change lists, validation comparison payloads, and report subtrees.
+   - Updated `savePhaseResult` to take a typed `{ payload: { field, result } }` object so field/result pairs are validated together instead of accepting any blob.
+2. **Agent payload normalization and typing (`agent/src/bridges/python-subprocess.ts`, `agent/src/api/convex.ts`, `agent/src/orchestrator.ts`):**
+   - Added structured TypeScript result types for persisted phase payloads and removed `unknown` from the Convex wrapper’s phase result API.
+   - Normalized subprocess mapping outputs to preserve target context, confidence breakdowns, and canonical research-spec payloads instead of leaving snake_case/raw extractor objects to drift into persistence.
+   - Normalized patch validation metadata (`schemaVersion`, `payloadType`) and tightened the orchestrator’s Convex handoff to use typed persisted phase results.
+3. **Phase 6 report contract fix (`agent/src/phases/phase6-report.ts`, `agent/src/phases/types.ts`):**
+   - Exported a concrete `Phase6Report` type and aligned `Phase6Context.report` to it.
+   - Fixed the persisted report contract to use the actual `diffPreview` field and full report structure (`whatChanged`, `why`, `observedImpact`, `testResults`, `recommendation`) instead of the stale `{ summary, diff, metadata }` schema.
+4. **Regression coverage (`agent/src/api/convex.test.ts`, `agent/src/bridges/python-subprocess.test.ts`):**
+   - Added a Convex client regression test covering the new nested phase result payload contract.
+   - Added subprocess bridge coverage for normalized mapping context, confidence breakdowns, canonicalized research specs, and validation metadata passthrough.
+
+**Verification:**
+- `cd agent && bun test src/api/convex.test.ts src/bridges/python-subprocess.test.ts src/phases/phase6-report.test.ts`
+- `cd agent && bun run build`
+
+**Notes:**
+- A standalone TypeScript check for `convex/*.ts` was not runnable in this checkout because `convex/_generated/server` is absent, so Convex’s generated type bindings are not available locally.
 
 ### 2026-05-23 (Paper-to-Code PDF Upload Flow)
 **Summary:** Finished the missing PDF upload transport for the Paper-to-Code page and aligned the UI with the backend’s actual patch-generation response.

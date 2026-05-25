@@ -22,28 +22,39 @@ export interface BridgeOptions {
   timeout?: number;
 }
 
+export type StructuredScalar = string | number | boolean | null;
+
+export interface StructuredObject {
+  [key: string]: StructuredScalar | StructuredScalar[] | StructuredObject;
+}
+
+export interface RepoModel {
+  name: string;
+  file: string;
+  line: number;
+  parent: string;
+  components: StructuredObject;
+}
+
+export interface TrainingLoopResult {
+  file: string;
+  line: number;
+  optimizer: string;
+  lossFn: string;
+}
+
 export interface RepoAnalysisResult {
   repoName: string;
   architecture: {
-    models: Array<{
-      name: string;
-      file: string;
-      line: number;
-      parent: string;
-      components: Record<string, unknown>;
-    }>;
-    trainingLoop?: {
-      file: string;
-      line: number;
-      optimizer: string;
-      lossFn: string;
-    };
+    models: RepoModel[];
+    trainingLoop?: TrainingLoopResult;
   };
-  dependencies: Record<string, unknown>;
+  dependencies: StructuredObject;
   testSuite: {
     runner: string;
     testFiles: string[];
   };
+  root_path?: string;
 }
 
 export interface ResearchSpecResult {
@@ -63,13 +74,17 @@ export interface ResearchSpecResult {
     moduleName: string;
     parentClass: string;
     parameters: string[];
-    codeTemplate: string;
+    codeTemplate?: string | null;
   };
   changes: {
     type: string;
     targetPattern: string;
+    targetPatterns?: string[];
     insertionPoints: string[];
+    replacement?: string | null;
+    expectedBenefits?: string[];
   };
+  validation?: StructuredObject;
 }
 
 export interface MappingResult {
@@ -78,11 +93,15 @@ export interface MappingResult {
     line: number;
     currentCode: string;
     replacementRequired: boolean;
+    context?: StructuredObject;
+    original?: string;
+    replacement?: string | null;
   }>;
   strategy: string;
   confidence: number;
-  research_spec?: Record<string, unknown>;
-  researchSpec?: Record<string, unknown>;
+  confidence_breakdown?: StructuredObject;
+  research_spec?: ResearchSpecResult;
+  researchSpec?: ResearchSpecResult;
 }
 
 export interface PatchResult {
@@ -94,13 +113,20 @@ export interface PatchResult {
     file: string;
     original: string;
     modified: string;
-    changes: unknown[];
+    changes: StructuredObject[];
   }>;
   branchName: string;
   algorithmName?: string;
   paperReference?: string;
-  researchSpec?: Record<string, unknown>;
+  researchSpec?: ResearchSpecResult;
 }
+
+export type ValidationComparison = StructuredObject & {
+  lossChange?: number;
+  loss_change?: number;
+  speedup?: number;
+  passed?: boolean;
+};
 
 export interface ValidationResult {
   passed: boolean;
@@ -117,13 +143,11 @@ export interface ValidationResult {
     tokensPerSecond: number;
     memoryMb: number;
   };
-  comparison?: {
-    lossChange: number;
-    speedup: number;
-    passed: boolean;
-  };
+  comparison?: ValidationComparison;
   logs?: string;
   error?: string;
+  schemaVersion?: string;
+  payloadType?: string;
 }
 
 export class PythonSubprocessBridge {
@@ -430,6 +454,57 @@ export class PythonSubprocessBridge {
     return Array.isArray(value) ? value.map((item) => String(item)) : [];
   }
 
+  private asStructuredObject(value: unknown): StructuredObject | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+
+    const normalized: StructuredObject = {};
+    for (const [key, raw] of Object.entries(value)) {
+      const structuredValue = this.asStructuredValue(raw);
+      if (structuredValue !== undefined) {
+        normalized[key] = structuredValue;
+      }
+    }
+    return normalized;
+  }
+
+  private asStructuredValue(
+    value: unknown,
+  ): StructuredScalar | StructuredScalar[] | StructuredObject | undefined {
+    if (value === null) {
+      return null;
+    }
+    if (
+      typeof value === 'string'
+      || typeof value === 'number'
+      || typeof value === 'boolean'
+    ) {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      const normalized = value
+        .map((item) => this.asStructuredScalar(item))
+        .filter((item): item is StructuredScalar => item !== undefined);
+      return normalized;
+    }
+    return this.asStructuredObject(value);
+  }
+
+  private asStructuredScalar(value: unknown): StructuredScalar | undefined {
+    if (value === null) {
+      return null;
+    }
+    if (
+      typeof value === 'string'
+      || typeof value === 'number'
+      || typeof value === 'boolean'
+    ) {
+      return value;
+    }
+    return undefined;
+  }
+
   private inferSpecName(value: unknown): string {
     const text = String(value || '').trim().toLowerCase();
     const knownSpecs = [
@@ -451,8 +526,56 @@ export class PythonSubprocessBridge {
     if (!record) {
       return null;
     }
-    if (this.asRecord(record.paper) && this.asRecord(record.algorithm)) {
-      return record as unknown as ResearchSpecResult;
+
+    const paper = this.asRecord(record.paper);
+    const algorithm = this.asRecord(record.algorithm);
+    if (paper && algorithm) {
+      const implementation = this.asRecord(record.implementation) || {};
+      const changes = this.asRecord(record.changes) || {};
+      const targetPatterns = this.asStringArray(changes.targetPatterns ?? changes.target_patterns);
+      const singleTarget = typeof changes.targetPattern === 'string'
+        ? String(changes.targetPattern).trim()
+        : '';
+      const normalizedTargetPatterns = targetPatterns.length
+        ? targetPatterns
+        : singleTarget
+          ? [singleTarget]
+          : [];
+      const validation = this.asStructuredObject(record.validation);
+
+      return {
+        paper: {
+          title: String(paper.title || fallbackName || 'Unknown'),
+          authors: this.asStringArray(paper.authors),
+          arxiv: paper.arxiv ? String(paper.arxiv) : undefined,
+          year: Number(paper.year || 0),
+        },
+        algorithm: {
+          name: String(algorithm.name || fallbackName || 'unknown'),
+          replaces: algorithm.replaces ? String(algorithm.replaces) : undefined,
+          description: String(algorithm.description || ''),
+          formula: algorithm.formula ? String(algorithm.formula) : undefined,
+        },
+        implementation: {
+          moduleName: String(implementation.moduleName || implementation.module_name || ''),
+          parentClass: String(implementation.parentClass || implementation.parent_class || ''),
+          parameters: this.asStringArray(implementation.parameters),
+          codeTemplate: implementation.codeTemplate || implementation.code_template
+            ? String(implementation.codeTemplate || implementation.code_template || '')
+            : null,
+        },
+        changes: {
+          type: String(changes.type || 'replace'),
+          targetPattern: normalizedTargetPatterns[0] || singleTarget,
+          targetPatterns: normalizedTargetPatterns,
+          insertionPoints: this.asStringArray(changes.insertionPoints ?? changes.insertion_points),
+          replacement: changes.replacement ? String(changes.replacement) : undefined,
+          expectedBenefits: this.asStringArray(
+            changes.expectedBenefits ?? changes.expected_benefits,
+          ),
+        },
+        ...(validation ? { validation } : {}),
+      };
     }
 
     const localSpecs = Array.isArray(record.local_specs) ? record.local_specs : [];
@@ -483,7 +606,9 @@ export class PythonSubprocessBridge {
       changes: {
         type: 'replace',
         targetPattern: String(first.replaces || name),
+        targetPatterns: [String(first.replaces || name)],
         insertionPoints: [],
+        replacement: first.replaces ? String(first.replaces) : undefined,
       },
     };
   }
@@ -514,7 +639,7 @@ export class PythonSubprocessBridge {
       dependencies: {
         languages: Array.isArray(record.languages) ? record.languages : [],
         frameworks: Array.isArray(record.frameworks) ? record.frameworks : [],
-        patterns: this.asRecord(record.patterns) || {},
+        patterns: this.asStructuredObject(record.patterns) || {},
       },
       testSuite: {
         runner: 'pytest',
@@ -527,9 +652,16 @@ export class PythonSubprocessBridge {
   private normalizeMapping(data: unknown): MappingResult {
     const record = this.asRecord(data) || {};
     const rawTargets = Array.isArray(record.targets) ? record.targets : [];
+    const confidenceBreakdown = this.asStructuredObject(record.confidence_breakdown);
+    const normalizedResearchSpec = this.normalizeResearchSpec(
+      record.researchSpec ?? record.research_spec,
+      '',
+    );
+
     return {
       targets: rawTargets.map((target) => {
         const targetRecord = this.asRecord(target) || {};
+        const context = this.asStructuredObject(targetRecord.context);
         return {
           file: String(targetRecord.file || ''),
           line: Number(targetRecord.line || 0),
@@ -537,11 +669,22 @@ export class PythonSubprocessBridge {
           replacementRequired: Boolean(
             targetRecord.replacementRequired ?? targetRecord.replacement_required ?? false,
           ),
+          ...(context ? { context } : {}),
+          ...(targetRecord.original ? { original: String(targetRecord.original) } : {}),
+          ...(targetRecord.replacement !== undefined
+            ? { replacement: targetRecord.replacement === null ? null : String(targetRecord.replacement) }
+            : {}),
         };
       }),
       strategy: String(record.strategy || ''),
       confidence: Number(record.confidence || 0),
-      ...(record.research_spec ? { research_spec: record.research_spec } : {}),
+      ...(confidenceBreakdown ? { confidence_breakdown: confidenceBreakdown } : {}),
+      ...(normalizedResearchSpec
+        ? {
+            research_spec: normalizedResearchSpec,
+            researchSpec: normalizedResearchSpec,
+          }
+        : {}),
     } as MappingResult;
   }
 
@@ -554,7 +697,7 @@ export class PythonSubprocessBridge {
         : [];
     const rawTransformations = Array.isArray(record.transformations) ? record.transformations : [];
 
-    const researchSpec = this.asRecord(record.researchSpec ?? record.research_spec) || undefined;
+    const researchSpec = this.normalizeResearchSpec(record.researchSpec ?? record.research_spec, '');
 
     return {
       newFiles: rawFiles.map((item) => {
@@ -570,7 +713,11 @@ export class PythonSubprocessBridge {
           file: String(transformation.file || ''),
           original: String(transformation.original || ''),
           modified: String(transformation.modified || ''),
-          changes: Array.isArray(transformation.changes) ? transformation.changes : [],
+          changes: Array.isArray(transformation.changes)
+            ? transformation.changes
+                .map((change) => this.asStructuredObject(change))
+                .filter((change): change is StructuredObject => change !== undefined)
+            : [],
         };
       }),
       branchName: String(record.branchName || record.branch_name || ''),
@@ -626,6 +773,8 @@ export class PythonSubprocessBridge {
       comparison,
       logs: String(record.logs || ''),
       error: record.error ? String(record.error) : undefined,
+      ...(record.schemaVersion ? { schemaVersion: String(record.schemaVersion) } : {}),
+      ...(record.payloadType ? { payloadType: String(record.payloadType) } : {}),
     };
   }
 }

@@ -12,6 +12,7 @@ import {
   ConvexClientWrapper,
   type Integration,
   type IntegrationCreate,
+  type PersistedPhaseResult,
 } from './api/convex.js';
 import { GitHubClient } from './api/github.js';
 import { RunStore, type RunSnapshot, type ApprovalRecord } from './utils/run-store.js';
@@ -700,7 +701,7 @@ export class ScholarDevClawOrchestrator {
     context: OrchestrationContext,
     phaseResults: Record<number, unknown>,
     phase: number,
-    data: unknown,
+    data: PersistedPhaseResult,
     retryCount: number,
   ): Promise<void> {
     if (integrationId && this.convex) {
