@@ -2,7 +2,44 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-05-26
+
+### 2026-05-26 (Hardening Tests — Validation Runner + Security Modules)
+**Summary:** Added 168 validation runner tests (covering 19 previously uncovered methods) and 54 security module tests (covering BanditScanner, SemgrepScanner, SecurityScanner, and SecurityReport). All 1824 tests pass (4 skipped).
+
+**What changed:**
+1. **Validation runner hardening tests (`core/tests/unit/test_validation_runner.py`):**
+   - Added `_is_script_destructive` tests: rm -rf, curl|bash, wget|bash, dd, subprocess calls, os.system, socket, requests, urllib, sensitive file access, YOLO mode bypass
+   - Added `_is_sandbox_escape` tests: __import__, importlib, sys.modules, getattr(builtins), eval, exec, compile, __class__/__mro__/__globals__, ctypes, setattr, pty, YOLO mode
+   - Added `_patch_has_artifacts` tests: new_files, transformations, both, empty, None, non-dict
+   - Added `_normalize_patch_payload` tests: snake_case passthrough, camelCase conversion, None handling
+   - Added `_normalize_algorithm_key` tests: simple normalization, spaces→underscores, alias resolution (flash_attention_2→flashattention, cosine_annealing→cosine_warmup, etc.), double underscore collapse
+   - Added `_extract_algorithm_key` tests: from algorithm_name, algorithm, spec, research_spec.algorithm.name, None when no match
+   - Added `_candidate_sources_from_patch` tests: new_files, transformations, non-.py filtering, None/invalid entries
+   - Added `_build_metrics_comparison` tests: speedup calculation, loss_change, None baseline/new
+   - Added `_signature_snapshot` tests: function params, class names, async functions
+   - Added `_run_numerical_correctness` tests: GELU match/fail, layernorm/lora flow, missing expected file, non-callable functions
+   - Added `_run_regression_snapshot` tests: matching signatures, removed symbols, signature changes, syntax errors, non-Python files
+   - Added `_score_diff_readability` tests: default score 5, score 4/3/2 thresholds, many files/lines
+   - Added `_enforce_execution_policy` tests: warn mode, strict+no sandbox, strict+docker unavailable, strict+docker available
+   - Added `_execution_policy_warning` tests: warn no sandbox→warning, warn+docker→None, strict→None
+   - Added `_validate_patch_artifacts` tests: no artifacts, valid/invalid Python, transformations, non-Python files skipped
+   - Added `_docker_available` tests: available, not found, exception
+   - Added `_sandbox_mode`/`_docker_image` tests: env var, default, case insensitivity
+   - Added `_load_module_from_source`/`_load_module_from_path` tests: successful load, invalid source raises, nonexistent path raises
+
+2. **Security module hardening tests (`core/tests/unit/test_security.py`):**
+   - Added `BanditScanner` tests (15): is_available(True/False/timeout), scan(nonexistent path, tool not found, timeout, generic exception, returncode 2, no findings, HIGH finding→failed, MEDIUM finding→passes, invalid JSON→graceful, exclude patterns validation)
+   - Added `BanditParseResults` tests: empty, with findings, without CWE, map_severity mapping
+   - Added `SemgrepScanner` tests (14): is_available(True/False), scan(nonexistent path, tool not found, timeout, generic exception, returncode 3, returncode 1 with findings, no findings, HIGH finding→failed, invalid JSON→graceful, exclude patterns, invalid rules skipped)
+   - Added `SemgrepParseResults` tests: empty, with findings, map_severity mapping
+   - Added `SecurityScannerAdditional` tests: specific tools, scan_python_only, scan_multi_language, is_available returns dict, fail_on_high behavior
+   - Added `SecurityReportAdditional` tests: to_dict, passed default, error field, aggregated severity counts
+
+**Verification:**
+- `cd core && python -m pytest tests/unit/test_validation_runner.py -q` → 168 passed
+- `cd core && python -m pytest tests/unit/test_security.py -q` → 54 passed
+- `cd core && python -m pytest -q` → 1824 passed, 4 skipped
 
 ### 2026-05-25 (Convex Phase Schema Hardening + Agent Contract Alignment)
 **Summary:** Tightened the remaining loose Convex phase-result contracts, aligned the agent’s persisted result types to the real bridge payloads, and fixed a phase 6 report schema mismatch that previously made Convex less compatible than the runtime bridges.
