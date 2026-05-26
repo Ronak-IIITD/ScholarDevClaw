@@ -182,9 +182,10 @@ class TestSecurityScanResult:
 
 class TestBanditScanner:
     def test_is_available_true(self):
-        from unittest.mock import patch
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+        from unittest.mock import patch
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         scanner = BanditScanner()
         with patch.object(subprocess, "run") as mock_run:
@@ -194,8 +195,9 @@ class TestBanditScanner:
             assert scanner.is_available() is True
 
     def test_is_available_false(self):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         scanner = BanditScanner()
         with patch.object(subprocess, "run") as mock_run:
@@ -203,8 +205,9 @@ class TestBanditScanner:
             assert scanner.is_available() is False
 
     def test_is_available_timeout(self):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         scanner = BanditScanner()
         with patch.object(subprocess, "run") as mock_run:
@@ -220,8 +223,9 @@ class TestBanditScanner:
         assert "does not exist" in (result.error or "")
 
     def test_scan_tool_not_found(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = BanditScanner()
@@ -232,8 +236,9 @@ class TestBanditScanner:
         assert "not found" in (result.error or "")
 
     def test_scan_timeout(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = BanditScanner()
@@ -244,8 +249,9 @@ class TestBanditScanner:
         assert "timed out" in (result.error or "").lower()
 
     def test_scan_generic_exception(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = BanditScanner()
@@ -256,8 +262,9 @@ class TestBanditScanner:
         assert "error" in (result.error or "").lower()
 
     def test_scan_returncode_2(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = BanditScanner()
@@ -270,8 +277,9 @@ class TestBanditScanner:
         assert "failed" in (result.error or "")
 
     def test_scan_success_no_findings(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = BanditScanner()
@@ -284,8 +292,9 @@ class TestBanditScanner:
         assert len(result.findings) == 0
 
     def test_scan_with_high_finding(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = BanditScanner()
@@ -312,8 +321,9 @@ class TestBanditScanner:
         assert result.high_severity_count == 1
 
     def test_scan_with_medium_finding_passes(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = BanditScanner()
@@ -340,8 +350,9 @@ class TestBanditScanner:
         assert result.medium_severity_count == 1
 
     def test_scan_invalid_json(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = BanditScanner()
@@ -354,8 +365,9 @@ class TestBanditScanner:
         assert len(result.findings) == 0
 
     def test_scan_exclude_patterns_valid(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         scanner = BanditScanner({"exclude": ["tests/", "*.venv/"]})
         (tmp_path / "test.py").write_text("x = 1")
@@ -370,8 +382,9 @@ class TestBanditScanner:
             assert "*.venv/" in call_args
 
     def test_scan_exclude_patterns_invalid_skipped(self, tmp_path):
-        from scholardevclaw.security.bandit import BanditScanner
         import subprocess
+
+        from scholardevclaw.security.bandit import BanditScanner
 
         scanner = BanditScanner({"exclude": ["$(rm -rf /)"]})
         (tmp_path / "test.py").write_text("x = 1")
@@ -469,8 +482,9 @@ class TestBanditParseResults:
 
 class TestSemgrepScanner:
     def test_is_available_true(self):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         scanner = SemgrepScanner()
         with patch.object(subprocess, "run") as mock_run:
@@ -480,8 +494,9 @@ class TestSemgrepScanner:
             assert scanner.is_available() is True
 
     def test_is_available_false(self):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         scanner = SemgrepScanner()
         with patch.object(subprocess, "run") as mock_run:
@@ -497,8 +512,9 @@ class TestSemgrepScanner:
         assert "does not exist" in (result.error or "")
 
     def test_scan_tool_not_found(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = SemgrepScanner()
@@ -509,8 +525,9 @@ class TestSemgrepScanner:
         assert "not found" in (result.error or "")
 
     def test_scan_timeout(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = SemgrepScanner()
@@ -521,8 +538,9 @@ class TestSemgrepScanner:
         assert "timed out" in (result.error or "").lower()
 
     def test_scan_generic_exception(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = SemgrepScanner()
@@ -533,8 +551,9 @@ class TestSemgrepScanner:
         assert "error" in (result.error or "").lower()
 
     def test_scan_returncode_3(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = SemgrepScanner()
@@ -547,8 +566,9 @@ class TestSemgrepScanner:
         assert "failed" in (result.error or "")
 
     def test_scan_returncode_1_success_with_findings(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = SemgrepScanner()
@@ -577,8 +597,9 @@ class TestSemgrepScanner:
         assert len(result.findings) == 1
 
     def test_scan_success_no_findings(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = SemgrepScanner()
@@ -591,8 +612,9 @@ class TestSemgrepScanner:
         assert len(result.findings) == 0
 
     def test_scan_with_high_finding(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = SemgrepScanner()
@@ -621,8 +643,9 @@ class TestSemgrepScanner:
         assert result.high_severity_count == 1
 
     def test_scan_invalid_json(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         (tmp_path / "test.py").write_text("x = 1")
         scanner = SemgrepScanner()
@@ -635,8 +658,9 @@ class TestSemgrepScanner:
         assert len(result.findings) == 0
 
     def test_scan_exclude_patterns(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         scanner = SemgrepScanner({"exclude": ["node_modules/", "*.min.js"]})
         (tmp_path / "test.py").write_text("x = 1")
@@ -650,8 +674,9 @@ class TestSemgrepScanner:
             assert "node_modules/" in call_args
 
     def test_scan_invalid_rules_skipped(self, tmp_path):
-        from scholardevclaw.security.semgrep import SemgrepScanner
         import subprocess
+
+        from scholardevclaw.security.semgrep import SemgrepScanner
 
         scanner = SemgrepScanner({"rules": ["auto", "$(malicious)", "p/python"]})
         (tmp_path / "test.py").write_text("x = 1")
@@ -721,8 +746,9 @@ class TestSemgrepParseResults:
 
 class TestSecurityScannerAdditional:
     def test_scan_with_specific_tools(self, tmp_path):
-        from scholardevclaw.security.scanner import SecurityScanner
         import subprocess
+
+        from scholardevclaw.security.scanner import SecurityScanner
 
         scanner = SecurityScanner({"run_bandit": True, "run_semgrep": True})
         (tmp_path / "test.py").write_text("x = 1")
@@ -743,8 +769,9 @@ class TestSecurityScannerAdditional:
             assert report.scans[0].tool == SecurityTool.BANDIT
 
     def test_scan_python_only(self, tmp_path):
-        from scholardevclaw.security.scanner import SecurityScanner
         import subprocess
+
+        from scholardevclaw.security.scanner import SecurityScanner
 
         scanner = SecurityScanner()
         (tmp_path / "test.py").write_text("x = 1")
@@ -757,8 +784,9 @@ class TestSecurityScannerAdditional:
             assert result.tool == SecurityTool.BANDIT
 
     def test_scan_multi_language(self, tmp_path):
-        from scholardevclaw.security.scanner import SecurityScanner
         import subprocess
+
+        from scholardevclaw.security.scanner import SecurityScanner
 
         scanner = SecurityScanner()
         (tmp_path / "test.py").write_text("x = 1")
@@ -780,8 +808,9 @@ class TestSecurityScannerAdditional:
         assert "semgrep" in available
 
     def test_scan_passes_without_high(self, tmp_path):
-        from scholardevclaw.security.scanner import SecurityScanner
         import subprocess
+
+        from scholardevclaw.security.scanner import SecurityScanner
 
         scanner = SecurityScanner({"fail_on_high": False})
         (tmp_path / "test.py").write_text("x = 1")

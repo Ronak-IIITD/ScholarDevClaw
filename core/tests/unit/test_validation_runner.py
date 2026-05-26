@@ -1863,7 +1863,6 @@ class TestLoadModule:
 
     def test_load_nonexistent_path_raises(self, tmp_path):
         runner = ValidationRunner(tmp_path)
-        import importlib
 
         try:
             runner._load_module_from_path(tmp_path / "nonexistent.py", "no_mod")
