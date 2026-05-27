@@ -2,10 +2,22 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-27 (5th pass)
+**Last updated:** 2026-05-27 (6th pass)
+
+### 2026-05-27 (repo_intelligence Source Bug Fixes — All 12 Tests Now Passing)
+**Summary:** Fixed all 6 source bugs discovered during test authoring. All 116 repo_intelligence tests pass. Full suite: 2109 passed, 4 skipped, 51.97% coverage.
+
+**Bugs fixed (2 source files):**
+1. **`parser.py` — `_get_python_files` double-count:** Replaced `["*.py", "**/*.py"]` with single `**/*.py` glob (root + nested files matched without duplicates).
+2. **`parser.py` — `visit_ImportFrom` module=None:** `from . import local` has `node.module = None` — changed default from `None` to `""`.
+3. **`parser.py` — `visit_ClassDef` cst.Arg unwrapping:** `ClassDef.bases` entries are `cst.Arg` wrappers, not direct nodes. Added `base.value if isinstance(base, cst.Arg) else base` before isinstance checks.
+4. **`parser.py` — `is_custom_norm` logic:** Changed `any("Norm" in name and "nn." not in base for base in bases)` to `"Norm" in name and not any("nn." in base for base in bases)`, so a class with `Norm` in the name and no bases (or non-nn bases) is correctly detected.
+5. **`parser.py` — `visit_Import` dotted name handling:** Added `_resolve_name()` helper to recursively resolve `cst.Attribute` names (e.g., `import torch.nn as nn` → name=`"torch.nn"`). Also applied to `from_module` in `visit_ImportFrom`.
+6. **`parser.py` — Attribute collection libcst API fixes:** `AnnAssign.target` uses `.value` not `.id`; `Assign.targets` items are `AssignTarget` wrappers (need `.target.value`). Added `SimpleStatementLine` unwrapping for body iteration.
+7. **`detector.py` — `detect_layer_norms` unused read:** Removed `module.path.read_text()` call that required a real file on disk but was never used.
 
 ### 2026-05-27 (Python Coverage — repo_intelligence Tests, Session 1)
-**Summary:** Added test coverage for the `repo_intelligence` module (parser, detector, call_graph, dependency_graph). Discovered 3 source bugs in `parser.py` (cst.Arg wrapping, _get_python_files double-count, from . import local module=None) and 1 in `detector.py` (read_text needs real file). 104 tests passing, 12 failing due to source bugs.
+**Summary:** Added test coverage for the `repo_intelligence` module (parser, detector, call_graph, dependency_graph). Discovered 6 source bugs in `parser.py` and `detector.py`. 104 tests passing, 12 failing due to source bugs.
 
 **What changed:**
 1. **New test files (2 files, 116 tests):**

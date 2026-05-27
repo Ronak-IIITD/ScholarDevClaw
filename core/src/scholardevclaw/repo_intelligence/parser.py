@@ -94,10 +94,8 @@ class PyTorchRepoParser:
         )
 
     def _get_python_files(self) -> list[Path]:
-        python_files = []
-        for pattern in ["*.py", "**/*.py"]:
-            python_files.extend(self.repo_path.glob(pattern))
-        return [f for f in python_files if not self._should_ignore(f)]
+        # Use **/*.py to match all .py files (root + nested) without double-counting
+        return [f for f in self.repo_path.glob("**/*.py") if not self._should_ignore(f)]
 
     def _should_ignore(self, path: Path) -> bool:
         ignore_dirs = {
@@ -225,9 +223,19 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
         self.imports: list[ImportInfo] = []
         self._current_class_bases: list[str] = []
 
+    @staticmethod
+    def _resolve_name(name_node: cst.BaseExpression) -> str:
+        if isinstance(name_node, cst.Name):
+            return name_node.value
+        if isinstance(name_node, cst.Attribute):
+            return (
+                f"{PyTorchComponentVisitor._resolve_name(name_node.value)}.{name_node.attr.value}"
+            )
+        return str(name_node)
+
     def visit_Import(self, node: cst.Import) -> None:  # noqa: N802
         for alias in node.names:
-            alias_name = alias.name.value if hasattr(alias.name, "value") else alias.name
+            alias_name = self._resolve_name(alias.name)
             alias_value = (
                 alias.asname.name.value if alias.asname and hasattr(alias.asname, "name") else None
             )
@@ -239,9 +247,9 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
             )
 
     def visit_ImportFrom(self, node: cst.ImportFrom) -> None:  # noqa: N802
-        module = node.module.value if node.module else None
+        module = self._resolve_name(node.module) if node.module else ""
         for alias in node.names:
-            alias_name = alias.name.value if hasattr(alias.name, "value") else alias.name
+            alias_name = self._resolve_name(alias.name)
             alias_value = (
                 alias.asname.name.value if alias.asname and hasattr(alias.asname, "name") else None
             )
@@ -256,18 +264,20 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
     def visit_ClassDef(self, node: cst.ClassDef) -> None:  # noqa: N802
         bases = []
         for base in node.bases:
-            if isinstance(base, cst.Name):
-                bases.append(base.value)
-            elif isinstance(base, cst.Attribute):
-                value = base.value
+            # ClassDef.bases entries are cst.Arg objects wrapping the actual node
+            base_node = base.value if isinstance(base, cst.Arg) else base
+            if isinstance(base_node, cst.Name):
+                bases.append(base_node.value)
+            elif isinstance(base_node, cst.Attribute):
+                value = base_node.value
                 if isinstance(value, cst.Name):
-                    bases.append(f"{value.value}.{base.attr.value}")
+                    bases.append(f"{value.value}.{base_node.attr.value}")
                 elif isinstance(value, cst.Attribute):
-                    bases.append(f"{base.attr.value}")
+                    bases.append(f"{base_node.attr.value}")
 
         is_nn_module = any("nn.Module" in base or base == "Module" for base in bases)
 
-        is_custom_norm = any("Norm" in node.name.value and "nn." not in base for base in bases)
+        is_custom_norm = "Norm" in node.name.value and not any("nn." in base for base in bases)
 
         methods = []
         attributes = []
@@ -275,12 +285,15 @@ class PyTorchComponentVisitor(cst.CSTVisitor):
         for item in node.body.body:
             if isinstance(item, cst.FunctionDef):
                 methods.append(item.name.value)
-            elif isinstance(item, cst.AnnAssign) and isinstance(item.target, cst.Name):
-                attributes.append(item.target.id)
-            elif isinstance(item, cst.Assign):
-                for target in item.targets:
-                    if isinstance(target, cst.Name):
-                        attributes.append(target.id)
+            # Simple statements (AnnAssign, Assign) are wrapped in SimpleStatementLine
+            stmts = item.body if isinstance(item, cst.SimpleStatementLine) else [item]
+            for stmt in stmts:
+                if isinstance(stmt, cst.AnnAssign) and isinstance(stmt.target, cst.Name):
+                    attributes.append(stmt.target.value)
+                elif isinstance(stmt, cst.Assign):
+                    for t in stmt.targets:
+                        if isinstance(t, cst.AssignTarget) and isinstance(t.target, cst.Name):
+                            attributes.append(t.target.value)
 
         self.classes.append(
             ClassInfo(

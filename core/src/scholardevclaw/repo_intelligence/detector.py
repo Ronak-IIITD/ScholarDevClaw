@@ -31,8 +31,6 @@ class PyTorchComponentDetector:
         matches = []
 
         for module in modules:
-            module.path.read_text()
-
             for cls in module.classes:
                 if "LayerNorm" in cls.name or "layer_norm" in cls.name:
                     matches.append(
