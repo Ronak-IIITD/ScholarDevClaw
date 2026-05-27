@@ -2,7 +2,23 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-27 (4th pass)
+**Last updated:** 2026-05-27 (5th pass)
+
+### 2026-05-27 (Python Coverage — repo_intelligence Tests, Session 1)
+**Summary:** Added test coverage for the `repo_intelligence` module (parser, detector, call_graph, dependency_graph). Discovered 3 source bugs in `parser.py` (cst.Arg wrapping, _get_python_files double-count, from . import local module=None) and 1 in `detector.py` (read_text needs real file). 104 tests passing, 12 failing due to source bugs.
+
+**What changed:**
+1. **New test files (2 files, 116 tests):**
+   - `core/tests/unit/test_repo_intelligence_simple.py` (77 tests): detector, call_graph, dependency_graph coverage
+   - `core/tests/unit/test_repo_intelligence_parser.py` (39 tests): parser module coverage (PyTorchComponentVisitor, PyTorchRepoParser)
+
+**Bugs discovered (source fixes pending):**
+- `parser.py`: `ClassDef.bases` entries are `cst.Arg` objects → need unwrapping before isinstance checks
+- `parser.py`: `_get_python_files` uses `["*.py", "**/*.py"]` matching each file twice
+- `parser.py`: `from . import local` → `node.module` is `None` not `""`
+- `detector.py`: `detect_layer_norms` calls `module.path.read_text()` requiring a real file on disk
+
+**Status:** 104 passed, 12 failed (test failures reflect source bugs, not test bugs)
 
 ### 2026-05-27 (CI Parallelization — Docker Split, Agent Staged Builds, Web CI, Bun Caching)
 **Summary:** Parallelized the CI workflow to reduce wall-clock time. Split docker build into 2 parallel jobs, restructured agent into staged install→lint/test/build with bun caching, and added web frontend build check.
