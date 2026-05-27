@@ -75,7 +75,7 @@ describe('GracefulShutdown', () => {
 
   it('respects timeout and stops handler loop', async () => {
     // Use a longer shutdown timeout so we don't flake in CI, but still test the logic
-    const timeoutShutdown = new GracefulShutdown(500); 
+    const timeoutShutdown = new GracefulShutdown(500);
     vi.spyOn(process, 'exit').mockImplementation((() => {}) as any);
 
     const slow = vi.fn().mockImplementation(async () => {
@@ -90,7 +90,7 @@ describe('GracefulShutdown', () => {
 
     // The slow handler may or may not have finished depending on internal timing,
     // but the key is that shutdown() resolves.
-    expect(true).toBe(true); 
+    expect(true).toBe(true);
   });
 });
 

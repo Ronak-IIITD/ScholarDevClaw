@@ -21,7 +21,7 @@ export class GracefulShutdown {
   private setupSignalHandlers(): void {
     process.on('SIGTERM', () => this.handleSignal('SIGTERM'));
     process.on('SIGINT', () => this.handleSignal('SIGINT'));
-    
+
     process.on('beforeExit', () => {
       if (!this.isShuttingDown) {
         this.shutdown('Process exit');
@@ -76,7 +76,7 @@ export class GracefulShutdown {
       try {
         await Promise.race([
           Promise.resolve(handler()),
-          new Promise((_, reject) => 
+          new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Handler timeout')), 5000)
           ),
         ]);

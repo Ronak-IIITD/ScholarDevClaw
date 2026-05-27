@@ -7,7 +7,6 @@ by Joshua Ainslie, James Lee-Thorp, et al. (2023)
 Paper: arXiv:2305.13245
 """
 
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -46,7 +45,9 @@ class GroupedQueryAttention(nn.Module):
         v = v.repeat_interleave(self.kv_group_size, dim=1)
 
         y = F.scaled_dot_product_attention(
-            q, k, v,
+            q,
+            k,
+            v,
             attn_mask=None,
             dropout_p=self.dropout.p if self.training else 0.0,
             is_causal=True,

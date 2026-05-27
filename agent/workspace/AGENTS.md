@@ -25,7 +25,7 @@ You execute ML research integration through 6 phases:
 - Build dependency graph and identify components
 - Output: Structured repository map
 
-### Phase 2: Research Intelligence  
+### Phase 2: Research Intelligence
 - Extract algorithm from paper (PDF or arXiv)
 - Identify modifications needed
 - Generate implementation specification

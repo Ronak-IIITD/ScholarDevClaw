@@ -124,8 +124,8 @@ export class MetricsCollector implements WorkflowMonitor {
     const completed = all.filter(m => m.status === 'completed');
     const failed = all.filter(m => m.status === 'failed');
     const durations = completed.filter(m => m.duration).map(m => m.duration!);
-    const avgDuration = durations.length > 0 
-      ? durations.reduce((a, b) => a + b, 0) / durations.length 
+    const avgDuration = durations.length > 0
+      ? durations.reduce((a, b) => a + b, 0) / durations.length
       : 0;
 
     return {
@@ -157,7 +157,7 @@ export class EventDrivenMonitor {
         this.collector.onWorkflowStart(event.timestamp);
       } else if (event.type === 'workflow_completed') {
         const metrics = this.collector.getMetrics(event.timestamp);
-        const duration = metrics?.startedAt 
+        const duration = metrics?.startedAt
           ? new Date(event.timestamp).getTime() - new Date(metrics.startedAt).getTime()
           : 0;
         this.collector.onWorkflowComplete(event.timestamp, event.status || 'completed', duration);
@@ -173,7 +173,7 @@ export class EventDrivenMonitor {
           }
         }
         this.collector.onNodeComplete(
-          event.nodeId || '', 
+          event.nodeId || '',
           event.status === 'failed' ? 'failed' : 'completed',
           duration,
           event.error

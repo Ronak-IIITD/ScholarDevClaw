@@ -18,10 +18,10 @@ export async function executePhase1(
     }
 
     const analysis = result.data as RepoAnalysisResult;
-    
+
     const confidence = calculateRepoConfidence(analysis);
-    
-    logger.info('Phase 1 completed', { 
+
+    logger.info('Phase 1 completed', {
       repoName: analysis.repoName,
       confidence,
       modelsFound: analysis.architecture.models.length,

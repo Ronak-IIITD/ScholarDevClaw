@@ -122,7 +122,7 @@ User Message → Router → Agent Engine → [Phase 1] → [Phase 2] → ... →
 #### 2. Channel Integration
 OpenClaw connects to your existing communication platforms:
 - **Telegram** - Direct bot commands
-- **Discord** - Server-based interactions  
+- **Discord** - Server-based interactions
 - **Slack** - Workspace integration
 - **Signal** - Privacy-focused messaging
 - **iMessage/WhatsApp** - Via extensions
@@ -139,7 +139,7 @@ OpenClaw is model-agnostic but recommends:
 #### 4. Skills System
 OpenClaw has a skill system for extending capabilities:
 - File system operations
-- Git operations  
+- Git operations
 - Web search
 - Code execution
 - Custom skills via plugins
@@ -190,7 +190,7 @@ const result = await pythonBridge.runPhase({
 });
 ```
 
-#### 2. HTTP Bridge  
+#### 2. HTTP Bridge
 For server deployments:
 ```typescript
 // agent/src/bridges/python-http.ts
@@ -229,7 +229,7 @@ Every research-to-code task flows through these phases:
          │         • Identify components
          ▼
   ┌─────────────┐
-  │     2       │  RESEARCH INTELLIGENCE  
+  │     2       │  RESEARCH INTELLIGENCE
   │   Search    │  ─────────────────────
   │             │  • Search arXiv/PubMed/IEEE
   └──────┬──────┘  • Extract paper specs
@@ -267,7 +267,7 @@ Every research-to-code task flows through these phases:
 
 #### 1. Repo Intelligence (`repo_intelligence/`)
 - **Tree-sitter analyzer** - Multi-language AST parsing
-- **Dependency graph** - Import/dependency analysis  
+- **Dependency graph** - Import/dependency analysis
 - **Call graph** - Function/method relationships
 - **Code embeddings** - Semantic similarity search
 - **Refactoring** - Cross-file change planning
@@ -355,12 +355,12 @@ Found 3 relevant papers:
     Authors: Tri Dao et al. (Stanford)
     arXiv: 2405.10973
     Impact: 2-4x speedup on H100 GPUs
-    
+
 [2] FlashDecoding++: Fast LLM Inference
     Authors: Shi et al.
     arXiv: 2403.01941
     Impact: 1.5-2x speedup
-    
+
 [3] Ring Attention: Long Context
     Authors: Liu et al.
     arXiv: 2310.07760
@@ -380,11 +380,11 @@ Changes needed:
 │ 1. Replace attention_forward()            │
 │    → Use FlashAttention-3 kernel          │
 │    → Location: lines 234-289              │
-│                                             
+│
 │ 2. Add attention hardware detection       │
 │    → Detect CUDA compute capability        │
 │    → Fallback to SDPA for older GPUs      │
-│                                             
+│
 │ 3. Update forward() signature              │
 │    → Add flash_options parameter           │
 └────────────────────────────────────────────┘

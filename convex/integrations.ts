@@ -98,7 +98,7 @@ export const getLogs = query({
       .query("integrationLogs")
       .withIndex("by_integration", (q) => q.eq("integrationId", args.integrationId))
       .order("asc");
-    
+
     const limit = args.limit || 500;
     return await query.take(limit);
   },

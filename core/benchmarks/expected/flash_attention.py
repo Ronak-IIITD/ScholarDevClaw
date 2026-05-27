@@ -7,7 +7,6 @@ by Tri Dao, Daniel Y. Fu, Stefano Ermon, Christopher Ré, Zachary C. Brown (2022
 Paper: arXiv:2205.14135
 """
 
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -75,7 +74,6 @@ def smoke_test(candidate_module) -> bool:
     """
     try:
         import torch
-        import torch.nn as nn
 
         # Check that the candidate module has the expected attributes
         assert hasattr(candidate_module, "FlashCausalSelfAttention")
@@ -99,7 +97,7 @@ def smoke_test(candidate_module) -> bool:
         )
 
         return True
-    except Exception as e:
+    except Exception:
         # Optionally log the error for debugging
         # print(f"FlashAttention smoke test failed: {e}")
         return False

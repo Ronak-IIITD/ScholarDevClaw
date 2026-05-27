@@ -1,6 +1,5 @@
 """Tests for utils/validation.py"""
 
-
 import pytest
 
 from scholardevclaw.utils.validation import (

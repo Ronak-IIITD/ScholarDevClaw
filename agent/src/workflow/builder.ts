@@ -90,7 +90,7 @@ export class DynamicWorkflowBuilder {
 
   private createFunctionNode(def: NodeDefinition): WorkflowNode {
     const handler = this.getHandler(def.handler || def.id);
-    
+
     return new FunctionNode(def.config, async (context, state) => {
       return handler(this.bridge, context, state);
     });
@@ -290,7 +290,7 @@ export function createQuickWorkflow(
     if (!handler) continue;
 
     const node = handler(bridge);
-    
+
     if (previousId) {
       const prevNode = nodes.find(n => n.id === previousId);
       if (prevNode) {

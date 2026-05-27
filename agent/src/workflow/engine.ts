@@ -170,7 +170,7 @@ export class DAGEngine {
         }
 
         const readyNodes = this.getReadyNodes();
-        
+
         if (readyNodes.length === 0) {
           const allDone = Array.from(this.nodes.values()).every(
             n => n.status !== 'pending' && n.status !== 'running'

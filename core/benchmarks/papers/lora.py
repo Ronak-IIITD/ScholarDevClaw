@@ -7,10 +7,11 @@ by  (2021)
 Paper: arXiv:2106.09685
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 
 EXPECTED_SYMBOLS = ("LoRALinear", "apply_lora")
 

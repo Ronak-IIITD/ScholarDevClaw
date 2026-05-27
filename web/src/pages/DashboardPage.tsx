@@ -103,7 +103,7 @@ export default function DashboardPage() {
         {/* Abstract glow effects */}
         <div className="absolute top-0 right-0 -mt-32 -mr-32 h-96 w-96 rounded-full bg-brand-600/20 blur-[100px] pointer-events-none" />
         <div className="absolute bottom-0 left-0 -mb-32 -ml-32 h-96 w-96 rounded-full bg-violet-600/20 blur-[100px] pointer-events-none" />
-        
+
         <div className="relative z-10 max-w-3xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-gray-300 backdrop-blur-md mb-8">
             <Sparkles size={14} className="text-brand-400" />
@@ -116,7 +116,7 @@ export default function DashboardPage() {
             </span>
           </h1>
           <p className="text-xl text-gray-400 mb-10 max-w-2xl leading-relaxed font-light">
-            Instantly transform arXiv papers into production-ready codebases. 
+            Instantly transform arXiv papers into production-ready codebases.
             Drop a PDF, and the autonomous engine builds the architecture, logic, and tests.
           </p>
           <div className="flex flex-wrap items-center gap-4">

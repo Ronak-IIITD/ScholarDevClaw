@@ -1,6 +1,5 @@
 """Tests for utils/parallel.py"""
 
-
 from scholardevclaw.utils.parallel import (
     LazyFileScanner,
     ParallelGit,

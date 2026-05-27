@@ -7,7 +7,6 @@ by Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bohan Zhou, Yunfeng Liu (20
 Paper: arXiv:2104.09864
 """
 
-import math
 import torch
 import torch.nn as nn
 

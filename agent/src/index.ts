@@ -32,12 +32,12 @@ interface ParsedCommand {
 function parseNaturalInput(input: string): ParsedCommand {
   const lower = input.toLowerCase().trim();
   const result: ParsedCommand = { command: 'help' };
-  
+
   const pathMatch = input.match(/(?:\s|^)([\/~.][^\s]+)/);
   if (pathMatch) {
     result.repoPath = pathMatch[1];
   }
-  
+
   const specs = ['rmsnorm', 'flashattention', 'swiglu', 'geglu', 'gqa', 'rope', 'preln', 'alibi', 'qknorm'];
   for (const spec of specs) {
     if (lower.includes(spec)) {
@@ -45,7 +45,7 @@ function parseNaturalInput(input: string): ParsedCommand {
       break;
     }
   }
-  
+
   if (lower.includes('analyze') || lower.includes('scan') || lower.includes('inspect')) {
     result.command = 'analyze';
   } else if (lower.includes('suggest') || lower.includes('recommend') || lower.includes('ideas')) {
@@ -69,7 +69,7 @@ function parseNaturalInput(input: string): ParsedCommand {
   } else if (result.repoPath) {
     result.command = 'analyze';
   }
-  
+
   return result;
 }
 
@@ -98,7 +98,7 @@ async function runRepl(): Promise<void> {
 
   rl.on('line', async (line) => {
     const input = line.trim();
-    
+
     if (!input) {
       rl.prompt();
       return;
@@ -141,7 +141,7 @@ async function runRepl(): Promise<void> {
 
     const parts = input.split(/\s+/);
     const parsed = parseNaturalInput(input);
-    
+
     if (parts[0] === 'set' && parts[1] === 'repo' && parts[2]) {
       parsed.command = 'set';
       parsed.repoPath = parts.slice(2).join(' ');
@@ -269,7 +269,7 @@ async function runRepl(): Promise<void> {
 
 async function run(): Promise<void> {
   const command = process.argv[2] || 'heartbeat';
-  
+
   if (command === '--repl' || command === 'repl') {
     await runRepl();
     return;

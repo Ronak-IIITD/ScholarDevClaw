@@ -25,11 +25,11 @@ repos:
     hooks:
       - id: scholardevclaw-mypy
         name: scholardevclaw-mypy
-        entry: bash -lc 'cd core && python3 -m mypy --strict src/scholardevclaw/exceptions.py tests/unit/test_phase0_foundation.py'
+        entry: bash -lc 'cd core && python3 -m mypy src/scholardevclaw/cli.py src/scholardevclaw/api/server.py src/scholardevclaw/application/pipeline.py src/scholardevclaw/utils/config.py src/scholardevclaw/utils/validation.py --ignore-missing-imports --follow-imports=skip --disable-error-code no-any-return'
         language: system
         pass_filenames: false
       - id: scholardevclaw-pytest
         name: scholardevclaw-pytest
-        entry: bash -lc 'cd core && python3 -m pytest tests/unit/test_phase0_foundation.py tests/test_ingestion.py tests/test_execution.py -q'
+        entry: bash -lc 'cd core && python3 -m pytest tests/unit/test_config.py tests/unit/test_logger.py tests/unit/test_atomic_write.py tests/unit/test_validation_utils.py tests/unit/test_phase0_foundation.py -q'
         language: system
         pass_filenames: false

@@ -25,13 +25,13 @@ export function createAnalyzeNode(
     async (context: Record<string, unknown>, state: WorkflowState) => {
       logger.info('Executing Phase 1: Repository Analysis');
       const repoPath = context.repoPath as string;
-      
+
       const result = await bridge.analyzeRepo(repoPath);
-      
+
       if (!result.success || !result.data) {
         throw new Error(`Phase 1 failed: ${result.error || 'No data'}`);
       }
-      
+
       state.context.repoAnalysis = result.data;
       return result.data;
     }
@@ -54,13 +54,13 @@ export function createResearchNode(
       logger.info('Executing Phase 2: Research Extraction');
       const paperSource = context.paperSource as string;
       const sourceType = context.sourceType as 'pdf' | 'arxiv';
-      
+
       const result = await bridge.extractResearch(paperSource, sourceType);
-      
+
       if (!result.success || !result.data) {
         throw new Error(`Phase 2 failed: ${result.error || 'No data'}`);
       }
-      
+
       state.context.researchSpec = result.data;
       return result.data;
     }
@@ -83,17 +83,17 @@ export function createMappingNode(
       logger.info('Executing Phase 3: Architecture Mapping');
       const repoAnalysis = state.context.repoAnalysis;
       const researchSpec = state.context.researchSpec;
-      
+
       if (!repoAnalysis || !researchSpec) {
         throw new Error('Missing repo analysis or research spec');
       }
-      
+
       const result = await bridge.mapArchitecture(repoAnalysis as RepoAnalysisResult, researchSpec as ResearchSpecResult);
-      
+
       if (!result.success || !result.data) {
         throw new Error(`Phase 3 failed: ${result.error || 'No data'}`);
       }
-      
+
       state.context.mapping = result.data;
       return result.data;
     }
@@ -116,17 +116,17 @@ export function createPatchNode(
       logger.info('Executing Phase 4: Patch Generation');
       const mapping = state.context.mapping;
       const repoPath = context.repoPath as string;
-      
+
       if (!mapping) {
         throw new Error('Missing mapping');
       }
-      
+
       const result = await bridge.generatePatch(mapping as MappingResult, repoPath);
-      
+
       if (!result.success || !result.data) {
         throw new Error(`Phase 4 failed: ${result.error || 'No data'}`);
       }
-      
+
       state.context.patch = result.data;
       return result.data;
     }
@@ -149,17 +149,17 @@ export function createValidationNode(
       logger.info('Executing Phase 5: Validation');
       const patch = state.context.patch;
       const repoPath = context.repoPath as string;
-      
+
       if (!patch) {
         throw new Error('Missing patch');
       }
-      
+
       const result = await bridge.validate(patch as PatchResult, repoPath);
-      
+
       if (!result.success || !result.data) {
         throw new Error(`Phase 5 failed: ${result.error || 'No data'}`);
       }
-      
+
       state.context.validation = result.data;
       return result.data;
     }
@@ -179,7 +179,7 @@ export function createReportNode(
     },
     async (context: Record<string, unknown>, state: WorkflowState) => {
       logger.info('Executing Phase 6: Report Generation');
-      
+
       const report = {
         repoAnalysis: state.context.repoAnalysis,
         researchSpec: state.context.researchSpec,
@@ -188,7 +188,7 @@ export function createReportNode(
         validation: state.context.validation,
         completedAt: new Date().toISOString(),
       };
-      
+
       state.context.report = report;
       return report;
     }

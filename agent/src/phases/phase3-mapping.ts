@@ -23,7 +23,7 @@ export async function executePhase3(
     }
 
     const mapping = result.data as MappingResult;
-    
+
     logger.info('Phase 3 completed', {
       targetsFound: mapping.targets.length,
       strategy: mapping.strategy,

@@ -20,7 +20,7 @@ export async function executePhase5(
     }
 
     const validation = result.data as ValidationResult;
-    
+
     logger.info('Phase 5 completed', {
       passed: validation.passed,
       stage: validation.stage,

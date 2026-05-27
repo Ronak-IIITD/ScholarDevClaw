@@ -8,6 +8,7 @@ Paper: arXiv:2108.12409
 """
 
 import math
+
 import torch
 import torch.nn as nn
 
@@ -34,9 +35,7 @@ class ALiBiPositionalBias(nn.Module):
             return 2 ** math.floor(math.log2(n))
 
         n = _closest_power_of_2(n_heads)
-        slopes = torch.tensor(
-            [2 ** (-(2 ** -(math.log2(n) - i))) for i in range(n)]
-        )
+        slopes = torch.tensor([2 ** (-(2 ** -(math.log2(n) - i))) for i in range(n)])
         if n < n_heads:
             extra = torch.tensor(
                 [2 ** (-(2 ** -(math.log2(2 * n) - i))) for i in range(n_heads - n)]

@@ -19,7 +19,7 @@ export async function executePhase4(
     }
 
     const patch = result.data as PatchResult;
-    
+
     logger.info('Phase 4 completed', {
       newFiles: patch.newFiles.length,
       transformations: patch.transformations.length,

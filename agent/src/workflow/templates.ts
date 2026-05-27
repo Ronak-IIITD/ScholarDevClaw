@@ -217,17 +217,17 @@ function createValidationGateNode(bridge: PythonSubprocessBridge | PythonHttpBri
     async (context, state) => {
       const critic = state.context.critic as any;
       const validation = state.context.validation as any;
-      
-      const gatePassed = 
+
+      const gatePassed =
         (critic?.payload?.issue_count || 0) === 0 &&
         (validation?.passed || false);
-      
+
       state.context.gatePassed = gatePassed;
-      
+
       if (!gatePassed) {
         logger.warn('Validation gate not passed');
       }
-      
+
       return { passed: gatePassed, critic, validation };
     }
   );
@@ -278,7 +278,7 @@ function createMultiExecuteNode(bridge: PythonSubprocessBridge | PythonHttpBridg
     async (context, state) => {
       const plan = state.context.plan as any;
       const specs = plan?.payload?.selected_specs || [];
-      
+
       const results = [];
       for (const spec of specs) {
         const mapping = await bridge.mapArchitecture(
@@ -292,7 +292,7 @@ function createMultiExecuteNode(bridge: PythonSubprocessBridge | PythonHttpBridg
         const validation = await bridge.validate(patch.data as PatchResult, context.repoPath as string);
         results.push({ spec, mapping: mapping.data, patch: patch.data, validation: validation.data });
       }
-      
+
       state.context.multiResults = results;
       return results;
     }

@@ -568,7 +568,7 @@ docker build -f docker/Dockerfile.agent -t scholardevclaw-agent:ci .
 ### GitHub Pages Not Showing
 
 **Problem**: Landing page not visible at GitHub Pages URL
-**Solution**: 
+**Solution**:
 1. Check if GitHub Pages is enabled in repository settings
 2. Verify source is set to `gh-pages` branch
 3. Check if `gh-pages` branch exists

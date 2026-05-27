@@ -46,7 +46,7 @@ export class GitHubClient {
       });
 
       logger.info('Created pull request', { url: pr.html_url, number: pr.number });
-      
+
       return {
         url: pr.html_url,
         number: pr.number,

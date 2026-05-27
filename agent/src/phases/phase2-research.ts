@@ -7,7 +7,7 @@ export async function executePhase2(
   bridge: PythonBridge,
   context: Phase2Context
 ): Promise<PhaseResult<ResearchSpecResult>> {
-  logger.info('=== Phase 2: Research Intelligence ===', { 
+  logger.info('=== Phase 2: Research Intelligence ===', {
     paperSource: context.paperSource,
     sourceType: context.sourceType,
   });
@@ -21,9 +21,9 @@ export async function executePhase2(
     }
 
     const spec = result.data as ResearchSpecResult;
-    
+
     const confidence = calculateResearchConfidence(spec);
-    
+
     logger.info('Phase 2 completed', {
       algorithmName: spec.algorithm.name,
       confidence,

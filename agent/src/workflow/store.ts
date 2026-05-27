@@ -99,12 +99,12 @@ export class WorkflowStore {
     try {
       const { readdir } = await import('fs/promises');
       const files = await readdir(this.storeDir);
-      
+
       const snapshots: WorkflowSnapshot[] = [];
-      
+
       for (const file of files) {
         if (!file.endsWith('.json')) continue;
-        
+
         try {
           const content = await readFile(`${this.storeDir}/${file}`, 'utf-8');
           snapshots.push(JSON.parse(content));
@@ -112,8 +112,8 @@ export class WorkflowStore {
           continue;
         }
       }
-      
-      return snapshots.sort((a, b) => 
+
+      return snapshots.sort((a, b) =>
         new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()
       );
     } catch {
@@ -124,7 +124,7 @@ export class WorkflowStore {
   async delete(workflowId: string): Promise<void> {
     const { unlink } = await import('fs/promises');
     const filePath = this.getFilePath(workflowId);
-    
+
     if (existsSync(filePath)) {
       await unlink(filePath);
     }
@@ -168,7 +168,7 @@ export class ResumableWorkflow {
     nodes: WorkflowNode[]
   ): Promise<{ state: WorkflowState; nodeResults: Map<string, NodeResult> } | null> {
     const snapshot = await store.load(workflowId);
-    
+
     if (!snapshot) {
       return null;
     }

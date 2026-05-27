@@ -2,7 +2,7 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-27
+**Last updated:** 2026-05-27 (2nd pass)
 
 ### 2026-05-27 (Coverage Boost — Utility Module + Graph Tests, CI Threshold Raised)
 **Summary:** Added 178 new tests covering 9 previously-untested modules (8 utils + understanding/graph), raising overall coverage from 49% → 51%. Raised CI coverage threshold from 40% → 50%.
@@ -587,10 +587,10 @@
 2. 🔄 Complete frontend Paper-to-Code flow (repo path input, file upload in PaperToCodePage.tsx)
 3. Address Medium/Low priority items from SECURITY_UPDATES.md as needed`
 
-**Status:** All TOP 5 HIGHEST-IMPACT FIXES from SECURITY_UPDATES.md are COMPLETE and pushed to GitHub (commit `efbdc04`). 
-Core security fixes done: patch truncation, validation flow, install path, TypeScript bridge logic, auto-approve, web auth. 
-✅ 1632 core tests pass, 40 validation runner tests pass. 
-🔄 TypeScript build errors (duplicate method definitions in `python-subprocess.ts`) are secondary and can be addressed in a follow-up. 
+**Status:** All TOP 5 HIGHEST-IMPACT FIXES from SECURITY_UPDATES.md are COMPLETE and pushed to GitHub (commit `efbdc04`).
+Core security fixes done: patch truncation, validation flow, install path, TypeScript bridge logic, auto-approve, web auth.
+✅ 1632 core tests pass, 40 validation runner tests pass.
+🔄 TypeScript build errors (duplicate method definitions in `python-subprocess.ts`) are secondary and can be addressed in a follow-up.
 
 **Final Summary (2026-05-07):**
 ✅ **Critical #1**: Removed patch truncation (generator.py, server.py)
@@ -606,7 +606,7 @@ Core security fixes done: patch truncation, validation flow, install path, TypeS
 **Remaining work:**
 - Fix TypeScript build errors in `python-subprocess.ts` (duplicate methods - secondary)
 - Complete frontend Paper-to-Code flow (repo path input, file upload)
-- Address Medium/Low priority items from SECURITY_UPDATES.md` 
+- Address Medium/Low priority items from SECURITY_UPDATES.md`
 
 **Summary of Completed Work:**
 1. ✅ Critical #1: Removed patch truncation (generator.py, server.py)
@@ -4639,7 +4639,7 @@ Verification notes:
 **Key Changes:**
 - **Hero Section**: Changed from "The open source AI coding agent" to "Autonomous Research-to-Code AI Agent" with gradient accent text
 - **Smooth Scroll**: Added IntersectionObserver-based fade-in animations on scroll
-- **New Sections**: 
+- **New Sections**:
   - Workflow section showing 6-phase pipeline (Analyze → Research → Map → Generate → Validate → Integrate)
   - Terminal demo section with real command examples
   - CTA section with call-to-action button

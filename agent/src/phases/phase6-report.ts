@@ -49,7 +49,7 @@ export async function executePhase6(
 
   try {
     const report = generateReport(context);
-    
+
     logger.info('Phase 6 completed', {
       recommendation: report.recommendation.action,
       confidence: report.recommendation.confidence,
@@ -69,7 +69,7 @@ export async function executePhase6(
 
 function generateReport(context: Phase6Context): Phase6Report {
   const { repoAnalysis, researchSpec, mapping, patch, validation } = context;
-  
+
   const algorithmName = researchSpec?.algorithm?.name || 'Unknown';
   const paperTitle = researchSpec?.paper?.title || 'Unknown';
 
@@ -111,14 +111,14 @@ function generateReport(context: Phase6Context): Phase6Report {
 function generateWhatChanged(mapping: MappingResult | undefined, spec: ResearchSpecResult | undefined): string {
   const algorithmName = spec?.algorithm?.name || 'the research';
   const targetPattern = spec?.changes?.targetPattern || 'components';
-  
+
   return `This integration applies ${algorithmName} by replacing ${targetPattern} in the codebase.`;
 }
 
 function generateWhy(spec: ResearchSpecResult | undefined): string {
   const algorithmName = spec?.algorithm?.name || 'The technique';
   const benefits = spec?.changes?.expectedBenefits?.join(', ') || 'improved performance';
-  
+
   return `${algorithmName} offers ${benefits}.`;
 }
 
@@ -130,35 +130,35 @@ function generateRiskNotes(
   const speedup = validation?.comparison?.speedup;
   const lossChange = validation?.comparison?.lossChange;
   const mappingConfidence = mapping?.confidence;
-  
+
   if (typeof speedup === 'number' && speedup < 1.0) {
     notes.push('Performance regression detected - review required');
   }
-  
+
   if (typeof lossChange === 'number' && lossChange > 5) {
     notes.push('Significant loss change observed - verify model quality');
   }
-  
+
   if (typeof mappingConfidence === 'number' && mappingConfidence < 70) {
     notes.push('Low mapping confidence - manual review recommended');
   }
-  
+
   return notes;
 }
 
 function generateDiffPreview(patch: PatchResult | undefined): string {
   if (!patch) return 'No patch generated';
-  
+
   const lines: string[] = [];
-  
+
   if (patch.newFiles?.length) {
     lines.push(`New files: ${patch.newFiles.map((f) => f.path).join(', ')}`);
   }
-  
+
   if (patch.transformations?.length) {
     lines.push(`Modified: ${patch.transformations.map((t) => t.file).join(', ')}`);
   }
-  
+
   return lines.join('\n') || 'No changes';
 }
 
@@ -178,15 +178,15 @@ function generateRecommendationNotes(
   spec: ResearchSpecResult | undefined,
 ): string {
   const algorithmName = spec?.algorithm?.name || 'The integration';
-  
+
   if (!validation) {
     return `${algorithmName} validation could not be completed. Manual review required.`;
   }
-  
+
   if (validation.passed) {
     return `${algorithmName} passed validation with ${validation.comparison?.speedup?.toFixed(2)}x speedup. Ready for integration.`;
   }
-  
+
   return `${algorithmName} validation failed at ${validation.stage}. Review required before proceeding.`;
 }
 

@@ -7,10 +7,11 @@ by Edward J. Hu, Yelong Shen, Phillip Wallis, et al. (2021)
 Paper: arXiv:2106.09685
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 
 EXPECTED_SYMBOLS = ("LoRALinear", "apply_lora")
 
@@ -125,7 +126,7 @@ def smoke_test(candidate_module) -> bool:
         )
 
         return True
-    except Exception as e:
+    except Exception:
         # Optionally log the error for debugging
         # print(f"LoRA smoke test failed: {e}")
         return False

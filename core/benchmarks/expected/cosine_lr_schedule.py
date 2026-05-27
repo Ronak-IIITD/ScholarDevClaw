@@ -10,8 +10,9 @@ Paper: arXiv:1608.03983
 import math
 
 
-def get_cosine_warmup_lr(step: int, warmup_steps: int, max_steps: int,
-                          max_lr: float = 6e-4, min_lr: float = 6e-5) -> float:
+def get_cosine_warmup_lr(
+    step: int, warmup_steps: int, max_steps: int, max_lr: float = 6e-4, min_lr: float = 6e-5
+) -> float:
     """
     Cosine annealing schedule with linear warmup.
 
