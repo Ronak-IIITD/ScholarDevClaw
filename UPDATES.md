@@ -2,7 +2,29 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-26
+**Last updated:** 2026-05-27
+
+### 2026-05-27 (Coverage Boost — Utility Module + Graph Tests, CI Threshold Raised)
+**Summary:** Added 178 new tests covering 9 previously-untested modules (8 utils + understanding/graph), raising overall coverage from 49% → 51%. Raised CI coverage threshold from 40% → 50%.
+
+**What changed:**
+1. **New test files (9 files, 178 tests):**
+   - `test_config.py` (7 tests): Settings defaults, overrides, env_prefix
+   - `test_logger.py` (7 tests): setup_logger, logging levels, handler reuse
+   - `test_atomic_write.py` (10 tests): atomic_write_text/json/jsonl, permissions, cleanup
+   - `test_benchmark.py` (17 tests): Benchmark.time_operation, time_with_memory, compare_operations, get_system_info, Profiler, OperationTimer, profile_block
+   - `test_cache.py` (20 tests): Cache (TTL, LRU eviction, stats), FileCache (set/get/clear, expiration), cached decorator, ResultCache
+   - `test_circuit_breaker.py` (20 tests): CircuitBreaker state machine (CLOSED/OPEN/HALF_OPEN), threshold tripping, recovery, force_open/close, CircuitBreakerRegistry, with_circuit_breaker decorator
+   - `test_parallel.py` (16 tests): parallel_map, LazyFileScanner, ParallelGit, count_files_fast, find_files_by_ext
+   - `test_validation_utils.py` (52 tests): RequiredValidator, PathValidator, StringValidator, EnumValidator, RangeValidator, CompositeValidator, InputValidator, validate_repo_path/spec_name/output_dir
+   - `test_graph.py` (7 tests): build_concept_graph, export_graph_json with empty/cycle/DAG graphs
+2. **CI threshold raised:** `--cov-fail-under` from 40 → 50 in `.github/workflows/ci.yml`
+3. **Ruff lint fix:** Removed unused imports in new test files
+
+**Verification:**
+- `cd core && python -m pytest tests/ -q` → 2002 passed, 2 skipped
+- `cd core && ruff check src/ tests/` → All checks passed
+- `cd core && ruff format --check src/ tests/` → All formatted
 
 ### 2026-05-26 (Hardening Tests — Validation Runner + Security Modules)
 **Summary:** Added 168 validation runner tests (covering 19 previously uncovered methods) and 54 security module tests (covering BanditScanner, SemgrepScanner, SecurityScanner, and SecurityReport). All 1824 tests pass (4 skipped).
