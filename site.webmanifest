@@ -1,0 +1,16 @@
+{
+  "name": "ScholarDevClaw",
+  "short_name": "ScholarDevClaw",
+  "description": "Research-to-code AI agent for automated ML paper integration.",
+  "start_url": "/ScholarDevClaw/",
+  "display": "standalone",
+  "background_color": "#040509",
+  "theme_color": "#040509",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

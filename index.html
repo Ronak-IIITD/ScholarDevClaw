@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScholarDevClaw — Research to Code</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --ink:#0c0c0c;
+  --paper:#f5f2eb;
+  --paper2:#ede9df;
+  --accent:#c8410a;
+  --accent2:#1a3a2a;
+  --muted:#6b6455;
+  --line:rgba(12,12,12,0.12);
+  --serif:'DM Serif Display',Georgia,serif;
+  --mono:'DM Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+
+html{scroll-behavior:smooth}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.6;
+  overflow-x:hidden;
+}
+
+/* ── GRAIN OVERLAY ── */
+body::before{
+  content:'';
+  position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events:none;
+  z-index:999;
+  opacity:.4;
+}
+
+/* ── NAV ── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1.2rem 3rem;
+  border-bottom:1px solid var(--line);
+  background:rgba(245,242,235,0.92);
+  backdrop-filter:blur(12px);
+}
+.nav-logo{
+  font-family:var(--serif);
+  font-size:1.15rem;
+  letter-spacing:-0.02em;
+  color:var(--ink);
+  text-decoration:none;
+}
+.nav-logo span{color:var(--accent)}
+.nav-links{display:flex;gap:2rem;list-style:none}
+.nav-links a{
+  font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);text-decoration:none;
+  transition:color .2s;
+}
+.nav-links a:hover{color:var(--ink)}
+.nav-cta{
+  font-family:var(--mono);font-size:.75rem;
+  background:var(--ink);color:var(--paper);
+  border:none;padding:.55rem 1.2rem;cursor:pointer;
+  text-decoration:none;letter-spacing:.05em;
+  transition:background .2s,color .2s;
+}
+.nav-cta:hover{background:var(--accent)}
+
+/* ── HERO ── */
+.hero{
+  min-height:100vh;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  padding-top:80px;
+  border-bottom:1px solid var(--line);
+  overflow:hidden;
+}
+.hero-left{
+  padding:8rem 3rem 5rem 3rem;
+  display:flex;flex-direction:column;justify-content:center;
+  border-right:1px solid var(--line);
+  position:relative;
+}
+.hero-eyebrow{
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--accent);
+  margin-bottom:2rem;
+  display:flex;align-items:center;gap:.7rem;
+}
+.hero-eyebrow::before{
+  content:'';display:block;
+  width:28px;height:1px;background:var(--accent);
+}
+.hero-h1{
+  font-family:var(--serif);
+  font-size:clamp(3rem,5.5vw,5.2rem);
+  line-height:1.05;
+  letter-spacing:-0.03em;
+  margin-bottom:2rem;
+  color:var(--ink);
+}
+.hero-h1 em{
+  font-style:italic;
+  color:var(--accent);
+}
+.hero-sub{
+  font-size:1.05rem;font-weight:300;
+  color:var(--muted);max-width:440px;
+  line-height:1.75;margin-bottom:3rem;
+}
+.hero-actions{display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap}
+.btn-primary{
+  font-family:var(--mono);font-size:.8rem;letter-spacing:.06em;
+  background:var(--ink);color:var(--paper);
+  padding:.85rem 2rem;border:none;cursor:pointer;
+  text-decoration:none;
+  transition:background .2s;
+  display:inline-block;
+}
+.btn-primary:hover{background:var(--accent)}
+.btn-ghost{
+  font-family:var(--mono);font-size:.8rem;letter-spacing:.06em;
+  color:var(--muted);text-decoration:none;
+  border-bottom:1px solid var(--line);padding-bottom:2px;
+  transition:color .2s,border-color .2s;
+}
+.btn-ghost:hover{color:var(--ink);border-color:var(--ink)}
+.hero-badges{
+  display:flex;gap:1rem;margin-top:3.5rem;flex-wrap:wrap;
+}
+.badge{
+  font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;
+  text-transform:uppercase;
+  border:1px solid var(--line);
+  padding:.3rem .8rem;color:var(--muted);
+}
+.badge.live{
+  border-color:var(--accent2);color:var(--accent2);
+  position:relative;padding-left:1.4rem;
+}
+.badge.live::before{
+  content:'';position:absolute;left:.7rem;top:50%;
+  transform:translateY(-50%);
+  width:5px;height:5px;border-radius:50%;
+  background:var(--accent2);
+  animation:pulse-dot 2s infinite;
+}
+@keyframes pulse-dot{
+  0%,100%{opacity:1;transform:translateY(-50%) scale(1)}
+  50%{opacity:.5;transform:translateY(-50%) scale(.7)}
+}
+
+/* hero right — paper diagram */
+.hero-right{
+  position:relative;
+  background:var(--paper2);
+  display:flex;align-items:center;justify-content:center;
+  padding:4rem 3rem;
+  overflow:hidden;
+}
+.hero-right::before{
+  content:'';position:absolute;inset:0;
+  background:
+    repeating-linear-gradient(0deg,transparent,transparent 39px,var(--line) 39px,var(--line) 40px),
+    repeating-linear-gradient(90deg,transparent,transparent 39px,var(--line) 39px,var(--line) 40px);
+}
+.pipeline-visual{
+  position:relative;z-index:1;
+  width:100%;max-width:420px;
+}
+.pipe-step{
+  display:flex;align-items:flex-start;gap:1.2rem;
+  padding:1.2rem 1.5rem;
+  background:var(--paper);
+  border:1px solid var(--line);
+  margin-bottom:-1px;
+  opacity:0;
+  animation:slide-in .5s ease forwards;
+}
+.pipe-step:nth-child(1){animation-delay:.2s}
+.pipe-step:nth-child(2){animation-delay:.35s}
+.pipe-step:nth-child(3){animation-delay:.5s}
+.pipe-step:nth-child(4){animation-delay:.65s}
+.pipe-step:nth-child(5){animation-delay:.8s}
+.pipe-step:nth-child(6){animation-delay:.95s}
+@keyframes slide-in{
+  from{opacity:0;transform:translateX(20px)}
+  to{opacity:1;transform:translateX(0)}
+}
+.pipe-num{
+  font-family:var(--mono);font-size:.65rem;
+  color:var(--muted);min-width:20px;
+  padding-top:2px;
+}
+.pipe-content{}
+.pipe-title{
+  font-family:var(--mono);font-size:.8rem;font-weight:500;
+  color:var(--ink);
+}
+.pipe-desc{font-size:.75rem;color:var(--muted);margin-top:.15rem}
+.pipe-tag{
+  font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;
+  background:var(--accent);color:#fff;
+  padding:.15rem .5rem;margin-left:auto;align-self:flex-start;
+  white-space:nowrap;flex-shrink:0;
+}
+.pipe-tag.green{background:var(--accent2)}
+
+/* ── MARQUEE ── */
+.marquee-strip{
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  padding:.75rem 0;overflow:hidden;white-space:nowrap;
+  background:var(--paper2);
+}
+.marquee-inner{
+  display:inline-flex;gap:3rem;
+  animation:marquee 30s linear infinite;
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);
+}
+.marquee-inner span{flex-shrink:0}
+.marquee-inner .dot{color:var(--accent)}
+@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ── SECTION SHELLS ── */
+section{border-bottom:1px solid var(--line)}
+.section-inner{max-width:1200px;margin:0 auto;padding:6rem 3rem}
+.section-label{
+  font-family:var(--mono);font-size:.7rem;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--accent);
+  margin-bottom:1.5rem;
+  display:flex;align-items:center;gap:.7rem;
+}
+.section-label::before{content:'';width:22px;height:1px;background:var(--accent)}
+.section-h2{
+  font-family:var(--serif);
+  font-size:clamp(2.2rem,4vw,3.8rem);
+  line-height:1.1;letter-spacing:-0.03em;
+  margin-bottom:1.2rem;
+}
+.section-h2 em{font-style:italic;color:var(--accent)}
+.section-sub{
+  font-size:1rem;font-weight:300;color:var(--muted);
+  max-width:560px;line-height:1.75;
+}
+
+/* ── HOW IT WORKS ── */
+.how-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:0;margin-top:5rem;
+  border:1px solid var(--line);
+}
+.how-card{
+  padding:2.5rem 2rem;
+  border-right:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  position:relative;
+  transition:background .2s;
+}
+.how-card:hover{background:var(--paper2)}
+.how-card:nth-child(3n){border-right:none}
+.how-card:nth-last-child(-n+3){border-bottom:none}
+.how-n{
+  font-family:var(--serif);font-size:3rem;
+  color:var(--line);
+  position:absolute;top:1.5rem;right:1.8rem;
+  line-height:1;user-select:none;
+}
+.how-icon{
+  width:36px;height:36px;
+  border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:1.5rem;font-size:1rem;
+}
+.how-title{
+  font-family:var(--mono);font-size:.85rem;font-weight:500;
+  margin-bottom:.6rem;letter-spacing:.02em;
+}
+.how-text{font-size:.85rem;color:var(--muted);line-height:1.65}
+.how-tag{
+  font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--accent);border:1px solid rgba(200,65,10,.25);
+  display:inline-block;padding:.25rem .6rem;margin-top:1rem;
+}
+
+/* ── CODE BLOCK ── */
+.code-showcase{
+  display:grid;grid-template-columns:1fr 1.2fr;
+  gap:0;margin-top:5rem;
+  border:1px solid var(--line);
+}
+.code-left{
+  padding:3rem;
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;justify-content:center;
+}
+.code-right{
+  background:var(--ink);
+  padding:2.5rem;
+  position:relative;
+  overflow:hidden;
+}
+.code-right::before{
+  content:'';position:absolute;
+  top:-60px;right:-60px;
+  width:200px;height:200px;
+  background:radial-gradient(circle,rgba(200,65,10,.15),transparent 70%);
+  pointer-events:none;
+}
+.code-label{
+  font-family:var(--mono);font-size:.65rem;letter-spacing:.12em;
+  text-transform:uppercase;color:rgba(245,242,235,.3);
+  margin-bottom:1.5rem;
+}
+.code-block{
+  font-family:var(--mono);font-size:.78rem;
+  color:rgba(245,242,235,.75);
+  line-height:1.75;
+  white-space:pre;
+}
+.c-comment{color:rgba(245,242,235,.3)}
+.c-key{color:#e8a87c}
+.c-str{color:#adc9a1}
+.c-func{color:#a8c4f5}
+.c-num{color:#e8a87c}
+.c-op{color:rgba(245,242,235,.5)}
+.code-step-list{list-style:none;margin-top:2.5rem}
+.code-step-list li{
+  display:flex;align-items:flex-start;gap:.9rem;
+  padding:.7rem 0;
+  border-bottom:1px solid var(--line);
+  font-size:.85rem;color:var(--muted);
+}
+.code-step-list li:last-child{border-bottom:none}
+.code-step-list .step-n{
+  font-family:var(--mono);font-size:.65rem;
+  color:var(--accent);min-width:16px;
+  padding-top:2px;
+}
+.code-step-list .step-b{font-weight:500;color:var(--ink)}
+
+/* ── STATS ── */
+.stats-section{background:var(--ink);color:var(--paper)}
+.stats-section .section-label{color:rgba(200,65,10,.8)}
+.stats-section .section-label::before{background:rgba(200,65,10,.8)}
+.stats-section .section-h2 em{color:rgba(200,65,10,.9)}
+.stats-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  gap:0;margin-top:4rem;
+  border:1px solid rgba(245,242,235,.1);
+}
+.stat-card{
+  padding:2.5rem 2rem;
+  border-right:1px solid rgba(245,242,235,.1);
+  text-align:center;
+}
+.stat-card:last-child{border-right:none}
+.stat-n{
+  font-family:var(--serif);font-size:3.5rem;
+  letter-spacing:-0.04em;line-height:1;
+  color:var(--paper);
+  display:block;margin-bottom:.5rem;
+}
+.stat-label{
+  font-family:var(--mono);font-size:.7rem;
+  letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(245,242,235,.4);
+}
+
+/* ── INSTALL ── */
+.install-tabs{display:flex;border:1px solid var(--line);margin-top:4rem;overflow:hidden}
+.install-tab{
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
+  text-transform:uppercase;
+  padding:.75rem 1.5rem;
+  background:none;border:none;border-right:1px solid var(--line);
+  cursor:pointer;color:var(--muted);
+  transition:background .15s,color .15s;
+}
+.install-tab:last-child{border-right:none}
+.install-tab.active{background:var(--ink);color:var(--paper)}
+.install-tab:not(.active):hover{background:var(--paper2)}
+.install-code{
+  border:1px solid var(--line);border-top:none;
+  padding:1.5rem 2rem;
+  font-family:var(--mono);font-size:.85rem;
+  background:var(--paper2);
+  display:flex;align-items:center;justify-content:space-between;
+  gap:1rem;
+}
+.install-cmd{color:var(--ink)}
+.copy-btn{
+  font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;
+  background:none;border:1px solid var(--line);
+  padding:.35rem .8rem;cursor:pointer;color:var(--muted);
+  transition:background .15s,color .15s;
+}
+.copy-btn:hover{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* ── FAQ ── */
+.faq-list{margin-top:4rem;border:1px solid var(--line)}
+.faq-item{border-bottom:1px solid var(--line)}
+.faq-item:last-child{border-bottom:none}
+.faq-q{
+  width:100%;background:none;border:none;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1.5rem 2rem;
+  font-family:var(--sans);font-size:.95rem;font-weight:500;
+  color:var(--ink);cursor:pointer;text-align:left;
+  transition:background .15s;
+}
+.faq-q:hover{background:var(--paper2)}
+.faq-icon{
+  font-family:var(--mono);font-size:1.2rem;color:var(--muted);
+  transition:transform .2s;flex-shrink:0;
+}
+.faq-item.open .faq-icon{transform:rotate(45deg)}
+.faq-a{
+  padding:0 2rem;max-height:0;overflow:hidden;
+  transition:max-height .3s ease,padding .3s;
+  font-size:.9rem;color:var(--muted);line-height:1.75;
+}
+.faq-item.open .faq-a{max-height:200px;padding:0 2rem 1.5rem}
+
+/* ── CTA FINAL ── */
+.cta-final{
+  text-align:center;padding:8rem 3rem;
+  position:relative;overflow:hidden;
+}
+.cta-final::before{
+  content:'';position:absolute;
+  top:50%;left:50%;transform:translate(-50%,-50%);
+  width:600px;height:300px;
+  background:radial-gradient(ellipse,rgba(200,65,10,.06),transparent 70%);
+  pointer-events:none;
+}
+.cta-final .section-label{justify-content:center}
+.cta-final .section-label::before{display:none}
+.cta-final .section-h2{margin:0 auto 1.2rem}
+.cta-final .section-sub{margin:0 auto 2.5rem}
+.cta-actions{display:flex;align-items:center;gap:1rem;justify-content:center;flex-wrap:wrap}
+
+/* ── FOOTER ── */
+footer{
+  border-top:1px solid var(--line);
+  padding:3rem;
+  display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;
+  gap:3rem;background:var(--paper2);
+}
+.footer-brand .nav-logo{display:block;margin-bottom:.75rem;font-size:1rem}
+.footer-tagline{font-size:.8rem;color:var(--muted);line-height:1.6;max-width:220px}
+.footer-col h4{
+  font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);
+  margin-bottom:1rem;
+}
+.footer-col ul{list-style:none}
+.footer-col li{margin-bottom:.5rem}
+.footer-col a{font-size:.83rem;color:var(--muted);text-decoration:none;transition:color .2s}
+.footer-col a:hover{color:var(--ink)}
+.footer-bottom{
+  border-top:1px solid var(--line);
+  padding:1.2rem 3rem;
+  display:flex;align-items:center;justify-content:space-between;
+  font-family:var(--mono);font-size:.68rem;
+  color:var(--muted);letter-spacing:.06em;
+}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  .hero{grid-template-columns:1fr}
+  .hero-right{display:none}
+  .how-grid{grid-template-columns:1fr 1fr}
+  .how-card:nth-child(2n){border-right:none}
+  .how-card:nth-child(3n){border-right:1px solid var(--line)}
+  .how-card:nth-child(3){border-right:none}
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .stat-card:nth-child(2){border-right:none}
+  .code-showcase{grid-template-columns:1fr}
+  footer{grid-template-columns:1fr 1fr}
+  nav{padding:1.2rem 1.5rem}
+  .section-inner{padding:4rem 1.5rem}
+}
+@media(max-width:600px){
+  .how-grid{grid-template-columns:1fr}
+  .how-card{border-right:none!important}
+  .stats-grid{grid-template-columns:1fr}
+  .stat-card{border-right:none;border-bottom:1px solid rgba(245,242,235,.1)}
+  footer{grid-template-columns:1fr}
+  nav .nav-links{display:none}
+  .install-tabs{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#"><span>Scholar</span>DevClaw</a>
+  <ul class="nav-links">
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#install">Install</a></li>
+    <li><a href="#faq">FAQ</a></li>
+  </ul>
+  <a class="nav-cta" href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank">GitHub →</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-left">
+    <div class="hero-eyebrow">v2.0 · Open source · MIT</div>
+    <h1 class="hero-h1">
+      Research papers,<br>
+      turned into<br>
+      <em>running code.</em>
+    </h1>
+    <p class="hero-sub">
+      ScholarDevClaw reads ML research, maps improvements to your codebase,
+      and generates validated patches — autonomously. Runs entirely on your machine.
+    </p>
+    <div class="hero-actions">
+      <a class="btn-primary" href="#install">Install now</a>
+      <a class="btn-ghost" href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank">View source →</a>
+    </div>
+    <div class="hero-badges">
+      <span class="badge live">Active</span>
+      <span class="badge">1260+ tests</span>
+      <span class="badge">6 languages</span>
+      <span class="badge">15 paper specs</span>
+    </div>
+  </div>
+
+  <div class="hero-right">
+    <div class="pipeline-visual">
+      <div class="pipe-step">
+        <span class="pipe-num">01</span>
+        <div class="pipe-content">
+          <div class="pipe-title">ingest paper.pdf</div>
+          <div class="pipe-desc">Extract algorithms, equations, pseudocode</div>
+        </div>
+        <span class="pipe-tag">PDF</span>
+      </div>
+      <div class="pipe-step">
+        <span class="pipe-num">02</span>
+        <div class="pipe-content">
+          <div class="pipe-title">analyze ./my-repo</div>
+          <div class="pipe-desc">AST traversal, framework detection</div>
+        </div>
+        <span class="pipe-tag">AST</span>
+      </div>
+      <div class="pipe-step">
+        <span class="pipe-num">03</span>
+        <div class="pipe-content">
+          <div class="pipe-title">search arXiv 2.4M+</div>
+          <div class="pipe-desc">Semantic match to your patterns</div>
+        </div>
+        <span class="pipe-tag">2.4M</span>
+      </div>
+      <div class="pipe-step">
+        <span class="pipe-num">04</span>
+        <div class="pipe-content">
+          <div class="pipe-title">map → generate</div>
+          <div class="pipe-desc">6-tier matching + CST patch synthesis</div>
+        </div>
+        <span class="pipe-tag">94%</span>
+      </div>
+      <div class="pipe-step">
+        <span class="pipe-num">05</span>
+        <div class="pipe-content">
+          <div class="pipe-title">benchmark + validate</div>
+          <div class="pipe-desc">Real subprocess benchmarks, 1260+ tests</div>
+        </div>
+        <span class="pipe-tag green">✓ pass</span>
+      </div>
+      <div class="pipe-step">
+        <span class="pipe-num">06</span>
+        <div class="pipe-content">
+          <div class="pipe-title">open pull request</div>
+          <div class="pipe-desc">Clean diff, changelog, confidence scores</div>
+        </div>
+        <span class="pipe-tag green">PR</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MARQUEE -->
+<div class="marquee-strip">
+  <div class="marquee-inner">
+    <span>RMSNorm</span><span class="dot">·</span>
+    <span>FlashAttention</span><span class="dot">·</span>
+    <span>RoPE embeddings</span><span class="dot">·</span>
+    <span>SwiGLU activations</span><span class="dot">·</span>
+    <span>Grouped Query Attention</span><span class="dot">·</span>
+    <span>LoRA fine-tuning</span><span class="dot">·</span>
+    <span>Speculative Decoding</span><span class="dot">·</span>
+    <span>ALiBi attention bias</span><span class="dot">·</span>
+    <span>RMSNorm</span><span class="dot">·</span>
+    <span>FlashAttention</span><span class="dot">·</span>
+    <span>RoPE embeddings</span><span class="dot">·</span>
+    <span>SwiGLU activations</span><span class="dot">·</span>
+    <span>Grouped Query Attention</span><span class="dot">·</span>
+    <span>LoRA fine-tuning</span><span class="dot">·</span>
+    <span>Speculative Decoding</span><span class="dot">·</span>
+    <span>ALiBi attention bias</span><span class="dot">·</span>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="section-inner">
+    <div class="section-label">How it works</div>
+    <h2 class="section-h2">Six phases.<br><em>One pipeline.</em></h2>
+    <p class="section-sub">From raw research paper to production pull request — entirely autonomous, with approval gates where it matters.</p>
+
+    <div class="how-grid">
+      <div class="how-card">
+        <div class="how-n">01</div>
+        <div class="how-icon">📄</div>
+        <div class="how-title">Analyze Repository</div>
+        <p class="how-text">Tree-sitter extracts a full AST from your codebase across 6+ languages. Detects frameworks, patterns, and architecture.</p>
+        <span class="how-tag">tree-sitter</span>
+      </div>
+      <div class="how-card">
+        <div class="how-n">02</div>
+        <div class="how-icon">🔍</div>
+        <div class="how-title">Search Research</div>
+        <p class="how-text">Searches arXiv (2.4M+ papers), Papers with Code, and GitHub for ML research relevant to your specific codebase.</p>
+        <span class="how-tag">arXiv · PWC</span>
+      </div>
+      <div class="how-card">
+        <div class="how-n">03</div>
+        <div class="how-icon">🗺</div>
+        <div class="how-title">Map to Your Code</div>
+        <p class="how-text">6-tier matching: exact name → fuzzy → imports → text scan → legacy → LLM semantic. Every match is confidence-scored.</p>
+        <span class="how-tag">6-tier</span>
+      </div>
+      <div class="how-card">
+        <div class="how-n">04</div>
+        <div class="how-icon">⚙️</div>
+        <div class="how-title">Generate Patches</div>
+        <p class="how-text">15 CST templates (RMSNorm, FlashAttention, RoPE…) plus LLM synthesis fallback for novel improvements.</p>
+        <span class="how-tag">15 templates</span>
+      </div>
+      <div class="how-card">
+        <div class="how-n">05</div>
+        <div class="how-icon">📊</div>
+        <div class="how-title">Benchmark & Validate</div>
+        <p class="how-text">Real subprocess benchmarks measure actual speedup and memory impact. Approval gates on low-confidence changes.</p>
+        <span class="how-tag">1260+ tests</span>
+      </div>
+      <div class="how-card">
+        <div class="how-n">06</div>
+        <div class="how-icon">🔀</div>
+        <div class="how-title">Open a Safe PR</div>
+        <p class="how-text">Clean pull request on a safe branch with full changelog, benchmark results, and confidence scores attached.</p>
+        <span class="how-tag">git · CI</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CODE BLOCK -->
+<section id="features">
+  <div class="section-inner">
+    <div class="section-label">Features</div>
+    <h2 class="section-h2">Built for research<br><em>engineers.</em></h2>
+
+    <div class="code-showcase">
+      <div class="code-left">
+        <p class="section-sub" style="max-width:none;margin-bottom:0">Production-grade tooling for teams who operationalize ML research at scale.</p>
+        <ul class="code-step-list">
+          <li>
+            <span class="step-n">→</span>
+            <div><span class="step-b">Multi-language AST</span> — Python, JS/TS, Go, Rust, Java. tree-sitter powered, sub-second analysis.</div>
+          </li>
+          <li>
+            <span class="step-n">→</span>
+            <div><span class="step-b">Smart 6-tier matching</span> — never misses an improvement opportunity. LLM semantic search as last resort.</div>
+          </li>
+          <li>
+            <span class="step-n">→</span>
+            <div><span class="step-b">Sandboxed validation</span> — all patches run in isolation. 1260+ tests catch regressions before your CI does.</div>
+          </li>
+          <li>
+            <span class="step-n">→</span>
+            <div><span class="step-b">Interactive TUI</span> — workflow wizard, live logs, run history, artifact viewer. Full terminal UI.</div>
+          </li>
+          <li>
+            <span class="step-n">→</span>
+            <div><span class="step-b">Zero data sharing</span> — runs 100% locally. Your code never leaves your machine.</div>
+          </li>
+        </ul>
+      </div>
+      <div class="code-right">
+        <div class="code-label">// example session</div>
+        <pre class="code-block"><span class="c-comment"># 1. Install</span>
+<span class="c-func">pip install</span> scholardevclaw
+
+<span class="c-comment"># 2. Point at your project</span>
+<span class="c-func">scholardevclaw</span> analyze <span class="c-str">./my-transformer</span>
+<span class="c-comment"># → Found 6 improvement candidates</span>
+<span class="c-comment"># → RMSNorm:    94% confidence</span>
+<span class="c-comment"># → FlashAttn:  97% confidence</span>
+
+<span class="c-comment"># 3. Map paper spec → code</span>
+<span class="c-func">scholardevclaw</span> map <span class="c-str">.</span> rmsnorm
+
+<span class="c-comment"># 4. Generate + validate patch</span>
+<span class="c-func">scholardevclaw</span> generate <span class="c-str">.</span> rmsnorm
+<span class="c-comment"># → Generating patch artifacts...</span>
+<span class="c-comment"># → Running 1260 tests... PASS</span>
+<span class="c-comment"># → Speedup: +18.4%</span>
+
+<span class="c-comment"># 5. Or just launch the TUI</span>
+<span class="c-func">scholardevclaw</span> tui</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="stats-section">
+  <div class="section-inner">
+    <div class="section-label">By the numbers</div>
+    <h2 class="section-h2">Precision <em>at scale.</em></h2>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-n">15</span>
+        <span class="stat-label">Paper Specs</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-n">1260+</span>
+        <span class="stat-label">Tests Passing</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-n">6</span>
+        <span class="stat-label">Languages</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-n">2.4M</span>
+        <span class="stat-label">arXiv Papers Indexed</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install">
+  <div class="section-inner">
+    <div class="section-label">Install</div>
+    <h2 class="section-h2">Running in under<br><em>a minute.</em></h2>
+    <p class="section-sub">Four install methods. Pick whichever fits your environment.</p>
+
+    <div class="install-tabs">
+      <button class="install-tab active" onclick="setTab(this,'curl')">curl</button>
+      <button class="install-tab" onclick="setTab(this,'pip')">pip</button>
+      <button class="install-tab" onclick="setTab(this,'source')">source</button>
+      <button class="install-tab" onclick="setTab(this,'demo')">demo</button>
+    </div>
+    <div class="install-code" id="install-cmd-box">
+      <span class="install-cmd" id="install-cmd">curl -fsSL https://ronak-iiitd.github.io/ScholarDevClaw/install.sh | bash</span>
+      <button class="copy-btn" onclick="copyInstall()">copy</button>
+    </div>
+
+    <ul class="code-step-list" style="margin-top:3rem;border-top:1px solid var(--line)">
+      <li style="padding-top:1.5rem">
+        <span class="step-n">1</span>
+        <div><span class="step-b">Install</span> using your preferred method above.</div>
+      </li>
+      <li>
+        <span class="step-n">2</span>
+        <div><span class="step-b">Run the demo</span> on nanoGPT: <code style="font-family:var(--mono);font-size:.8rem;background:var(--paper2);padding:.1rem .4rem">scholardevclaw demo</code></div>
+      </li>
+      <li>
+        <span class="step-n">3</span>
+        <div><span class="step-b">Launch the TUI</span>: <code style="font-family:var(--mono);font-size:.8rem;background:var(--paper2);padding:.1rem .4rem">scholardevclaw tui</code></div>
+      </li>
+      <li>
+        <span class="step-n">4</span>
+        <div><span class="step-b">Point at your project</span>: <code style="font-family:var(--mono);font-size:.8rem;background:var(--paper2);padding:.1rem .4rem">scholardevclaw analyze .</code></div>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="section-inner">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-h2">Common<br><em>questions.</em></h2>
+
+    <div class="faq-list">
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          What is ScholarDevClaw?
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-a">
+          ScholarDevClaw is an autonomous Research-to-Code AI Agent. It analyzes your codebase, finds relevant improvements from the latest ML papers, maps them to your code, and generates validated patches automatically. It supports Python, JS/TS, Go, Rust, and Java — running entirely on your local machine.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          How is this different from Copilot or Cursor?
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-a">
+          Generic AI coding assistants complete code you write. ScholarDevClaw proactively reads actual research papers, extracts implementation specs, and autonomously maps them to your specific codebase using 6-tier matching. It's built for researchers and engineers who want to operationalize ML innovations — not just autocomplete.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          Do I need an API key?
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-a">
+          No. ScholarDevClaw works out of the box with 15 built-in paper specs — RMSNorm, FlashAttention, RoPE, SwiGLU, and more. For advanced LLM-powered semantic matching you can optionally connect Claude, GPT, Gemini, or any other provider.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          Does my code leave my machine?
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-a">
+          Never. ScholarDevClaw runs entirely locally. Your code is analyzed on your machine and never transmitted anywhere unless you explicitly configure an external LLM service. Full control, always.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          Is ScholarDevClaw open source?
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-a">
+          Yes. ScholarDevClaw is fully open source under the MIT license. Fork it, contribute to it, or build on top of it. Source code, docs, and contribution guide are all on GitHub.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section>
+  <div class="cta-final">
+    <div class="section-label">Get started</div>
+    <h2 class="section-h2" style="max-width:700px;margin:0 auto .8rem">Your codebase deserves<br><em>the latest research.</em></h2>
+    <p class="section-sub" style="margin:0 auto 2.5rem">Install ScholarDevClaw and run your first research-to-code pipeline in under a minute.</p>
+    <div class="cta-actions">
+      <a class="btn-primary" href="#install">Install now</a>
+      <a class="btn-ghost" href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank">View on GitHub →</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-brand">
+    <a class="nav-logo" href="#"><span>Scholar</span>DevClaw</a>
+    <p class="footer-tagline">Autonomous Research-to-Code AI Agent. Transform any codebase with cutting-edge ML research.</p>
+  </div>
+  <div class="footer-col">
+    <h4>Project</h4>
+    <ul>
+      <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw" target="_blank">GitHub</a></li>
+      <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/releases" target="_blank">Releases</a></li>
+      <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/CHANGELOG.md" target="_blank">Changelog</a></li>
+    </ul>
+  </div>
+  <div class="footer-col">
+    <h4>Docs</h4>
+    <ul>
+      <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/docs/API.md" target="_blank">API Reference</a></li>
+      <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/GUIDE.md" target="_blank">Guide</a></li>
+      <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/AGENTS.md" target="_blank">Architecture</a></li>
+    </ul>
+  </div>
+  <div class="footer-col">
+    <h4>Community</h4>
+    <ul>
+      <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/issues" target="_blank">Issues</a></li>
+      <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/discussions" target="_blank">Discussions</a></li>
+      <li><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/LICENSE" target="_blank">MIT License</a></li>
+    </ul>
+  </div>
+</footer>
+<div class="footer-bottom">
+  <span>© 2026 ScholarDevClaw · MIT License</span>
+  <span>Built for researchers and developers</span>
+</div>
+
+<script>
+const CMDS = {
+  curl: 'curl -fsSL https://ronak-iiitd.github.io/ScholarDevClaw/install.sh | bash',
+  pip: 'pip install scholardevclaw',
+  source: 'git clone https://github.com/Ronak-IIITD/ScholarDevClaw.git && cd ScholarDevClaw/core && pip install -e ".[arxiv,ml,tui]"',
+  demo: 'scholardevclaw demo'
+};
+function setTab(btn, key) {
+  document.querySelectorAll('.install-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('install-cmd').textContent = CMDS[key];
+}
+function copyInstall() {
+  const txt = document.getElementById('install-cmd').textContent;
+  navigator.clipboard.writeText(txt).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.textContent = 'copied!';
+    setTimeout(() => btn.textContent = 'copy', 1500);
+  });
+}
+function toggleFaq(btn) {
+  const item = btn.closest('.faq-item');
+  const isOpen = item.classList.contains('open');
+  document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+  if (!isOpen) item.classList.add('open');
+}
+
+// Animate stats counters on scroll
+const targets = {0:15, 1:1260, 2:6, 3:2.4};
+let animated = false;
+function animateStats() {
+  if (animated) return;
+  const section = document.querySelector('.stats-grid');
+  if (!section) return;
+  const rect = section.getBoundingClientRect();
+  if (rect.top < window.innerHeight * 0.85) {
+    animated = true;
+    document.querySelectorAll('.stat-n').forEach((el, i) => {
+      const target = targets[i];
+      const isDecimal = target % 1 !== 0;
+      const duration = 1200;
+      const start = performance.now();
+      function update(now) {
+        const progress = Math.min((now - start) / duration, 1);
+        const ease = 1 - Math.pow(1 - progress, 3);
+        const val = target * ease;
+        el.textContent = isDecimal
+          ? val.toFixed(1) + 'M'
+          : (i === 1 ? Math.round(val) + '+' : Math.round(val));
+        if (progress < 1) requestAnimationFrame(update);
+      }
+      requestAnimationFrame(update);
+    });
+  }
+}
+window.addEventListener('scroll', animateStats, {passive: true});
+animateStats();
+</script>
+</body>
+</html>
