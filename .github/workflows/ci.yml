@@ -184,10 +184,55 @@ jobs:
           path: /tmp/benchmark_report.json
 
   # ──────────────────────────────────────────────
-  # TypeScript Agent — lint, build, typecheck, test
+  # TypeScript Agent — staged: install → lint + test + build (parallel)
   # ──────────────────────────────────────────────
-  agent-build:
-    name: "Agent Build + Test"
+  agent-install:
+    name: "Agent Install"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - uses: actions/cache@v4
+        id: bun-cache
+        with:
+          path: agent/node_modules
+          key: bun-${{ runner.os }}-${{ hashFiles('agent/bun.lock', 'agent/package.json') }}
+      - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+  agent-lint:
+    name: "Agent Lint (tsc)"
+    needs: [agent-install]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - uses: actions/cache@v4
+        id: bun-restore
+        with:
+          path: agent/node_modules
+          key: bun-${{ runner.os }}-${{ hashFiles('agent/bun.lock', 'agent/package.json') }}
+      - name: Install if cache miss
+        if: steps.bun-restore.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+      - run: bun tsc --noEmit
+
+  agent-test:
+    name: "Agent Test (vitest)"
+    needs: [agent-install]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -198,18 +243,46 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.10"
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-      - run: bun tsc --noEmit
+      - uses: actions/cache@v4
+        id: bun-restore
+        with:
+          path: agent/node_modules
+          key: bun-${{ runner.os }}-${{ hashFiles('agent/bun.lock', 'agent/package.json') }}
+      - name: Install if cache miss
+        if: steps.bun-restore.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
       - run: bun run test
 
-  # ──────────────────────────────────────────────
-  # Docker build smoke test
-  # ──────────────────────────────────────────────
-  docker-build:
-    name: "Docker Build"
+  agent-build:
+    name: "Agent Build (tsc)"
+    needs: [agent-install]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - uses: actions/cache@v4
+        id: bun-restore
+        with:
+          path: agent/node_modules
+          key: bun-${{ runner.os }}-${{ hashFiles('agent/bun.lock', 'agent/package.json') }}
+      - name: Install if cache miss
+        if: steps.bun-restore.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+      - run: bun run build
+
+  # ──────────────────────────────────────────────
+  # Docker build smoke test (parallel builds)
+  # ──────────────────────────────────────────────
+  docker-build-core:
+    name: "Docker Build (Core)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
@@ -223,6 +296,15 @@ jobs:
           tags: scholardevclaw-core:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  docker-build-agent:
+    name: "Docker Build (Agent)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build agent image
         uses: docker/build-push-action@v6
         with:
@@ -232,6 +314,26 @@ jobs:
           tags: scholardevclaw-agent:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ──────────────────────────────────────────────
+  # Web frontend build
+  # ──────────────────────────────────────────────
+  web-build:
+    name: "Web Build"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build
 
   docs-lint:
     name: "Docs Lint"
@@ -257,8 +359,13 @@ jobs:
         python-test,
         python-demo-integration,
         benchmark-regression,
+        agent-install,
+        agent-lint,
+        agent-test,
         agent-build,
-        docker-build,
+        docker-build-core,
+        docker-build-agent,
+        web-build,
         docs-lint,
       ]
     steps:

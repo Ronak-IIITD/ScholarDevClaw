@@ -2,7 +2,26 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-27 (3rd pass)
+**Last updated:** 2026-05-27 (4th pass)
+
+### 2026-05-27 (CI Parallelization — Docker Split, Agent Staged Builds, Web CI, Bun Caching)
+**Summary:** Parallelized the CI workflow to reduce wall-clock time. Split docker build into 2 parallel jobs, restructured agent into staged install→lint/test/build with bun caching, and added web frontend build check.
+
+**What changed:**
+1. **Docker split (parallel builds):** `docker-build` was building core and agent images sequentially in one job. Now split into `docker-build-core` and `docker-build-agent` running in parallel — cuts wall-clock from ~5min to ~3min.
+2. **Agent staged builds with caching:** Monolithic `agent-build` job (install→build→tsc→test sequential) replaced with:
+   - `agent-install`: checkout + bun install with `actions/cache` keyed on `bun.lock` + `package.json`
+   - `agent-lint` (needs install): `bun tsc --noEmit` — parallel with test + build
+   - `agent-test` (needs install): `bun run test` — parallel with lint + build
+   - `agent-build` (needs install): `bun run build` — parallel with lint + test
+   - Cache hit avoids re-install; cache miss fallback runs `bun install` in each dependent job.
+3. **Web build check (new):** Added `web-build` job running `npm ci && npm run build` for the Vite+React frontend. Runs in parallel with all other jobs. Uses `actions/setup-node@v4` with npm caching.
+4. **Quality gate updated:** `quality-gate.needs` updated to include all new job names.
+
+**Verification:**
+- YAML validated with `yaml.safe_load()`: 14 jobs, no circular dependencies
+- 9 jobs run in parallel start: python-lint, python-typecheck, python-test (3x), python-demo-integration, benchmark-regression, agent-install, docker-build-core, docker-build-agent, web-build, docs-lint
+- 3 agent leaf jobs (lint/test/build) run in parallel after agent-install completes
 
 ### 2026-05-27 (TypeScript Agent Coverage — 11 Untested Modules)
 **Summary:** Added 194 new TypeScript tests covering 11 previously-untested agent modules and fixed error propagation in `AgentTools` bridge methods. All 294 TypeScript tests pass (26 suites, 0 failures).
