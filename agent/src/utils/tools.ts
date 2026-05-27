@@ -124,6 +124,7 @@ export class AgentTools {
       return {
         success: result.success,
         data: result.data,
+        error: result.error,
         duration: Date.now() - start,
       };
     } catch (err) {
@@ -145,6 +146,7 @@ export class AgentTools {
       return {
         success: result.success,
         data: result.data,
+        error: result.error,
         duration: Date.now() - start,
       };
     } catch (err) {
@@ -166,6 +168,7 @@ export class AgentTools {
       return {
         success: result.success,
         data: result.data,
+        error: result.error,
         duration: Date.now() - start,
       };
     } catch (err) {
@@ -192,6 +195,7 @@ export class AgentTools {
       return {
         success: result.success,
         data: result.data,
+        error: result.error,
         duration: Date.now() - start,
       };
     } catch (err) {

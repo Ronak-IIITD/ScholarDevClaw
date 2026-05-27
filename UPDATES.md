@@ -2,7 +2,28 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-27 (2nd pass)
+**Last updated:** 2026-05-27 (3rd pass)
+
+### 2026-05-27 (TypeScript Agent Coverage — 11 Untested Modules)
+**Summary:** Added 194 new TypeScript tests covering 11 previously-untested agent modules and fixed error propagation in `AgentTools` bridge methods. All 294 TypeScript tests pass (26 suites, 0 failures).
+
+**What changed:**
+1. **New test files (11 files, 194 tests):**
+   - `agent/src/utils/circuit-breaker.test.ts` (25 tests): CircuitBreaker state machine, registry, withCircuitBreaker
+   - `agent/src/utils/logger.test.ts` (19 tests): Level filtering, safeReplacer, ring buffer
+   - `agent/src/utils/config.test.ts` (11 tests): Env overrides, defaults, security warnings
+   - `agent/src/utils/tools.test.ts` (16 tests): Bridge methods, HTTP endpoints, error propagation
+   - `agent/src/api/github.test.ts` (15 tests): PR creation, branch lookup, URL parsing
+   - `agent/src/workflow/node.test.ts` (22 tests): canExecute, shouldSkip, function/parallel/conditional nodes
+   - `agent/src/workflow/store.test.ts` (19 tests): CRUD, validation, snapshot resume
+   - `agent/src/workflow/monitor.test.ts` (15 tests): Metrics collection, summary, event-driven
+   - `agent/src/workflow/builder.test.ts` (16 tests): Dynamic builder, quick workflow, fromDefinition
+   - `agent/src/workflow/templates.test.ts` (12 tests): Template listing, categories, node creation
+   - `agent/src/workflow/integration.test.ts` (24 tests): All phase node creators, workflow builders
+2. **Bug fix (`agent/src/utils/tools.ts`):** Added `error: result.error` propagation in `runPlanner`, `runCritic`, `getContext`, and `runExperiment` HTTP bridge methods — errors from the `request()` helper were being silently dropped on success paths.
+
+**Verification:**
+- `cd agent && npx vitest run` → 294 passed, 0 failures (26 suites)
 
 ### 2026-05-27 (Coverage Boost — Utility Module + Graph Tests, CI Threshold Raised)
 **Summary:** Added 178 new tests covering 9 previously-untested modules (8 utils + understanding/graph), raising overall coverage from 49% → 51%. Raised CI coverage threshold from 40% → 50%.
