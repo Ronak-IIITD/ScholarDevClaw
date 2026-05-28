@@ -14,6 +14,7 @@ import {
   createExperimentWorkflow,
 } from './integration.js';
 import { FunctionNode } from './node.js';
+import type { NodeStatus } from './types.js';
 
 describe('integration phase node creators', () => {
   const mockBridge = {
@@ -26,7 +27,7 @@ describe('integration phase node creators', () => {
 
   const mockState = () => ({
     workflowId: 'test',
-    status: 'running',
+    status: 'running' as NodeStatus,
     context: {} as Record<string, unknown>,
     nodeResults: new Map(),
   });

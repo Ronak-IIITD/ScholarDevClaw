@@ -14,7 +14,8 @@ function createLogger(minLevel: string = 'info') {
 }
 
 describe('Logger', () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let logSpy: any;
 
   beforeEach(() => {
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

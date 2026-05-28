@@ -6,7 +6,7 @@ import {
   ParallelNode,
   ConditionalNode,
 } from './node.js';
-import type { WorkflowState } from './types.js';
+import type { NodeStatus, WorkflowState } from './types.js';
 
 describe('WorkflowNode', () => {
   it('cannot be instantiated directly (abstract)', () => {
@@ -220,7 +220,7 @@ describe('FunctionNode', () => {
     const fn = vi.fn().mockResolvedValue('result');
     const node = new FunctionNode({ id: 'fn', name: 'Fn' }, fn);
 
-    const output = await node.execute({}, { workflowId: 'w1', status: 'running', context: {}, nodeResults: new Map() });
+    const output = await node.execute({}, { workflowId: 'w1', status: 'running' as NodeStatus, context: {}, nodeResults: new Map() });
     expect(output).toBe('result');
     expect(fn).toHaveBeenCalled();
   });
@@ -229,7 +229,7 @@ describe('FunctionNode', () => {
     const fn = vi.fn().mockResolvedValue('ok');
     const node = new FunctionNode({ id: 'fn', name: 'Fn' }, fn);
     const context = { key: 'val' };
-    const state = { workflowId: 'w1', status: 'running', context: {}, nodeResults: new Map() };
+    const state = { workflowId: 'w1', status: 'running' as NodeStatus, context: {}, nodeResults: new Map() };
 
     await node.execute(context, state);
     expect(fn).toHaveBeenCalledWith(context, state);
@@ -245,7 +245,7 @@ describe('ParallelNode', () => {
     const child2 = new FunctionNode({ id: 'c2', name: 'C2' }, fn2);
 
     const node = new ParallelNode({ id: 'parallel', name: 'Parallel' }, [child1, child2]);
-    const state = { workflowId: 'w1', status: 'running', context: {}, nodeResults: new Map() };
+    const state = { workflowId: 'w1', status: 'running' as NodeStatus, context: {}, nodeResults: new Map() };
 
     const result = await node.execute({}, state);
     expect(result).toEqual(['a', 'b']);
@@ -255,7 +255,7 @@ describe('ParallelNode', () => {
 
   it('handles empty children array', async () => {
     const node = new ParallelNode({ id: 'empty', name: 'Empty' }, []);
-    const state = { workflowId: 'w1', status: 'running', context: {}, nodeResults: new Map() };
+    const state = { workflowId: 'w1', status: 'running' as NodeStatus, context: {}, nodeResults: new Map() };
 
     const result = await node.execute({}, state);
     expect(result).toEqual([]);
@@ -271,7 +271,7 @@ describe('ConditionalNode', () => {
     const falseNode = new FunctionNode({ id: 'f', name: 'False' }, falseFn);
 
     const node = new ConditionalNode({ id: 'cond', name: 'Cond' }, () => true, trueNode, falseNode);
-    const state = { workflowId: 'w1', status: 'running', context: {}, nodeResults: new Map() };
+    const state = { workflowId: 'w1', status: 'running' as NodeStatus, context: {}, nodeResults: new Map() };
 
     const result = await node.execute({}, state);
     expect(result).toBe('true-branch');
@@ -287,7 +287,7 @@ describe('ConditionalNode', () => {
     const falseNode = new FunctionNode({ id: 'f', name: 'False' }, falseFn);
 
     const node = new ConditionalNode({ id: 'cond', name: 'Cond' }, () => false, trueNode, falseNode);
-    const state = { workflowId: 'w1', status: 'running', context: {}, nodeResults: new Map() };
+    const state = { workflowId: 'w1', status: 'running' as NodeStatus, context: {}, nodeResults: new Map() };
 
     const result = await node.execute({}, state);
     expect(result).toBe('false-branch');
@@ -301,7 +301,7 @@ describe('ConditionalNode', () => {
     const trueNode = new FunctionNode({ id: 't', name: 'True' }, trueFn);
 
     const node = new ConditionalNode({ id: 'cond', name: 'Cond' }, () => false, trueNode, null);
-    const state = { workflowId: 'w1', status: 'running', context: {}, nodeResults: new Map() };
+    const state = { workflowId: 'w1', status: 'running' as NodeStatus, context: {}, nodeResults: new Map() };
 
     const result = await node.execute({}, state);
     expect(result).toBeNull();
@@ -315,7 +315,7 @@ describe('ConditionalNode', () => {
 
     const node = new ConditionalNode({ id: 'cond', name: 'Cond' }, conditionFn, trueNode);
     const context = { data: 42 };
-    const state = { workflowId: 'w1', status: 'running', context: {}, nodeResults: new Map() };
+    const state = { workflowId: 'w1', status: 'running' as NodeStatus, context: {}, nodeResults: new Map() };
 
     await node.execute(context, state);
     expect(conditionFn).toHaveBeenCalledWith(context, state);
