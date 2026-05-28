@@ -2,15 +2,12 @@
 
 from pathlib import Path
 
-import pytest
-
 from scholardevclaw.repo_intelligence.code_embeddings import (
     CodeEmbedding,
     CodeEmbeddingEngine,
     CodeSimilarityFinder,
     CodeTokenizer,
     SemanticCodeMapper,
-    SimilarCodeElement,
     compute_code_hash,
 )
 from scholardevclaw.repo_intelligence.multi_lang_analyzer import (
@@ -21,7 +18,6 @@ from scholardevclaw.repo_intelligence.multi_lang_analyzer import (
     MultiLanguageAnalyzer,
     RepoAnalysis,
 )
-
 
 # =========================================================================
 # code_embeddings — CodeTokenizer

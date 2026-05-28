@@ -2,25 +2,17 @@
 
 from pathlib import Path
 
-import pytest
-
 from scholardevclaw.repo_intelligence.call_graph import (
-    CallChain,
     CallGraph,
     CallGraphAnalyzer,
-    FunctionNode,
 )
 from scholardevclaw.repo_intelligence.dependency_graph import (
     DependencyAnalyzer,
-    DependencyChain,
     DependencyGraph,
-    ModuleNode,
 )
 from scholardevclaw.repo_intelligence.detector import (
-    ComponentMatch,
     PyTorchComponentDetector,
 )
-
 
 # =========================================================================
 # detector — PyTorchComponentDetector

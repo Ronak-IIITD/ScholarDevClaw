@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import libcst as cst
-import pytest
 
 from scholardevclaw.repo_intelligence.parser import (
     ClassInfo,
@@ -13,7 +12,6 @@ from scholardevclaw.repo_intelligence.parser import (
     PyTorchComponentVisitor,
     PyTorchRepoParser,
 )
-
 
 # =========================================================================
 # PyTorchComponentVisitor

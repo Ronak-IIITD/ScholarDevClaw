@@ -2,10 +2,8 @@
 
 from pathlib import Path
 
-import pytest
-
-from scholardevclaw.repo_intelligence.call_graph import CallGraph, FunctionNode
-from scholardevclaw.repo_intelligence.dependency_graph import DependencyGraph, ModuleNode
+from scholardevclaw.repo_intelligence.call_graph import CallGraph
+from scholardevclaw.repo_intelligence.dependency_graph import DependencyGraph
 from scholardevclaw.repo_intelligence.refactoring import (
     CrossFileRefactorer,
     RefactorChange,
@@ -13,7 +11,6 @@ from scholardevclaw.repo_intelligence.refactoring import (
     RefactoringPlan,
     RefactoringResult,
 )
-
 
 # =========================================================================
 # Dataclasses
