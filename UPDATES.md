@@ -2,7 +2,27 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-28 (8th pass)
+**Last updated:** 2026-05-28 (9th pass)
+
+### 2026-05-28 (Cloud Execution Profiles — Phase 3 Complete)
+**Summary:** Added cloud-ready execution profiles with named presets (local, cloud-cpu, cloud-gpu, heavy, networked), custom profile management, and CLI commands. Updated SandboxRunner to accept profiles. Phase 3 is now fully complete.
+
+**What changed:**
+1. **`core/src/scholardevclaw/execution/profiles.py` (new):**
+   - `ExecutionProfile` dataclass: name, image, timeout, memory, cpu, gpu, network, environment, pytest_args
+   - 5 preset profiles: `local`, `cloud-cpu`, `cloud-gpu`, `heavy`, `networked`
+   - `ExecutionProfileManager`: save/load/delete custom profiles, set active profile, persistence to `~/.scholardevclaw/execution/profiles.json`
+
+2. **`core/src/scholardevclaw/execution/sandbox.py` (updated):**
+   - `SandboxRunner.__init__` now accepts optional `profile: ExecutionProfile` parameter
+   - When profile provided, uses its image, timeout, memory, cpu, network, gpu, and pytest_args settings
+   - Backward-compatible: existing `SandboxRunner(timeout, memory)` calls still work
+
+3. **`core/src/scholardevclaw/execution/__init__.py`:** Exports `ExecutionProfile`, `ExecutionProfileManager`, `PRESET_PROFILES`
+
+4. **CLI `profiles` subcommand:** `list`, `show`, `set`, `create`, `delete` with `--output-json` support
+
+5. **`core/tests/unit/test_execution_profiles.py` (30 tests):** ExecutionProfile construction, roundtrip, presets, manager CRUD, persistence, corrupt file handling, SandboxRunner profile integration, fallback behavior
 
 ### 2026-05-28 (Engineering Safety — Enhanced Preflight + Guardrails Expansion)
 **Summary:** Enhanced the pipeline preflight system with dependency availability checks and framework detection. Expanded TS guardrails test coverage from 2 to 17 tests. Added 29 new Python tests for pipeline preflight.
@@ -7355,7 +7375,7 @@ To become world-class, ScholarDevClaw should optimize for:
 - ~~Add long-horizon memory for project context.~~ ✅ Implemented.
 - ~~Add experiment loop mode for hypothesis testing.~~ ✅ Implemented.
 - ~~Add plugin system and team collaboration review layer.~~ ✅ Implemented.
-- Add cloud-ready execution profiles. ← NEXT
+- ~~Add cloud-ready execution profiles.~~ ✅ Implemented.
 
 ### Agent/Orchestration (current active track)
 - ~~Run persistence + resumable orchestration checkpoints.~~ ✅ Implemented.

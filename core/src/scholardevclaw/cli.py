@@ -2644,6 +2644,96 @@ def cmd_plugin(args):
             sys.exit(1)
 
 
+def cmd_profiles(args):
+    """Manage cloud execution profiles for sandbox runs."""
+    from scholardevclaw.execution.profiles import (
+        PRESET_PROFILES,
+        ExecutionProfile,
+        ExecutionProfileManager,
+    )
+
+    mgr = ExecutionProfileManager()
+    action = args.profile_action
+
+    if action == "list":
+        profiles = mgr.list_profiles()
+        if args.output_json:
+            print(json.dumps([p.to_dict() for p in profiles], indent=2))
+        else:
+            active = mgr.active_name
+            print(f"Active profile: {active}\n")
+            for p in profiles:
+                marker = " *" if p.name == active else ""
+                gpu = " GPU" if p.gpu_enabled else ""
+                net = " net" if p.network_enabled else ""
+                print(
+                    f"  {p.name}{marker}: {p.description or 'no description'}"
+                    f"  [{p.memory_limit_mb}MB, {p.timeout_seconds}s, "
+                    f"{p.cpu_limit}cpu{gpu}{net}]"
+                )
+
+    elif action == "show":
+        name = args.profile_name or mgr.active_name
+        profile = mgr.get(name)
+        if profile is None:
+            print(f"Profile not found: {name}", file=sys.stderr)
+            sys.exit(1)
+        if args.output_json:
+            print(json.dumps(profile.to_dict(), indent=2))
+        else:
+            d = profile.to_dict()
+            print(f"Profile: {d['name']}")
+            print(f"  Description: {d['description']}")
+            print(f"  Image: {d['image']}")
+            print(f"  Timeout: {d['timeout_seconds']}s")
+            print(f"  Memory: {d['memory_limit_mb']}MB")
+            print(f"  CPU: {d['cpu_limit']}")
+            print(f"  GPU: {'enabled' if d['gpu_enabled'] else 'disabled'} ({d['gpu_count']})")
+            print(f"  Network: {'enabled' if d['network_enabled'] else 'disabled'}")
+
+    elif action == "set":
+        name = args.profile_name
+        if not name:
+            print("Profile name required", file=sys.stderr)
+            sys.exit(1)
+        if mgr.set_active(name):
+            print(f"Active profile set to: {name}")
+        else:
+            print(f"Profile not found: {name}", file=sys.stderr)
+            sys.exit(1)
+
+    elif action == "create":
+        name = args.profile_name
+        if not name:
+            print("Profile name required", file=sys.stderr)
+            sys.exit(1)
+        if mgr.get(name) is not None:
+            print(f"Profile already exists: {name}", file=sys.stderr)
+            sys.exit(1)
+        profile = ExecutionProfile(
+            name=name,
+            image=args.image or "sdc-sandbox:latest",
+            timeout_seconds=args.timeout or 300,
+            memory_limit_mb=args.memory or 4096,
+            cpu_limit=args.cpu or 2.0,
+            gpu_enabled=args.gpu,
+            network_enabled=args.network,
+        )
+        mgr.save(profile)
+        print(f"Created profile: {name}")
+
+    elif action == "delete":
+        name = args.profile_name
+        if not name:
+            print("Profile name required", file=sys.stderr)
+            sys.exit(1)
+        if mgr.delete(name):
+            print(f"Deleted profile: {name}")
+        else:
+            print(f"Cannot delete profile: {name} (preset or not found)", file=sys.stderr)
+            sys.exit(1)
+
+
 def cmd_rollback(args):
     """Manage rollback snapshots and revert integrations"""
     from scholardevclaw.rollback import (
@@ -4301,6 +4391,24 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
     p_rollback.add_argument("--force", action="store_true", help="Force rollback/delete")
     p_rollback.add_argument("--output-json", action="store_true", help="Output JSON")
 
+    # execution profiles
+    p_profiles = subparsers.add_parser(
+        "profiles", help="Manage cloud execution profiles for sandbox runs"
+    )
+    p_profiles.add_argument(
+        "profile_action",
+        choices=["list", "show", "set", "create", "delete"],
+        help="Action to perform",
+    )
+    p_profiles.add_argument("profile_name", nargs="?", help="Profile name")
+    p_profiles.add_argument("--image", help="Docker image for sandbox")
+    p_profiles.add_argument("--timeout", type=int, help="Timeout in seconds")
+    p_profiles.add_argument("--memory", type=int, help="Memory limit in MB")
+    p_profiles.add_argument("--cpu", type=float, help="CPU limit")
+    p_profiles.add_argument("--gpu", action="store_true", help="Enable GPU")
+    p_profiles.add_argument("--network", action="store_true", help="Enable network")
+    p_profiles.add_argument("--output-json", action="store_true", help="Output JSON")
+
     # github-app
     p_github = subparsers.add_parser("github-app", help="Manage GitHub App and webhooks")
     p_github.add_argument(
@@ -4493,6 +4601,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         "experiment": cmd_experiment,
         "plugin": cmd_plugin,
         "rollback": cmd_rollback,
+        "profiles": cmd_profiles,
         "github-app": cmd_github_app,
         "security": cmd_security,
         "agent": cmd_agent,

@@ -16,6 +16,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency path
     docker = None  # type: ignore[assignment]
 
+from scholardevclaw.execution.profiles import ExecutionProfile
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +51,35 @@ class ExecutionReport:
 
 
 class SandboxRunner:
-    def __init__(self, timeout_seconds: int = 300, memory_limit_mb: int = 4096) -> None:
-        self.timeout = timeout_seconds
-        self.memory_limit = memory_limit_mb
-        self.image_name = (
-            os.getenv(SANDBOX_IMAGE_ENV_VAR, DEFAULT_SANDBOX_IMAGE).strip() or DEFAULT_SANDBOX_IMAGE
-        )
+    def __init__(
+        self,
+        timeout_seconds: int = 300,
+        memory_limit_mb: int = 4096,
+        profile: ExecutionProfile | None = None,
+    ) -> None:
+        if profile is not None:
+            self.timeout = profile.timeout_seconds
+            self.memory_limit = profile.memory_limit_mb
+            self.image_name = profile.image
+            self.cpu_limit = profile.cpu_limit
+            self.network_enabled = profile.network_enabled
+            self.gpu_enabled = profile.gpu_enabled
+            self.gpu_count = profile.gpu_count
+            self.pytest_args = profile.pytest_args
+            self.environment = dict(profile.environment)
+        else:
+            self.timeout = timeout_seconds
+            self.memory_limit = memory_limit_mb
+            self.cpu_limit = 2.0
+            self.network_enabled = False
+            self.gpu_enabled = False
+            self.gpu_count = 0
+            self.pytest_args = "tests/ -v --json-report --json-report-file=/tmp/report.json"
+            self.environment = {}
+            self.image_name = (
+                os.getenv(SANDBOX_IMAGE_ENV_VAR, DEFAULT_SANDBOX_IMAGE).strip()
+                or DEFAULT_SANDBOX_IMAGE
+            )
         self.client: Any | None = None
         self._client_error: str | None = None
 
@@ -91,11 +115,11 @@ class SandboxRunner:
         try:
             container = self.client.containers.run(
                 image=self.image_name,
-                command=("pytest tests/ -v --json-report --json-report-file=/tmp/report.json"),
+                command=self.pytest_args,
                 volumes={str(project_dir): {"bind": "/workspace", "mode": "ro"}},
                 working_dir="/workspace",
                 mem_limit=f"{self.memory_limit}m",
-                network_disabled=True,
+                network_disabled=not self.network_enabled,
                 remove=True,
                 detach=True,
             )
