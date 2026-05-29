@@ -2647,7 +2647,6 @@ def cmd_plugin(args):
 def cmd_profiles(args):
     """Manage cloud execution profiles for sandbox runs."""
     from scholardevclaw.execution.profiles import (
-        PRESET_PROFILES,
         ExecutionProfile,
         ExecutionProfileManager,
     )
