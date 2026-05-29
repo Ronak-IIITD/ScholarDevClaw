@@ -2,7 +2,20 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-27 (7th pass)
+**Last updated:** 2026-05-28 (8th pass)
+
+### 2026-05-28 (Engineering Safety — Enhanced Preflight + Guardrails Expansion)
+**Summary:** Enhanced the pipeline preflight system with dependency availability checks and framework detection. Expanded TS guardrails test coverage from 2 to 17 tests. Added 29 new Python tests for pipeline preflight.
+
+**What changed:**
+1. **`core/src/scholardevclaw/application/pipeline.py`:**
+   - Added `_check_dependencies()`: verifies availability of critical packages (torch, libcst, tree_sitter, numpy, httpx) at preflight time
+   - Added `_detect_frameworks()`: scans repo Python files for ML framework imports (PyTorch, TensorFlow, JAX, Transformers)
+   - Enhanced `run_preflight()` with dependency and framework checks in the payload + warnings/recommendations
+
+2. **`core/tests/unit/test_pipeline_preflight.py` (29 tests):** Tests for `_check_dependencies()`, `_detect_frameworks()`, and `run_preflight()` covering: clean/dirty repos, git availability, missing Python files, require_clean mode, dependency warnings, framework detection, log callbacks
+
+3. **`agent/src/utils/guardrails.test.ts` (17 tests, up from 2):** Expanded with: passing cases, boundary values (exact threshold), undefined/null inputs, multiple simultaneous triggers, mixed guardrail scenarios
 
 ### 2026-05-27 (repo_intelligence Test Coverage Complete — All 9 Submodules Covered)
 **Summary:** Completed repo_intelligence test coverage by adding tests for the 3 remaining untested modules: refactoring, code_embeddings, and multi_lang_analyzer. Item #6 from roadmap is now done.

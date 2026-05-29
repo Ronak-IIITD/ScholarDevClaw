@@ -701,6 +701,42 @@ def _ensure_repo(repo_path: str) -> Path:
     return enforce_allowed_repo_path(path)
 
 
+def _detect_frameworks(repo_path: Path) -> list[str]:
+    """Detect ML frameworks used in the repository by scanning imports."""
+    frameworks: set[str] = set()
+    framework_patterns: dict[str, list[str]] = {
+        "pytorch": ["import torch", "from torch"],
+        "tensorflow": ["import tensorflow", "import tf", "from tensorflow"],
+        "jax": ["import jax", "from jax"],
+        "transformers": ["import transformers", "from transformers"],
+    }
+    try:
+        for py_file in list(repo_path.rglob("*.py"))[:50]:
+            try:
+                content = py_file.read_text(errors="ignore")[:8192]
+            except OSError:
+                continue
+            for framework, patterns in framework_patterns.items():
+                if any(p in content for p in patterns):
+                    frameworks.add(framework)
+    except Exception:
+        pass
+    return sorted(frameworks)
+
+
+def _check_dependencies() -> dict[str, bool]:
+    """Check availability of critical runtime dependencies."""
+    critical = ["torch", "libcst", "tree_sitter", "numpy", "httpx"]
+    result: dict[str, bool] = {}
+    for pkg in critical:
+        try:
+            __import__(pkg)
+            result[pkg] = True
+        except ImportError:
+            result[pkg] = False
+    return result
+
+
 def run_preflight(
     repo_path: str,
     *,
@@ -774,6 +810,23 @@ def run_preflight(
             warnings.append("Clean-check requested but git status is unavailable")
             recommendations.append("Fix git availability or disable --require-clean to continue")
 
+    # --- Dependency availability checks ---
+    dep_status = _check_dependencies()
+    missing_deps = [pkg for pkg, available in dep_status.items() if not available]
+    if missing_deps:
+        warnings.append(f"Missing runtime dependencies: {', '.join(missing_deps)}")
+        recommendations.append(f"Install missing packages: pip install {' '.join(missing_deps)}")
+
+    # --- Language/framework compatibility checks ---
+    detected_frameworks = _detect_frameworks(path)
+    has_frameworks = len(detected_frameworks) > 0
+    if python_file_count > 0 and not has_frameworks:
+        warnings.append("No ML frameworks detected in repository")
+        recommendations.append(
+            "Integration targets typically use PyTorch/Transformers; "
+            "verify the repository uses a compatible framework"
+        )
+
     checks = {
         "repo_exists": True,
         "repo_is_writable": is_writable,
@@ -783,6 +836,8 @@ def run_preflight(
         "is_clean": is_clean,
         "changed_file_entries": changed_files,
         "git_error": git_error,
+        "dependency_status": dep_status,
+        "detected_frameworks": detected_frameworks,
         "warnings": warnings,
         "recommendations": recommendations,
     }
