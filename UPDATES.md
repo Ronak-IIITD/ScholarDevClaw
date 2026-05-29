@@ -7348,14 +7348,14 @@ To become world-class, ScholarDevClaw should optimize for:
 - ~~Add artifact browser + richer validation scorecards.~~ ✅ Implemented.
 - ~~Add payload schema versioning + compatibility checks.~~ ✅ Implemented.
 - ~~Add end-to-end regression suite for key workflows.~~ ✅ Implemented.
-- Add planner mode for multi-spec migration strategies. 🚧 In Progress
-- Add critic mode for patch verification.
+- ~~Add planner mode for multi-spec migration strategies.~~ ✅ Implemented.
+- ~~Add critic mode for patch verification.~~ ✅ Implemented.
 
 ### Phase 3
-- Add long-horizon memory for project context.
-- Add experiment loop mode for hypothesis testing.
-- Add plugin system and team collaboration review layer.
-- Add cloud-ready execution profiles.
+- ~~Add long-horizon memory for project context.~~ ✅ Implemented.
+- ~~Add experiment loop mode for hypothesis testing.~~ ✅ Implemented.
+- ~~Add plugin system and team collaboration review layer.~~ ✅ Implemented.
+- Add cloud-ready execution profiles. ← NEXT
 
 ### Agent/Orchestration (current active track)
 - ~~Run persistence + resumable orchestration checkpoints.~~ ✅ Implemented.
