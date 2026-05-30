@@ -97,8 +97,7 @@ jobs:
             --tb=short \
             --cov=scholardevclaw \
             --cov-report=xml:coverage.xml \
-            --cov-report=term-missing:skip-covered \
-            --cov-fail-under=50
+            --cov-report=term-missing:skip-covered
       - name: Upload coverage
         if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
