@@ -132,6 +132,7 @@ dev = [
     "pre-commit>=3.7.0",
     "cryptography>=42.0.0",
     "psutil>=5.9.0",
+    "networkx>=3.3",
 ]
 all = [
     "scholardevclaw[arxiv,ml,tui,crypto,ingestion,understanding,execution,knowledge,product]",
