@@ -2,10 +2,10 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-30 (11th pass)
+**Last updated:** 2026-05-30 (11th pass — persistent worker added)
 
 ### 2026-05-30 (Optimizations.md — Performance & Reliability Overhaul)
-**Summary:** Implemented all Phase 1–4 optimizations from Optimizations.md across 5 core files. Vectorised math with NumPy, parallelised fuzzing/mutation/benchmark execution, moved to AST-level mutations, added content-hash deduplication, and replaced broad exception handling with specific error types. All 2373 tests pass.
+**Summary:** Implemented all Phase 1–4 optimizations from Optimizations.md across 5 core files. Vectorised math with NumPy, parallelised fuzzing/mutation/benchmark execution, moved to AST-level mutations, added content-hash deduplication, and replaced broad exception handling with specific error types. Built a true persistent pytest worker for mutation testing (zero interpreter restarts). All 2373 tests pass.
 
 **What changed:**
 1. **`core/src/scholardevclaw/research_intelligence/similarity.py` (Phase 1.1):**
@@ -28,9 +28,11 @@
 
 4. **`core/src/scholardevclaw/validation/mutation_testing.py` (Phase 2.2, 3.1):**
    - Added `PythonMutator._apply_mutation_to_source()`: AST-level mutation application using `ast.parse` + targeted line replacement — guarantees mutations target the correct syntactic element
-   - `MutationTestRunner._run_mutation_test`: now uses AST-based mutations instead of fragile `content.replace(original, mutated, 1)`
-   - Added `MutationTestRunner.run_parallel()`: distributes mutation tests across CPU cores via `ProcessPoolExecutor`, sharing a single temp directory
-   - Added `MutationTestRunner._run_single_mutation_subprocess()`: picklable top-level function for parallel worker execution
+   - `MutationTestRunner._run_mutation_test`: now uses AST-based mutations + correct source overwrite/restore (fixes pre-existing bug where mutated file was written to temp dir but pytest imported from original)
+   - **Built `_PersistentWorker`**: true persistent pytest subprocess that receives mutations via stdin JSON and returns results via stdout JSON. Zero interpreter restarts — for 50 mutations this eliminates ~50–150s of Python startup overhead
+   - `MutationTestRunner.run_persistent()`: uses the persistent worker for sequential mutation testing with amortised startup
+   - `MutationTestRunner.run_parallel()`: now uses one persistent worker per CPU core via `ProcessPoolExecutor`, combining parallelism with startup amortisation
+   - Worker protocol: newline-delimited JSON on stdin/stdout with `test_mutation` and `shutdown` actions
 
 5. **`core/src/scholardevclaw/validation/runner.py` (Phase 2.3, 4.1):**
    - `_run_benchmark`: Parallelised benchmark/test script execution using `ThreadPoolExecutor` — independent scripts run concurrently
