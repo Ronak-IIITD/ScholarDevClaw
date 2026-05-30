@@ -2,7 +2,14 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-28 (9th pass)
+**Last updated:** 2026-05-28 (10th pass)
+
+### 2026-05-28 (Research Intelligence Test Coverage — citation_graph, similarity, paper_sources, embeddings)
+**Summary:** Added 90 tests covering 4 previously untested research_intelligence modules: citation_graph (38 tests), similarity (16 tests), paper_sources (24 tests), embeddings (12 tests). Coverage jumped from 32% to 59% for the research_intelligence package.
+
+**What changed:**
+1. **`core/tests/unit/test_citation_graph.py` (54 tests):** CitationGraph (add, paths, ancestors, descendants, PageRank, influence, related, save/load), CitationAnalyzer (influence analysis, paper comparison, citation trends), ResearchSimilaritySearch (tokenize, TF-IDF, keyword, find_similar, find_related_by_papers), ResearchRecommendationEngine (recommend, recommend_by_query, exclusion)
+2. **`core/tests/unit/test_paper_sources_embeddings.py` (36 tests):** Paper/SearchResult dataclasses, URL validation, source factory, ArxivSource XML parsing, PubmedSource XML parsing, IEEESource no-key handling, PaperSourceAggregator, EmbeddingIndex (encode, index, search, similarity, cache), utility functions (_cosine_similarity, _tokenize, _spec_identifier, _spec_text)
 
 ### 2026-05-28 (Cloud Execution Profiles — Phase 3 Complete)
 **Summary:** Added cloud-ready execution profiles with named presets (local, cloud-cpu, cloud-gpu, heavy, networked), custom profile management, and CLI commands. Updated SandboxRunner to accept profiles. Phase 3 is now fully complete.
