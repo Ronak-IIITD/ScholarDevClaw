@@ -25,6 +25,7 @@ import json
 import logging
 import re
 import textwrap
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -1791,70 +1792,100 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
     # ------------------------------------------------------------------
 
     def _create_transformations(self, mapping_result: dict) -> list[Transformation]:
-        transformations: list[Transformation] = []
+        """Create transformations for target files.
 
+        Independent target files are processed in parallel using a thread pool
+        for improved wall-clock time when many targets exist.
+        """
         targets = mapping_result.get("targets", [])
         spec = mapping_result.get("research_spec", {})
 
-        for target in targets:
-            file_path = self.repo_path / target.get("file", "model.py")
+        if not targets:
+            return []
 
-            # SECURITY: Prevent path traversal — ensure target stays within repo
-            try:
-                resolved = file_path.resolve()
-                if not resolved.is_relative_to(self.repo_path.resolve()):
-                    logger.warning("Skipping path traversal target: %s", file_path)
-                    continue
-            except (ValueError, OSError):
-                continue
+        # Single-target fast path (no thread pool overhead)
+        if len(targets) == 1:
+            return self._transform_single_target(targets[0], spec)
 
-            if not file_path.exists():
-                logger.debug("Target file does not exist: %s", file_path)
-                continue
-
-            try:
-                original = file_path.read_text()
-
-                context = target.get("context", {})
-                replacement = context.get("replacement", "") if isinstance(context, dict) else ""
-                original_name = context.get("original", "") if isinstance(context, dict) else ""
-
-                if replacement and original_name:
-                    modified = self._apply_transformation(
-                        original,
-                        original_name,
-                        replacement,
-                        spec.get("algorithm", {}).get("name", ""),
+        transformations: list[Transformation] = []
+        with ThreadPoolExecutor(max_workers=min(4, len(targets))) as executor:
+            futures = {
+                executor.submit(self._transform_single_target, target, spec): target
+                for target in targets
+            }
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    transformations.extend(result)
+                except Exception:
+                    target = futures[future]
+                    logger.warning(
+                        "Error transforming %s",
+                        target.get("file", "unknown"),
+                        exc_info=True,
                     )
-                    if modified == original and self.llm_assistant is not None:
-                        llm_modified = self._rewrite_file_with_llm(
-                            source=original,
-                            file_path=str(target.get("file", "model.py")),
-                            spec=spec,
-                            target=target,
-                        )
-                        if llm_modified:
-                            modified = llm_modified
-
-                    if modified != original:
-                        transformations.append(
-                            Transformation(
-                                file=str(target.get("file", "model.py")),
-                                original=original,
-                                modified=modified,
-                                changes=[
-                                    {
-                                        "type": "replace",
-                                        "from": original_name,
-                                        "to": replacement,
-                                    }
-                                ],
-                            )
-                        )
-            except Exception:
-                logger.warning("Error transforming %s", file_path, exc_info=True)
-
         return transformations
+
+    def _transform_single_target(self, target: dict, spec: dict) -> list[Transformation]:
+        """Transform a single target file (may return 0 or 1 transformations)."""
+        file_path = self.repo_path / target.get("file", "model.py")
+
+        # SECURITY: Prevent path traversal — ensure target stays within repo
+        try:
+            resolved = file_path.resolve()
+            if not resolved.is_relative_to(self.repo_path.resolve()):
+                logger.warning("Skipping path traversal target: %s", file_path)
+                return []
+        except (ValueError, OSError):
+            return []
+
+        if not file_path.exists():
+            logger.debug("Target file does not exist: %s", file_path)
+            return []
+
+        try:
+            original = file_path.read_text()
+
+            context = target.get("context", {})
+            replacement = context.get("replacement", "") if isinstance(context, dict) else ""
+            original_name = context.get("original", "") if isinstance(context, dict) else ""
+
+            if replacement and original_name:
+                modified = self._apply_transformation(
+                    original,
+                    original_name,
+                    replacement,
+                    spec.get("algorithm", {}).get("name", ""),
+                )
+                if modified == original and self.llm_assistant is not None:
+                    llm_modified = self._rewrite_file_with_llm(
+                        source=original,
+                        file_path=str(target.get("file", "model.py")),
+                        spec=spec,
+                        target=target,
+                    )
+                    if llm_modified:
+                        modified = llm_modified
+
+                if modified != original:
+                    return [
+                        Transformation(
+                            file=str(target.get("file", "model.py")),
+                            original=original,
+                            modified=modified,
+                            changes=[
+                                {
+                                    "type": "replace",
+                                    "from": original_name,
+                                    "to": replacement,
+                                }
+                            ],
+                        )
+                    ]
+        except Exception:
+            logger.warning("Error transforming %s", file_path, exc_info=True)
+
+        return []
 
     def _apply_transformation(
         self, source: str, original: str, replacement: str, algorithm: str

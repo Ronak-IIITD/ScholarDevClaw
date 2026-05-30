@@ -19,11 +19,38 @@ import re
 import subprocess
 import sys
 import textwrap
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 from scholardevclaw.patch_generation.generator import PatchGenerator
+
+
+# ---------------------------------------------------------------------------
+# Specific exception classes for robust error handling
+# ---------------------------------------------------------------------------
+
+
+class BenchmarkTimeoutError(Exception):
+    """Raised when a benchmark subprocess exceeds its timeout."""
+
+
+class BenchmarkExecutionError(Exception):
+    """Raised when a benchmark subprocess fails with a non-zero exit code."""
+
+
+class SandboxNotAvailableError(Exception):
+    """Raised when Docker sandbox is configured but unavailable."""
+
+
+class ScriptSecurityError(Exception):
+    """Raised when a script is blocked by destructive/sandbox-escape checks."""
+
+
+class ModuleLoadError(Exception):
+    """Raised when a Python module cannot be loaded for validation."""
+
 
 # Patterns that indicate potentially destructive operations in scripts
 _DESTRUCTIVE_PATTERNS = [
@@ -208,16 +235,34 @@ def _run_bench_script(
             preexec_fn=_sandbox_preexec,
         )
         if result.returncode != 0:
+            _logger.debug(
+                "Bench script exited with code %d: %s",
+                result.returncode,
+                result.stderr[:200] if result.stderr else "",
+            )
             return None
         # The script must print a single JSON object on its last line.
         for line in reversed(result.stdout.strip().splitlines()):
             line = line.strip()
             if line.startswith("{"):
-                payload = json.loads(line)
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
                 if isinstance(payload, dict):
                     return cast(dict[str, float], payload)
         return None
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+    except subprocess.TimeoutExpired:
+        _logger.warning("Bench script timed out after %ds", timeout)
+        return None
+    except FileNotFoundError:
+        _logger.error("Python executable not found at: %s", sys.executable)
+        return None
+    except OSError as e:
+        _logger.error("OS error running bench script: %s", e)
+        return None
+    except json.JSONDecodeError:
+        _logger.debug("Failed to decode JSON from bench script output")
         return None
 
 
@@ -1027,6 +1072,7 @@ class ValidationRunner:
                     passed=False,
                     stage="tests",
                     error="Docker requested but not available",
+                    logs="Configure Docker or set SCHOLARDEVCLAW_VALIDATION_SANDBOX to a different value",
                 )
             docker_image = self._docker_image()
             docker_cmd = [
@@ -1069,6 +1115,12 @@ class ValidationRunner:
                     stage="tests",
                     error="Docker executable not found",
                 )
+            except OSError as e:
+                return ValidationResult(
+                    passed=False,
+                    stage="tests",
+                    error=f"OS error running Docker: {e}",
+                )
 
         try:
             result = subprocess.run(
@@ -1098,11 +1150,11 @@ class ValidationRunner:
                 stage="tests",
                 logs="pytest not found - skipping tests",
             )
-        except Exception as e:
+        except OSError as e:
             return ValidationResult(
                 passed=False,
                 stage="tests",
-                error=str(e),
+                error=f"OS error running tests: {e}",
             )
 
     # ------------------------------------------------------------------
@@ -1110,10 +1162,13 @@ class ValidationRunner:
     # ------------------------------------------------------------------
 
     def _run_benchmark(self) -> ValidationResult:
-        """Run actual repo benchmarks or tests with timing."""
+        """Run actual repo benchmarks or tests with timing.
+
+        Independent scripts are executed in parallel using a thread pool to
+        reduce wall-clock time for multi-file benchmark suites.
+        """
         import time
 
-        # Check for benchmark scripts in the repo
         benchmark_scripts = list(self.repo_path.glob("**/benchmark*.py")) + list(
             self.repo_path.glob("**/bench*.py")
         )
@@ -1127,13 +1182,9 @@ class ValidationRunner:
                 logs="No benchmark or test files found — skipping benchmark",
             )
 
-        # Run benchmarks if available, else run tests with timing
-        scripts_to_run = (
-            benchmark_scripts if benchmark_scripts else test_files[:5]
-        )  # Limit to 5 test files
-        results = []
+        scripts_to_run = benchmark_scripts if benchmark_scripts else test_files[:5]
 
-        for script in scripts_to_run:
+        def _run_one_script(script: Path) -> dict:
             start_time = time.time()
             try:
                 if self._sandbox_mode() == "docker":
@@ -1163,37 +1214,59 @@ class ValidationRunner:
                         text=True,
                         timeout=120,
                     )
-                end_time = time.time()
-                duration = end_time - start_time
-                passed = result.returncode == 0
-                results.append(
-                    {
-                        "script": str(script.relative_to(self.repo_path)),
-                        "passed": passed,
-                        "duration": round(duration, 2),
-                        "output": result.stdout[-500:] if result.stdout else "",  # Last 500 chars
-                        "error": result.stderr[-500:] if result.stderr else "",
-                    }
-                )
+                duration = time.time() - start_time
+                return {
+                    "script": str(script.relative_to(self.repo_path)),
+                    "passed": result.returncode == 0,
+                    "duration": round(duration, 2),
+                    "output": result.stdout[-500:] if result.stdout else "",
+                    "error": result.stderr[-500:] if result.stderr else "",
+                }
             except subprocess.TimeoutExpired:
-                results.append(
-                    {
-                        "script": str(script.relative_to(self.repo_path)),
-                        "passed": False,
-                        "duration": 120,
-                        "error": "Timeout after 120 seconds",
-                    }
-                )
-            except Exception as e:
-                results.append(
-                    {
-                        "script": str(script.relative_to(self.repo_path)),
-                        "passed": False,
-                        "error": str(e),
-                    }
-                )
+                return {
+                    "script": str(script.relative_to(self.repo_path)),
+                    "passed": False,
+                    "duration": 120,
+                    "error": "Timeout after 120 seconds",
+                }
+            except FileNotFoundError:
+                return {
+                    "script": str(script.relative_to(self.repo_path)),
+                    "passed": False,
+                    "error": "Python executable or Docker not found",
+                }
+            except OSError as e:
+                return {
+                    "script": str(script.relative_to(self.repo_path)),
+                    "passed": False,
+                    "error": f"OS error: {e}",
+                }
 
-        # Aggregate results
+        # Execute all scripts in parallel
+        num_workers = min(4, len(scripts_to_run))
+        results: list[dict] = []
+
+        if num_workers <= 1:
+            # Single script — run directly without thread pool overhead
+            results = [_run_one_script(scripts_to_run[0])]
+        else:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = {
+                    executor.submit(_run_one_script, script): script for script in scripts_to_run
+                }
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception as e:
+                        script = futures[future]
+                        results.append(
+                            {
+                                "script": str(script.relative_to(self.repo_path)),
+                                "passed": False,
+                                "error": f"Worker exception: {e}",
+                            }
+                        )
+
         total = len(results)
         passed_count = sum(1 for r in results if r["passed"])
         avg_duration = sum(float(r.get("duration", 0.0) or 0.0) for r in results) / max(total, 1)

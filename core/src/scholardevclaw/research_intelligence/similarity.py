@@ -4,16 +4,17 @@ Research similarity search to find related papers.
 Uses multiple strategies:
 - Keyword overlap
 - Citation/-reference overlap
-- TF-IDF similarity on abstracts
+- TF-IDF similarity on abstracts (vectorized with NumPy)
 - Year proximity
 """
 
 from __future__ import annotations
 
-import math
 import re
 from collections import Counter
 from dataclasses import dataclass
+
+import numpy as np
 
 
 @dataclass
@@ -140,20 +141,24 @@ class ResearchSimilaritySearch:
         return {word: count / total for word, count in counter.items()}
 
     def _compute_idf(self, documents: list[list[str]]) -> dict[str, float]:
-        """Compute inverse document frequency across all documents"""
+        """Compute inverse document frequency across all documents (vectorized).
+
+        Uses NumPy for the batch IDF computation instead of per-term Python loops.
+        """
         n_docs = len(documents)
         df: dict[str, int] = Counter()
 
         for doc in documents:
-            unique_terms = set(doc)
-            for term in unique_terms:
+            for term in set(doc):
                 df[term] += 1
 
-        idf = {}
-        for term, doc_freq in df.items():
-            idf[term] = math.log(n_docs / (1 + doc_freq)) + 1
+        if not df:
+            return {}
 
-        return idf
+        terms = list(df.keys())
+        doc_freqs = np.array([df[t] for t in terms], dtype=np.float64)
+        idf_values = np.log(n_docs / (1.0 + doc_freqs)) + 1.0
+        return dict(zip(terms, idf_values.tolist()))
 
     def _tfidf_similarity(
         self,
@@ -161,23 +166,32 @@ class ResearchSimilaritySearch:
         tokens2: list[str],
         idf: dict[str, float],
     ) -> float:
-        """Compute TF-IDF cosine similarity"""
+        """Compute TF-IDF cosine similarity using vectorized NumPy operations.
+
+        Builds sparse-like vectors only over the union of terms present in the
+        two documents, then computes cosine similarity in bulk with NumPy.
+        """
         tf1 = self._compute_tf(tokens1)
         tf2 = self._compute_tf(tokens2)
 
-        all_terms = set(tf1.keys()) | set(tf2.keys())
-
-        vec1 = [tf1.get(t, 0) * idf.get(t, 1) for t in all_terms]
-        vec2 = [tf2.get(t, 0) * idf.get(t, 1) for t in all_terms]
-
-        dot_product = sum(a * b for a, b in zip(vec1, vec2))
-        magnitude1 = math.sqrt(sum(a * a for a in vec1))
-        magnitude2 = math.sqrt(sum(b * b for b in vec2))
-
-        if magnitude1 == 0 or magnitude2 == 0:
+        if not tf1 and not tf2:
             return 0.0
 
-        return dot_product / (magnitude1 * magnitude2)
+        all_terms = sorted(set(tf1) | set(tf2))
+        if not all_terms:
+            return 0.0
+
+        idf_arr = np.array([idf.get(t, 1.0) for t in all_terms], dtype=np.float64)
+        vec1 = np.array([tf1.get(t, 0.0) for t in all_terms], dtype=np.float64) * idf_arr
+        vec2 = np.array([tf2.get(t, 0.0) for t in all_terms], dtype=np.float64) * idf_arr
+
+        magnitude1 = float(np.linalg.norm(vec1))
+        magnitude2 = float(np.linalg.norm(vec2))
+
+        if magnitude1 == 0.0 or magnitude2 == 0.0:
+            return 0.0
+
+        return float(np.dot(vec1, vec2) / (magnitude1 * magnitude2))
 
     def keyword_similarity(
         self,

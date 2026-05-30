@@ -2,7 +2,42 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-28 (10th pass)
+**Last updated:** 2026-05-30 (11th pass)
+
+### 2026-05-30 (Optimizations.md — Performance & Reliability Overhaul)
+**Summary:** Implemented all Phase 1–4 optimizations from Optimizations.md across 5 core files. Vectorised math with NumPy, parallelised fuzzing/mutation/benchmark execution, moved to AST-level mutations, added content-hash deduplication, and replaced broad exception handling with specific error types. All 2373 tests pass.
+
+**What changed:**
+1. **`core/src/scholardevclaw/research_intelligence/similarity.py` (Phase 1.1):**
+   - `_compute_idf`: Vectorised IDF computation using `numpy` arrays instead of per-term Python loops
+   - `_tfidf_similarity`: Replaced manual `sum(a*b …)` dot-product and `math.sqrt` magnitude calculations with `numpy.dot`, `numpy.linalg.norm` — orders-of-magnitude speedup on large vocabularies
+   - Removed `import math` (no longer needed)
+
+2. **`core/src/scholardevclaw/validation/fuzzing.py` (Phase 1.2, 2.1, 4.2):**
+   - `_generate_input`: Replaced `bytes(random.getrandbits(8) for …)` with `os.urandom(length)`; replaced `"".join(random.choice …)` with `"".join(random.choices(chars, k=length))`; replaced list comprehension with `random.choices(range(256), k=length)`
+   - Added `PythonFuzzer.fuzz_parallel()`: distributes fuzzing iterations across CPU cores via `concurrent.futures.ProcessPoolExecutor`
+   - Added content-hash deduplication (`_content_hash`, `_is_new_crash`, `_is_new_hang`) using `hashlib.sha256` to prevent redundant crash/hang tracking
+   - `FuzzerManager.fuzz_python_function`: new `parallel` and `max_workers` parameters
+   - `FuzzerManager.fuzz_with_corpus`: optimised XOR mutation with `os.urandom`, added hash-based crash deduplication
+   - All `fuzz_with_corpus` byte generation now uses `os.urandom()` instead of Python loops
+
+3. **`core/src/scholardevclaw/patch_generation/generator.py` (Phase 1.3):**
+   - `_create_transformations`: Parallelised target-file transformations using `concurrent.futures.ThreadPoolExecutor` (independent files processed concurrently)
+   - Extracted `_transform_single_target` helper for clean single-file processing
+   - Single-target fast path avoids thread pool overhead when only 1 target exists
+
+4. **`core/src/scholardevclaw/validation/mutation_testing.py` (Phase 2.2, 3.1):**
+   - Added `PythonMutator._apply_mutation_to_source()`: AST-level mutation application using `ast.parse` + targeted line replacement — guarantees mutations target the correct syntactic element
+   - `MutationTestRunner._run_mutation_test`: now uses AST-based mutations instead of fragile `content.replace(original, mutated, 1)`
+   - Added `MutationTestRunner.run_parallel()`: distributes mutation tests across CPU cores via `ProcessPoolExecutor`, sharing a single temp directory
+   - Added `MutationTestRunner._run_single_mutation_subprocess()`: picklable top-level function for parallel worker execution
+
+5. **`core/src/scholardevclaw/validation/runner.py` (Phase 2.3, 4.1):**
+   - `_run_benchmark`: Parallelised benchmark/test script execution using `ThreadPoolExecutor` — independent scripts run concurrently
+   - Added specific exception classes: `BenchmarkTimeoutError`, `BenchmarkExecutionError`, `SandboxNotAvailableError`, `ScriptSecurityError`, `ModuleLoadError`
+   - `_run_bench_script`: Replaced broad `except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception)` with specific `except` blocks for `TimeoutExpired`, `FileNotFoundError`, `OSError`, `json.JSONDecodeError`
+   - `_run_tests`: Replaced `except Exception` with `except OSError` for OS-level errors; added informative logs for Docker unavailability
+   - Added `concurrent.futures` import for parallel execution
 
 ### 2026-05-28 (Research Intelligence Test Coverage — citation_graph, similarity, paper_sources, embeddings)
 **Summary:** Added 90 tests covering 4 previously untested research_intelligence modules: citation_graph (38 tests), similarity (16 tests), paper_sources (24 tests), embeddings (12 tests). Coverage jumped from 32% to 59% for the research_intelligence package.
