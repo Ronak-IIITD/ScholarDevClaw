@@ -227,7 +227,6 @@ class _PersistentWorker:
         self.shutdown()
 
 
-
 MUTATIONS = [
     ("AOR", "Arithmetic Operator Replacement"),
     ("ROR", "Relational Operator Replacement"),
