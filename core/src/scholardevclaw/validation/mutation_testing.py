@@ -18,11 +18,9 @@ import random
 import shutil
 import subprocess
 import sys
-import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Persistent worker — runs as a long-lived subprocess, receives mutations
@@ -229,7 +227,6 @@ class _PersistentWorker:
         self.shutdown()
 
 
-from typing import IO
 
 MUTATIONS = [
     ("AOR", "Arithmetic Operator Replacement"),

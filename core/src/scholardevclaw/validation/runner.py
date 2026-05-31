@@ -26,7 +26,6 @@ from typing import Any, cast
 
 from scholardevclaw.patch_generation.generator import PatchGenerator
 
-
 # ---------------------------------------------------------------------------
 # Specific exception classes for robust error handling
 # ---------------------------------------------------------------------------
