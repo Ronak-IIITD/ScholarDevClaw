@@ -2,7 +2,54 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-05-30 (11th pass — persistent worker added)
+**Last updated:** 2026-06-02 (profiling-driven performance optimizations)
+
+### 2026-06-02 (Profiling-Driven Performance Optimizations)
+**Summary:** Profiled the full pipeline against test_repos/nanogpt using cProfile and implemented targeted optimizations based on real measured bottlenecks. Key wins: 96% faster mapping engine (analysis caching), 62% faster similarity search (eliminated re-tokenization), merged tree-sitter AST walks, eliminated redundant file I/O.
+
+**Profiling results (before → after on nanogpt):**
+- `mapping_engine_full`: 0.087s → 0.003s (96% faster)
+- `similarity_find_similar_200papers`: 0.039s → 0.015s (62% faster)
+- `tree_sitter_analyze`: 0.087s → ~same (but with 1 fewer walk per file and cached rglob)
+
+**What changed:**
+1. **`core/src/scholardevclaw/repo_intelligence/tree_sitter_analyzer.py`:**
+   - Added `_file_cache` dict and `_get_files_for_language()` method — single `rglob` per language, shared across `detect_languages()`, `_analyze_language()`, and `_parse_language_files()` (was 3× redundant scans)
+   - Added `_walk_for_elements_and_imports()` — single-pass AST traversal collecting both elements and imports (was 2 separate 12k-call recursive walks)
+   - Made `_extract_elements_from_tree()` and `_extract_imports_from_tree()` accept optional `source: bytes` parameter to skip redundant `file_path.read_bytes()` (was reading same file 3× per parse)
+
+2. **`core/src/scholardevclaw/research_intelligence/similarity.py`:**
+   - Optimized `find_similar()` to reuse pre-tokenized query/paper tokens for keyword overlap instead of re-tokenizing via `keyword_similarity()` 200× (was doing 600 redundant tokenizations)
+
+3. **`core/src/scholardevclaw/mapping/engine.py`:**
+   - Optimized `_text_scan_for_patterns()` to scan each file's lines once and match all patterns in a single pass instead of iterating all lines per-pattern (O(F×L×P) → O(F×L))
+
+4. **`core/src/scholardevclaw/application/pipeline.py`:**
+   - Added optional `analysis` parameter to `_build_mapping_result()` and `run_generate()` — `run_integrate()` and `run_multi_integrate()` now pass pre-computed analysis, avoiding 2-3 redundant `TreeSitterAnalyzer.analyze()` calls per integration run
+
+5. **`core/benchmarks/profile_pipeline.py`:**
+   - Added profiling harness for pipeline hot paths (tree-sitter, similarity, mapping engine) against test_repos/nanogpt
+
+6. **`core/tests/unit/test_pipeline.py`:**
+   - Updated 15 `_build_mapping_result` mock function signatures to accept the new `analysis` parameter
+
+**Verification:**
+- 680 unit tests pass (1 skipped), 31 e2e tests pass
+- Ruff check + format clean on all changed files
+
+### 2026-06-02 (Pipeline Optimization — Reuse Repo Analysis Across Mapping/Generation)
+**Summary:** Removed redundant repository re-analysis in `pipeline.py` by threading precomputed analysis into mapping/generation flows. This avoids repeated `TreeSitterAnalyzer.analyze()` calls during integration workflows.
+
+**What changed:**
+1. **`core/src/scholardevclaw/application/pipeline.py`:**
+   - Added optional `analysis: dict[str, Any] | None = None` parameter to `_build_mapping_result()` and reused it when provided.
+   - Updated `_build_mapping_result()` to only instantiate `TreeSitterAnalyzer` and analyze the repo when no analysis dict is passed.
+   - Updated `run_generate()` signature with optional `analysis` passthrough and forwarded it to `_build_mapping_result()`.
+   - Updated `run_integrate()` to pass `analysis.__dict__` into both `_build_mapping_result()` (planning) and `run_generate()` (generation).
+   - Updated `run_multi_integrate()` to pass shared `analysis.__dict__` into `_build_mapping_result()` and `run_generate()` for each spec.
+
+**Verification:**
+- `cd /home/ronak-anand/Desktop/schoraldevClaw/ScholarDevClaw/core && unset PYTHONHOME && unset PYTHONPATH && python -m ruff check src/scholardevclaw/application/pipeline.py && python -m ruff format src/scholardevclaw/application/pipeline.py` ✅
 
 ### 2026-05-30 (Optimizations.md — Performance & Reliability Overhaul)
 **Summary:** Implemented all Phase 1–4 optimizations from Optimizations.md across 5 core files. Vectorised math with NumPy, parallelised fuzzing/mutation/benchmark execution, moved to AST-level mutations, added content-hash deduplication, and replaced broad exception handling with specific error types. Built a true persistent pytest worker for mutation testing (zero interpreter restarts). All 2373 tests pass.

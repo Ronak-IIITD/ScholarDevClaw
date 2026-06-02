@@ -225,23 +225,25 @@ class ResearchSimilaritySearch:
         idf = self._compute_idf([query_tokens] + paper_tokens_list)
 
         similarities: list[tuple[int, SimilarPaper]] = []
+        query_set = set(query_tokens)
+        query_len = len(query_set)
 
         for i, paper in enumerate(papers):
             title = paper.get("title", "")
-            abstract = paper.get("abstract", "")
             paper_id = paper.get("paper_id", "")
             year = paper.get("year", 0)
             source = paper.get("source", "")
+            paper_tokens = paper_tokens_list[i]
 
             reasons = []
 
-            keyword_score = self.keyword_similarity(query, title, abstract)
+            paper_token_set = set(paper_tokens)
+            keyword_score = len(query_set & paper_token_set) / query_len if query_len else 0.0
             if keyword_score > 0.3:
                 reasons.append(f"keyword_match ({keyword_score:.0%})")
 
             tfidf_score = 0.0
             if use_tfidf:
-                paper_tokens = paper_tokens_list[i]
                 tfidf_score = self._tfidf_similarity(query_tokens, paper_tokens, idf)
                 if tfidf_score > 0.2:
                     reasons.append(f"tfidf ({tfidf_score:.0%})")

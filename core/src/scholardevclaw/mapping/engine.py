@@ -424,7 +424,13 @@ class MappingEngine:
                     except ValueError:
                         pass
 
+        # Keep scanning until each pattern has at least one insertion point.
+        patterns_to_find = list(patterns)
+
         for rel_file in element_files:
+            if not patterns_to_find:
+                break
+
             full_path = root / rel_file
             if not full_path.is_file():
                 continue
@@ -435,26 +441,38 @@ class MappingEngine:
                 continue
 
             lines = content.split("\n")
-            for pattern in patterns:
-                for i, line in enumerate(lines, 1):
-                    if pattern in line:
-                        key = (rel_file, i)
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        targets.append(
-                            self._make_insertion_point(
-                                file=rel_file,
-                                line=i,
-                                current_code=line.strip(),
-                                replacement=replacement,
-                                component_type="usage",
-                                match_tier="text_scan",
-                                pattern=pattern,
-                            )
+            matched_this_file: set[str] = set()
+
+            # Single pass over lines, checking all remaining patterns.
+            for i, line in enumerate(lines, 1):
+                if len(matched_this_file) == len(patterns_to_find):
+                    break
+
+                for pattern in patterns_to_find:
+                    if pattern in matched_this_file or pattern not in line:
+                        continue
+
+                    key = (rel_file, i)
+                    if key in seen:
+                        continue
+
+                    seen.add(key)
+                    targets.append(
+                        self._make_insertion_point(
+                            file=rel_file,
+                            line=i,
+                            current_code=line.strip(),
+                            replacement=replacement,
+                            component_type="usage",
+                            match_tier="text_scan",
+                            pattern=pattern,
                         )
-                        # Only report the first occurrence per pattern per file
-                        break
+                    )
+                    # Only report the first non-seen occurrence per pattern.
+                    matched_this_file.add(pattern)
+
+            # Do not look for already matched patterns in subsequent files.
+            patterns_to_find = [p for p in patterns_to_find if p not in matched_this_file]
 
         return targets
 

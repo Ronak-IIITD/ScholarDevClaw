@@ -138,6 +138,7 @@ class TreeSitterAnalyzer:
     def __init__(self, repo_path: Path):
         self.repo_path = Path(repo_path)
         self.parsers: dict[str, Any] = {}
+        self._file_cache: dict[str, list[Path]] = {}
         self._setup_parsers()
 
     def _setup_parsers(self):
@@ -190,16 +191,29 @@ class TreeSitterAnalyzer:
         """Detect all languages in the repository"""
         languages: set[str] = set()
 
-        for lang, config in LANGUAGE_CONFIGS.items():
-            for ext in config["extensions"]:
-                files = list(self.repo_path.rglob(f"*{ext}"))
-                # Filter out ignored directories
-                files = [f for f in files if not self._should_ignore(f)]
-                if files:
-                    languages.add(lang)
-                    break
+        for lang in LANGUAGE_CONFIGS:
+            if self._get_files_for_language(lang):
+                languages.add(lang)
 
         return sorted(list(languages))
+
+    def _get_files_for_language(self, language: str) -> list[Path]:
+        """Get cached list of files for a language, avoiding repeated rglob."""
+        if language in self._file_cache:
+            return self._file_cache[language]
+
+        if language not in LANGUAGE_CONFIGS:
+            self._file_cache[language] = []
+            return []
+
+        config = LANGUAGE_CONFIGS[language]
+        files = []
+        for ext in config["extensions"]:
+            for file_path in self.repo_path.rglob(f"*{ext}"):
+                if not self._should_ignore(file_path):
+                    files.append(file_path)
+        self._file_cache[language] = files
+        return files
 
     def analyze(self) -> RepoAnalysis:
         """Perform comprehensive repository analysis"""
@@ -311,19 +325,16 @@ class TreeSitterAnalyzer:
         if language not in LANGUAGE_CONFIGS:
             return None
 
-        config = LANGUAGE_CONFIGS[language]
         file_count = 0
         line_count = 0
 
-        for ext in config["extensions"]:
-            for file_path in self.repo_path.rglob(f"*{ext}"):
-                if not self._should_ignore(file_path):
-                    file_count += 1
-                    try:
-                        content = file_path.read_text(encoding="utf-8", errors="ignore")
-                        line_count += len(content.split("\n"))
-                    except Exception:
-                        pass
+        for file_path in self._get_files_for_language(language):
+            file_count += 1
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                line_count += len(content.split("\n"))
+            except Exception:
+                pass
 
         if file_count == 0:
             return None
@@ -344,30 +355,34 @@ class TreeSitterAnalyzer:
         if language not in LANGUAGE_CONFIGS:
             return elements, imports
 
-        config = LANGUAGE_CONFIGS[language]
         parser = self._get_parser(language)
 
         if not parser:
             # Fallback to regex-based parsing
             return self._parse_with_regex(language)
 
-        for ext in config["extensions"]:
-            for file_path in self.repo_path.rglob(f"*{ext}"):
-                if self._should_ignore(file_path):
-                    continue
+        for file_path in self._get_files_for_language(language):
+            try:
+                content = file_path.read_bytes()
+                tree = parser.parse(content)
+                rel_path = str(file_path.relative_to(self.repo_path))
 
-                try:
-                    content = file_path.read_bytes()
-                    tree = parser.parse(content)
+                file_elements: list[CodeElement] = []
+                file_imports: list[ImportStatement] = []
+                self._walk_for_elements_and_imports(
+                    tree.root_node,
+                    rel_path,
+                    language,
+                    content,
+                    file_elements,
+                    file_imports,
+                    parent_class=None,
+                )
+                elements.extend(file_elements)
+                imports.extend(file_imports)
 
-                    file_elements = self._extract_elements_from_tree(tree, file_path, language)
-                    elements.extend(file_elements)
-
-                    file_imports = self._extract_imports_from_tree(tree, file_path, language)
-                    imports.extend(file_imports)
-
-                except Exception as e:
-                    print(f"Error parsing {file_path}: {e}")
+            except Exception as e:
+                print(f"Error parsing {file_path}: {e}")
 
         return elements, imports
 
@@ -394,7 +409,11 @@ class TreeSitterAnalyzer:
         return elements, imports
 
     def _extract_elements_from_tree(
-        self, tree, file_path: Path, language: str
+        self,
+        tree,
+        file_path: Path,
+        language: str,
+        source: bytes | None = None,
     ) -> list[CodeElement]:
         """Extract code elements from AST tree using real tree-sitter walking.
 
@@ -405,14 +424,68 @@ class TreeSitterAnalyzer:
         elements: list[CodeElement] = []
         rel_path = str(file_path.relative_to(self.repo_path))
 
-        try:
-            source = file_path.read_bytes()
-        except Exception:
-            return elements
+        if source is None:
+            try:
+                source = file_path.read_bytes()
+            except Exception:
+                return elements
 
         root = tree.root_node
         self._walk_for_elements(root, rel_path, language, source, elements, parent_class=None)
         return elements
+
+    def _walk_for_elements_and_imports(
+        self,
+        node: Any,
+        rel_path: str,
+        language: str,
+        source: bytes,
+        elements: list[CodeElement],
+        imports: list[ImportStatement],
+        parent_class: str | None,
+    ) -> None:
+        """Single-pass walk extracting both elements and imports."""
+        elem_handler = self._ELEMENT_HANDLERS.get(language)
+        if elem_handler:
+            elem_handler(self, node, rel_path, language, source, elements, parent_class)
+
+        import_handler = self._IMPORT_HANDLERS.get(language)
+        if import_handler:
+            import_handler(self, node, rel_path, language, source, imports)
+
+        # Recurse into children, updating parent_class context for class bodies
+        for child in node.children:
+            new_parent = parent_class
+
+            if language == "python" and node.type == "class_definition":
+                name_node = self._child_by_field(node, "name")
+                if name_node:
+                    new_parent = self._node_text(name_node, source)
+            elif language in ("javascript", "typescript") and node.type in (
+                "class_declaration",
+                "class",
+            ):
+                name_node = self._child_by_field(node, "name")
+                if name_node:
+                    new_parent = self._node_text(name_node, source)
+            elif language == "java" and node.type == "class_declaration":
+                name_node = self._child_by_field(node, "name")
+                if name_node:
+                    new_parent = self._node_text(name_node, source)
+            elif language == "rust" and node.type == "impl_item":
+                type_node = self._child_by_field(node, "type")
+                if type_node:
+                    new_parent = self._node_text(type_node, source)
+
+            self._walk_for_elements_and_imports(
+                child,
+                rel_path,
+                language,
+                source,
+                elements,
+                imports,
+                new_parent,
+            )
 
     def _walk_for_elements(
         self,
@@ -1295,7 +1368,11 @@ class TreeSitterAnalyzer:
     # ---------- Import extraction ----------
 
     def _extract_imports_from_tree(
-        self, tree, file_path: Path, language: str
+        self,
+        tree,
+        file_path: Path,
+        language: str,
+        source: bytes | None = None,
     ) -> list[ImportStatement]:
         """Extract import statements from AST tree using real tree-sitter walking.
 
@@ -1305,10 +1382,11 @@ class TreeSitterAnalyzer:
         imports: list[ImportStatement] = []
         rel_path = str(file_path.relative_to(self.repo_path))
 
-        try:
-            source = file_path.read_bytes()
-        except Exception:
-            return imports
+        if source is None:
+            try:
+                source = file_path.read_bytes()
+            except Exception:
+                return imports
 
         root = tree.root_node
         self._walk_for_imports(root, rel_path, language, source, imports)

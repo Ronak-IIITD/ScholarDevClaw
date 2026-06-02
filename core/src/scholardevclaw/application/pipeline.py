@@ -1166,15 +1166,20 @@ def _build_mapping_result(
     *,
     llm_assistant: Any | None = None,
     log_callback: LogCallback | None = None,
+    analysis: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     from scholardevclaw.mapping.engine import MappingEngine
-    from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
-    analyzer = TreeSitterAnalyzer(repo_path)
-    if log_callback is not None:
-        log_callback("Analyzing repository structure for mapping")
-    analysis = analyzer.analyze()
+    if analysis is None:
+        from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
+
+        analyzer = TreeSitterAnalyzer(repo_path)
+        if log_callback is not None:
+            log_callback("Analyzing repository structure for mapping")
+        analysis_dict = analyzer.analyze().__dict__
+    else:
+        analysis_dict = analysis
 
     extractor = ResearchExtractor(llm_assistant=llm_assistant)
     if log_callback is not None:
@@ -1187,7 +1192,7 @@ def _build_mapping_result(
             "Fix: run the specs command to list valid spec names and choose one of them."
         )
 
-    engine = MappingEngine(analysis.__dict__, spec, llm_assistant=llm_assistant)
+    engine = MappingEngine(analysis_dict, spec, llm_assistant=llm_assistant)
     if log_callback is not None:
         log_callback("Running mapping engine")
     mapping = engine.map()
@@ -1274,6 +1279,7 @@ def run_generate(
     *,
     output_dir: str | None = None,
     log_callback: LogCallback | None = None,
+    analysis: dict[str, Any] | None = None,
 ) -> PipelineResult:
     from scholardevclaw.patch_generation.generator import PatchGenerator
 
@@ -1299,6 +1305,7 @@ def run_generate(
             spec_name,
             llm_assistant=llm_assistant,
             log_callback=log_callback,
+            analysis=analysis,
         )
 
         generator = PatchGenerator(path, llm_assistant=llm_assistant)
@@ -1699,6 +1706,7 @@ def run_integrate(
             selected_spec_name,
             llm_assistant=llm_assistant,
             log_callback=log_callback,
+            analysis=analysis.__dict__,
         )
         timings["planning"] = round(
             float(timings.get("planning", 0.0)) + (time.perf_counter() - planning_started),
@@ -1776,6 +1784,7 @@ def run_integrate(
                 selected_spec_name,
                 output_dir=output_dir,
                 log_callback=log_callback,
+                analysis=analysis.__dict__,
             ),
         )
         logs.extend(generate_result.logs)
@@ -2191,6 +2200,7 @@ def run_multi_integrate(
                 spec_name,
                 llm_assistant=llm_assistant,
                 log_callback=log_callback,
+                analysis=analysis.__dict__,
             )
             timings["planning"] = round(
                 float(timings.get("planning", 0.0)) + (time.perf_counter() - planning_started),
@@ -2210,6 +2220,7 @@ def run_multi_integrate(
                     spec_name,
                     output_dir=output_dir,
                     log_callback=log_callback,
+                    analysis=analysis.__dict__,
                 ),
             )
             logs.extend(generate_result.logs)

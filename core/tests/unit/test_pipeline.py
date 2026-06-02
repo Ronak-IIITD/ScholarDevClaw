@@ -323,7 +323,9 @@ def test_run_integrate_and_validate(monkeypatch, tmp_path):
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -380,7 +382,9 @@ def test_run_integrate_dry_run_skips_generate_and_validate(monkeypatch, tmp_path
 
     pipeline = _pipeline_module()
 
-    def _fake_mapping_result(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _fake_mapping_result(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"algorithm": "RMSNorm", "targets": [{"file": "model.py"}]}, {"name": "RMSNorm"}
 
     def _should_not_be_called(*args, **kwargs):
@@ -416,7 +420,9 @@ def test_run_integrate_dry_run_does_not_create_rollback_snapshot(monkeypatch, tm
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -452,7 +458,9 @@ def test_run_integrate_blocks_on_mapping_quality_gate(monkeypatch, tmp_path):
 
     pipeline = _pipeline_module()
 
-    def _low_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _low_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [], "confidence": 12.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _low_confidence_mapping)
@@ -1316,7 +1324,9 @@ def test_run_integrate_auto_select_spec_success(monkeypatch, tmp_path):
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1394,7 +1404,9 @@ def test_run_integrate_generate_fails(monkeypatch, tmp_path):
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1415,7 +1427,9 @@ def test_run_integrate_create_rollback(monkeypatch, tmp_path):
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1435,7 +1449,9 @@ def test_run_integrate_no_rollback_when_disabled(monkeypatch, tmp_path):
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1470,7 +1486,9 @@ def test_run_integrate_marks_snapshot_applied_after_success(monkeypatch, tmp_pat
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1490,7 +1508,9 @@ def test_run_integrate_validation_failure_keeps_snapshot_unapplied(monkeypatch, 
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1544,7 +1564,9 @@ def test_run_integrate_rollback_snapshot_failure_triggers_error_hook(monkeypatch
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1572,7 +1594,9 @@ def test_run_integrate_hooks_called(monkeypatch, tmp_path):
     pipeline = _pipeline_module()
 
     # Mock _build_mapping_result to return high-confidence result that passes quality gates
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1618,7 +1642,9 @@ def test_run_integrate_uses_patched_temp_copy_for_validation(monkeypatch, tmp_pa
     source_file = tmp_path / "model.py"
     source_file.write_text("x = 1\n")
 
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1676,7 +1702,9 @@ def test_run_integrate_keeps_original_repo_unchanged_after_validation(monkeypatc
     source_file = tmp_path / "model.py"
     source_file.write_text("x = 1\n")
 
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
@@ -1724,7 +1752,9 @@ def test_run_integrate_emits_diff_evidence_and_validation_provenance(monkeypatch
 
     (tmp_path / "model.py").write_text("x = 1\n")
 
-    def _high_confidence_mapping(repo_path, spec_name, *, llm_assistant=None, log_callback=None):
+    def _high_confidence_mapping(
+        repo_path, spec_name, *, llm_assistant=None, log_callback=None, analysis=None
+    ):
         return {"targets": [{"file": "model.py"}], "confidence": 85.0}, {"name": "RMSNorm"}
 
     monkeypatch.setattr(pipeline, "_build_mapping_result", _high_confidence_mapping)
