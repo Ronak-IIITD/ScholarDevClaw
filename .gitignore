@@ -48,6 +48,7 @@ htmlcov/
 
 # ScholarDevClaw specific
 *.log
+*.prof
 .env
 .env.local
 demo.md
