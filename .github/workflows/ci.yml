@@ -197,7 +197,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.10"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: bun-cache
         with:
           path: agent/node_modules
@@ -219,7 +219,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.10"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: bun-restore
         with:
           path: agent/node_modules
@@ -242,7 +242,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.10"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: bun-restore
         with:
           path: agent/node_modules
@@ -265,7 +265,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.10"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: bun-restore
         with:
           path: agent/node_modules
