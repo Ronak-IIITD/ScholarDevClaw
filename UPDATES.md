@@ -2,7 +2,29 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-02 (profiling-driven performance optimizations)
+**Last updated:** 2026-06-02 (test coverage for profiling-driven optimizations)
+
+### 2026-06-02 (Test Coverage for Profiling-Driven Optimizations)
+**Summary:** Added 37 new tests across 4 test files covering all profiling-driven optimizations: tree-sitter file cache + merged walks + source parameter, similarity re-tokenization elimination, mapping engine single-pass text scan, and pipeline analysis caching.
+
+**What changed:**
+1. **`tests/unit/test_tree_sitter_optimizations.py` (11 tests):**
+   - `TestFileCacheOptimization`: cache populated after analyze, consistent results, unknown language returns empty, excludes ignored dirs
+   - `TestSinglePassWalk`: merged walk returns both elements and imports, handles no-imports case
+   - `TestSourceParameter`: extract elements/imports with and without source parameter
+   - `TestAnalyzeEndToEnd`: full Python repo analysis, empty repo analysis
+
+2. **`tests/unit/test_similarity_optimizations.py` (12 tests):**
+   - `TestFindSimilarOptimized`: ranked results, relevance ordering, max_results, empty inputs, keyword/tfidf/year scores in reasons, use_tfidf=False, paper_id preservation, 500-paper batch, keyword-only scoring
+
+3. **`tests/unit/test_mapping_text_scan.py` (10 tests):**
+   - `TestTextScanSinglePass`: single/multiple patterns, first-match-per-file, seen-set dedup, missing/nonexistent root, patterns not found, same-line matching, rglob fallback, early break optimization
+
+4. **`tests/unit/test_pipeline_analysis_cache.py` (4 tests):**
+   - `TestBuildMappingResultAnalysisCaching`: analyzer created when analysis=None, skipped when analysis provided
+   - `TestRunGenerateAnalysisParameter`: accepts analysis kwarg, backward-compatible without analysis
+
+**Verification:** 37/37 new tests pass, 628 existing tests pass, ruff check/format clean.
 
 ### 2026-06-02 (Profiling-Driven Performance Optimizations)
 **Summary:** Profiled the full pipeline against test_repos/nanogpt using cProfile and implemented targeted optimizations based on real measured bottlenecks. Key wins: 96% faster mapping engine (analysis caching), 62% faster similarity search (eliminated re-tokenization), merged tree-sitter AST walks, eliminated redundant file I/O.
