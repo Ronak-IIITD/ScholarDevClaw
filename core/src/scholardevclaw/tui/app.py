@@ -56,6 +56,7 @@ from .screens import (
     UnderstandingScreen,
 )
 from .theme import COLORS as TUI_COLORS
+from .toasts import show_toast
 from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspector, StatusBar
 
 logger = logging.getLogger(__name__)
@@ -4701,6 +4702,40 @@ class ScholarDevClawApp(App[None]):
         from textual.widgets import Input
 
         self.on_prompt_submitted(Input.Submitted(prompt, command))
+
+    def notify_toast(
+        self,
+        message: str,
+        *,
+        severity: str = "info",
+        title: str = "",
+        duration: float = 4.0,
+        action_label: str = "",
+        action: object = None,
+    ) -> None:
+        """Show a toast notification on the current screen.
+
+        Thin convenience wrapper around :func:`scholardevclaw.tui.toasts.show_toast`
+        so screens and widgets can do ``self.app.notify_toast(...)`` without
+        having to reach into the toasts module.
+
+        Args:
+            message: Body text of the toast.
+            severity: One of ``"info"``, ``"success"``, ``"warning"``, ``"error"``.
+            title: Optional headline. Defaults to the severity name in caps.
+            duration: Seconds to display. ``0`` disables auto-dismiss.
+            action_label: Optional label for an action button.
+            action: Optional zero-arg callable invoked if the user triggers the action.
+        """
+        show_toast(
+            self,
+            message,
+            severity=severity,  # type: ignore[arg-type]
+            title=title,
+            duration=duration,
+            action_label=action_label,
+            action=action,  # type: ignore[arg-type]
+        )
 
     def action_show_help(self) -> None:
         context = {
