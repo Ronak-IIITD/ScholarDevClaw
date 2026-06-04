@@ -2,7 +2,63 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-04 (TUI first-run quickstart dashboard)
+**Last updated:** 2026-06-04 (TUI UX suite — toasts, workspace selector, settings panel, diff viewer)
+
+### 2026-06-04 (TUI UX Suite — 4 Modal Screens)
+
+**Summary:** Shipped a coordinated set of TUI UX improvements that close the gap between "command succeeded" and "user has the information they need". Four new modal screens share a consistent design language, theme-aware CSS, and keyboard-first navigation.
+
+**What changed:**
+
+1. **Toast notification system (cross-cutting infrastructure) — `core/src/scholardevclaw/tui/toasts.py`:**
+   - Lightweight, theme-consistent toast widget for non-blocking user feedback
+   - 4 severities with icons and colors: info (ℹ, accent), success (✓, green), warning (⚠, amber), error (✗, red)
+   - Auto-dismiss with configurable duration (default 4s; 0 = no auto-dismiss)
+   - Optional action button with callback (e.g. "View diff" → opens diff viewer)
+   - Stacks multiple toasts in the bottom-right corner without overlap
+   - `app.notify_toast(message, severity, title, duration, action_label, action)` convenience method
+   - Uses standard Textual CSS variables (`$success`, `$warning`, `$error`, `$text-accent`, `$surface`, `$text`, `$border`)
+
+2. **Workspace / repo selector (Ctrl+W) — `core/src/scholardevclaw/tui/repo_selector.py`:**
+   - Keyboard-navigable picker for switching the active repository
+   - 4 candidate sources (deduplicated, prioritized): current directory, recent run repos, subdirectories, git roots
+   - Live filter input (substring match on label or path, case-insensitive)
+   - Source icons: ◉ current, ↻ recent, ▸ subdir, ⎇ git root
+   - Recent repos sourced from `_recent_run_artifacts` (last 10, deduped by abspath)
+   - Pure helpers (`build_repo_candidates`, `filter_candidates`) for testability
+
+3. **Settings panel (Ctrl+,) — `core/src/scholardevclaw/tui/settings_panel.py`:**
+   - Settings dialog grouped by category: LLM, Behavior, Appearance
+   - 5 settings: provider (cycle 16 supported), model (free text), default mode (analyze/search/edit), YOLO mode (toggle), theme (cycle 21 built-in)
+   - Keyboard nav: ↑↓ between settings, Enter/Space to cycle/edit, Ctrl+S to save, Esc to cancel
+   - Returns a diff dict (only changed keys) on save; caller applies changes
+   - `_SettingRow` decouples immutable `Setting` spec from mutable row state
+   - Integrated with status bar + `notify_toast` for feedback
+
+4. **Diff / patch viewer (F3) — `core/src/scholardevclaw/tui/diff_viewer.py`:**
+   - Built-in unified diff viewer — no more leaving the TUI to inspect generated patches
+   - Color-coded: `[green]+` additions, `[red]-` deletions, `[cyan]+++`/`---` file headers, `[dim]@@` hunk headers
+   - Multi-file: Tab/→ next, Shift+Tab/← prev (wraps)
+   - File statuses: added (whole file is +), modified (unified diff), deleted (whole file is -), renamed
+   - `patch_diff_from_payload(payload)` converts agent bridge payloads (camelCase + snake_case) to a `PatchDiff`
+   - `app.set_last_patch(payload)` public API for the agent bridge to call
+   - Toast on missing/empty/error diff instead of failing silently
+
+**Tests:**
+- 170 new tests across 4 files (32 toasts + 39 repo selector + 28 settings + 45 diff viewer + 26 from prior quickstart already in this branch)
+- 331/331 TUI tests pass (170 new + 161 from prior TUI work, no regressions)
+- mypy clean on all 4 new modules
+- ruff check + format clean on all 4 new modules and `app.py` wiring
+- Pre-existing LSP errors in `app.py` (3 errors at lines ~1832-1834, 4010-4012) are unrelated to this change
+
+**UX flow (e.g. for a fresh run):**
+1. Launch `scholardevclaw tui` → press `Ctrl+Q` for the quickstart dashboard
+2. Press `Ctrl+W` to switch repos if needed
+3. Press `Ctrl+,` to change provider/model/theme
+4. Run a command (e.g. `:generate`)
+5. Toast appears: "Patch generated [View diff]" → click action or press F3
+6. Inspect the color-coded diff, tab between files
+7. Press Esc to return to the main shell
 
 ### 2026-06-04 (TUI First-Run Quickstart Dashboard)
 
