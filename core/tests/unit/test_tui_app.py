@@ -2065,6 +2065,7 @@ def test_bindings_include_phase9_shortcuts():
     assert '("f5", "open_planning", "Planning")' in source
     assert '("slash", "open_log_search", "Find")' in source
     assert '("f2", "open_reverse_search", "History")' in source
+    assert '("f4", "open_patch_history", "Patch History")' in source
 
 
 def test_app_has_log_filter_actions():
@@ -2085,3 +2086,13 @@ def test_app_has_reverse_search_actions():
     # The result handler must restore the prompt input value
     assert 'query_one("#prompt-input", PromptInput)' in source
     assert "self._command_history" in source
+
+
+def test_app_has_patch_history_actions():
+    source = inspect.getsource(ScholarDevClawApp)
+    assert "def action_open_patch_history" in source
+    assert "def _on_patch_history_selected" in source
+    assert "PatchHistoryScreen" in source
+    assert "self._patch_history" in source
+    # set_last_patch must record into history
+    assert "_patch_history.append" in source

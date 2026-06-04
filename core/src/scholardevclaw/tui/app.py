@@ -45,6 +45,7 @@ from scholardevclaw.understanding import PaperUnderstanding, UnderstandingAgent
 
 from .diff_viewer import DiffViewer, patch_diff_from_payload
 from .log_search import LogSearchScreen
+from .patch_history import PatchHistoryScreen
 from .quickstart import QuickstartDashboard
 from .repo_selector import RepoSelector
 from .reverse_search import ReverseSearchScreen
@@ -406,6 +407,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+w", "open_workspace_selector", "Workspace"),
         ("ctrl+comma", "open_settings", "Settings"),
         ("f3", "view_last_patch", "View Diff"),
+        ("f4", "open_patch_history", "Patch History"),
         ("slash", "open_log_search", "Find"),
         ("f2", "open_reverse_search", "History"),
     ]
@@ -514,6 +516,7 @@ class ScholarDevClawApp(App[None]):
         self._run_replay_map: dict[int, dict[str, Any]] = {}
         self._recent_run_artifacts: list[RunArtifact] = []
         self._last_patch: dict[str, Any] | None = None
+        self._patch_history: list[dict[str, Any]] = []
         self._run_events: dict[int, list[RunEvent]] = {}
         self._run_event_seq: dict[int, int] = {}
         self._chat_event_accumulator: dict[int, str] = {}
@@ -4900,10 +4903,58 @@ class ScholarDevClawApp(App[None]):
 
         Called by the agent bridge when a patch is generated so the
         user can press F3 (or call :meth:`action_view_last_patch`) to
-        inspect the changes without leaving the TUI.
+        inspect the changes without leaving the TUI. The payload is
+        also appended to a bounded ``_patch_history`` so the user can
+        browse past patches via F4.
         """
         if isinstance(payload, dict):
             self._last_patch = payload
+            self._patch_history.append(payload)
+            # Cap at 50 entries to keep the modal responsive
+            if len(self._patch_history) > 50:
+                self._patch_history = self._patch_history[-50:]
+
+    def action_open_patch_history(self) -> None:
+        """Open the patch history browser (F4)."""
+        if not self._patch_history:
+            self.notify_toast(
+                "No patches in history — run :generate or integrate to produce one",
+                severity="info",
+                title="No patches",
+            )
+            return
+        try:
+            self.push_screen(
+                PatchHistoryScreen(payloads=list(reversed(self._patch_history))),
+                self._on_patch_history_selected,
+            )
+        except Exception as exc:  # pragma: no cover - safety net
+            self._set_status(f"Patch history unavailable: {exc}", "warning")
+
+    def _on_patch_history_selected(self, payload: dict[str, Any] | None) -> None:
+        """Open a DiffViewer for the chosen historical patch."""
+        if payload is None:
+            return
+        try:
+            patch = patch_diff_from_payload(payload)
+        except Exception as exc:  # noqa: BLE001
+            self.notify_toast(
+                f"Could not render diff: {exc}",
+                severity="error",
+                title="Diff error",
+            )
+            return
+        if patch.file_count == 0:
+            self.notify_toast(
+                "That patch had no files to display",
+                severity="info",
+                title="Empty patch",
+            )
+            return
+        try:
+            self.push_screen(DiffViewer(patch))
+        except Exception as exc:  # pragma: no cover - safety net
+            self._set_status(f"Could not open diff viewer: {exc}", "warning")
 
     def action_view_last_patch(self) -> None:
         """Open the diff viewer for the most recently generated patch."""
