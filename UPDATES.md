@@ -2,7 +2,51 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-02 (test coverage for profiling-driven optimizations)
+**Last updated:** 2026-06-04 (TUI first-run quickstart dashboard)
+
+### 2026-06-04 (TUI First-Run Quickstart Dashboard)
+
+**Summary:** Added a beautiful, keyboard-navigable first-run experience for the TUI (`Ctrl+Q`). The dashboard showcases the product with an ASCII art banner, system status panel, 6 clickable quick-action tiles, recent runs pane, and helpful tips — so a new user can pick a workflow in seconds without reading docs.
+
+**What changed:**
+
+1. **`core/src/scholardevclaw/tui/quickstart.py` (new, ~370 lines):**
+   - `SCHOLAR_BANNER` / `SCHOLAR_BANNER_COMPACT` — letter-spaced ASCII art with "RESEARCH → CODE" tagline
+   - `QuickAction` frozen dataclass: `key`, `title`, `description`, `icon`, `command`, `shortcut`
+   - `QUICK_ACTIONS` tuple — 6 actions: Analyze (A), Suggest (S), Integrate (I), Search (/), Map (M), Doctor (?)
+   - `QuickActionTile(Button)` — clickable, focusable tile widget with custom rendering
+   - `_render_tile()` — pure ASCII box renderer for unit testing without an App
+   - `QuickstartDashboard(ModalScreen[str | None])` — the modal screen with bindings (escape, q, enter, tab) and the visual layout
+   - `_gather_system_status()` — collects `version`, `python`, `platform`, `cwd`, and a masked API key (prefix + "…" + last-4-chars)
+   - `_format_recent_runs()` — formats the last 5 runs with status icons (✓ completed, ✗ failed, ⟳ running, ⊘ cancelled, ⋯ queued)
+
+2. **`core/src/scholardevclaw/tui/app.py` (wiring):**
+   - Imported `QuickstartDashboard`
+   - Added `Ctrl+Q` binding → `action_open_quickstart("Quickstart")`
+   - Added `action_open_quickstart()` — builds `recent_runs` from `_recent_run_artifacts` and pushes the dashboard
+   - Added `_on_quickstart_result(result)` — dispatches the chosen command back to the main prompt via `on_prompt_submitted(Input.Submitted(prompt, command))`
+
+3. **`core/tests/unit/test_tui_quickstart.py` (new, 37 tests, 6 classes):**
+   - `TestQuickActions` (11): action count, unique keys/shortcuts, all titles populated, dataclass frozen & constructible, all expected actions present
+   - `TestBanner` (4): non-empty banners, tagline and product name substrings (with letter-spacing normalization)
+   - `TestRenderTile` (4): renders ASCII box, includes title/command, focused marker
+   - `TestFormatRecentRuns` (7): empty, None, completed, failed, running, cancelled, multiple
+   - `TestSystemStatus` (6): returns dict, includes python version, platform, cwd, masked API key, "not set" placeholder
+   - `TestQuickstartDashboard` (5): constructible with defaults/runs/custom status, ModalScreen subclass, callable
+
+**Verification:**
+- 37/37 new quickstart tests pass
+- 187/187 full TUI test suite passes (init + app + screens + widgets + clipboard + quickstart) — zero regressions
+- `mypy` clean on `quickstart.py`
+- `ruff check` + `ruff format --check` clean on `quickstart.py` and `test_tui_quickstart.py`
+- Pre-existing LSP errors in `app.py` (3 errors at lines ~1825, 4001-4002) are unrelated to this change
+
+**UX flow:**
+1. User launches `scholardevclaw tui`
+2. Presses `Ctrl+Q` → modal opens over the main view
+3. Sees the ASCII banner, system status, and 6 tiles
+4. Clicks a tile OR presses the shortcut key (A/S/I/M/?) OR navigates with Tab + Enter
+5. Modal dismisses and the chosen command is sent to the main prompt for execution
 
 ### 2026-06-02 (Test Coverage for Profiling-Driven Optimizations)
 **Summary:** Added 37 new tests across 4 test files covering all profiling-driven optimizations: tree-sitter file cache + merged walks + source parameter, similarity re-tokenization elimination, mapping engine single-pass text scan, and pipeline analysis caching.

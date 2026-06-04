@@ -43,6 +43,7 @@ from scholardevclaw.product.trust_report import write_paper_workflow_reports
 from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 from scholardevclaw.understanding import PaperUnderstanding, UnderstandingAgent
 
+from .quickstart import QuickstartDashboard
 from .screens import (
     CommandPalette,
     ExecutionScreen,
@@ -393,6 +394,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+g", "open_generation", "Generation"),
         ("ctrl+e", "open_execution", "Execution"),
         ("ctrl+r", "open_product", "Product"),
+        ("ctrl+q", "open_quickstart", "Quickstart"),
     ]
 
     CSS = """
@@ -4673,6 +4675,32 @@ class ScholarDevClawApp(App[None]):
         self._context_hints = []
         self._update_command_meta()
         self._set_status("Screen cleared", "accent")
+
+    def action_open_quickstart(self) -> None:
+        """Open the quickstart dashboard."""
+        # Build recent_runs from app state (use _recent_run_artifacts if available)
+        recent_runs = []
+        for artifact in getattr(self, "_recent_run_artifacts", [])[-5:]:
+            recent_runs.append(
+                {
+                    "action": artifact.action,
+                    "spec": artifact.spec,
+                    "status": artifact.status,
+                }
+            )
+        self.push_screen(QuickstartDashboard(recent_runs=recent_runs), self._on_quickstart_result)
+
+    def _on_quickstart_result(self, command: str | None) -> None:
+        """Handle a quickstart dashboard dismissal — runs the chosen command."""
+        if not command:
+            return
+        # Put the command into the prompt and submit it
+        prompt = self.query_one("#prompt-input", PromptInput)
+        prompt.value = command
+        # Trigger the same handler used when the user types + presses Enter
+        from textual.widgets import Input
+
+        self.on_prompt_submitted(Input.Submitted(prompt, command))
 
     def action_show_help(self) -> None:
         context = {
