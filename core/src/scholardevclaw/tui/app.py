@@ -56,6 +56,7 @@ from .screens import (
     ProviderSetupScreen,
     UnderstandingScreen,
 )
+from .settings_panel import Setting, SettingsPanel
 from .theme import COLORS as TUI_COLORS
 from .toasts import show_toast
 from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspector, StatusBar
@@ -398,6 +399,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+r", "open_product", "Product"),
         ("ctrl+q", "open_quickstart", "Quickstart"),
         ("ctrl+w", "open_workspace_selector", "Workspace"),
+        ("ctrl+comma", "open_settings", "Settings"),
     ]
 
     CSS = """
@@ -4772,6 +4774,107 @@ class ScholarDevClawApp(App[None]):
             f"Switched to {name}",
             severity="success",
             title="Workspace changed",
+        )
+
+    def action_open_settings(self) -> None:
+        """Open the settings panel populated with current app state."""
+        yolo_on = os.environ.get("SCHOLARDEVCLAW_YOLO_MODE", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        provider_options = tuple(sorted(SUPPORTED_TUI_PROVIDERS.keys()))
+        model_options = ()
+        # If a preset exists for the current provider, surface it as a hint
+        current_provider = (self._provider or "").strip().lower() or "setup"
+        try:
+            from scholardevclaw.auth.types import AuthProvider
+            from scholardevclaw.tui.screens import PROVIDER_MODEL_PRESETS
+
+            presets = PROVIDER_MODEL_PRESETS.get(AuthProvider(current_provider), ())
+            model_options = tuple(presets)
+        except Exception:
+            model_options = ()
+
+        settings: list[Setting] = [
+            Setting(
+                key="llm.provider",
+                label="Provider",
+                kind="choice",
+                current=current_provider
+                if current_provider in provider_options
+                else (provider_options[0] if provider_options else current_provider),
+                options=provider_options,
+                help_text="LLM backend",
+            ),
+            Setting(
+                key="llm.model",
+                label="Model",
+                kind="text",
+                current=getattr(self, "_model", "") or "",
+                options=model_options,
+                help_text="model name (free text)",
+            ),
+            Setting(
+                key="behavior.mode",
+                label="Default mode",
+                kind="choice",
+                current=getattr(self, "_mode", "analyze"),
+                options=("analyze", "search", "edit"),
+                help_text="default command mode",
+            ),
+            Setting(
+                key="behavior.yolo",
+                label="YOLO mode",
+                kind="toggle",
+                current="on" if yolo_on else "off",
+                help_text="skip destructive & approval gates",
+            ),
+            Setting(
+                key="appearance.theme",
+                label="Theme",
+                kind="choice",
+                current=str(self.theme or "textual-dark"),
+                options=tuple(sorted(self.available_themes.keys())),
+                help_text="textual theme",
+            ),
+        ]
+        self.push_screen(SettingsPanel(settings=settings), self._on_settings_saved)
+
+    def _on_settings_saved(self, changed: dict[str, str] | None) -> None:
+        """Apply settings changes returned by the SettingsPanel."""
+        if not changed:
+            return
+        for key, value in changed.items():
+            if key == "llm.provider":
+                # Re-use the existing provider-set path
+                self._provider = value
+                self._set_status(f"Provider: {value}", "accent")
+            elif key == "llm.model":
+                self._model = value
+                self._remember_model_for_provider(self._provider, value)
+            elif key == "behavior.mode":
+                self._mode = value
+                self._set_status(f"Mode: {value}", "accent")
+            elif key == "behavior.yolo":
+                if value == "on":
+                    os.environ["SCHOLARDEVCLAW_YOLO_MODE"] = "1"
+                else:
+                    os.environ.pop("SCHOLARDEVCLAW_YOLO_MODE", None)
+            elif key == "appearance.theme":
+                try:
+                    self.theme = value
+                except Exception:
+                    pass
+        # Persist whatever changed
+        self._save_runtime_state()
+        # Reflect in the status bar
+        self._sync_status_bar()
+        self.notify_toast(
+            f"Updated {len(changed)} setting{'s' if len(changed) != 1 else ''}",
+            severity="success",
+            title="Settings saved",
         )
 
     def action_show_help(self) -> None:
