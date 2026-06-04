@@ -2064,6 +2064,7 @@ def test_bindings_include_phase9_shortcuts():
     assert '("ctrl+l", "cycle_log_filter", "Log Filter")' in source
     assert '("f5", "open_planning", "Planning")' in source
     assert '("slash", "open_log_search", "Find")' in source
+    assert '("f2", "open_reverse_search", "History")' in source
 
 
 def test_app_has_log_filter_actions():
@@ -2074,3 +2075,13 @@ def test_app_has_log_filter_actions():
     assert 'query_one("#main-output", LogView)' in source
     assert "cycle_severity_filter" in source
     assert "LogSearchScreen" in source
+
+
+def test_app_has_reverse_search_actions():
+    source = inspect.getsource(ScholarDevClawApp)
+    assert "def action_open_reverse_search" in source
+    assert "def _on_reverse_search_result" in source
+    assert "ReverseSearchScreen" in source
+    # The result handler must restore the prompt input value
+    assert 'query_one("#prompt-input", PromptInput)' in source
+    assert "self._command_history" in source

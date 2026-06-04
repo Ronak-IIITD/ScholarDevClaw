@@ -47,6 +47,7 @@ from .diff_viewer import DiffViewer, patch_diff_from_payload
 from .log_search import LogSearchScreen
 from .quickstart import QuickstartDashboard
 from .repo_selector import RepoSelector
+from .reverse_search import ReverseSearchScreen
 from .screens import (
     CommandPalette,
     ExecutionScreen,
@@ -406,6 +407,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+comma", "open_settings", "Settings"),
         ("f3", "view_last_patch", "View Diff"),
         ("slash", "open_log_search", "Find"),
+        ("f2", "open_reverse_search", "History"),
     ]
 
     CSS = """
@@ -4999,6 +5001,31 @@ class ScholarDevClawApp(App[None]):
             self.push_screen(LogSearchScreen())
         except Exception as exc:  # pragma: no cover - safety net
             self._set_status(f"Log search unavailable: {exc}", "warning")
+
+    def action_open_reverse_search(self) -> None:
+        """Open the reverse-i-search modal (F2)."""
+        try:
+            self.push_screen(
+                ReverseSearchScreen(history=self._command_history),
+                self._on_reverse_search_result,
+            )
+        except Exception as exc:  # pragma: no cover - safety net
+            self._set_status(f"Reverse search unavailable: {exc}", "warning")
+
+    def _on_reverse_search_result(self, command: str | None) -> None:
+        """Apply the chosen command (if any) to the prompt input."""
+        if command is None:
+            return
+        try:
+            prompt = self.query_one("#prompt-input", PromptInput)
+        except Exception:
+            self._set_status("Prompt input unavailable", "warning")
+            return
+        try:
+            prompt.value = command
+            self._set_status(f"Restored from history: {command[:40]}", "accent")
+        except Exception:
+            pass
 
     def _on_command_palette_result(self, command: str | None) -> None:
         if not command:
