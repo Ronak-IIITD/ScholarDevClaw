@@ -2,9 +2,60 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-04 (TUI UX suite — toasts, workspace selector, settings panel, diff viewer)
+**Last updated:** 2026-06-04 (TUI v2 — git context, log filter, reverse search, patch history)
 
-### 2026-06-04 (TUI UX Suite — 4 Modal Screens)
+### 2026-06-04 (TUI v2 — Status Bar Git Context, Log Filter, Reverse-i-Search, Patch History)
+
+**Summary:** A second wave of TUI polish that gives users persistent context (git state), noise control (log filtering), recall (reverse-i-search), and revisitation (patch history). Four new modules and four new modal screens that share the same theme-aware design language as the previous suite.
+
+**What changed:**
+
+1. **Git context in the status bar — `core/src/scholardevclaw/tui/git_status.py`:**
+   - `GitContext` frozen dataclass (branch, dirty, ahead, behind, is_repo)
+   - `get_git_context(path)` shells out to `git rev-parse` / `status --porcelain` / `rev-list --left-right` for branch + dirty + ahead/behind counts
+   - `GitContext.short()` renders a single-line Rich fragment: `⎇ main* ↑3 ↓2` (or dim "not a git repo")
+   - `is_git_available()` PATH probe
+   - `StatusBar.set_git_text()` plumbs the rendered text into the existing parts list (rightmost slot, with dim muted color)
+   - `ScholarDevClawApp._sync_status_bar()` now reads the current `_directory` and forwards the result; falls back silently on missing git or non-repo paths
+
+2. **LogView severity + search filter (Ctrl+L cycling, / search):**
+   - Internal buffer of every entry (capped at 800); the visible children are re-rendered whenever a filter changes
+   - Severity filter: `all / info / success / warning / error / system / debug` (cycle order)
+   - Search filter: case-insensitive substring match against the entry text
+   - Filters compose (severity AND search); `clear_filters()` resets both; `clear_logs()` empties the buffer but keeps the filter state
+   - Filter header line appears only when a filter is active; hidden otherwise
+   - **Hotkeys (rebound to avoid conflict with the paper-modal PlanningScreen):**
+     - `Ctrl+L` → cycle log severity filter (was `open_planning`)
+     - `Ctrl+Shift+L` / `F5` → `open_planning` (replacement, still in the command palette)
+     - `/` → open `LogSearchScreen` (live substring filter input)
+   - `LogSearchScreen` modal with a single Input; every keystroke updates `LogView.set_search_filter`. Enter / Esc dismiss; Ctrl+U clears
+
+3. **Reverse-i-search for command history (F2) — `core/src/scholardevclaw/tui/reverse_search.py`:**
+   - Bash-style reverse-i-search modal mirroring `Ctrl+R`
+   - Live-filters `app._command_history` by substring (case-insensitive), most-recent first
+   - Shows the current best match in real time; F2 / Shift+Tab step to the next earlier match, Shift+F2 to the next later match (wrap-around)
+   - Enter accepts the highlighted match and dismisses; if there is no match the raw query is returned so the user can run a new command
+   - Esc cancels and returns `None`
+   - **Hotkey:** `F2` → `action_open_reverse_search` → push screen → restore chosen command into `#prompt-input` and update the status bar
+   - Note: `Ctrl+R` is already taken by `open_product`, so `F2` is the binding
+
+4. **Patch history browser (F4) — `core/src/scholardevclaw/tui/patch_history.py`:**
+   - Session-scoped list of every patch recorded via `set_last_patch`
+   - `set_last_patch` now also appends to a bounded `_patch_history` list (capped at 50 entries)
+   - `PatchHistoryScreen(ModalScreen[dict|None])` lists the payloads with a one-line summary per row (file path or "N files: …")
+   - Substring filter input narrows the list; Enter selects the highlighted row and dismisses with the payload
+   - `_on_patch_history_selected` opens a `DiffViewer` for the chosen patch, surfacing toast errors for empty or unparseable payloads
+   - **Hotkey:** `F4` → `action_open_patch_history` (toast warning if no patches yet)
+
+**Tests added:** 22 (git status) + 24 (log filter) + 8 (log search modal) + 17 (reverse search) + 16 (patch history) + 4 (binding / action smoke tests in `test_tui_app.py`) = **91 new tests**. Full TUI suite: **419/419 passing** (was 353 before this round). `ruff check` and `mypy` clean for every new module. The 3 pre-existing `app.py` LSP errors are untouched and unrelated.
+
+**Commits:**
+- `feat(tui): add git context to status bar (branch, dirty, ahead/behind)` — git status
+- `feat(tui): log severity/search filter with Ctrl+L cycle and / search` — log filter
+- `feat(tui): reverse-i-search modal for command history (F2)` — reverse search
+- `feat(tui): patch history browser modal (F4)` — patch history
+
+
 
 **Summary:** Shipped a coordinated set of TUI UX improvements that close the gap between "command succeeded" and "user has the information they need". Four new modal screens share a consistent design language, theme-aware CSS, and keyboard-first navigation.
 
