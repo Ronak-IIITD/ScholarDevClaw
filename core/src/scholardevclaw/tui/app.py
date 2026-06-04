@@ -2208,6 +2208,15 @@ class ScholarDevClawApp(App[None]):
             "yes",
         )
         status_bar.set_yolo_mode(yolo_enabled)
+        # Refresh git context (best-effort, with a short timeout in
+        # the helper to avoid blocking the UI on slow disks)
+        from .git_status import get_git_context
+
+        try:
+            ctx = get_git_context(self._directory or ".")
+            status_bar.set_git_text(ctx.short())
+        except Exception:
+            status_bar.set_git_text("")
 
     def _set_phase(self, phase: str) -> None:
         try:

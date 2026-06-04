@@ -210,6 +210,7 @@ class StatusBar(Static):
         self._start_time = 0.0
         self._level = "info"
         self._yolo_mode = False
+        self._git_text = ""
         self._refresh_display()
 
     def set_yolo_mode(self, enabled: bool) -> None:
@@ -259,6 +260,11 @@ class StatusBar(Static):
         self._step_text = f"{current}/{total}" if total > 0 else ""
         self._refresh_display()
 
+    def set_git_text(self, text: str) -> None:
+        """Set the pre-formatted git context line (e.g. '⎇ main*')."""
+        self._git_text = text
+        self._refresh_display()
+
     def start_timer(self) -> None:
         self._start_time = time.perf_counter()
         self._refresh_display()
@@ -299,6 +305,8 @@ class StatusBar(Static):
             f"TOKENS: {self._format_tokens(self._session_tokens)}",
             f"DIR: {directory_value}",
         ]
+        if self._git_text:
+            parts.append(self._git_text)
 
         # Status message with icon based on level
         status_icon = {
