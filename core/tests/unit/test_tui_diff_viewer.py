@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from scholardevclaw.tui.diff_viewer import (
+pytest.importorskip("textual")
+
+from scholardevclaw.tui.diff_viewer import (  # noqa: E402
     DiffViewer,
     FileDiff,
     PatchDiff,
