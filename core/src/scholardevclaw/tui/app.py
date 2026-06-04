@@ -43,6 +43,7 @@ from scholardevclaw.product.trust_report import write_paper_workflow_reports
 from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 from scholardevclaw.understanding import PaperUnderstanding, UnderstandingAgent
 
+from .diff_viewer import DiffViewer, patch_diff_from_payload
 from .quickstart import QuickstartDashboard
 from .repo_selector import RepoSelector
 from .screens import (
@@ -400,6 +401,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+q", "open_quickstart", "Quickstart"),
         ("ctrl+w", "open_workspace_selector", "Workspace"),
         ("ctrl+comma", "open_settings", "Settings"),
+        ("f3", "view_last_patch", "View Diff"),
     ]
 
     CSS = """
@@ -505,6 +507,7 @@ class ScholarDevClawApp(App[None]):
         self._run_started_at: dict[int, float] = {}
         self._run_replay_map: dict[int, dict[str, Any]] = {}
         self._recent_run_artifacts: list[RunArtifact] = []
+        self._last_patch: dict[str, Any] | None = None
         self._run_events: dict[int, list[RunEvent]] = {}
         self._run_event_seq: dict[int, int] = {}
         self._chat_event_accumulator: dict[int, str] = {}
@@ -4876,6 +4879,43 @@ class ScholarDevClawApp(App[None]):
             severity="success",
             title="Settings saved",
         )
+
+    def set_last_patch(self, payload: dict[str, Any]) -> None:
+        """Store a patch payload for later viewing via the diff viewer.
+
+        Called by the agent bridge when a patch is generated so the
+        user can press F3 (or call :meth:`action_view_last_patch`) to
+        inspect the changes without leaving the TUI.
+        """
+        if isinstance(payload, dict):
+            self._last_patch = payload
+
+    def action_view_last_patch(self) -> None:
+        """Open the diff viewer for the most recently generated patch."""
+        if not self._last_patch:
+            self.notify_toast(
+                "No patch available yet — run :generate or integrate to produce one",
+                severity="info",
+                title="No patch",
+            )
+            return
+        try:
+            patch = patch_diff_from_payload(self._last_patch)
+        except Exception as exc:  # noqa: BLE001
+            self.notify_toast(
+                f"Could not render diff: {exc}",
+                severity="error",
+                title="Diff error",
+            )
+            return
+        if patch.file_count == 0:
+            self.notify_toast(
+                "The last patch had no files to display",
+                severity="info",
+                title="Empty patch",
+            )
+            return
+        self.push_screen(DiffViewer(patch))
 
     def action_show_help(self) -> None:
         context = {
