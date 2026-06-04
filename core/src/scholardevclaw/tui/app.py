@@ -44,6 +44,7 @@ from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 from scholardevclaw.understanding import PaperUnderstanding, UnderstandingAgent
 
 from .quickstart import QuickstartDashboard
+from .repo_selector import RepoSelector
 from .screens import (
     CommandPalette,
     ExecutionScreen,
@@ -396,6 +397,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+e", "open_execution", "Execution"),
         ("ctrl+r", "open_product", "Product"),
         ("ctrl+q", "open_quickstart", "Quickstart"),
+        ("ctrl+w", "open_workspace_selector", "Workspace"),
     ]
 
     CSS = """
@@ -4735,6 +4737,41 @@ class ScholarDevClawApp(App[None]):
             duration=duration,
             action_label=action_label,
             action=action,  # type: ignore[arg-type]
+        )
+
+    def action_open_workspace_selector(self) -> None:
+        """Open the workspace / repo selector modal."""
+        from pathlib import Path
+
+        # Collect unique recent repo paths from the run history
+        recent: list[str] = []
+        seen: set[str] = set()
+        for artifact in reversed(getattr(self, "_recent_run_artifacts", [])):
+            path = (artifact.repo_path or "").strip()
+            if not path:
+                continue
+            norm = os.path.abspath(path)
+            if norm in seen:
+                continue
+            seen.add(norm)
+            recent.append(path)
+            if len(recent) >= 10:
+                break
+
+        cwd = Path(self._directory or ".").resolve()
+        self.push_screen(RepoSelector(cwd=cwd, recent_repos=recent), self._on_workspace_selected)
+
+    def _on_workspace_selected(self, path: str | None) -> None:
+        """Apply the chosen workspace path and toast the result."""
+        if not path:
+            return
+        self._directory = path
+        name = os.path.basename(path.rstrip("/").rstrip("\\")) or path
+        self._set_status(f"Workspace: {name}", "accent")
+        self.notify_toast(
+            f"Switched to {name}",
+            severity="success",
+            title="Workspace changed",
         )
 
     def action_show_help(self) -> None:
