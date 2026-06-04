@@ -2061,4 +2061,16 @@ def test_bindings_include_phase9_shortcuts():
     source = inspect.getsource(ScholarDevClawApp)
 
     assert '("ctrl+p", "open_paper_ingestion", "Paper")' in source
-    assert '("ctrl+l", "open_planning", "Planning")' in source
+    assert '("ctrl+l", "cycle_log_filter", "Log Filter")' in source
+    assert '("f5", "open_planning", "Planning")' in source
+    assert '("slash", "open_log_search", "Find")' in source
+
+
+def test_app_has_log_filter_actions():
+    source = inspect.getsource(ScholarDevClawApp)
+    assert "def action_cycle_log_filter" in source
+    assert "def action_open_log_search" in source
+    # The cycle action must query the LogView by id and call its method
+    assert 'query_one("#main-output", LogView)' in source
+    assert "cycle_severity_filter" in source
+    assert "LogSearchScreen" in source

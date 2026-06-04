@@ -44,6 +44,7 @@ from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 from scholardevclaw.understanding import PaperUnderstanding, UnderstandingAgent
 
 from .diff_viewer import DiffViewer, patch_diff_from_payload
+from .log_search import LogSearchScreen
 from .quickstart import QuickstartDashboard
 from .repo_selector import RepoSelector
 from .screens import (
@@ -394,7 +395,9 @@ class ScholarDevClawApp(App[None]):
         ("escape", "handle_escape", "ESC"),
         ("ctrl+p", "open_paper_ingestion", "Paper"),
         ("ctrl+u", "open_understanding", "Understanding"),
-        ("ctrl+l", "open_planning", "Planning"),
+        ("ctrl+l", "cycle_log_filter", "Log Filter"),
+        ("ctrl+shift+l", "open_planning", "Planning"),
+        ("f5", "open_planning", "Planning"),
         ("ctrl+g", "open_generation", "Generation"),
         ("ctrl+e", "open_execution", "Execution"),
         ("ctrl+r", "open_product", "Product"),
@@ -402,6 +405,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+w", "open_workspace_selector", "Workspace"),
         ("ctrl+comma", "open_settings", "Settings"),
         ("f3", "view_last_patch", "View Diff"),
+        ("slash", "open_log_search", "Find"),
     ]
 
     CSS = """
@@ -4969,6 +4973,32 @@ class ScholarDevClawApp(App[None]):
             self._set_status("Inspector focused (j/k navigate, enter/r/s/e action)", "accent")
         except Exception:
             self._set_status("Inspector unavailable", "warning")
+
+    def action_cycle_log_filter(self) -> None:
+        """Cycle the LogView severity filter (Ctrl+L)."""
+        try:
+            log_view = self.query_one("#main-output", LogView)
+        except Exception:
+            self._set_status("Log view unavailable", "warning")
+            return
+        new_level = log_view.cycle_severity_filter()
+        if new_level == "all":
+            label = "Log filter: all (no filter)"
+        else:
+            label = f"Log filter: {new_level}"
+        self._set_status(label, "accent")
+        # Push a toast for short feedback
+        try:
+            self.notify_toast(label, severity="info")
+        except Exception:
+            pass
+
+    def action_open_log_search(self) -> None:
+        """Open the log search modal (``/``)."""
+        try:
+            self.push_screen(LogSearchScreen())
+        except Exception as exc:  # pragma: no cover - safety net
+            self._set_status(f"Log search unavailable: {exc}", "warning")
 
     def _on_command_palette_result(self, command: str | None) -> None:
         if not command:

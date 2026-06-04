@@ -65,7 +65,16 @@ class PhaseTracker(Static):
 
 
 class LogView(VerticalScroll):
-    """Plain streaming text area."""
+    """Plain streaming text area with optional severity / search filters.
+
+    Two independent filters can be applied at the same time:
+    - severity filter  : cycle through all/info/success/warning/error/system/debug
+    - search filter    : substring match against the entry text (case-insensitive)
+
+    Filter state changes re-render the visible entries from an internal
+    buffer so previously-hidden entries come back when the filter is
+    relaxed.
+    """
 
     can_focus = True
 
@@ -94,6 +103,13 @@ class LogView(VerticalScroll):
     }
     LogView .log-line.system { color: $text-muted; }
     LogView .log-line.debug { color: $text-muted; }
+
+    LogView .log-filter-header {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        background: $surface;
+    }
     """
 
     LEVEL_ICONS = {
@@ -106,36 +122,115 @@ class LogView(VerticalScroll):
         "debug": "·",
     }
 
+    # Ordered list of severity filter modes; "all" matches everything
+    SEVERITY_FILTER_LEVELS: tuple[str, ...] = (
+        "all",
+        "info",
+        "success",
+        "warning",
+        "error",
+        "system",
+        "debug",
+    )
+
     def __init__(self, show_timestamps: bool = False, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._entry_count = 0
         self._max_entries = 800
         self._progress_line: Static | None = None
         self._show_timestamps = show_timestamps
+        # Internal buffer of (text, level) pairs
+        self._buffer: list[tuple[str, str]] = []
+        self._severity_filter: str = "all"
+        self._search_filter: str = ""
+        # The single header line that shows the active filters
+        self._filter_header: Static | None = None
+        # Last-rendered filter label (kept in sync for tests and consumers)
+        self._filter_label: str = ""
+        # Source of truth for currently-mounted log lines (works in tests too)
+        self._visible_lines: list[Static] = []
+        self._update_filter_header()
 
-    def add_log(self, text: str, level: str = "auto") -> None:
-        if level == "auto":
-            level = self._detect_level(text)
+    # ----- buffer + filtering -----
 
-        # Add icon prefix based on level
+    def _matches_filter(self, text: str, level: str) -> bool:
+        if self._severity_filter != "all" and level != self._severity_filter:
+            return False
+        if self._search_filter and self._search_filter.lower() not in text.lower():
+            return False
+        return True
+
+    def _update_filter_header(self) -> None:
+        # If neither filter is active, hide the header entirely
+        active = self._severity_filter != "all" or bool(self._search_filter)
+        if not active:
+            if self._filter_header is not None:
+                try:
+                    self._filter_header.remove()
+                except Exception:
+                    pass
+                self._filter_header = None
+            self._filter_label = ""
+            return
+        bits: list[str] = []
+        if self._severity_filter != "all":
+            bits.append(f"severity: {self._severity_filter}")
+        if self._search_filter:
+            bits.append(f"search: '{self._search_filter}'")
+        label = "filter active  ·  " + "  ·  ".join(bits)
+        self._filter_label = label
+        if self._filter_header is None:
+            try:
+                self._filter_header = Static(label, classes="log-filter-header")
+            except Exception:
+                # No active app (e.g. in unit tests) — skip header
+                self._filter_header = None
+                return
+            try:
+                self.mount(self._filter_header, before=0)
+            except Exception:
+                self._filter_header = None
+        else:
+            try:
+                self._filter_header.update(label)
+            except Exception:
+                pass
+
+    def _mount_line(self, text: str, level: str) -> None:
         icon = self.LEVEL_ICONS.get(level, "▸")
-
-        # Add timestamp if enabled
         timestamp = ""
         if self._show_timestamps:
             from datetime import datetime
 
             timestamp = f"[{datetime.now().strftime('%H:%M:%S')}] "
+        try:
+            line = Static(f"{timestamp}{icon} {text}", classes=f"log-line {level}")
+        except Exception:
+            # No active app context (e.g. unit tests) — record a None placeholder
+            # so the buffer entry is still tracked, but skip the mount.
+            self._visible_lines.append(None)  # type: ignore[arg-type]
+            return
+        # Mount just after the filter header (or at the start)
+        if self._filter_header is not None:
+            self.mount(line, after=self._filter_header)
+        else:
+            self.mount(line, before=0)
+        self._visible_lines.append(line)
 
-        line = Static(f"{timestamp}{icon} {text}", classes=f"log-line {level}")
-        self.mount(line)
-        self._entry_count += 1
-        if self._entry_count > self._max_entries:
-            children = list(self.children)
-            if len(children) > self._max_entries:
-                for child in children[: len(children) - self._max_entries]:
-                    child.remove()
-                self._entry_count = self._max_entries
+    # ----- public API -----
+
+    def add_log(self, text: str, level: str = "auto") -> None:
+        if level == "auto":
+            level = self._detect_level(text)
+        # Always append to the buffer
+        self._buffer.append((text, level))
+        # Trim the buffer if needed
+        if len(self._buffer) > self._max_entries:
+            self._buffer = self._buffer[-self._max_entries :]
+        # Only mount the visible line if it matches the current filter
+        if self._matches_filter(text, level):
+            self._mount_line(text, level)
+            # Trim visible children if we somehow exceed max
+            self._enforce_max_visible()
         self.scroll_end(animate=False)
 
     def add_logs(self, lines: list[str], level: str = "auto") -> None:
@@ -144,25 +239,117 @@ class LogView(VerticalScroll):
 
     def set_progress(self, text: str, level: str = "system") -> None:
         if self._progress_line is None:
-            self._progress_line = Static(text, classes=f"log-line {level}")
+            try:
+                self._progress_line = Static(text, classes=f"log-line {level}")
+            except Exception:
+                return
             self.mount(self._progress_line)
-            self._entry_count += 1
         else:
-            self._progress_line.update(text)
-            self._progress_line.set_classes(f"log-line {level}")
+            try:
+                self._progress_line.update(text)
+                self._progress_line.set_classes(f"log-line {level}")
+            except Exception:
+                pass
         self.scroll_end(animate=False)
 
     def clear_progress(self) -> None:
         if self._progress_line is None:
             return
-        self._progress_line.remove()
+        try:
+            self._progress_line.remove()
+        except Exception:
+            pass
         self._progress_line = None
-        self._entry_count = max(0, self._entry_count - 1)
 
     def clear_logs(self) -> None:
-        self.remove_children()
-        self._entry_count = 0
+        # Remove visible log lines (use our own list to be test-friendly)
+        for line in self._visible_lines:
+            if line is None:
+                continue
+            try:
+                line.remove()
+            except Exception:
+                pass
+        self._visible_lines.clear()
         self._progress_line = None
+        self._buffer.clear()
+
+    # ----- filter API -----
+
+    def set_severity_filter(self, level: str) -> None:
+        """Set the severity filter. Use ``'all'`` to disable."""
+        if level not in self.SEVERITY_FILTER_LEVELS:
+            level = "all"
+        self._severity_filter = level
+        self._update_filter_header()
+        self._rerender_visible()
+
+    def cycle_severity_filter(self) -> str:
+        """Advance the severity filter to the next level. Returns the new level."""
+        levels = self.SEVERITY_FILTER_LEVELS
+        try:
+            idx = levels.index(self._severity_filter)
+        except ValueError:
+            idx = 0
+        new_level = levels[(idx + 1) % len(levels)]
+        self.set_severity_filter(new_level)
+        return new_level
+
+    def set_search_filter(self, text: str) -> None:
+        """Set the substring search filter (case-insensitive). Empty disables."""
+        self._search_filter = text or ""
+        self._update_filter_header()
+        self._rerender_visible()
+
+    def clear_filters(self) -> None:
+        """Remove both filters at once."""
+        self._severity_filter = "all"
+        self._search_filter = ""
+        self._update_filter_header()
+        self._rerender_visible()
+
+    @property
+    def severity_filter(self) -> str:
+        return self._severity_filter
+
+    @property
+    def search_filter(self) -> str:
+        return self._search_filter
+
+    @property
+    def buffer_size(self) -> int:
+        return len(self._buffer)
+
+    @property
+    def visible_count(self) -> int:
+        return len(self._visible_lines)
+
+    def _rerender_visible(self) -> None:
+        """Remove all visible log lines and re-mount those that match the filters."""
+        for line in self._visible_lines:
+            if line is None:
+                continue
+            try:
+                line.remove()
+            except Exception:
+                pass
+        self._visible_lines.clear()
+        for text, level in self._buffer:
+            if self._matches_filter(text, level):
+                self._mount_line(text, level)
+        self._enforce_max_visible()
+        self.scroll_end(animate=False)
+
+    def _enforce_max_visible(self) -> None:
+        # Trim from the front if we exceed the max
+        while len(self._visible_lines) > self._max_entries:
+            line = self._visible_lines.pop(0)
+            if line is None:
+                continue
+            try:
+                line.remove()
+            except Exception:
+                pass
 
     @staticmethod
     def _detect_level(text: str) -> str:
