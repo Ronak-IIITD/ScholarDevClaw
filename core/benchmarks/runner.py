@@ -410,6 +410,27 @@ def _parse_args() -> argparse.Namespace:
         default=str(DEFAULT_REPORT_PATH),
         help="Path to write benchmark_report.json",
     )
+    parser.add_argument(
+        "--baseline",
+        default=None,
+        help="Path to a previous benchmark_report.json to compare against.",
+    )
+    parser.add_argument(
+        "--regression-threshold",
+        type=float,
+        default=None,
+        help="Override the regression detection threshold (default 0.1).",
+    )
+    parser.add_argument(
+        "--regression-output",
+        default=None,
+        help="Path to write the regression report JSON (default: <output>.regression.json).",
+    )
+    parser.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help="Exit with status 2 if regressions are detected.",
+    )
     return parser.parse_args()
 
 
@@ -420,7 +441,8 @@ def main() -> None:
         selected = set(args.case)
         cases = [case for case in cases if case.id in selected]
 
-    report = run_benchmarks(cases=cases, output_path=Path(args.output).resolve())
+    output_path = Path(args.output).resolve()
+    report = run_benchmarks(cases=cases, output_path=output_path)
 
     print("ScholarDevClaw benchmark harness")
     print(f"  Cases           : {report.total_cases}")
@@ -428,7 +450,43 @@ def main() -> None:
     print(f"  Unsupported     : {report.unsupported_cases}")
     print(f"  Aggregate score : {report.aggregate_score:.3f}")
     print(f"  Supported score : {report.supported_score:.3f}")
-    print(f"  Report          : {Path(args.output).resolve()}")
+    print(f"  Report          : {output_path}")
+
+    exit_code = 0
+    if args.baseline:
+        from .regression import (
+            DEFAULT_REGRESSION_THRESHOLD,
+            detect_regressions,
+            format_regression_summary,
+            load_report_payload,
+            write_regression_report,
+        )
+
+        baseline_path = Path(args.baseline).resolve()
+        threshold = args.regression_threshold or DEFAULT_REGRESSION_THRESHOLD
+        baseline_payload = load_report_payload(baseline_path)
+        current_payload = load_report_payload(output_path)
+        regression = detect_regressions(
+            baseline_payload,
+            current_payload,
+            baseline_path=baseline_path,
+            current_path=output_path,
+            threshold=threshold,
+        )
+        regression_output = (
+            Path(args.regression_output).resolve()
+            if args.regression_output
+            else output_path.with_suffix(".regression.json")
+        )
+        write_regression_report(regression, regression_output)
+        print()
+        print(format_regression_summary(regression).rstrip())
+        print(f"  Regression report: {regression_output}")
+        if args.fail_on_regression and regression.has_regressions:
+            exit_code = 2
+
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":
