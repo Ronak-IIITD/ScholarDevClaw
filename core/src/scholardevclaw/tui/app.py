@@ -49,6 +49,7 @@ from .patch_history import PatchHistoryScreen
 from .quickstart import QuickstartDashboard
 from .repo_selector import RepoSelector
 from .reverse_search import ReverseSearchScreen
+from .theme_switcher import ThemeSwitcherScreen
 from .screens import (
     CommandPalette,
     ExecutionScreen,
@@ -408,6 +409,7 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+comma", "open_settings", "Settings"),
         ("f3", "view_last_patch", "View Diff"),
         ("f4", "open_patch_history", "Patch History"),
+        ("f6", "open_theme_switcher", "Theme"),
         ("slash", "open_log_search", "Find"),
         ("f2", "open_reverse_search", "History"),
     ]
@@ -4955,6 +4957,30 @@ class ScholarDevClawApp(App[None]):
             self.push_screen(DiffViewer(patch))
         except Exception as exc:  # pragma: no cover - safety net
             self._set_status(f"Could not open diff viewer: {exc}", "warning")
+
+    def action_open_theme_switcher(self) -> None:
+        """Open the theme switcher modal (F6)."""
+        try:
+            self.push_screen(
+                ThemeSwitcherScreen(current_theme=self.theme or "default"),
+                self._on_theme_selected,
+            )
+        except Exception as exc:  # pragma: no cover - safety net
+            self._set_status(f"Theme switcher unavailable: {exc}", "warning")
+
+    def _on_theme_selected(self, theme_name: str | None) -> None:
+        """Apply the selected theme."""
+        if theme_name is None:
+            return
+        try:
+            self.theme = theme_name
+            self.notify_toast(
+                f"Theme changed to {theme_name}",
+                severity="success",
+                title="Theme",
+            )
+        except Exception as exc:  # pragma: no cover - safety net
+            self._set_status(f"Could not apply theme: {exc}", "warning")
 
     def action_view_last_patch(self) -> None:
         """Open the diff viewer for the most recently generated patch."""
