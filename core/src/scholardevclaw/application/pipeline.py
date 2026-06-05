@@ -15,6 +15,7 @@ from typing import Any
 
 from scholardevclaw.security.path_policy import enforce_allowed_repo_path
 
+from .cache import get_pipeline_cache
 from .schema_contract import SCHEMA_VERSION, with_meta
 
 _logger = logging.getLogger(__name__)
@@ -901,13 +902,47 @@ def run_preflight(
     return PipelineResult(ok=True, title="Preflight", payload=checks, logs=logs)
 
 
-def run_analyze(repo_path: str, *, log_callback: LogCallback | None = None) -> PipelineResult:
+def _get_repo_cache_key(repo_path: Path) -> str:
+    """Generate a cache key based on repo path and git commit."""
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()[:12]
+    except Exception:
+        pass
+    # Fallback: use mtime of repo root
+    return str(int(repo_path.stat().st_mtime))
+
+
+def run_analyze(
+    repo_path: str, *, log_callback: LogCallback | None = None, use_cache: bool = True
+) -> PipelineResult:
     from scholardevclaw.repo_intelligence.tree_sitter_analyzer import TreeSitterAnalyzer
 
     logs: list[str] = []
     _log(logs, f"Analyzing repository: {repo_path}", log_callback)
     try:
         path = _ensure_repo(repo_path)
+
+        # Check cache first
+        if use_cache:
+            cache = get_pipeline_cache()
+            cache_key = _get_repo_cache_key(path)
+            cached = cache.get("analyze", str(path), cache_key)
+            if cached is not None:
+                _log(logs, "Using cached repository analysis", log_callback)
+                return PipelineResult(
+                    ok=True, title="Repository Analysis (cached)", payload=cached, logs=logs
+                )
 
         _fire_hook(
             "on_before_analyze",
@@ -952,6 +987,12 @@ def run_analyze(repo_path: str, *, log_callback: LogCallback | None = None) -> P
             payload=payload,
             metadata={"repo_path": str(path)},
         )
+
+        # Cache the result
+        if use_cache:
+            cache = get_pipeline_cache()
+            cache_key = _get_repo_cache_key(path)
+            cache.set("analyze", payload, str(path), cache_key, metadata={"repo_path": str(path)})
 
         return PipelineResult(ok=True, title="Repository Analysis", payload=payload, logs=logs)
     except Exception as exc:
@@ -1018,11 +1059,26 @@ def run_search(
     language: str = "python",
     max_results: int = 10,
     log_callback: LogCallback | None = None,
+    use_cache: bool = True,
 ) -> PipelineResult:
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
 
     logs: list[str] = []
     _log(logs, f"Searching for: {query}", log_callback)
+
+    # Build cache key from search parameters
+    cache_key = f"{query}:{include_arxiv}:{include_web}:{language}:{max_results}"
+
+    # Check cache first
+    if use_cache:
+        cache = get_pipeline_cache()
+        cached = cache.get("search", cache_key)
+        if cached is not None:
+            _log(logs, "Using cached search results", log_callback)
+            return PipelineResult(
+                ok=True, title="Research Search (cached)", payload=cached, logs=logs
+            )
+
     try:
         _fire_hook(
             "on_before_search",
@@ -1104,6 +1160,11 @@ def run_search(
             payload=payload,
             metadata={"query": query, "language": language},
         )
+
+        # Cache the result
+        if use_cache:
+            cache = get_pipeline_cache()
+            cache.set("search", payload, cache_key, metadata={"query": query})
 
         return PipelineResult(ok=True, title="Research Search", payload=payload, logs=logs)
     except Exception as exc:
@@ -1218,10 +1279,26 @@ def _build_mapping_result(
 
 
 def run_map(
-    repo_path: str, spec_name: str, *, log_callback: LogCallback | None = None
+    repo_path: str,
+    spec_name: str,
+    *,
+    log_callback: LogCallback | None = None,
+    use_cache: bool = True,
 ) -> PipelineResult:
     logs: list[str] = []
     _log(logs, f"Mapping spec '{spec_name}' to repository: {repo_path}", log_callback)
+
+    # Build cache key from repo + spec
+    cache_key = f"{repo_path}:{spec_name}"
+
+    # Check cache first
+    if use_cache:
+        cache = get_pipeline_cache()
+        cached = cache.get("map", cache_key)
+        if cached is not None:
+            _log(logs, "Using cached mapping result", log_callback)
+            return PipelineResult(ok=True, title="Mapping (cached)", payload=cached, logs=logs)
+
     try:
         path = _ensure_repo(repo_path)
 
@@ -1266,6 +1343,13 @@ def run_map(
             f"Strategy: {payload['strategy']}, confidence: {payload['confidence']}%",
             log_callback,
         )
+
+        # Cache the result
+        if use_cache:
+            cache = get_pipeline_cache()
+            cache.set(
+                "map", payload, cache_key, metadata={"repo_path": str(path), "spec_name": spec_name}
+            )
 
         return PipelineResult(ok=True, title="Mapping", payload=payload, logs=logs)
     except Exception as exc:
