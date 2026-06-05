@@ -20,6 +20,7 @@ import {
   evaluateMappingGuardrails,
   evaluateValidationGuardrails,
 } from './utils/guardrails.js';
+import { PhaseObserver, createPhaseObserver } from './utils/phase-observer.js';
 import * as Phase1 from './phases/phase1-repo.js';
 import * as Phase2 from './phases/phase2-research.js';
 import * as Phase3 from './phases/phase3-mapping.js';
@@ -147,6 +148,9 @@ export class ScholarDevClawOrchestrator {
 
     const phaseResults: Record<number, unknown> = { ...(options.phaseResults || {}) };
 
+    // Initialize phase observer for structured observability
+    const phaseObserver = createPhaseObserver(runId, integrationId, this.convex);
+
     await this.saveSnapshot({
       runId,
       integrationId,
@@ -164,12 +168,14 @@ export class ScholarDevClawOrchestrator {
         logger.info('Starting Phase 1...');
         await this.logAndConvex('Starting Phase 1: Repository Analysis', integrationId);
         await this.updateExternalPhase(integrationId, 1, 'phase1_analyzing');
+        phaseObserver.startPhase(1, 'Repository Analysis');
         const result = await Phase1.executePhase1(this.bridge, context);
         if (!result.success || !result.data) {
           throw new Error(`Phase 1 failed: ${result.error || 'No data'}`);
         }
         context.repoAnalysis = result.data;
         phaseResults[1] = result.data;
+        phaseObserver.completePhase(1, 'Repository Analysis', result.data);
         await this.finalizePhase(
           runId,
           integrationId,
@@ -202,15 +208,18 @@ export class ScholarDevClawOrchestrator {
         logger.info('Starting Phase 2...');
         await this.logAndConvex('Starting Phase 2: Research Extraction', integrationId);
         await this.updateExternalPhase(integrationId, 2, 'phase2_extracting');
+        phaseObserver.startPhase(2, 'Research Extraction');
         const result = await Phase2.executePhase2(this.bridge, {
           ...context,
           repoAnalysis: context.repoAnalysis,
         });
         if (!result.success || !result.data) {
+          phaseObserver.failPhase(2, 'Research Extraction', result.error || 'No data');
           throw new Error(`Phase 2 failed: ${result.error || 'No data'}`);
         }
         context.researchSpec = result.data;
         phaseResults[2] = result.data;
+        phaseObserver.completePhase(2, 'Research Extraction', result.data);
         await this.finalizePhase(
           runId,
           integrationId,
@@ -243,16 +252,19 @@ export class ScholarDevClawOrchestrator {
         logger.info('Starting Phase 3...');
         await this.logAndConvex('Starting Phase 3: Mapping Specification', integrationId);
         await this.updateExternalPhase(integrationId, 3, 'phase3_mapping');
+        phaseObserver.startPhase(3, 'Mapping Specification');
         const result = await Phase3.executePhase3(this.bridge, {
           ...context,
           repoAnalysis: context.repoAnalysis,
           researchSpec: context.researchSpec,
         });
         if (!result.success || !result.data) {
+          phaseObserver.failPhase(3, 'Mapping Specification', result.error || 'No data');
           throw new Error(`Phase 3 failed: ${result.error || 'No data'}`);
         }
         context.mapping = result.data;
         phaseResults[3] = result.data;
+        phaseObserver.completePhase(3, 'Mapping Specification', result.data);
         await this.finalizePhase(
           runId,
           integrationId,
@@ -303,6 +315,7 @@ export class ScholarDevClawOrchestrator {
         logger.info('Starting Phase 4...');
         await this.logAndConvex('Starting Phase 4: Patch Generation', integrationId);
         await this.updateExternalPhase(integrationId, 4, 'phase4_patching');
+        phaseObserver.startPhase(4, 'Patch Generation');
         const result = await Phase4.executePhase4(this.bridge, {
           ...context,
           repoAnalysis: context.repoAnalysis,
@@ -310,11 +323,13 @@ export class ScholarDevClawOrchestrator {
           mapping: context.mapping,
         });
         if (!result.success || !result.data) {
+          phaseObserver.failPhase(4, 'Patch Generation', result.error || 'No data');
           throw new Error(`Phase 4 failed: ${result.error || 'No data'}`);
         }
         this.enforcePatchSafety(result.data);
         context.patch = result.data;
         phaseResults[4] = result.data;
+        phaseObserver.completePhase(4, 'Patch Generation', result.data);
         await this.finalizePhase(
           runId,
           integrationId,
@@ -347,6 +362,7 @@ export class ScholarDevClawOrchestrator {
         logger.info('Starting Phase 5...');
         await this.logAndConvex('Starting Phase 5: Validation', integrationId);
         await this.updateExternalPhase(integrationId, 5, 'phase5_validating');
+        phaseObserver.startPhase(5, 'Validation');
         const result = await Phase5.executePhase5(this.bridge, {
           ...context,
           repoAnalysis: context.repoAnalysis,
@@ -355,6 +371,7 @@ export class ScholarDevClawOrchestrator {
           patch: context.patch,
         }, repoUrl);
         if (!result.success || !result.data) {
+          phaseObserver.failPhase(5, 'Validation', result.error || 'Unknown phase 5 error');
           const retried = await this.retryPhaseWithBackoff(
             5,
             result.error || 'Unknown phase 5 error',
@@ -373,6 +390,7 @@ export class ScholarDevClawOrchestrator {
         }
         context.validation = result.data;
         phaseResults[5] = result.data;
+        phaseObserver.completePhase(5, 'Validation', result.data);
         await this.finalizePhase(
           runId,
           integrationId,
@@ -412,6 +430,7 @@ export class ScholarDevClawOrchestrator {
         logger.info('Starting Phase 6...');
         await this.logAndConvex('Starting Phase 6: Final Reporting', integrationId);
         await this.updateExternalPhase(integrationId, 6, 'phase6_reporting');
+        phaseObserver.startPhase(6, 'Final Reporting');
         const result = await Phase6.executePhase6({
           ...context,
           repoAnalysis: context.repoAnalysis,
@@ -421,9 +440,11 @@ export class ScholarDevClawOrchestrator {
           validation: context.validation,
         });
         if (!result.success || !result.data) {
+          phaseObserver.failPhase(6, 'Final Reporting', result.error || 'No data');
           throw new Error(`Phase 6 failed: ${result.error || 'No data'}`);
         }
         phaseResults[6] = result.data;
+        phaseObserver.completePhase(6, 'Final Reporting', result.data);
         await this.finalizePhase(
           runId,
           integrationId,
@@ -439,6 +460,17 @@ export class ScholarDevClawOrchestrator {
         logger.info('Integration completed successfully', {
           runId,
           recommendation: result.data.recommendation.action,
+        });
+
+        // Log final execution summary
+        const summary = phaseObserver.getSummary();
+        logger.info('Integration execution summary', {
+          runId,
+          integrationId,
+          totalDurationMs: summary.totalDurationMs,
+          completedPhases: summary.completedPhases,
+          failedPhases: summary.failedPhases,
+          phaseTimings: summary.phaseTimings,
         });
 
         await this.saveSnapshot({
