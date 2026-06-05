@@ -49,7 +49,6 @@ from .patch_history import PatchHistoryScreen
 from .quickstart import QuickstartDashboard
 from .repo_selector import RepoSelector
 from .reverse_search import ReverseSearchScreen
-from .theme_switcher import ThemeSwitcherScreen
 from .screens import (
     CommandPalette,
     ExecutionScreen,
@@ -61,8 +60,10 @@ from .screens import (
     ProviderSetupScreen,
     UnderstandingScreen,
 )
+from .session import apply_session_to_app, load_session, save_session, update_session_from_app
 from .settings_panel import Setting, SettingsPanel
 from .theme import COLORS as TUI_COLORS
+from .theme_switcher import ThemeSwitcherScreen
 from .toasts import show_toast
 from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspector, StatusBar
 
@@ -564,6 +565,13 @@ class ScholarDevClawApp(App[None]):
             yield PromptInput(placeholder="> ", id="prompt-input")
 
     def on_mount(self) -> None:
+        # Load persisted session first
+        try:
+            session = load_session()
+            apply_session_to_app(self, session)
+        except Exception:
+            pass
+
         if self._directory in {"", "."}:
             self._directory = os.getcwd()
         self._startup_preflight()
@@ -575,6 +583,14 @@ class ScholarDevClawApp(App[None]):
         self.set_interval(6.0, self._rotate_hint)
         self.query_one("#prompt-input", PromptInput).focus()
         self.set_timer(0.01, self._maybe_show_setup)
+
+    def on_unmount(self) -> None:
+        """Save session state on exit."""
+        try:
+            session = update_session_from_app(self)
+            save_session(session)
+        except Exception:
+            pass
 
     def _hydrate_history_from_recent_artifacts(self) -> None:
         if not self._recent_run_artifacts:
