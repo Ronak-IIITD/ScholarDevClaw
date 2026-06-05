@@ -212,11 +212,15 @@ class HelpOverlay(ModalScreen[None]):
     def __init__(self, context: dict[str, Any] | None = None) -> None:
         super().__init__()
         self.context = context or {}
+        self._search_query: str = ""
+        self._all_lines: list[str] = []
 
     BINDINGS = [
         ("escape", "dismiss", "Dismiss"),
         ("enter", "dismiss", "Dismiss"),
         ("f1", "dismiss", "Dismiss"),
+        ("/", "focus_search", "Search"),
+        ("ctrl+f", "focus_search", "Search"),
     ]
 
     DEFAULT_CSS = """
@@ -232,11 +236,34 @@ class HelpOverlay(ModalScreen[None]):
         max-height: 90vh;
         padding: 1 2;
     }
+
+    HelpOverlay #help-search {
+        width: 100%;
+        height: 1;
+        margin-bottom: 1;
+        border: none;
+        padding: 0;
+    }
+
+    HelpOverlay #help-content {
+        width: 100%;
+        height: auto;
+    }
     """
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static(self._generate_help_text(), id="help-content")
+            yield Input(placeholder="Search help... (press / or Ctrl+F)", id="help-search")
+            yield Static("", id="help-content")
+
+    def on_mount(self) -> None:
+        self._all_lines = self._generate_help_text().split("\n")
+        self._update_content()
+        # Focus search input by default for immediate filtering
+        try:
+            self.query_one("#help-search", Input).focus()
+        except Exception:
+            pass
 
     def _generate_help_text(self) -> str:
         """Generate contextual help text based on current app state."""
@@ -343,6 +370,31 @@ class HelpOverlay(ModalScreen[None]):
             )
 
         return "\n".join(lines)
+
+    def _update_content(self) -> None:
+        """Filter and update help content based on search query."""
+        if not self._search_query:
+            visible = self._all_lines
+        else:
+            query = self._search_query.lower()
+            visible = [line for line in self._all_lines if query in line.lower()]
+        try:
+            content = self.query_one("#help-content", Static)
+            content.update("\n".join(visible))
+        except Exception:
+            pass
+
+    @on(Input.Changed, "#help-search")
+    def on_search_changed(self, event: Input.Changed) -> None:
+        self._search_query = event.value or ""
+        self._update_content()
+
+    def action_focus_search(self) -> None:
+        """Focus the search input."""
+        try:
+            self.query_one("#help-search", Input).focus()
+        except Exception:
+            pass
 
 
 class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
