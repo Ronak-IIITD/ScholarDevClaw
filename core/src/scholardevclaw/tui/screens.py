@@ -683,14 +683,39 @@ class ProviderSetupScreen(ModalScreen[dict[str, str] | None]):
         key_input.placeholder = f"{provider.display_name} API key"
 
 
+def _fuzzy_match(query: str, text: str) -> tuple[bool, int]:
+    """Fuzzy match query against text.
+
+    Returns (matched, score) where lower score is better.
+    Score is based on character positions - earlier matches score better.
+    """
+    query = query.lower()
+    text = text.lower()
+    if not query:
+        return True, 0
+    if query in text:
+        return True, text.index(query)
+    # Fuzzy: check if all query chars appear in order
+    qi = 0
+    score = 0
+    for i, ch in enumerate(text):
+        if qi < len(query) and ch == query[qi]:
+            if qi == 0:
+                score = i
+            qi += 1
+    return qi == len(query), score
+
+
 class CommandPalette(ModalScreen[str | None]):
-    """Thin command chooser for keyboard fallback."""
+    """Command chooser with fuzzy search."""
 
     BINDINGS = [
         ("escape", "dismiss_none", "Dismiss"),
         ("enter", "run_selected", "Run"),
         ("down", "select_next", "Next"),
         ("up", "select_prev", "Prev"),
+        ("ctrl+n", "select_next", "Next"),
+        ("ctrl+p", "select_prev", "Prev"),
     ]
 
     PALETTE_COMMANDS = [
@@ -753,18 +778,23 @@ class CommandPalette(ModalScreen[str | None]):
         color: $accent;
         text-style: bold;
     }
+
+    CommandPalette .palette-line .match-highlight {
+        color: $accent;
+        text-style: bold;
+    }
     """
 
     def __init__(self) -> None:
         super().__init__()
         self._selected_index = 0
-        self._filtered_commands = list(self.PALETTE_COMMANDS)
+        self._filtered_commands: list[tuple[str, int]] = [(cmd, 0) for cmd in self.PALETTE_COMMANDS]
 
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Static("Commands")
-            yield Input(placeholder="Filter commands", id="palette-input")
-            for command in self.PALETTE_COMMANDS[:3]:
+            yield Input(placeholder="Filter commands (fuzzy)", id="palette-input")
+            for command, _ in self._filtered_commands[:3]:
                 yield Static(command, classes="palette-line")
 
     def on_mount(self) -> None:
@@ -788,15 +818,22 @@ class CommandPalette(ModalScreen[str | None]):
         if not self._filtered_commands:
             self.dismiss(None)
             return
-        self.dismiss(self._filtered_commands[self._selected_index])
+        self.dismiss(self._filtered_commands[self._selected_index][0])
 
     @on(Input.Changed, "#palette-input")
     def on_input_changed(self, event: Input.Changed) -> None:
-        query = event.value.strip().lower()
+        query = event.value.strip()
         if not query:
-            self._filtered_commands = list(self.PALETTE_COMMANDS)
+            self._filtered_commands = [(cmd, 0) for cmd in self.PALETTE_COMMANDS]
         else:
-            self._filtered_commands = [cmd for cmd in self.PALETTE_COMMANDS if query in cmd.lower()]
+            matches = []
+            for cmd in self.PALETTE_COMMANDS:
+                matched, score = _fuzzy_match(query, cmd)
+                if matched:
+                    matches.append((cmd, score))
+            # Sort by score (lower = better match)
+            matches.sort(key=lambda x: x[1])
+            self._filtered_commands = matches
         self._selected_index = 0
         self._refresh()
 
@@ -807,7 +844,7 @@ class CommandPalette(ModalScreen[str | None]):
         if not self._filtered_commands:
             self.mount(Static("No matches", classes="palette-line"))
             return
-        for index, command in enumerate(self._filtered_commands[:3]):
+        for index, (command, _) in enumerate(self._filtered_commands[:3]):
             classes = "palette-line"
             if index == self._selected_index:
                 classes += " -selected"
