@@ -984,7 +984,10 @@ def test_run_search_exception(monkeypatch):
     monkeypatch.setitem(sys.modules, module.__name__, module)
 
     pipeline = _pipeline_module()
-    result = pipeline.run_search("test")
+    # Disable caching: the test exercises the exception path inside
+    # run_search and would otherwise short-circuit on a cache hit left
+    # behind by a prior successful test.
+    result = pipeline.run_search("test", use_cache=False)
 
     assert result.ok is False
     assert "Search failed" in result.error
