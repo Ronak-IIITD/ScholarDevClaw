@@ -21,6 +21,7 @@ import {
   evaluateValidationGuardrails,
 } from './utils/guardrails.js';
 import { PhaseObserver, createPhaseObserver } from './utils/phase-observer.js';
+import { circuitRegistry, CircuitState } from './utils/circuit-breaker.js';
 import * as Phase1 from './phases/phase1-repo.js';
 import * as Phase2 from './phases/phase2-research.js';
 import * as Phase3 from './phases/phase3-mapping.js';
@@ -833,17 +834,54 @@ export class ScholarDevClawOrchestrator {
       return false;
     }
 
-    const delayMs = this.computeRetryDelayMs(nextRetry);
-    logger.warn('Scheduling deterministic retry', {
+    // Classify error to determine retry strategy
+    const errorClassification = this.classifyError(errorMessage);
+    if (!errorClassification.retryable) {
+      logger.error('Non-retryable error encountered, aborting', {
+        runId,
+        phase,
+        error: errorMessage,
+        classification: errorClassification.type,
+      });
+      return false;
+    }
+
+    // Check circuit breaker for the phase's external service
+    const breakerName = this.getCircuitBreakerName(phase);
+    const breaker = circuitRegistry.getOrCreate(breakerName);
+    const breakerStats = breaker.getStats();
+
+    if (breakerStats.state === CircuitState.Open) {
+      // Compute next attempt time from openedAt + recovery timeout (30s default)
+      const recoveryTimeout = 30000;
+      const nextAttemptTime = (breakerStats.openedAt || 0) + recoveryTimeout;
+      logger.warn('Circuit breaker open, waiting for recovery', {
+        runId,
+        phase,
+        breaker: breakerName,
+        nextAttempt: nextAttemptTime,
+      });
+      // Wait for circuit to potentially recover
+      const waitMs = Math.max(0, nextAttemptTime - Date.now());
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+
+    const delayMs = this.computeRetryDelayMs(nextRetry, errorClassification.type);
+    logger.warn('Scheduling retry with backoff', {
       runId,
       phase,
       nextRetry,
       delayMs,
       error: errorMessage,
+      classification: errorClassification.type,
+      circuitBreaker: breakerName,
+      circuitState: breakerStats.state,
     });
 
+    // Record retry in phase observer
+    // (phaseObserver would need to be passed or accessed - for now log it)
     if (integrationId && this.convex) {
-      await this.convex.saveLog(integrationId, `[WARN] Failed with ${errorMessage} after ${retryCount} retries`);
+      await this.convex.saveLog(integrationId, `[WARN] Retry ${nextRetry}/${config.execution.maxRetries} for phase ${phase}: ${errorMessage}`);
     }
 
     await this.saveSnapshot({
@@ -874,11 +912,94 @@ export class ScholarDevClawOrchestrator {
     return true;
   }
 
-  private computeRetryDelayMs(retryAttempt: number): number {
+  /**
+   * Classify error to determine if it's retryable and what strategy to use.
+   */
+  private classifyError(errorMessage: string): { retryable: boolean; type: 'transient' | 'rate_limit' | 'timeout' | 'permanent' } {
+    const msg = errorMessage.toLowerCase();
+
+    // Rate limiting - retryable with longer backoff
+    if (msg.includes('rate limit') || msg.includes('429') || msg.includes('too many requests')) {
+      return { retryable: true, type: 'rate_limit' };
+    }
+
+    // Timeout - retryable
+    if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('etimedout') || msg.includes('econnreset')) {
+      return { retryable: true, type: 'timeout' };
+    }
+
+    // Network/transient errors - retryable
+    if (msg.includes('econnrefused') || msg.includes('enotfound') || msg.includes('eai_again') ||
+        msg.includes('socket hang up') || msg.includes('econnreset') || msg.includes('epipe')) {
+      return { retryable: true, type: 'transient' };
+    }
+
+    // 5xx server errors - retryable
+    if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504')) {
+      return { retryable: true, type: 'transient' };
+    }
+
+    // Authentication/authorization - NOT retryable
+    if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') || msg.includes('forbidden') ||
+        msg.includes('invalid api key') || msg.includes('authentication failed')) {
+      return { retryable: false, type: 'permanent' };
+    }
+
+    // Validation/business logic errors - NOT retryable
+    if (msg.includes('validation') || msg.includes('invalid input') || msg.includes('bad request') || msg.includes('400')) {
+      return { retryable: false, type: 'permanent' };
+    }
+
+    // Not found - NOT retryable
+    if (msg.includes('404') || msg.includes('not found')) {
+      return { retryable: false, type: 'permanent' };
+    }
+
+    // Default: treat as transient (retryable)
+    return { retryable: true, type: 'transient' };
+  }
+
+  /**
+   * Get circuit breaker name for a phase.
+   */
+  private getCircuitBreakerName(phase: number): string {
+    switch (phase) {
+      case 1: return 'phase1-repo-analysis';
+      case 2: return 'phase2-research';
+      case 3: return 'phase3-mapping';
+      case 4: return 'phase4-patch-generation';
+      case 5: return 'phase5-validation';
+      case 6: return 'phase6-reporting';
+      default: return `phase${phase}-unknown`;
+    }
+  }
+
+  private computeRetryDelayMs(retryAttempt: number, errorType: 'transient' | 'rate_limit' | 'timeout' | 'permanent' = 'transient'): number {
     const normalizedAttempt = Math.max(1, retryAttempt);
-    const baseMs = 1000;
-    const maxMs = 30000;
-    return Math.min(baseMs * (2 ** (normalizedAttempt - 1)), maxMs);
+    let baseMs = 1000;
+    let maxMs = 30000;
+
+    // Adjust base delay based on error type
+    switch (errorType) {
+      case 'rate_limit':
+        baseMs = 5000; // Longer base for rate limits
+        maxMs = 60000;
+        break;
+      case 'timeout':
+        baseMs = 2000;
+        maxMs = 45000;
+        break;
+      case 'transient':
+      default:
+        baseMs = 1000;
+        maxMs = 30000;
+        break;
+    }
+
+    // Exponential backoff with jitter (±25%)
+    const exponentialDelay = Math.min(baseMs * (2 ** (normalizedAttempt - 1)), maxMs);
+    const jitter = exponentialDelay * 0.25 * (Math.random() * 2 - 1); // ±25%
+    return Math.max(100, Math.floor(exponentialDelay + jitter));
   }
 
   private async updateExternalPhase(
