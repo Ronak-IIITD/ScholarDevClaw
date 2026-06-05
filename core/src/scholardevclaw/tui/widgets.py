@@ -398,6 +398,10 @@ class StatusBar(Static):
         self._level = "info"
         self._yolo_mode = False
         self._git_text = ""
+        self._progress: float | None = None  # 0.0-1.0 or None
+        self._spinner_active: bool = False
+        self._spinner_frame: int = 0
+        self._spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         self._refresh_display()
 
     def set_yolo_mode(self, enabled: bool) -> None:
@@ -451,6 +455,31 @@ class StatusBar(Static):
         """Set the pre-formatted git context line (e.g. '⎇ main*')."""
         self._git_text = text
         self._refresh_display()
+
+    def set_progress(self, progress: float | None) -> None:
+        """Set progress bar value (0.0-1.0) or None to hide."""
+        self._progress = None if progress is None else max(0.0, min(1.0, progress))
+        self._refresh_display()
+
+    def start_spinner(self) -> None:
+        """Start the indeterminate spinner animation."""
+        if not self._spinner_active:
+            self._spinner_active = True
+            self._spinner_frame = 0
+            self._animate_spinner()
+
+    def stop_spinner(self) -> None:
+        """Stop the indeterminate spinner animation."""
+        self._spinner_active = False
+        self._refresh_display()
+
+    def _animate_spinner(self) -> None:
+        """Animate the spinner frame."""
+        if not self._spinner_active:
+            return
+        self._spinner_frame = (self._spinner_frame + 1) % len(self._spinner_frames)
+        self._refresh_display()
+        self.set_timer(0.1, self._animate_spinner)
 
     def start_timer(self) -> None:
         self._start_time = time.perf_counter()
@@ -513,6 +542,37 @@ class StatusBar(Static):
             tail.append(f"{time.perf_counter() - self._start_time:.1f}s")
 
         lines.append("   ".join(parts) + (f"   {' | '.join(tail)}" if tail else ""))
+
+        # Progress bar (shown below main line when active)
+        if self._progress is not None:
+            width = 30
+            filled = int(self._progress * width)
+            bar = "█" * filled + "░" * (width - filled)
+            pct = int(self._progress * 100)
+            lines.append(f"  [{bar}] {pct}%")
+
+        # Spinner (shown inline with status message when active)
+        if self._spinner_active:
+            spinner = self._spinner_frames[self._spinner_frame]
+            # Replace the status icon with spinner
+            if lines and not self._yolo_mode:
+                # Find the last line and prepend spinner
+                last_line = lines[-1]
+                if (
+                    "●" in last_line
+                    or "✓" in last_line
+                    or "⚠" in last_line
+                    or "✗" in last_line
+                    or "▶" in last_line
+                ):
+                    lines[-1] = (
+                        last_line.replace("●", spinner, 1)
+                        .replace("✓", spinner, 1)
+                        .replace("⚠", spinner, 1)
+                        .replace("✗", spinner, 1)
+                        .replace("▶", spinner, 1)
+                    )
+
         self.update("\n".join(lines))
 
     @staticmethod

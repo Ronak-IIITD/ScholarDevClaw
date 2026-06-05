@@ -2245,6 +2245,30 @@ class ScholarDevClawApp(App[None]):
         except Exception:
             status_bar.set_git_text("")
 
+    def set_status_progress(self, progress: float | None) -> None:
+        """Update the status bar progress bar (0.0-1.0 or None to hide)."""
+        try:
+            status_bar = self.query_one("#status-bar", StatusBar)
+            status_bar.set_progress(progress)
+        except Exception:
+            pass
+
+    def start_status_spinner(self) -> None:
+        """Start the status bar indeterminate spinner."""
+        try:
+            status_bar = self.query_one("#status-bar", StatusBar)
+            status_bar.start_spinner()
+        except Exception:
+            pass
+
+    def stop_status_spinner(self) -> None:
+        """Stop the status bar indeterminate spinner."""
+        try:
+            status_bar = self.query_one("#status-bar", StatusBar)
+            status_bar.stop_spinner()
+        except Exception:
+            pass
+
     def _set_phase(self, phase: str) -> None:
         try:
             self.query_one("#phase-tracker", PhaseTracker).set_phase(phase)
