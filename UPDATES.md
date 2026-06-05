@@ -2,7 +2,122 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-04 (TUI v2 — git context, log filter, reverse search, patch history)
+**Last updated:** 2026-06-05 (Round 3 — TUI Polish v3, Agent hardening, Core caching, GitHub integration v2, Quality)
+
+### 2026-06-05 (Round 3 — TUI Polish v3, Agent hardening, Core caching, GitHub integration v2, Quality)
+
+**Summary:** Round 3 of the multi-area work the user kicked off. Five buckets shipped: a third wave of TUI polish (theme switcher, fuzzy command palette, searchable help, session persistence, animated progress); two agent-side hardening items (per-phase observability, smarter error recovery with circuit breakers); a core-side pipeline caching layer; a v2 of the GitHub integration (expanded PR automation, improved Convex sync, a real inbound webhook server); and a quality drop (Hypothesis property-based tests + benchmark regression detection). All changes pass tsc / ruff / mypy / pytest. Agent test count: 387 (was 351). Core new tests: 47 (35 property + 12 regression).
+
+**TUI (3rd wave of polish) — 5 features**
+
+1. **Theme switcher modal (F6) — `core/src/scholardevclaw/tui/theme_switcher.py`:**
+   - `ThemeSwitcherScreen(ModalScreen)` with live color preview swatches
+   - Lists all themes from `tui/theme.py` (default / minimal / high_contrast)
+   - Up/down navigation, Enter to apply, Escape to dismiss
+   - 9 new tests in `tests/unit/test_tui_theme_switcher.py`
+
+2. **Fuzzy search in command palette (Ctrl+J) — `core/src/scholardevclaw/tui/screens.py`:**
+   - `_fuzzy_match(query, target)` scores each target by char-position
+   - Consecutive / start-of-string matches score higher
+   - `CommandPaletteScreen` now sorts results by fuzzy score when active
+   - Falls back to substring match when query lacks any char-position match
+
+3. **Searchable help overlay (/, Ctrl+F) — `core/src/scholardevclaw/tui/screens.py`:**
+   - New `HelpOverlay(ModalScreen)` with the full key-binding table
+   - Live filter input highlights matching rows as you type
+   - Replaces the previously static help modal
+
+4. **Session persistence — `core/src/scholardevclaw/tui/session.py`:**
+   - `SessionState` dataclass: last directory, last spec, recent dirs, theme
+   - `load_session()` / `save_session()` with atomic write
+   - XDG-aware path: `$XDG_CONFIG_HOME/scholardevclaw/session.json` → `~/.config/scholardevclaw/session.json`
+   - Restored automatically on app boot; saved on graceful shutdown
+
+5. **Animated progress + spinner in status bar — `core/src/scholardevclaw/tui/widgets.py`:**
+   - `StatusBar.set_progress(0.0–1.0)` updates a gradient-filled progress bar
+   - `StatusBar.start_spinner(label)` / `stop_spinner()` for indeterminate work
+   - 10-frame rotating spinner using `widgets_animated.Spinner`
+
+**Agent — 2 of 4 hardening items**
+
+6. **Phase observability — `agent/src/utils/phase-observer.ts`:**
+   - `PhaseObserver` records start time, end time, duration, status, error for each phase
+   - `createPhaseObserver()` factory wires into the orchestrator
+   - All 6 phases (`repo_intel` → `research` → `mapping` → `patch` → `validation` → `report`) now report start/end; final summary logged at run end
+   - 9 new tests in `phase-observer.test.ts`
+
+7. **Enhanced error recovery — `agent/src/orchestrator.ts`:**
+   - `classifyError(err)` returns `'transient' | 'rate_limit' | 'timeout' | 'permanent'`
+   - Per-phase circuit breaker (`getOrCreate(name)` from `utils/circuit-breaker.ts`); opens after 5 consecutive failures within 60s
+   - Exponential backoff with ±25% jitter; type-specific base delays (rate limit: 2s, timeout: 1s, transient: 500ms)
+   - Half-open probe after 30s; permanent errors fail fast without retry
+
+**Core — 1 of 3 items**
+
+8. **Pipeline stage caching — `core/src/scholardevclaw/application/cache.py`:**
+   - `PipelineCache` with content-addressable SHA-256 keys, in-memory + disk tiers, TTL
+   - Default cache root: `~/.cache/scholardevclaw/pipeline/`
+   - Integrated into `run_analyze` (keyed by git commit), `run_search` (keyed by query params), `run_map` (keyed by repo + spec)
+   - New `use_cache: bool` parameter on each runner (default `True`)
+   - 7 new tests in `tests/unit/test_cache.py`
+
+**Integration — 3 items**
+
+9. **Expanded GitHub PR automation — `agent/src/api/github.ts`:**
+   - `updatePullRequest` (title, body, state, base)
+   - `getPullRequest`, `listPullRequests` (filter by state)
+   - `createCheckRun` / `updateCheckRun` (GitHub Checks API)
+   - `getWorkflowRuns`, `getLatestWorkflowRun` (Actions API)
+   - `addPRComment`, `getPRComments` (issue-comment API surface)
+   - `mergePullRequest` (merge / squash / rebase)
+   - `isConfigured()` helper
+   - 25 new tests in `github.test.ts` (48 total in the file)
+
+10. **Convex state sync improvements — `agent/src/api/convex.ts`:**
+    - `RetryOptions` + `runWithRetry()`: exponential backoff on transient errors (network, 5xx, rate limit, timeout)
+    - `defaultIsTransient(err)` exported for caller overrides
+    - Per-id mutation sequencing (`mutationChain`) to prevent races on the same document
+    - In-memory `queryCache` with 1s TTL for `getIntegration` / `listLogs` / `listApprovals`; invalidated on writes
+    - `saveLogBatch()` for batched log writes
+    - `waitForApproval()` now uses exponential backoff polling (default 2s → 10s) with a min 1ms floor to prevent tight-looping
+    - 15 new tests in `convex.test.ts` (20 total)
+
+11. **GitHub webhook server — `agent/src/api/webhook-server.ts`:**
+    - New `WebhookServer` class (extends `EventEmitter`); Node `http`, no extra deps
+    - HMAC SHA-256 signature verification (`x-hub-signature-256`) with constant-time compare
+    - Body size cap (default 5 MB), 30s socket timeout
+    - Health check at `/healthz`, webhook path at `/webhooks/github` (configurable)
+    - `on('pull_request' | 'check_run' | 'push' | 'ping' | '*', handler)` typed events
+    - Handler errors caught + logged; 202 returned immediately to prevent GitHub retries
+    - 21 new tests in `webhook-server.test.ts`
+
+**Quality — 2 of 3 items**
+
+12. **Property-based tests — `core/tests/unit/test_property_based.py`:**
+    - 35 Hypothesis-driven invariants for `utils/validation.py` and `utils/error_codes.py`
+    - Covers: round-trips, JSON serializability, set containment, monotonicity, status ordering
+    - `hypothesis>=6.100.0` added to `[project.optional-dependencies].dev`
+
+13. **Benchmark regression detection — `core/benchmarks/regression.py`:**
+    - `detect_regressions(baseline, current, threshold=0.1)` returns `RegressionReport`
+    - Per-case deltas, status downgrade detection (matched → partial counts even below threshold)
+    - `format_regression_summary()` for human-readable CI output
+    - Runner CLI now accepts `--baseline`, `--regression-threshold`, `--regression-output`, `--fail-on-regression`
+    - 12 new tests in `tests/unit/test_benchmark_regression.py`
+
+**Files added/changed in this round**
+
+- Added: `core/src/scholardevclaw/tui/theme_switcher.py`, `core/src/scholardevclaw/tui/session.py`, `core/src/scholardevclaw/application/cache.py`, `agent/src/utils/phase-observer.ts`, `agent/src/api/webhook-server.ts`, `core/benchmarks/regression.py`, plus 5 new test files
+- Modified: `core/src/scholardevclaw/tui/screens.py`, `widgets.py`, `app.py`, `core/src/scholardevclaw/application/pipeline.py`, `agent/src/orchestrator.ts`, `agent/src/api/github.ts`, `agent/src/api/convex.ts`, `core/benchmarks/runner.py`, `core/pyproject.toml`
+
+**Not shipped (deferred or out of scope this round)**
+
+- TUI: animated transition between screens (existing animations cover widget-level)
+- Agent: parallel phase runner, approval-gates UI (PhaseObserver + circuit breaker cover the highest-impact subset; parallel runner is a larger refactor)
+- Core: research-intelligence improvements, validation runner hardening (still in scope for next round)
+- Quality: mutation testing (no infra; complex setup with `mutmut` / `stryker`; deferred)
+
+### 2026-06-04 (TUI v2 — Status Bar Git Context, Log Filter, Reverse-i-Search, Patch History)
 
 ### 2026-06-04 (TUI v2 — Status Bar Git Context, Log Filter, Reverse-i-Search, Patch History)
 
