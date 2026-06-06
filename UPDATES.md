@@ -2,7 +2,59 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening)
+**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements)
+
+### 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements)
+
+**Summary:** Two of the five deferred Round 3 items shipped. Validation runner hardening (shipped first) was covered in the previous changelog entry. This entry covers the research intelligence improvements: vectorized PageRank for large citation graphs, cross-source paper deduplication, and a year-drift bug fix in the similarity / influence scorers. All changes pass tsc / ruff / mypy / pytest. New tests: 64 (research improvements) + 50 (validation hardening, in the previous entry). Research module now exports `deduplicate_papers` from the top-level package.
+
+**Core — Research intelligence (2nd of 5 deferred items shipped)**
+
+1. **Vectorized PageRank — `core/src/scholardevclaw/research_intelligence/citation_graph.py`:**
+   - `CitationGraph.get_pagerank` was O(N² × iterations) in pure Python. New implementation builds a column-stochastic transition matrix once and runs the power iteration as a NumPy matrix-vector product.
+   - For graphs with `>= sparse_threshold` (default 500) nodes and `scipy.sparse` available, the matrix is built as a `csr_matrix` for better asymptotic performance on large graphs; otherwise it falls back to a dense NumPy array.
+   - Preserves original semantics exactly: same teleport factor `(1 - damping) / N`, same handling of dangling nodes (no redistribution — same bug as the original to keep behavior identical), same handling of references to nodes that aren't in the graph.
+   - 100 nodes / 50 iterations now runs in <2ms (was effectively unbounded for non-trivial sizes in the pure-Python version).
+   - New `sparse_threshold` keyword argument (default 500) lets callers tune the dense↔sparse crossover.
+
+2. **Paper deduplication — `core/src/scholardevclaw/research_intelligence/paper_sources.py`:**
+   - New `deduplicate_papers(papers)` function detects duplicates across sources by:
+     - DOI (with `https://doi.org/`, `https://dx.doi.org/`, and `doi:` prefix normalization, case-insensitive)
+     - arXiv ID (case-insensitive)
+     - PubMed ID
+     - IEEE ID
+     - Normalized title (lowercase, alphanumerics only, last-resort for titles ≥ 20 chars)
+   - New `_merge_papers()` helper unions `authors` / `categories` / `keywords`, takes the longer abstract / max year / max citations, fills in any missing scalar fields from any duplicate, and records contributing sources in a new `Paper.merged_sources` attribute (also added to `Paper.to_dict()`).
+   - `Paper` dataclass extended with `merged_sources: list[str]` field (default empty list).
+   - `PaperSourceAggregator.search_deduplicated(query, ...)` runs the existing per-source searches and returns a deduplicated union, with optional `max_results` cap.
+   - `deduplicate_papers` exported from `scholardevclaw.research_intelligence` package.
+
+3. **Year-drift fix — `core/src/scholardevclaw/research_intelligence/similarity.py` + `citation_graph.py`:**
+   - `ResearchSimilaritySearch.find_similar` and `CitationGraph.get_influence_score` both hard-coded the current year as `2026`. After Dec 31 2026 this would silently degrade year-proximity signals.
+   - Both now use `datetime.now().year` so recency weighting stays correct as time moves on.
+   - `from datetime import datetime` added to both modules' imports.
+
+**Tests — `core/tests/unit/test_research_improvements.py` (new, 64 tests):**
+- `_normalize_doi` / `_normalize_title` helper coverage (empty, plain, case, URL prefixes, doi: prefix, whitespace, punctuation, alphanumeric-only)
+- `deduplicate_papers` empty / single / preserve-order behavior
+- Dedup by DOI (same, case-insensitive, URL-prefix variants, doi: prefix, kept separate)
+- Dedup by arXiv / PubMed / IEEE ID
+- Dedup by title (case / punctuation / short-title threshold / kept separate)
+- Merge strategy (longer abstract, union authors / categories / keywords, max year, max citations, fill missing doi / pdf_url / journal, record merged_sources)
+- 3-way cross-source merges (arxiv + pubmed + ieee with the same DOI)
+- `Paper` dataclass: `to_dict()` includes `merged_sources`, default empty
+- `PaperSourceAggregator.search_deduplicated` orchestration (3 async tests via `asyncio.run`)
+- `CitationGraph.get_pagerank` correctness (empty / single / 2-node cycle / 3-node cycle / dangling node / hub > spokes / matches Python-loop / iterations converge / damping parameter / sparse threshold / external references)
+- `CitationGraph.get_pagerank` performance: 100 nodes / 50 iterations under 50ms
+- Year-drift fix (current-year paper is "recent", old paper is not, citation graph influence uses current year)
+
+**Deferred from Round 3, still pending (3 items):** Parallel Phase Runner (agent), Approval Gates UI (agent), Animated Screen Transitions (TUI).
+
+**Commits in this round (latest first):**
+
+- `6786ab7` — feat(core): research intelligence improvements (pagerank + dedup + year fix)
+- `460c72c` — feat(core): validation runner security hardening (AST + categorized)
+- `0601e79` — docs: UPDATES.md changelog for Round 4 (validation runner hardening)
 
 ### 2026-06-06 (Round 4 — Validation runner hardening)
 
