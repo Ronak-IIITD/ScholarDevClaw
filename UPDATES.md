@@ -42,7 +42,7 @@
 
 **Commits in this round (latest first):**
 
-- `feat(agent): parallel phase runner (DAG executor)` (pending — to be created this commit)
+- `8504bfb` — feat(agent): parallel phase runner (DAG executor)
 - `6786ab7` — feat(core): research intelligence improvements (pagerank + dedup + year fix)
 - `460c72c` — feat(core): validation runner security hardening (AST + categorized)
 - `0601e79` — docs: UPDATES.md changelog for Round 4 (validation runner hardening)
