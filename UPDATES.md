@@ -2,7 +2,56 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements + Parallel Phase Runner + Approval Gates UI)
+**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements + Parallel Phase Runner + Approval Gates UI + Animated Screen Transitions (TUI))
+
+### 2026-06-06 (Round 4 — Animated Screen Transitions (TUI))
+
+**Summary:** Fifth and final deferred Round 3 item shipped. The TUI now has a self-contained, declarative screen-transition system: 7 easing functions, 6 pre-built transitions (none / fade / slide_left / slide_right / slide_up / slide_down), a registry that supports custom transitions, and Textual-integrated helpers for animating enter/exit phases. New `push_screen_with_transition` and `pop_screen_with_transition` methods on `ScholarDevClawApp` make the feature opt-in — existing `push_screen` call sites are untouched. 132 new tests (121 pure-logic + 11 real-app integration via `App.run_test`). All 728 TUI / validation tests passing; CLI still works.
+
+**Core — 5th of 5 deferred items shipped**
+
+1. **Transition system — `core/src/scholardevclaw/tui/screen_transitions.py` (new, ~750 lines):**
+   - `EasingFunction` type alias + 7 built-in easings (`linear`, `in/out/in_out_quad`, `in/out/in_out_cubic`) with full boundary tests.
+   - `Keyframe(at, offset, opacity)` and `TransitionPhase(keyframes)` frozen dataclasses. Keyframes are sorted on construction; `at`/`opacity` invariants are enforced.
+   - `ScreenTransition(name, duration, easing, enter, exit)` frozen dataclass with `with_duration()` helper. Constructor validates duration ≥ 0 and that the easing is registered.
+   - Pre-built transitions:
+     - `NONE` (0.0s, identity)
+     - `FADE` (0.18s, `in_out_cubic`, opacity 0→1)
+     - `SLIDE_LEFT` / `SLIDE_RIGHT` (0.22s, offset ±8 / opacity 0→1)
+     - `SLIDE_UP` / `SLIDE_DOWN` (0.22s, offset ±2 vertical / opacity 0→1)
+   - `TRANSITION_REGISTRY` lookup; `get_transition(name)`, `get_transition_or_default(name)`, `list_transitions()`, `register_transition(custom)` (refuses to overwrite `NONE`).
+   - Pure logic helpers: `apply_easing(name, t)`, `compute_progress(transition, t)`, `interpolate_keyframes(phase, progress)`, `phase_start(phase)`, `phase_end(phase)`, `starting_state(transition, entering=)`, `ending_state(transition, entering=)`.
+   - Widget integration helpers: `apply_starting_state(widget, transition, *, entering=)` (mutates `widget.offset` and `widget.styles.opacity`), `animate_enter(widget, transition)`, `animate_exit(widget, transition, *, on_complete=)`, `push_screen_with_transition(app, screen, *, transition_name, callback=)`, `pop_screen_with_transition(app, transition)`.
+   - Honors screen-level `TRANSITION = "fade"` class attribute when no explicit transition name is passed.
+   - Uses `widget.styles.animate("opacity", ...)` for the actual animation (works on Textual 8.2.x). Offset is snapped to the final value at completion (Textual 8.2.x can't reliably animate `(x, y)` offsets through `Widget.animate`).
+
+2. **App integration — `core/src/scholardevclaw/tui/app.py` (modified):**
+   - Added `ScholarDevClawApp.push_screen_with_transition(screen, *, transition_name="fade", callback=None)`.
+   - Added `ScholarDevClawApp.pop_screen_with_transition(transition_name="fade")`.
+   - Both methods fall back to the screen's `TRANSITION` class attribute if the transition name is `None` or empty.
+   - All existing `push_screen(...)` call sites remain untouched; the animated variant is opt-in.
+
+3. **Pure-logic tests — `core/tests/unit/test_tui_screen_transitions.py` (new, 121 tests):**
+   - Easings (zero/one boundaries, unit-interval invariant, symmetry, `apply_easing` clamping, registry & resolve errors)
+   - `Keyframe` & `TransitionPhase` invariants (sort, frozen, opacity range)
+   - `ScreenTransition` invariants (name, duration, easing, `with_duration` re-validation, frozen)
+   - Pre-built transitions (`NONE` identity; `FADE` / `SLIDE_*` start/end states; easing/duration)
+   - Registry (lookup, errors, `None` defaults, ordering, `register_transition` add/replace, immutable `NONE`)
+   - Interpolation (empty phase, single keyframe, clamping, midpoint, quarter, opacity-`None` boundaries, three-keyframe segments, out-of-range)
+   - `compute_progress` (easing integration, clamping)
+   - `starting_state` / `ending_state` (phase selection, opacity omission when no keyframe has one)
+   - `apply_starting_state` (offset+opacity, exit phase, opacity omission, `NONE` identity)
+   - `animate_enter` / `animate_exit` (target values, `NONE` no-op, `on_complete` callback, offset snap on completion for both enter and exit)
+   - `push_screen_with_transition` (no animation for `NONE`, starting state application, `TRANSITION` class-attr fallback for `None` and empty string, unknown-transition `KeyError`, callback forwarding)
+   - `pop_screen_with_transition` (`NONE` no-op, schedule + completion cascade for `FADE`)
+
+4. **Real-app integration tests — `core/tests/unit/test_tui_screen_transition_app.py` (new, 11 tests):**
+   - Uses `App.run_test()` + `Pilot.pause(0.3)` to drive actual Textual animation cycles.
+   - Verifies `apply_starting_state` mutates real `opacity` and `offset` on a `ModalScreen` subclass.
+   - Verifies `animate_enter` / `animate_exit` reach the target `opacity` after the animation duration.
+   - Verifies the `on_complete` callback fires at the right time.
+   - Verifies offset snap at completion for `SLIDE_LEFT`.
+   - Verifies `NONE` is synchronous (no `pilot.pause` required).
 
 ### 2026-06-06 (Round 4 — Approval Gates UI (agent))
 
