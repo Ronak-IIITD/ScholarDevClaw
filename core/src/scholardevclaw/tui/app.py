@@ -49,6 +49,15 @@ from .patch_history import PatchHistoryScreen
 from .quickstart import QuickstartDashboard
 from .repo_selector import RepoSelector
 from .reverse_search import ReverseSearchScreen
+from .screen_transitions import (
+    get_transition_or_default,
+)
+from .screen_transitions import (
+    pop_screen_with_transition as _pop_screen_with_transition,
+)
+from .screen_transitions import (
+    push_screen_with_transition as _push_screen_with_transition,
+)
 from .screens import (
     CommandPalette,
     ExecutionScreen,
@@ -1226,6 +1235,47 @@ class ScholarDevClawApp(App[None]):
             ),
             self._apply_setup_result,
         )
+
+    # ------------------------------------------------------------------
+    # Animated screen transitions
+    # ------------------------------------------------------------------
+
+    def push_screen_with_transition(
+        self,
+        screen: Any,
+        *,
+        transition_name: str | None = "fade",
+        callback: Callable[[Any], None] | None = None,
+    ) -> None:
+        """Push a screen onto the stack with an animated transition.
+
+        The transition is resolved from ``transition_name`` (or the
+        screen's ``TRANSITION`` class attribute as a fallback). Existing
+        call sites that use :meth:`push_screen` directly continue to
+        work — the animated variant is opt-in.
+        """
+        resolved = transition_name
+        if not resolved:
+            resolved = getattr(screen, "TRANSITION", None)
+        transition = get_transition_or_default(resolved)
+        _push_screen_with_transition(
+            self, screen, transition_name=transition.name, callback=callback
+        )
+
+    def pop_screen_with_transition(
+        self,
+        transition_name: str | None = "fade",
+    ) -> None:
+        """Pop the topmost screen with an animated transition.
+
+        Mirrors :meth:`push_screen_with_transition` for dismissal.
+        """
+        current = self.screen
+        resolved = transition_name
+        if not resolved:
+            resolved = getattr(current, "TRANSITION", None)
+        transition = get_transition_or_default(resolved)
+        _pop_screen_with_transition(self, transition)
 
     def _apply_setup_result(self, result: dict[str, str] | None) -> None:
         if result is None:
