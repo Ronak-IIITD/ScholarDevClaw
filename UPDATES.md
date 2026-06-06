@@ -2,7 +2,41 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-05 (Round 3 — TUI Polish v3, Agent hardening, Core caching, GitHub integration v2, Quality)
+**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening)
+
+### 2026-06-06 (Round 4 — Validation runner hardening)
+
+**Summary:** First item in the Round 4 backlog (one of the 5 deferred items from Round 3) shipped. Moved the script security checks used by `_run_bench_script` out of inline regex lists and into a dedicated `scholardevclaw.validation.security` module with regex + AST analysis and a categorized `SecurityCheckResult`. The runner now delegates to the new check, logs every flagged issue, and exposes a `_audit_script_security` helper for observability. 50 new tests; 168 pre-existing validation runner tests still pass.
+
+**Core — 1 of 5 deferred items shipped**
+
+1. **Validation runner security hardening — `core/src/scholardevclaw/validation/security.py` (new):**
+   - `_categorized_security_check(script)` returns a `SecurityCheckResult` dataclass with disjoint `destructive_issues` and `escape_issues` lists so each issue belongs to exactly one category (no more double counting from overlapping regex lists).
+   - `_is_script_destructive_ast` and `_is_sandbox_escape_ast` walk the parsed AST and flag dangerous calls, attribute accesses, and imports. Catches obfuscated forms like `getattr(__import__('os'), 'system')` that bypass naive regex.
+   - `_DANGEROUS_AST_NODES` is now split into `destructive` / `escape` subsets per node kind (Call, Attribute, Import, ImportFrom) for clean classification.
+   - Regex sets cleaned up: `_SANDBOX_ESCAPE_PATTERNS_EXTENDED` now focuses on the *mechanisms* used to bypass a Python sandbox (dynamic code execution, attribute / builtin introspection, dunder access, `pty`/`ctypes`/`fcntl`/`resource` low-level hatches). File-system, process, and network access patterns live in `_DESTRUCTIVE_PATTERNS_EXTENDED`.
+   - `_comprehensive_security_check` kept as a thin wrapper around the categorized check for backward compatibility.
+   - `SecurityCheckResult` exported from `scholardevclaw.validation` package.
+
+2. **Runner integration — `core/src/scholardevclaw/validation/runner.py`:**
+   - `_is_script_destructive` and `_is_sandbox_escape` now delegate to `_categorized_security_check` and log every flagged issue at WARNING level.
+   - New `_audit_script_security(script)` helper returns the full `SecurityCheckResult` and logs a one-line summary of destructive / escape issue counts.
+   - Removed the duplicated inline `_DESTRUCTIVE_PATTERNS` and `_SANDBOX_ESCAPE_PATTERNS` lists (now centralized in the security module).
+   - YOLO mode (`SCHOLARDEVCLAW_YOLO_MODE=true`) escape hatch preserved.
+
+3. **Tests — `core/tests/unit/test_validation_security.py` (new, 50 tests):**
+   - `SecurityCheckResult` dataclass behaviour (default safe, combined `all_issues`, both-buckets unsafe)
+   - `_is_script_destructive_ast` (os.system, subprocess.run, import os, from subprocess import run, syntax-error blocks, safe imports / calls, pathlib is safe)
+   - `_is_sandbox_escape_ast` (eval, exec, compile, globals/locals/vars, dunder access, direct `__builtins__` reference)
+   - `_categorized_security_check` (clean / destructive-only / escape-only / combined / syntax-error / regex variants / `open('/etc/passwd')` / network socket)
+   - `_comprehensive_security_check` backward-compat wrapper (clean / unsafe / combined / signature)
+   - Runner integration (`_is_script_destructive`, `_is_sandbox_escape`): YOLO mode (true / 1 / yes / TRUE / Yes), destructive vs escape pattern mutual exclusion, dunder attribute blocking, compile blocking
+
+**Deferred from Round 3, still pending (4 items):** Research Intelligence improvements, Parallel Phase Runner (agent), Approval Gates UI (agent), Animated Screen Transitions (TUI).
+
+**Commits in this round:**
+
+- `460c72c` — feat(core): validation runner security hardening (AST + categorized)
 
 ### 2026-06-05 (Round 3 — TUI Polish v3, Agent hardening, Core caching, GitHub integration v2, Quality)
 
