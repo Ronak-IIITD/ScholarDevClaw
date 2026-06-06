@@ -1,8 +1,12 @@
 import { logger } from './utils/logger.js';
 import { ScholarDevClawOrchestrator } from './orchestrator.js';
 import type { IntegrationCreate } from './api/convex.js';
+import { ConvexClientWrapper } from './api/convex.js';
+import { ApprovalAudit } from './api/approval-audit.js';
+import { runApprovalsCommand } from './api/approval-cli.js';
 import { PythonSubprocessBridge } from './bridges/python-subprocess.js';
 import { config } from './utils/config.js';
+import { RunStore } from './utils/run-store.js';
 import * as readline from 'readline';
 
 function getArg(flag: string): string | undefined {
@@ -279,6 +283,52 @@ async function run(): Promise<void> {
     // Delegate to OpenTUI-based terminal interface
     const { main: runOpenTui } = await import('./tui/opentui-app.js');
     await runOpenTui();
+    return;
+  }
+
+  if (command === 'approvals') {
+    // Approval Gates subcommand. Routes to the ApprovalAudit +
+    // ApprovalCLI modules. The remaining argv becomes the subcommand
+    // args (e.g. `list`, `approve <id> <phase>`, `serve`).
+    const subArgs = process.argv.slice(3);
+    let convex: ConvexClientWrapper | null = null;
+    try {
+      convex = new ConvexClientWrapper();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn('Convex not configured — approval commands will fail', { error: message });
+    }
+    if (!convex) {
+      // Subcommands that don't need Convex (just `help`) can still
+      // run, but anything that hits the audit module will surface a
+      // clear error. Provide a stub that throws so the failure is
+      // visible at the first Convex call.
+      const stub = {
+        listIntegrations: () => {
+          throw new Error('Convex is not configured (set CONVEX_URL and SCHOLARDEVCLAW_CONVEX_AUTH_KEY)');
+        },
+        listApprovals: () => {
+          throw new Error('Convex is not configured (set CONVEX_URL and SCHOLARDEVCLAW_CONVEX_AUTH_KEY)');
+        },
+        getIntegration: () => {
+          throw new Error('Convex is not configured (set CONVEX_URL and SCHOLARDEVCLAW_CONVEX_AUTH_KEY)');
+        },
+        createApproval: () => {
+          throw new Error('Convex is not configured (set CONVEX_URL and SCHOLARDEVCLAW_CONVEX_AUTH_KEY)');
+        },
+      };
+      // Cast through unknown so we don't have to construct a real
+      // ConvexClientWrapper just to call its methods.
+      const audit = new ApprovalAudit(stub as unknown as ConvexClientWrapper, {
+        runStore: new RunStore(),
+      });
+      const result = await runApprovalsCommand(subArgs, { audit });
+      process.exitCode = result.exitCode;
+      return;
+    }
+    const audit = new ApprovalAudit(convex, { runStore: new RunStore() });
+    const result = await runApprovalsCommand(subArgs, { audit });
+    process.exitCode = result.exitCode;
     return;
   }
 
