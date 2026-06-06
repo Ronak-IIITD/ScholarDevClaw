@@ -2,7 +2,50 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements)
+**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements + Parallel Phase Runner)
+
+### 2026-06-06 (Round 4 — Parallel Phase Runner (agent))
+
+**Summary:** Third of the five deferred Round 3 items shipped. Added a generic, reusable DAG-based parallel task runner to the agent (`ParallelPhaseRunner`) plus its exported pure helpers (`validateDag`, `findCycle`, `topologicalLayers`, `topologicalOrder`). The runner knows nothing about the orchestrator or ML phases — it takes a `TaskSpec[]` and respects `dependsOn` relationships, a bounded worker pool, cooperative `AbortSignal` cancellation, and the `tolerateDependencyFailures` opt-out for downstream tasks when a dep fails. The orchestrator can later translate any phase definition (or sub-phase parallelism inside a single phase) into `TaskSpec` objects. 41 new tests covering validation, happy path, failures, observability, cancellation, performance, and a 6-phase realistic DAG. tsc clean. Full agent suite: **428/428 passing** (was 387). Two deferred items still pending: Approval Gates UI (agent), Animated Screen Transitions (TUI).
+
+**Agent — 3rd of 5 deferred items shipped**
+
+1. **Generic parallel task runner — `agent/src/utils/parallel-runner.ts` (new, ~430 lines):**
+   - `ParallelPhaseRunner` class with bounded worker pool (`maxConcurrency`, default 4), cooperative `AbortSignal` cancellation, and per-task lifecycle (`succeeded` / `failed` / `skipped` / `cancelled`).
+   - `TaskSpec` interface: `id`, `name`, `dependsOn?`, `tolerateDependencyFailures?`, `run(context)`. Reusable beyond phases — any DAG-shaped async work.
+   - On dep failure, downstream tasks are marked `skipped` and their downstream is walked recursively. Tasks with `tolerateDependencyFailures: true` still run.
+   - On abort: no new tasks start; in-flight tasks that complete are reported as `cancelled` (result value dropped); unstarted tasks in the ready queue are finalized as `cancelled` so the report has a definitive entry per task. `ok` is `false` for any aborted run.
+   - Scheduling uses a completion-callback pattern (`signalCompletion` / `waitForNextCompletion`) instead of `Promise.race` over in-flight promises — race would resolve immediately on any already-settled promise and spin the event loop. The 6 test failures from the previous cut were all caused by this busy-loop and a splice-then-race bug.
+   - Observability hooks: `onTaskStart` and `onTaskComplete` callbacks. `TaskResult` includes `value`, `error`, `durationMs`, `startedAt`, `finishedAt`.
+   - Pure helpers (exported for direct unit testing): `validateDag` (duplicates, self-deps, unknown deps, cycles), `findCycle` (iterative DFS), `topologicalLayers` (parallel layers), `topologicalOrder` (flattened topo sort). All generic over `TResult` / `TContext`.
+   - Throws on programmer errors (invalid DAG); never throws on individual task failure — failures are surfaced via `TaskResult.status === 'failed'` and the report's `failed` array.
+
+2. **Tests — `agent/src/utils/parallel-runner.test.ts` (new, 41 tests, 6 describe blocks):**
+   - `validateDag` (10): empty / single / linear chain / diamond / duplicate id / self-dep / unknown dep / 2-node cycle / 3-node cycle / indirect cycle.
+   - `findCycle` (3): null for acyclic, detects 2-node cycle, null for diamond.
+   - `topologicalLayers` (4): empty / all independent in layer 0 / linear chain in separate layers / diamond parallel grouping.
+   - `topologicalOrder` (1): order respects all dependencies.
+   - Construction (3): accepts `maxConcurrency`, rejects `< 1`, defaults to 4.
+   - Happy path (5): empty list / single task / parallel execution (proves with event ordering + elapsed time < 150ms for 2×50ms tasks) / topological order / maxConcurrency respected (10 tasks, maxConcurrency=3, never > 3 active) / context passthrough.
+   - Failure handling (6): single failure surfaces in `failed` / `succeeded` arrays without throwing / downstream skipped when dep fails / `tolerateDependencyFailures` tasks still run / sibling failures don't block / duration recorded on failure / non-Error throws wrapped.
+   - Observability (3): `onTaskStart` / `onTaskComplete` hooks fire with correct ids / `onTaskComplete` fires with `failed` status / `startedAt` / `finishedAt` ISO timestamps.
+   - Cancellation (2): abort stops scheduling new tasks (`ok=false`, events.length < N) / in-flight task marked cancelled when abort fires during run.
+   - Performance (1): 20 independent tasks at maxConcurrency=10 run in <250ms (sequential would be 600ms).
+   - Integration (2): realistic 6-phase pipeline DAG (P1→P2→P3→P4→P5→P6) with order verification / failure in P3 propagates `skipped` status through P4, P5, P6.
+
+**Verification:**
+- `cd agent && ./node_modules/.bin/vitest run` → 428 passed (was 387, +41 new), 0 failed
+- `cd agent && ./node_modules/.bin/tsc --noEmit` → clean (after making `validateDag` / `findCycle` / `topologicalLayers` / `topologicalOrder` and `ParallelRunnerOptions` generic over `TResult` / `TContext` to thread the typed `TaskSpec` through)
+- `cd agent && ./node_modules/.bin/tsc` → builds cleanly; `dist/utils/parallel-runner.{js,d.ts,test.{js,d.ts}}` present
+
+**Deferred from Round 3, still pending (2 items):** Approval Gates UI (agent), Animated Screen Transitions (TUI).
+
+**Commits in this round (latest first):**
+
+- `feat(agent): parallel phase runner (DAG executor)` (pending — to be created this commit)
+- `6786ab7` — feat(core): research intelligence improvements (pagerank + dedup + year fix)
+- `460c72c` — feat(core): validation runner security hardening (AST + categorized)
+- `0601e79` — docs: UPDATES.md changelog for Round 4 (validation runner hardening)
 
 ### 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements)
 
