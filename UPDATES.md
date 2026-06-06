@@ -2,7 +2,78 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements + Parallel Phase Runner)
+**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements + Parallel Phase Runner + Approval Gates UI)
+
+### 2026-06-06 (Round 4 — Approval Gates UI (agent))
+
+**Summary:** Fourth of the five deferred Round 3 items shipped. The orchestrator already pauses for human review via Convex (PhaseObserver + `waitForApproval`/`enforceGuardrailApproval`), but until now there was no first-class surface for inspecting the queue or recording decisions from outside the orchestrator. Added three new modules under `agent/src/api/` that together form the Approval Gates UI: a typed read/write audit aggregator, a Node `http` server exposing the audit API, and a `scholardevclaw approvals ...` subcommand dispatcher. The HTTP API has bearer-token auth, body-size cap, request timeout, and full input validation. 80 new tests (21 audit + 29 server + 30 CLI). Full agent suite: **508/508 passing** (was 428). One deferred item still pending: Animated Screen Transitions (TUI).
+
+**Agent — 4th of 5 deferred items shipped**
+
+1. **Audit aggregator — `agent/src/api/approval-audit.ts` (new, ~265 lines):**
+   - `ApprovalAudit` class wraps `ConvexClientWrapper` (and an optional `RunStore`) and exposes typed read/write methods: `listPending()`, `getIntegrationAudit(integrationId)`, `getRunApprovals(runId)`, `decide(decisions)`.
+   - `PendingApprovalEntry` record: integrationId, repoUrl, currentPhase, mode, awaitingReason, guardrailReasons, confidence, updatedAt, createdAt.
+   - `AuditEntry` discriminated union (`integration_created` | `phase_completed` | `awaiting_approval` | `approved` | `rejected` | `integration_failed`) with timestamp, phase, kind, details, action.
+   - `IntegrationAudit` aggregates the integration document + sorted timeline + summary counts (approved / rejected / pending).
+   - Pure formatters (exported for direct testing): `formatAuditLine(entry)` for one-line timeline rows; `formatPendingRow(entry)` for tabular CLI display with reason truncation and guardrail-suffix heuristics.
+   - `decide()` is a batch helper: it calls `convex.createApproval` for each decision in sequence, collects per-decision ok/error results, and never throws on individual failures.
+
+2. **HTTP server — `agent/src/api/approval-server.ts` (new, ~495 lines):**
+   - Node `http` server, zero new dependencies. Follows the existing `WebhookServer` pattern (body cap, request timeout, structured error responses, `Cache-Control: no-store`).
+   - Bearer-token auth via `Authorization: Bearer <key>`. Refuses to start without a configured `authKey` (we never want to ship an open approval API). Constant-time token comparison via `timingSafeEqual`.
+   - Endpoints:
+     - `GET /health` — unauthenticated; reports `uptimeMs` and `pendingCount` (best-effort)
+     - `GET /approvals/pending` — list pending approvals (oldest first)
+     - `GET /approvals/runs/:runId` — local RunStore approvals for a run
+     - `GET /approvals/audit?integrationId=...` — full integration timeline + summary
+     - `POST /approvals/:integrationId/:phase/decide` — body `{action, notes?}`; returns 200 on success, 502 on upstream failure
+     - `POST /approvals/batch` — body `{decisions: [...]}`; returns 200 if all succeed, 207 (Multi-Status) if any fail
+   - Input validation: phase must be integer 0..99, action must be `approved`/`rejected`, body capped at 1 MB, JSON parsed defensively.
+   - Helper exports: `verifyBearer(provided, expected)`, `parsePhase(raw)`.
+
+3. **CLI subcommand — `agent/src/api/approval-cli.ts` (new, ~315 lines):**
+   - `parseApprovalsArgs(argv)` — pure parser returning a discriminated union (`help` / `list` / `decide` / `audit` / `serve`). Throws on bad input with user-facing error messages.
+   - `runApprovalsCommand(argv, deps)` — executes the parsed command. Returns `{exitCode, subcommand}` for the caller. Output is injected via `output(line)` for testability.
+   - Subcommands:
+     - `list` — pretty-prints the pending queue (one row per entry)
+     - `approve <id> <phase> [--notes "..."]` — record approval decision
+     - `reject <id> <phase> [--reason "..."]` — record rejection decision (alias: `--notes`)
+     - `audit [id]` — print full audit timeline; falls back to `list` when no id given
+     - `serve [--port N] [--auth-key KEY]` — start the HTTP server (uses `SCHOLARDEVCLAW_APPROVAL_AUTH_KEY` env var as default)
+     - `help` — print usage
+   - Exit codes: 0 (ok), 1 (user error), 2 (upstream error). CLI is injected-DI friendly: callers can override `createServer` and `startServer` to swap the real server for a fake in tests.
+   - Bound to the agent's top-level command: `scholardevclaw approvals list` (etc.). Wired into `agent/src/index.ts`. The CLI works with or without Convex configured — failures are surfaced with a clear "Convex is not configured" message.
+
+4. **Tests (3 new files, 80 tests):**
+   - `agent/src/api/approval-audit.test.ts` (21 tests): formatter edge cases (long reason truncation, missing reason, guardrail suffix, action omission, phase=- for integration events); `listPending` returns oldest-first, preserves guardrail reasons; `getIntegrationAudit` throws on missing, merges lifecycle + approval timeline, appends `integration_failed` entry, summary counts (approved/rejected/pending, including the `pending=1` only when `status === 'awaiting_approval'`); `getRunApprovals` returns empty when no RunStore is configured, propagates the records, swallows errors and warns; `decide` per-decision success/failure, continues on partial failure, empty input is a no-op.
+   - `agent/src/api/approval-server.test.ts` (29 tests): `verifyBearer` (no header, wrong prefix, length mismatch, correct, equal-length different token); `parsePhase` (positives, non-numerics, out-of-range); constructor refuses empty authKey; health (authenticated-free, reports pending count, falls back to 0 on audit error); auth (401 on protected routes, 401 on wrong token); list pending (200, 500 on audit error); run approvals; audit (200, 400 on missing param, 500 on upstream "not found"); single decide (200 on approve, 400 on bad action, 400 on invalid phase, 502 on upstream failure); batch (200 all-success, 207 partial, 400 on bad shape, 400 on bad decision, 400 on invalid JSON); 404 on unknown routes.
+   - `agent/src/api/approval-cli.test.ts` (30 tests): `parseApprovalsArgs` (help/list/approve/reject/audit/serve variants, --reason alias, --notes flag, --port/--auth-key flags, env-var fallback, invalid phase/port/auth errors); `runApprovalsCommand` for help (exits 0, prints usage), list (empty, formatted rows, upstream error → exit 2), decide (approve, reject with reason, failure → exit 2), audit (full timeline, fallback to list when no id, upstream error → exit 2), parse error (exit 1), serve (factory invoked, port binding attempted, throws → exit 2).
+
+5. **Wiring — `agent/src/index.ts` (modified):**
+   - New top-level command branch: `process.argv[2] === 'approvals'`.
+   - Strips the `approvals` prefix from argv; remaining args become the subcommand args.
+   - Tries to construct a `ConvexClientWrapper` (no-op when env not set); falls back to a stub that throws a clear "Convex is not configured" message on every method call so failures are visible.
+   - Builds an `ApprovalAudit` (with a fresh `RunStore`) and calls `runApprovalsCommand`. Sets `process.exitCode` from the structured result.
+   - No orchestrator initialization needed for CLI use — the agent is intentionally side-effect-free for the approval commands.
+
+**Verification:**
+- `cd agent && ./node_modules/.bin/vitest run` → 508 passed (was 428, +80 new), 0 failed
+- `cd agent && ./node_modules/.bin/tsc --noEmit` → clean
+- `cd agent && ./node_modules/.bin/tsc` → builds cleanly; `dist/api/approval-{audit,server,cli}.{js,d.ts,test.{js,d.ts}}` all present
+- `cd agent && ./node_modules/.bin/vitest run src/api/approval-audit.test.ts` → 21/21
+- `cd agent && ./node_modules/.bin/vitest run src/api/approval-server.test.ts` → 29/29
+- `cd agent && ./node_modules/.bin/vitest run src/api/approval-cli.test.ts` → 30/30
+
+**Deferred from Round 3, still pending (1 item):** Animated Screen Transitions (TUI).
+
+**Commits in this round (latest first):**
+
+- `feat(agent): approval gates UI (audit + server + CLI)` (pending — to be created this commit)
+- `9d80460` — docs: UPDATES.md changelog for Round 4 (parallel phase runner)
+- `8504bfb` — feat(agent): parallel phase runner (DAG executor)
+- `6786ab7` — feat(core): research intelligence improvements (pagerank + dedup + year fix)
+- `460c72c` — feat(core): validation runner security hardening (AST + categorized)
+- `0601e79` — docs: UPDATES.md changelog for Round 4 (validation runner hardening)
 
 ### 2026-06-06 (Round 4 — Parallel Phase Runner (agent))
 
