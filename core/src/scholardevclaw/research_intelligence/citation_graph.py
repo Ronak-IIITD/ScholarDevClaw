@@ -14,7 +14,11 @@ import json
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+import numpy as np
 
 
 @dataclass
@@ -190,28 +194,94 @@ class CitationGraph:
         refs2 = self.get_references(paper_id2)
         return refs1 & refs2
 
-    def get_pagerank(self, damping: float = 0.85, iterations: int = 100) -> dict[str, float]:
-        """Calculate PageRank for papers"""
+    def get_pagerank(
+        self,
+        damping: float = 0.85,
+        iterations: int = 100,
+        *,
+        sparse_threshold: int = 500,
+    ) -> dict[str, float]:
+        """Calculate PageRank for papers using a vectorized NumPy implementation.
+
+        For graphs with ``>= sparse_threshold`` nodes and ``scipy.sparse``
+        available, the transition matrix is built sparse for better
+        asymptotic performance.  Falls back to dense NumPy otherwise.
+        """
         if not self.nodes:
             return {}
 
         n = len(self.nodes)
-        ranks = {node_id: 1.0 / n for node_id in self.nodes}
+        node_ids = list(self.nodes.keys())
+        id_to_idx = {nid: i for i, nid in enumerate(node_ids)}
+
+        transition = self._build_transition_matrix(
+            node_ids=node_ids,
+            id_to_idx=id_to_idx,
+            sparse_threshold=sparse_threshold,
+        )
+
+        ranks = np.full(n, 1.0 / n, dtype=np.float64)
+        teleport = (1.0 - damping) / n
 
         for _ in range(iterations):
-            new_ranks = {}
-            for node_id in self.nodes:
-                rank_sum = 0.0
-                for other_id in self.nodes:
-                    if node_id in self.nodes[other_id].references:
-                        out_degree = len(self.nodes[other_id].references)
-                        if out_degree > 0:
-                            rank_sum += ranks[other_id] / out_degree
-                new_ranks[node_id] = (1 - damping) / n + damping * rank_sum
+            ranks = teleport + damping * transition.dot(ranks)
 
-            ranks = new_ranks
+        return {node_ids[i]: float(ranks[i]) for i in range(n)}
 
-        return ranks
+    def _build_transition_matrix(
+        self,
+        *,
+        node_ids: list[str],
+        id_to_idx: dict[str, int],
+        sparse_threshold: int,
+    ) -> np.ndarray | Any:
+        """Build the column-stochastic transition matrix ``M`` where
+        ``M[i][j] = 1 / out_degree(j)`` whenever node ``i`` is referenced
+        by node ``j``.
+
+        Returns a dense :class:`numpy.ndarray` for small graphs.  For graphs
+        with ``>= sparse_threshold`` nodes, tries to build a
+        ``scipy.sparse.csr_matrix`` for faster matvec on big graphs; falls
+        back to dense NumPy if SciPy is unavailable.
+        """
+        n = len(node_ids)
+        use_sparse = n >= sparse_threshold
+
+        # Collect (row, col, value) triples once; choose the final format later.
+        rows: list[int] = []
+        cols: list[int] = []
+        data: list[float] = []
+
+        for j_idx, j_id in enumerate(node_ids):
+            out_degree = len(self.nodes[j_id].references)
+            if out_degree == 0:
+                continue
+            share = 1.0 / out_degree
+            for ref_id in self.nodes[j_id].references:
+                i_idx = id_to_idx.get(ref_id)
+                if i_idx is None:
+                    # Reference targets a node that isn't in the graph;
+                    # preserve original behavior of ignoring it.
+                    continue
+                rows.append(i_idx)
+                cols.append(j_idx)
+                data.append(share)
+
+        if use_sparse:
+            try:
+                from scipy.sparse import csr_matrix  # type: ignore[import-untyped]
+
+                return csr_matrix(
+                    (np.array(data, dtype=np.float64), (np.array(rows), np.array(cols))),
+                    shape=(n, n),
+                )
+            except Exception:
+                pass  # fall through to dense
+
+        matrix = np.zeros((n, n), dtype=np.float64)
+        for r, c, v in zip(rows, cols, data, strict=False):
+            matrix[r, c] = v
+        return matrix
 
     def get_influence_score(self, paper_id: str) -> float:
         """Calculate influence score based on citations and PageRank"""
@@ -227,7 +297,7 @@ class CitationGraph:
 
         year_weight = 1.0
         if node.year > 0:
-            current_year = 2026
+            current_year = datetime.now().year
             years_old = current_year - node.year
             year_weight = 1.0 / (1.0 + 0.1 * years_old)
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 
 import numpy as np
 
@@ -250,7 +251,8 @@ class ResearchSimilaritySearch:
 
             year_score = 0.0
             if year > 0:
-                years_diff = abs(2026 - year)
+                current_year = datetime.now().year
+                years_diff = abs(current_year - year)
                 year_score = 1.0 / (1.0 + 0.1 * years_diff)
                 if year_score > 0.7:
                     reasons.append(f"recent ({year})")

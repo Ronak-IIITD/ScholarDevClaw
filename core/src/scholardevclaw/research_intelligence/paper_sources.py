@@ -15,6 +15,204 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urlencode
 
+# ---------------------------------------------------------------------------
+# Paper deduplication helpers
+# ---------------------------------------------------------------------------
+
+
+_TITLE_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
+_DOI_NORMALIZE_RE = re.compile(r"^https?://(?:dx\.)?doi\.org/", re.IGNORECASE)
+
+
+def _normalize_doi(doi: str) -> str:
+    """Normalize a DOI for equality comparison.
+
+    Strips the ``https://doi.org/`` and ``doi:`` prefixes and lowercases.
+    """
+    if not doi:
+        return ""
+    candidate = doi.strip()
+    candidate = _DOI_NORMALIZE_RE.sub("", candidate)
+    if candidate.lower().startswith("doi:"):
+        candidate = candidate[4:]
+    return candidate.strip().lower()
+
+
+def _normalize_title(title: str) -> str:
+    """Normalize a paper title for fuzzy equality comparison.
+
+    Lower-cases, removes punctuation, collapses whitespace.  Used as a
+    last-resort duplicate detector when DOIs and arXiv IDs are missing.
+    """
+    if not title:
+        return ""
+    return _TITLE_NORMALIZE_RE.sub("", title.lower()).strip()
+
+
+def _dedupe_key(paper: Paper) -> tuple[str, str, str, str, str]:
+    """Compute a tuple key that uniquely identifies a paper across sources.
+
+    Returns ``(doi, arxiv_id, pubmed_id, ieee_id, normalized_title)``.
+    Each component is normalized to a comparable form.
+    """
+    return (
+        _normalize_doi(paper.doi),
+        (paper.arxiv_id or "").strip().lower(),
+        (paper.pubmed_id or "").strip().lower(),
+        (paper.ieee_id or "").strip().lower(),
+        _normalize_title(paper.title),
+    )
+
+
+def _merge_papers(papers: list[Paper]) -> Paper:
+    """Merge duplicate ``Paper`` records into a single best-effort record.
+
+    Strategy:
+    - Pick the paper with the most populated fields as the base.
+    - For each scalar field, prefer non-empty values from any duplicate.
+    - For list fields (authors, categories, keywords), union the values
+      while preserving order.
+    - For numeric fields (year, month, citations), take the max
+      plausible value.
+    - Track contributing sources in a new ``merged_sources`` attribute.
+    """
+    if len(papers) == 1:
+        paper = papers[0]
+        paper.merged_sources = [paper.source] if paper.source else []
+        return paper
+
+    # Pick the most-populated base: most non-empty fields wins, ties broken
+    # by longer abstract, then by higher citation count.
+    def _population(p: Paper) -> tuple[int, int, int]:
+        nonempty = sum(
+            1
+            for f in (
+                p.title,
+                p.abstract,
+                p.url,
+                p.doi,
+                p.pdf_url,
+                p.journal,
+                p.publisher,
+            )
+            if f
+        )
+        return (nonempty, len(p.abstract or ""), p.citations)
+
+    base = max(papers, key=_population)
+    merged = Paper(
+        paper_id=base.paper_id,
+        title=base.title,
+        authors=list(base.authors),
+        abstract=base.abstract,
+        year=base.year,
+        month=base.month,
+        source=base.source,
+        url=base.url,
+        doi=base.doi,
+        categories=list(base.categories),
+        citations=base.citations,
+        pdf_url=base.pdf_url,
+        arxiv_id=base.arxiv_id,
+        pubmed_id=base.pubmed_id,
+        ieee_id=base.ieee_id,
+        journal=base.journal,
+        volume=base.volume,
+        pages=base.pages,
+        publisher=base.publisher,
+        keywords=list(base.keywords),
+    )
+
+    for other in papers:
+        if other is base:
+            continue
+        # Scalar fields: fill in any non-empty value the base is missing.
+        if not merged.title and other.title:
+            merged.title = other.title
+        if len(other.abstract or "") > len(merged.abstract or ""):
+            merged.abstract = other.abstract
+        if not merged.doi and other.doi:
+            merged.doi = other.doi
+        if not merged.url and other.url:
+            merged.url = other.url
+        if not merged.pdf_url and other.pdf_url:
+            merged.pdf_url = other.pdf_url
+        if not merged.arxiv_id and other.arxiv_id:
+            merged.arxiv_id = other.arxiv_id
+        if not merged.pubmed_id and other.pubmed_id:
+            merged.pubmed_id = other.pubmed_id
+        if not merged.ieee_id and other.ieee_id:
+            merged.ieee_id = other.ieee_id
+        if not merged.journal and other.journal:
+            merged.journal = other.journal
+        if not merged.volume and other.volume:
+            merged.volume = other.volume
+        if not merged.pages and other.pages:
+            merged.pages = other.pages
+        if not merged.publisher and other.publisher:
+            merged.publisher = other.publisher
+        # Numeric fields: take the max plausible value.
+        if other.year and other.year > merged.year:
+            merged.year = other.year
+        if other.month and other.month > merged.month:
+            merged.month = other.month
+        if other.citations > merged.citations:
+            merged.citations = other.citations
+        # List fields: union while preserving order.
+        for author in other.authors:
+            if author not in merged.authors:
+                merged.authors.append(author)
+        for category in other.categories:
+            if category not in merged.categories:
+                merged.categories.append(category)
+        for keyword in other.keywords:
+            if keyword not in merged.keywords:
+                merged.keywords.append(keyword)
+
+    merged.merged_sources = [p.source for p in papers if p.source]
+    return merged
+
+
+def deduplicate_papers(papers: list[Paper]) -> list[Paper]:
+    """Deduplicate a list of ``Paper`` records across sources.
+
+    Two papers are considered duplicates if any of these match:
+    - DOI (after normalization)
+    - arXiv ID
+    - PubMed ID
+    - IEEE ID
+    - Normalized title (last-resort)
+
+    The first match wins for grouping; later matches are merged into the
+    first occurrence's bucket.
+    """
+    if not papers:
+        return []
+
+    groups: list[list[Paper]] = []
+    group_keys: list[tuple[str, str, str, str, str]] = []
+    for paper in papers:
+        key = _dedupe_key(paper)
+        doi, arxiv, pubmed, ieee, title = key
+        assigned = False
+        for idx, existing_key in enumerate(group_keys):
+            edoi, earxiv, epubmed, eieee, etitle = existing_key
+            if (
+                (doi and doi == edoi)
+                or (arxiv and arxiv == earxiv)
+                or (pubmed and pubmed == epubmed)
+                or (ieee and ieee == eieee)
+                or (title and len(title) >= 20 and title == etitle)
+            ):
+                groups[idx].append(paper)
+                assigned = True
+                break
+        if not assigned:
+            groups.append([paper])
+            group_keys.append(key)
+
+    return [_merge_papers(group) for group in groups]
+
 
 def _allowed_fixed_source_url(url: str) -> bool:
     from urllib.parse import urlparse
@@ -63,6 +261,9 @@ class Paper:
     pages: str = ""
     publisher: str = ""
     keywords: list[str] = field(default_factory=list)
+    # Populated by deduplicate_papers() to record the contributing sources
+    # when a paper was merged from multiple records.
+    merged_sources: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -86,6 +287,7 @@ class Paper:
             "pages": self.pages,
             "publisher": self.publisher,
             "keywords": self.keywords,
+            "merged_sources": list(self.merged_sources),
         }
 
 
@@ -511,6 +713,40 @@ class PaperSourceAggregator:
             result = await self.ieee.search(f"{paper_id}", max_results=1)
             return result.papers[0] if result.papers else None
         return None
+
+    async def search_deduplicated(
+        self,
+        query: str,
+        max_results_per_source: int = 5,
+        sources: list[str] | None = None,
+        *,
+        max_results: int | None = None,
+    ) -> list[Paper]:
+        """Search across all configured sources and return a deduplicated
+        union of the results.
+
+        Duplicate detection uses ``deduplicate_papers`` (DOI, arXiv ID,
+        PubMed ID, IEEE ID, and normalized title matching).  Each returned
+        ``Paper`` has a populated ``merged_sources`` list recording the
+        sources it was found in.
+
+        If ``max_results`` is given, the merged list is truncated to that
+        size in input order (preserving the order produced by
+        ``search_all``: arxiv → pubmed → ieee).
+        """
+        per_source = await self.search_all(
+            query=query,
+            max_results_per_source=max_results_per_source,
+            sources=sources,
+        )
+        combined: list[Paper] = []
+        for result in per_source.values():
+            combined.extend(result.papers)
+
+        deduped = deduplicate_papers(combined)
+        if max_results is not None:
+            deduped = deduped[:max_results]
+        return deduped
 
 
 def get_paper_source(source: str, **kwargs) -> ArxivSource | PubmedSource | IEEESource:

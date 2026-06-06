@@ -20,6 +20,7 @@ from .paper_sources import (
     PaperSourceAggregator,
     PubmedSource,
     SearchResult,
+    deduplicate_papers,
     get_paper_source,
 )
 from .similarity import (
@@ -37,6 +38,7 @@ __all__ = [
     "PubmedSource",
     "IEEESource",
     "PaperSourceAggregator",
+    "deduplicate_papers",
     "get_paper_source",
     "CitationNode",
     "CitationPath",
