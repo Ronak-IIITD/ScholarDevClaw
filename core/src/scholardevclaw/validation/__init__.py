@@ -37,9 +37,11 @@ from .property_testing import (
     quickcheck,
 )
 from .runner import ValidationRunner
+from .security import SecurityCheckResult
 
 __all__ = [
     "ValidationRunner",
+    "SecurityCheckResult",
     "HypothesisTestResult",
     "PropertyTestConfig",
     "TypeToStrategy",

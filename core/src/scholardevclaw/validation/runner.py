@@ -15,7 +15,6 @@ import importlib.util
 import json
 import logging
 import os
-import re
 import subprocess
 import sys
 import textwrap
@@ -25,6 +24,10 @@ from pathlib import Path
 from typing import Any, cast
 
 from scholardevclaw.patch_generation.generator import PatchGenerator
+from scholardevclaw.validation.security import (
+    SecurityCheckResult,
+    _categorized_security_check,
+)
 
 # ---------------------------------------------------------------------------
 # Specific exception classes for robust error handling
@@ -51,37 +54,10 @@ class ModuleLoadError(Exception):
     """Raised when a Python module cannot be loaded for validation."""
 
 
-# Patterns that indicate potentially destructive operations in scripts
-_DESTRUCTIVE_PATTERNS = [
-    r"rm\s+-rf\s+/",  # Matches rm -rf / and similar
-    r"dd\s+if=.*of=/dev/sd[^ ]",  # dd if=... of=/dev/sd...
-    r"curl\s+[^|]*\|\s*bash",  # curl ... | bash
-    r"wget\s+[^|]*\|\s*bash",  # wget ... | bash
-    r":\(\)\{.*\|\:\)",  # Fork bomb pattern
-    r"os\.system\s*\(",  # os.system() call
-    r"subprocess\.(call|run|Popen|check_output|check_call)\s*\(",  # subprocess calls
-    r"socket\.",  # network socket access
-    r"urllib\.|requests\.",  # HTTP client libraries
-    r"open\s*\(['\"]/(?:etc|proc|sys|dev|run)/",  # sensitive filesystem access
-    # Additional patterns can be added as needed
-]
-
-# Patterns that indicate attempts to bypass the sandbox
-_SANDBOX_ESCAPE_PATTERNS = [
-    r"__import__\s*\(",  # dynamic import
-    r"importlib\.",  # import library
-    r"sys\.modules",  # module manipulation
-    r"getattr\s*\(\s*builtins",  # access builtins
-    r"os\.environ",  # environment variable access
-    r"__class__|__mro__|__subclasses__|__globals__|__builtins__",  # Python introspection for sandbox escape
-    r"compile\s*\(",  # compile code objects
-    r"exec\s*\(",  # execute code objects
-    r"eval\s*\(",  # evaluate code objects
-    r"setattr\s*\(",  # set attributes dynamically
-    r"del\s+os\b|del\s+sys\b|del\s+builtins\b",  # module deletion
-    r"pty\.",  # pseudo-terminal access
-    r"ctypes\.",  # C extension access
-]
+# Security check functions are now in scholardevclaw.validation.security
+# This module provides comprehensive AST-based and regex-based checks.
+# The old pattern-based functions are kept for backward compatibility
+# but delegate to the new comprehensive check.
 
 
 def _is_script_destructive(script: str) -> bool:
@@ -94,9 +70,11 @@ def _is_script_destructive(script: str) -> bool:
     if yolo_mode:
         _logger.debug("YOLO mode active - skipping destructive check")
         return False
-    for pattern in _DESTRUCTIVE_PATTERNS:
-        if re.search(pattern, script, re.IGNORECASE):
-            return True
+    result = _categorized_security_check(script)
+    if result.destructive_issues:
+        for issue in result.destructive_issues:
+            _logger.warning("Blocking destructive script: %s", issue)
+        return True
     return False
 
 
@@ -106,10 +84,30 @@ def _is_sandbox_escape(script: str) -> bool:
     if yolo_mode:
         _logger.debug("YOLO mode active - skipping sandbox escape check")
         return False
-    for pattern in _SANDBOX_ESCAPE_PATTERNS:
-        if re.search(pattern, script, re.IGNORECASE):
-            return True
+    result = _categorized_security_check(script)
+    if result.escape_issues:
+        for issue in result.escape_issues:
+            _logger.warning("Blocking sandbox escape attempt: %s", issue)
+        return True
     return False
+
+
+def _audit_script_security(script: str) -> SecurityCheckResult:
+    """Run the comprehensive security check on *script* and log the result.
+
+    This is a thin observability wrapper around
+    :func:`_categorized_security_check` so callers can record the
+    full categorized result without having to import the security
+    module themselves.
+    """
+    result = _categorized_security_check(script)
+    if not result.is_safe:
+        _logger.info(
+            "Script security check flagged %d destructive / %d escape issues",
+            len(result.destructive_issues),
+            len(result.escape_issues),
+        )
+    return result
 
 
 def _sandbox_preexec() -> None:
