@@ -190,10 +190,12 @@ class ToastStack(Container):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._toasts: list[ToastWidget] = []
+        self._counter: int = 0
 
     def add_toast(self, toast: Toast) -> None:
         """Add a toast to the top of the stack."""
-        widget = ToastWidget(toast, id=f"toast-{int(toast.created_at * 1000)}")
+        self._counter += 1
+        widget = ToastWidget(toast, id=f"toast-{self._counter}")
         self._toasts.insert(0, widget)
         self.mount(widget)
 

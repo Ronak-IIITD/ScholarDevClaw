@@ -915,8 +915,8 @@ class PaperIngestionScreen(ModalScreen[dict[str, str] | None]):
     }
 
     PaperIngestionScreen > Vertical {
-        width: 120;
-        height: 36;
+        width: min(120, 98w);
+        height: min(36, 90h);
         border: round $accent;
         background: #111827;
         padding: 1 2;
@@ -1321,8 +1321,8 @@ class GenerationScreen(ModalScreen[None]):
     }
 
     GenerationScreen > Vertical {
-        width: 124;
-        height: 40;
+        width: min(124, 98w);
+        height: min(40, 90h);
         border: round $accent;
         background: #020617;
         padding: 1 2;
@@ -1650,8 +1650,8 @@ class ProductScreen(ModalScreen[None]):
     }
 
     ProductScreen > Vertical {
-        width: 126;
-        height: 42;
+        width: min(126, 98w);
+        height: min(42, 90h);
         border: round $accent;
         background: #020617;
         padding: 1 2;

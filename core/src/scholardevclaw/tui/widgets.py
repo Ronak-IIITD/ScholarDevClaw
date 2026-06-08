@@ -204,6 +204,9 @@ class LogView(VerticalScroll):
             timestamp = f"[{datetime.now().strftime('%H:%M:%S')}] "
         try:
             line = Static(f"{timestamp}{icon} {text}", classes=f"log-line {level}")
+            # Stash original (text, level) on the widget for diffing in _rerender_visible
+            line._log_text = text  # type: ignore[attr-defined]
+            line._log_level = level  # type: ignore[attr-defined]
         except Exception:
             # No active app context (e.g. unit tests) — record a None placeholder
             # so the buffer entry is still tracked, but skip the mount.
@@ -325,7 +328,39 @@ class LogView(VerticalScroll):
         return len(self._visible_lines)
 
     def _rerender_visible(self) -> None:
-        """Remove all visible log lines and re-mount those that match the filters."""
+        """Incrementally update visible lines to match filters.
+
+        Instead of removing all + remounting all (O(n²) DOM churn),
+        compute the diff between current visible set and desired set,
+        then only add/remove what changed.
+        """
+        # Build the desired visible set (buffer entries that match filters)
+        desired: list[tuple[str, str]] = [
+            (text, level) for text, level in self._buffer if self._matches_filter(text, level)
+        ]
+
+        # Extract stashed (text, level) from currently mounted widgets
+        current_keys: list[tuple[str, str]] = []
+        for widget in self._visible_lines:
+            if widget is None:
+                continue
+            t = getattr(widget, "_log_text", "")
+            lvl = getattr(widget, "_log_level", "info")
+            current_keys.append((t, lvl))
+
+        # If nothing to show and nothing mounted, nothing to do
+        if not desired and not self._visible_lines:
+            return
+
+        # Fast path: just appending (common case — new log lines, no filter change)
+        if len(desired) >= len(current_keys) and desired[: len(current_keys)] == current_keys:
+            for text, level in desired[len(current_keys) :]:
+                self._mount_line(text, level)
+            self._enforce_max_visible()
+            self.scroll_end(animate=False)
+            return
+
+        # General case: full rebuild (unavoidable on filter change)
         for line in self._visible_lines:
             if line is None:
                 continue
@@ -334,9 +369,8 @@ class LogView(VerticalScroll):
             except Exception:
                 pass
         self._visible_lines.clear()
-        for text, level in self._buffer:
-            if self._matches_filter(text, level):
-                self._mount_line(text, level)
+        for text, level in desired:
+            self._mount_line(text, level)
         self._enforce_max_visible()
         self.scroll_end(animate=False)
 
@@ -402,6 +436,7 @@ class StatusBar(Static):
         self._spinner_active: bool = False
         self._spinner_frame: int = 0
         self._spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self._spinner_timer: Any = None
         self._refresh_display()
 
     def set_yolo_mode(self, enabled: bool) -> None:
@@ -471,6 +506,14 @@ class StatusBar(Static):
     def stop_spinner(self) -> None:
         """Stop the indeterminate spinner animation."""
         self._spinner_active = False
+        # Cancel any pending timer to prevent leak
+        timer = getattr(self, "_spinner_timer", None)
+        if timer is not None:
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+            self._spinner_timer = None  # type: ignore[attr-defined]
         self._refresh_display()
 
     def _animate_spinner(self) -> None:
@@ -479,7 +522,7 @@ class StatusBar(Static):
             return
         self._spinner_frame = (self._spinner_frame + 1) % len(self._spinner_frames)
         self._refresh_display()
-        self.set_timer(0.1, self._animate_spinner)
+        self._spinner_timer = self.set_timer(0.1, self._animate_spinner)  # type: ignore[attr-defined]
 
     def start_timer(self) -> None:
         self._start_time = time.perf_counter()
@@ -1282,20 +1325,34 @@ class ChatLog(VerticalScroll):
     }
     """
 
+    _MAX_ENTRIES = 200
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._entries: list[str] = []
+        self._entries: list[tuple[str, Static]] = []
 
     def add_entry(self, role: str, content: str) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
         entry = f"{role} {timestamp} {content}"
-        self._entries.append(entry)
-        self.mount(Static(entry))
+        widget = Static(entry)
+        self._entries.append((entry, widget))
+        self.mount(widget)
+        # Trim oldest if over cap
+        if len(self._entries) > self._MAX_ENTRIES:
+            old_entry, old_widget = self._entries.pop(0)
+            try:
+                old_widget.remove()
+            except Exception:
+                pass
         self.scroll_end(animate=False)
 
     def clear_entries(self) -> None:
-        self.remove_children()
+        for _, widget in self._entries:
+            try:
+                widget.remove()
+            except Exception:
+                pass
         self._entries.clear()
 
     def export_markdown(self) -> str:
-        return "\n".join(self._entries) if self._entries else "No log entries"
+        return "\n".join(entry for entry, _ in self._entries) if self._entries else "No log entries"
