@@ -2,7 +2,37 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-06 (Round 4 — Validation runner hardening + Research intelligence improvements + Parallel Phase Runner + Approval Gates UI + Animated Screen Transitions (TUI))
+**Last updated:** 2026-06-08 (TUI Audit + Fixes: message queue, chat streaming, layout, timer leaks)
+
+### 2026-06-08 (TUI Audit + Fixes — 5 Critical Vulnerabilities)
+
+**Summary:** Comprehensive audit of the TUI codebase (12,817 lines across 17 files) uncovered and fixed 5 high-impact vulnerabilities affecting message queue performance, chat streaming reliability, layout responsiveness, and timer/resource leaks.
+
+**Core — TUI Quality Fixes**
+
+1. **LogView O(n²) filter rerender → incremental diff** (`widgets.py:327`):
+   - `_rerender_visible()` previously removed ALL visible lines then re-mounted ALL matching lines on every filter change (800 entries = 1600 DOM ops).
+   - Now computes diff between current and desired visible sets; fast-path appends new lines in O(k) where k = new lines only. Full rebuild only on actual filter change.
+
+2. **ChatLog unbounded growth → capped at 200 entries** (`widgets.py:1309`):
+   - Added `_MAX_ENTRIES = 200` constant. `add_entry()` now tracks `(entry, widget)` tuples and evicts oldest widget+entry when cap exceeded.
+   - Prevents memory leak and UI slowdown in long chat sessions.
+
+3. **StatusBar spinner timer leak → cancel on stop** (`widgets.py:498`):
+   - `_animate_spinner()` chained `set_timer(0.1, ...)` without tracking the timer handle.
+   - Added `_spinner_timer` attribute; `stop_spinner()` now cancels pending timer before clearing flag. Prevents timer explosion on rapid start/stop cycles.
+
+4. **ToastStack duplicate IDs → incrementing counter** (`toasts.py:190`):
+   - IDs were `toast-{timestamp_ms}` — collisions possible for toasts fired in same millisecond.
+   - Now uses `self._counter += 1` for guaranteed unique IDs.
+
+5. **Modal CSS fixed widths → responsive `min()` clamping** (`screens.py`):
+   - `PaperIngestionScreen`: `width: 120` → `min(120, 98w)`, `height: 36` → `min(36, 90h)`
+   - `GenerationScreen`: `width: 124` → `min(124, 98w)`, `height: 40` → `min(40, 90h)`
+   - `ProductScreen`: `width: 126` → `min(126, 98w)`, `height: 42` → `min(42, 90h)`
+   - Modals now fit on narrow terminals without horizontal scroll/overflow.
+
+**Verification:** All 834 TUI/validation tests + 508 agent tests pass. Ruff + MyPy clean.
 
 ### 2026-06-06 (Round 4 — Animated Screen Transitions (TUI))
 
