@@ -759,7 +759,7 @@ def _fuzzy_match(query: str, text: str) -> tuple[bool, int]:
 
 
 class CommandPalette(ModalScreen[str | None]):
-    """Command chooser with fuzzy search."""
+    """Command chooser with categories, icons, and fuzzy search."""
 
     BINDINGS = [
         ("escape", "dismiss_none", "Dismiss"),
@@ -768,86 +768,157 @@ class CommandPalette(ModalScreen[str | None]):
         ("up", "select_prev", "Prev"),
         ("ctrl+n", "select_next", "Next"),
         ("ctrl+p", "select_prev", "Prev"),
+        ("pageup", "page_up", "Page Up"),
+        ("pagedown", "page_down", "Page Down"),
     ]
 
-    PALETTE_COMMANDS = [
-        "paper",
-        "paper arxiv:1706.03762",
-        "paper ./paper.pdf",
-        "from-paper arxiv:1706.03762",
-        "setup",
-        "/ask explain this repository",
-        "/run analyze ./repo",
-        "/run generate ./repo rmsnorm",
-        "analyze ./repo",
-        "suggest ./repo",
-        "chat hello",
-        "search layer normalization",
-        "map ./repo rmsnorm",
-        "generate ./repo rmsnorm",
-        "validate ./repo",
-        "runs",
-        "inspect",
-        "run show 1",
-        "run events 1",
-        "run rerun 1",
-        "set provider openrouter",
-        "set provider ollama",
-        f"set model {DEFAULT_OPENROUTER_MODEL}",
-        "set mode analyze",
-        "set dir ./repo",
-        ":analyze",
-        ":search",
-        ":edit",
-    ]
+    # Commands organized by category with icons
+    PALETTE_CATEGORIES: dict[str, list[tuple[str, str, str]]] = {
+        "Paper Workflow": [
+            ("📄", "paper", "Start paper workflow"),
+            ("📄", "paper arxiv:1706.03762", "Paper from arXiv"),
+            ("📄", "paper ./paper.pdf", "Paper from PDF"),
+            ("📄", "from-paper arxiv:1706.03762", "From paper source"),
+        ],
+        "Code Actions": [
+            ("🔍", "/run analyze ./repo", "Analyze repository"),
+            ("💡", "/run generate ./repo rmsnorm", "Generate implementation"),
+            ("🔍", "analyze ./repo", "Analyze (legacy)"),
+            ("💡", "suggest ./repo", "Suggest improvements"),
+            ("🗺️", "map ./repo rmsnorm", "Map research to code"),
+            ("⚡", "generate ./repo rmsnorm", "Generate (legacy)"),
+            ("✅", "validate ./repo", "Validate repository"),
+            ("🔗", "integrate ./repo rmsnorm", "Integrate changes"),
+        ],
+        "Search": [
+            ("🔍", "search layer normalization", "Search research"),
+            ("🔍", "/ask explain this repository", "Ask question"),
+            ("💬", "chat hello", "Chat with assistant"),
+        ],
+        "Navigation": [
+            ("📊", "runs", "View run history"),
+            ("🔎", "inspect", "Inspect run details"),
+            ("📋", "run show 1", "Show run #1"),
+            ("📋", "run events 1", "Show run events"),
+            ("🔄", "run rerun 1", "Rerun #1"),
+        ],
+        "Settings": [
+            ("⚙️", "setup", "Configure provider/model"),
+            ("🔧", "set provider openrouter", "Set provider"),
+            ("🔧", "set provider ollama", "Set provider (local)"),
+            ("🔧", f"set model {DEFAULT_OPENROUTER_MODEL}", "Set model"),
+            ("🎯", "set mode analyze", "Set mode"),
+            ("📁", "set dir ./repo", "Set directory"),
+        ],
+        "Modes": [
+            ("📊", ":analyze", "Switch to analyze mode"),
+            ("🔍", ":search", "Switch to search mode"),
+            ("✏️", ":edit", "Switch to edit mode"),
+        ],
+    }
+
+    # Flat list for backward compatibility
+    PALETTE_COMMANDS = [cmd for cmds in PALETTE_CATEGORIES.values() for _, cmd, _ in cmds]
 
     DEFAULT_CSS = """
     CommandPalette {
         align: left top;
         background: $background 80%;
+        layer: overlay;
     }
 
     CommandPalette > Vertical {
-        width: 100%;
+        width: 80%;
+        max-width: 80;
         height: auto;
+        max-height: 80vh;
         padding: 1 2;
+        background: $surface;
+        border: round $accent;
+        overflow-y: auto;
+    }
+
+    CommandPalette .palette-header {
+        width: 100%;
+        height: 1;
+        color: $accent;
+        text-style: bold;
+        padding: 0;
+        margin: 0 0 1 0;
     }
 
     CommandPalette Input {
         width: 100%;
         height: 1;
-        border: none;
+        border: solid $border;
+        padding: 0 1;
+        margin: 0 0 1 0;
+    }
+
+    CommandPalette Input:focus {
+        border: solid $accent;
+    }
+
+    CommandPalette .palette-category {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        text-style: bold;
         padding: 0;
+        margin: 1 0 0 0;
     }
 
     CommandPalette .palette-line {
         width: 100%;
         height: 1;
         color: $text-muted;
+        padding: 0;
+        margin: 0;
     }
 
     CommandPalette .palette-line.-selected {
         color: $accent;
         text-style: bold;
+        background: $surface;
     }
 
-    CommandPalette .palette-line .match-highlight {
+    CommandPalette .palette-line .icon {
         color: $accent;
-        text-style: bold;
+    }
+
+    CommandPalette .palette-line .shortcut {
+        color: $text-muted;
+        text-style: italic;
+    }
+
+    CommandPalette .palette-help {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        padding: 0;
+        margin: 1 0 0 0;
     }
     """
 
     def __init__(self) -> None:
         super().__init__()
         self._selected_index = 0
-        self._filtered_commands: list[tuple[str, int]] = [(cmd, 0) for cmd in self.PALETTE_COMMANDS]
+        self._filtered_commands: list[tuple[str, str, str, int]] = []  # (icon, cmd, desc, score)
+        self._all_commands_with_meta: list[tuple[str, str, str]] = []  # (icon, cmd, desc)
+        self._build_flat_list()
+
+    def _build_flat_list(self) -> None:
+        """Build flat list of all commands with metadata."""
+        self._all_commands_with_meta = []
+        for cmds in self.PALETTE_CATEGORIES.values():
+            for icon, cmd, desc in cmds:
+                self._all_commands_with_meta.append((icon, cmd, desc))
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Commands")
-            yield Input(placeholder="Filter commands (fuzzy)", id="palette-input")
-            for command, _ in self._filtered_commands[:3]:
-                yield Static(command, classes="palette-line")
+            yield Static("⌘ Command Palette", classes="palette-header")
+            yield Input(placeholder="Type to search... (fuzzy)", id="palette-input")
+            yield Static("↑↓ navigate  ·  Enter run  ·  Esc close", classes="palette-help")
 
     def on_mount(self) -> None:
         self.query_one("#palette-input", Input).focus()
@@ -866,41 +937,93 @@ class CommandPalette(ModalScreen[str | None]):
             self._selected_index = (self._selected_index - 1) % len(self._filtered_commands)
             self._refresh()
 
+    def action_page_up(self) -> None:
+        if self._filtered_commands:
+            self._selected_index = max(0, self._selected_index - 10)
+            self._refresh()
+
+    def action_page_down(self) -> None:
+        if self._filtered_commands:
+            self._selected_index = min(len(self._filtered_commands) - 1, self._selected_index + 10)
+            self._refresh()
+
     def action_run_selected(self) -> None:
         if not self._filtered_commands:
             self.dismiss(None)
             return
-        self.dismiss(self._filtered_commands[self._selected_index][0])
+        self.dismiss(self._filtered_commands[self._selected_index][1])
 
     @on(Input.Changed, "#palette-input")
     def on_input_changed(self, event: Input.Changed) -> None:
         query = event.value.strip()
         if not query:
-            self._filtered_commands = [(cmd, 0) for cmd in self.PALETTE_COMMANDS]
+            self._filtered_commands = [
+                (icon, cmd, desc, 0) for icon, cmd, desc in self._all_commands_with_meta
+            ]
         else:
             matches = []
-            for cmd in self.PALETTE_COMMANDS:
+            seen: set[str] = set()
+            for icon, cmd, desc in self._all_commands_with_meta:
+                if cmd in seen:
+                    continue
                 matched, score = _fuzzy_match(query, cmd)
+                if not matched:
+                    matched, score = _fuzzy_match(query, desc)
                 if matched:
-                    matches.append((cmd, score))
-            # Sort by score (lower = better match)
-            matches.sort(key=lambda x: x[1])
+                    matches.append((icon, cmd, desc, score))
+                    seen.add(cmd)
+            matches.sort(key=lambda x: x[3])
             self._filtered_commands = matches
         self._selected_index = 0
         self._refresh()
 
     def _refresh(self) -> None:
-        lines = list(self.query(".palette-line"))
-        for line in lines:
-            line.remove()
+        """Re-render the command list with categories."""
+        # Remove old lines and categories
+        for widget in list(self.query(".palette-line, .palette-category")):
+            widget.remove()
+
         if not self._filtered_commands:
             self.mount(Static("No matches", classes="palette-line"))
             return
-        for index, (command, _) in enumerate(self._filtered_commands[:3]):
+
+        # Group by category for display
+        query = self.query_one("#palette-input", Input).value.strip()
+        if not query:
+            # Show grouped by category
+            self._render_grouped()
+        else:
+            # Show flat filtered list
+            self._render_filtered()
+
+    def _render_grouped(self) -> None:
+        """Render commands grouped by category."""
+        index = 0
+        for category, cmds in self.PALETTE_CATEGORIES.items():
+            # Check if any commands in this category are visible
+            visible_cmds = []
+            for icon, cmd, desc in cmds:
+                if index < len(self._filtered_commands):
+                    visible_cmds.append((icon, cmd, desc, index))
+                    index += 1
+
+            if visible_cmds:
+                self.mount(Static(f"  {category}", classes="palette-category"))
+                for icon, cmd, desc, idx in visible_cmds:
+                    selected = idx == self._selected_index
+                    classes = "palette-line"
+                    if selected:
+                        classes += " -selected"
+                    self.mount(Static(f"  {icon}  {desc}", classes=classes))
+
+    def _render_filtered(self) -> None:
+        """Render flat filtered list."""
+        for index, (icon, cmd, desc, _) in enumerate(self._filtered_commands[:15]):
+            selected = index == self._selected_index
             classes = "palette-line"
-            if index == self._selected_index:
+            if selected:
                 classes += " -selected"
-            self.mount(Static(command, classes=classes))
+            self.mount(Static(f"  {icon}  {desc}  ·  {cmd}", classes=classes))
 
 
 class PaperIngestionScreen(ModalScreen[dict[str, str] | None]):

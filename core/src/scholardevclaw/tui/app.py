@@ -82,6 +82,7 @@ from .widgets_new import (
     InlineInput,
     InlinePatchReview,
     InlineProgressCard,
+    WelcomeMessage,
     WorkflowCard,
     make_assistant_message,
     make_system_message,
@@ -585,6 +586,7 @@ class ScholarDevClawApp(App[None]):
         with Horizontal(id="workspace"):
             with Vertical(id="main-pane"):
                 yield ConversationView(id="conversation-view")
+                yield WelcomeMessage(id="welcome-message")
             with Vertical(id="side-pane"):
                 yield RunInspector(id="run-inspector")
                 yield HistoryPane(id="history-pane")
@@ -2626,10 +2628,30 @@ class ScholarDevClawApp(App[None]):
         conv = self.query_one("#conversation-view", ConversationView)
         msg = make_system_message(line)
         conv.add_message(msg)
+        # Hide welcome message when first message is added
+        self._hide_welcome_message()
+
+    def _hide_welcome_message(self) -> None:
+        """Hide the welcome message when conversation starts."""
+        try:
+            welcome = self.query_one("#welcome-message", WelcomeMessage)
+            welcome.display = False
+        except Exception:
+            pass
 
     def _clear_output(self) -> None:
         """Clear all messages from the conversation view."""
         self.query_one("#conversation-view", ConversationView).clear_messages()
+        # Show welcome message again when conversation is cleared
+        self._show_welcome_message()
+
+    def _show_welcome_message(self) -> None:
+        """Show the welcome message."""
+        try:
+            welcome = self.query_one("#welcome-message", WelcomeMessage)
+            welcome.display = True
+        except Exception:
+            pass
 
     def _record_token_usage(self, input_tokens: int, output_tokens: int) -> None:
         self._session_input_tokens += max(0, input_tokens)

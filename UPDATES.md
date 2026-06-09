@@ -2,7 +2,51 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-09 (TUI UI/UX Redesign: Phase 3 inline diff/patch review, Phase 2 inline conversation flow)
+**Last updated:** 2026-06-09 (TUI UI/UX Redesign: Phase 4 command palette + keyboard UX, Phase 3 inline diff/patch review)
+
+### 2026-06-09 (TUI UI/UX Redesign — Phase 4: Command Palette + Keyboard UX)
+
+**Summary:** Redesigned the command palette with categorized commands, icons, and improved keyboard navigation. Added welcome message to empty conversation view. This completes the 4-phase TUI UI/UX redesign.
+
+**Core — Redesigned Command Palette** (`screens.py`)
+
+1. **Categorized Commands**: Commands organized into 6 categories:
+   - Paper Workflow (4 commands)
+   - Code Actions (8 commands)
+   - Search (3 commands)
+   - Navigation (5 commands)
+   - Settings (6 commands)
+   - Modes (3 commands)
+
+2. **Icons & Descriptions**: Each command now has:
+   - Category icon (📄, 🔍, 💡, 🗺️, ⚡, ✅, 🔗, 💬, 📊, 🔎, 📋, 🔄, ⚙️, 🔧, 🎯, 📁, ✏️)
+   - Human-readable description
+   - Original command text shown in search results
+
+3. **Improved Styling**:
+   - Centered modal with rounded border
+   - Category headers with bold text
+   - Selected item highlighting
+   - Help text at bottom
+
+4. **Enhanced Navigation**:
+   - Page Up/Down for快速 scrolling
+   - Category-based grouping when no search query
+   - Flat filtered list when searching
+   - Deduplication of commands
+
+**Core — Welcome Message** (`app.py`)
+
+1. **Empty Conversation**: Shows `WelcomeMessage` widget when conversation is empty
+2. **Auto-hide**: Welcome message hides when first message is added
+3. **Auto-show**: Welcome message reappears when conversation is cleared
+
+**Core — Tests**
+
+1. All 283 TUI tests passing
+2. No regressions in existing functionality
+
+---
 
 ### 2026-06-09 (TUI UI/UX Redesign — Phase 3: Inline Diff & Patch Review)
 
