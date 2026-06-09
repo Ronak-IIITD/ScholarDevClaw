@@ -19,7 +19,7 @@ class SessionState:
     """Persisted session state."""
 
     # Window/layout state
-    theme: str = "default"
+    theme: str = "opencode"
     directory: str = "."
     mode: str = "analyze"
     provider: str = "setup"

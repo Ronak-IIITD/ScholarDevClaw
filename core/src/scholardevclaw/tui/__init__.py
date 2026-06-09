@@ -33,6 +33,21 @@ __all__ = [
     "ProgressBar",
     "TypingIndicator",
     "Marquee",
+    # New conversation widgets
+    "ConversationView",
+    "MessageBubble",
+    "ActionBar",
+    "ProgressViz",
+    "StreamingIndicator",
+    "ContextPanel",
+    "WelcomeMessage",
+    "ConversationMessage",
+    "MessageRole",
+    "MessageStatus",
+    "make_user_message",
+    "make_assistant_message",
+    "make_system_message",
+    "make_tool_message",
 ]
 
 
@@ -87,6 +102,41 @@ def __getattr__(name):
             Pulse,  # noqa: F401
             Spinner,  # noqa: F401
             TypingIndicator,  # noqa: F401
+        )
+
+        return locals()[name]
+
+    if name in (
+        "ConversationView",
+        "MessageBubble",
+        "ActionBar",
+        "ProgressViz",
+        "StreamingIndicator",
+        "ContextPanel",
+        "WelcomeMessage",
+        "ConversationMessage",
+        "MessageRole",
+        "MessageStatus",
+        "make_user_message",
+        "make_assistant_message",
+        "make_system_message",
+        "make_tool_message",
+    ):
+        from .widgets_new import (
+            ActionBar,  # noqa: F401
+            ConversationMessage,  # noqa: F401
+            ConversationView,  # noqa: F401
+            ContextPanel,  # noqa: F401
+            MessageBubble,  # noqa: F401
+            MessageRole,  # noqa: F401
+            MessageStatus,  # noqa: F401
+            ProgressViz,  # noqa: F401
+            StreamingIndicator,  # noqa: F401
+            WelcomeMessage,  # noqa: F401
+            make_assistant_message,  # noqa: F401
+            make_system_message,  # noqa: F401
+            make_tool_message,  # noqa: F401
+            make_user_message,  # noqa: F401
         )
 
         return locals()[name]

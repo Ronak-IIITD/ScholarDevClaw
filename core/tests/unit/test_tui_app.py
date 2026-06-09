@@ -217,7 +217,7 @@ def test_compose_includes_split_workspace_and_side_inspector_history_pane():
     assert 'Vertical(id="main-pane")' in source
     assert 'Vertical(id="side-pane")' in source
     assert "PhaseTracker" in source
-    assert "LogView" in source
+    assert "ConversationView" in source
     assert "HistoryPane" in source
     assert "RunInspector" in source
 
@@ -2072,9 +2072,8 @@ def test_app_has_log_filter_actions():
     source = inspect.getsource(ScholarDevClawApp)
     assert "def action_cycle_log_filter" in source
     assert "def action_open_log_search" in source
-    # The cycle action must query the LogView by id and call its method
-    assert 'query_one("#main-output", LogView)' in source
-    assert "cycle_severity_filter" in source
+    # The cycle action is now a no-op for conversation view
+    assert "Log filter" in source
     assert "LogSearchScreen" in source
 
 

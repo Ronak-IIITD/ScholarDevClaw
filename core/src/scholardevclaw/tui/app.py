@@ -75,6 +75,12 @@ from .theme import COLORS as TUI_COLORS
 from .theme_switcher import ThemeSwitcherScreen
 from .toasts import show_toast
 from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspector, StatusBar
+from .widgets_new import (
+    ConversationView,
+    make_assistant_message,
+    make_system_message,
+    make_user_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -429,23 +435,26 @@ class ScholarDevClawApp(App[None]):
         layout: vertical;
         background: $background;
         color: $text;
-        padding: 0 1;
+        padding: 0;
     }
 
     #header {
         height: 1;
         color: $accent;
         text-style: bold;
+        padding: 0 1;
     }
 
     .separator {
         height: 1;
         color: $border;
+        padding: 0;
     }
 
     #command-meta {
         height: auto;
         color: $text-muted;
+        padding: 0 1;
     }
 
     #workspace {
@@ -454,15 +463,24 @@ class ScholarDevClawApp(App[None]):
     }
 
     #main-pane {
-        width: 2fr;
+        width: 1fr;
         height: 1fr;
     }
 
     #side-pane {
-        width: 2fr;
-        min-width: 48;
+        width: 40;
+        min-width: 30;
         max-width: 60;
         height: 1fr;
+        background: $surface;
+        border-left: tall $border;
+    }
+
+    #prompt-area {
+        width: 100%;
+        height: auto;
+        padding: 0 1;
+        border-top: tall $border;
     }
 
     #prompt-input {
@@ -556,22 +574,19 @@ class ScholarDevClawApp(App[None]):
 
     def compose(self) -> ComposeResult:
         yield Static("ScholarDevClaw", id="header")
-        yield Static("────────────────────────", classes="separator")
         yield StatusBar(id="status-bar")
-        yield Static("────────────────────────", classes="separator")
         yield PhaseTracker(id="phase-tracker")
-        yield Static("────────────────────────", classes="separator")
         with Horizontal(id="workspace"):
             with Vertical(id="main-pane"):
-                yield LogView(id="main-output")
+                yield ConversationView(id="conversation-view")
             with Vertical(id="side-pane"):
                 yield RunInspector(id="run-inspector")
-                yield Static("────────────────────────", classes="separator")
                 yield HistoryPane(id="history-pane")
-        yield Static("────────────────────────", classes="separator")
-        with Vertical():
+        with Vertical(id="prompt-area"):
             yield Static("", id="command-meta")
-            yield PromptInput(placeholder="> ", id="prompt-input")
+            yield PromptInput(
+                placeholder="Ask anything...  (Ctrl+K for palette)", id="prompt-input"
+            )
 
     def on_mount(self) -> None:
         # Load persisted session first
@@ -2643,10 +2658,14 @@ class ScholarDevClawApp(App[None]):
         self.query_one("#status-bar", StatusBar).set_status(message, level)
 
     def _append_output(self, line: str, level: str = "auto") -> None:
-        self.query_one("#main-output", LogView).add_log(line, level)
+        """Append a system message to the conversation view."""
+        conv = self.query_one("#conversation-view", ConversationView)
+        msg = make_system_message(line)
+        conv.add_message(msg)
 
     def _clear_output(self) -> None:
-        self.query_one("#main-output", LogView).clear_logs()
+        """Clear all messages from the conversation view."""
+        self.query_one("#conversation-view", ConversationView).clear_messages()
 
     def _record_token_usage(self, input_tokens: int, output_tokens: int) -> None:
         self._session_input_tokens += max(0, input_tokens)
@@ -3091,15 +3110,19 @@ class ScholarDevClawApp(App[None]):
         return max(1, len(stripped) // 4)
 
     def _set_progress(self, action: str, fraction: float, label: str | None = None) -> None:
+        """Update progress as a system message in the conversation."""
         text = label or PROGRESS_LABELS.get(action, "Working...")
         line = f"{text} {self._progress_bar(fraction)}"
-        self.query_one("#main-output", LogView).set_progress(line, "system")
+        # For now, append as system message. Could be enhanced with ProgressViz
+        self._append_output(line, "system")
 
     def _clear_progress(self) -> None:
-        self.query_one("#main-output", LogView).clear_progress()
+        """Clear progress display (no-op for conversation view)."""
+        pass
 
     def _set_live_text(self, text: str, level: str = "info") -> None:
-        self.query_one("#main-output", LogView).set_progress(text, level)
+        """Set live text as system message."""
+        self._append_output(text, level)
 
     def _progress_bar(self, fraction: float) -> str:
         width = 10
@@ -5144,23 +5167,8 @@ class ScholarDevClawApp(App[None]):
             self._set_status("Inspector unavailable", "warning")
 
     def action_cycle_log_filter(self) -> None:
-        """Cycle the LogView severity filter (Ctrl+L)."""
-        try:
-            log_view = self.query_one("#main-output", LogView)
-        except Exception:
-            self._set_status("Log view unavailable", "warning")
-            return
-        new_level = log_view.cycle_severity_filter()
-        if new_level == "all":
-            label = "Log filter: all (no filter)"
-        else:
-            label = f"Log filter: {new_level}"
-        self._set_status(label, "accent")
-        # Push a toast for short feedback
-        try:
-            self.notify_toast(label, severity="info")
-        except Exception:
-            pass
+        """Cycle the log filter (Ctrl+L). No-op for conversation view."""
+        self._set_status("Log filter: all (conversation view)", "info")
 
     def action_open_log_search(self) -> None:
         """Open the log search modal (``/``)."""

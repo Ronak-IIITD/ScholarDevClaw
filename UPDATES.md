@@ -2,7 +2,89 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-08 (TUI Audit + Fixes: message queue, chat streaming, layout, timer leaks)
+**Last updated:** 2026-06-09 (TUI UI/UX Redesign: OpenCode-style themes, conversation-centric layout, new widgets)
+
+### 2026-06-09 (TUI UI/UX Redesign — Phase 1: Foundation)
+
+**Summary:** Major UI/UX overhaul to transform the TUI from a command-first shell into a modern conversation-centric interface inspired by Claude Code and OpenCode. This is Phase 1 of a multi-phase redesign.
+
+**Core — Theme System Overhaul** (`theme.py`)
+
+1. **New 4-theme system** with OpenCode-style (cyan accent) as default:
+   - `opencode`: Cool dark with cyan accent (#06b6d4) — new default
+   - `claude`: Warm dark with blue accent (#58a6ff)
+   - `minimal`: Clean monochrome
+   - `high_contrast`: Maximum readability
+
+2. **41 color variables per theme** covering backgrounds, text, accents, semantic states, code blocks, diffs, and provider-specific colors.
+
+3. **Theme accessor functions**:
+   - `get_theme(name)`: Full theme config
+   - `get_theme_colors(name)`: Just the color palette
+   - `get_color(key, theme)`: Single color lookup
+   - `list_themes()`: Theme summaries for switcher
+
+**Core — New Conversation Widgets** (`widgets_new.py`)
+
+1. **ConversationView**: Main scrolling conversation area replacing LogView
+   - Vertical scroll with message stream
+   - Auto-scroll to new messages
+   - Message lookup by ID
+
+2. **MessageBubble**: Individual message display with role indicator
+   - User/assistant/system/tool message types
+   - Markdown rendering for assistant messages
+   - Streaming status indicator
+   - Timestamp display
+
+3. **ActionBar**: Inline action buttons for diffs/patches
+   - Configurable action buttons with shortcuts
+   - Click and keyboard navigation
+   - Variant styling (primary, success, error)
+
+4. **ProgressViz**: Rich progress visualization
+   - Multi-phase progress tracking
+   - Per-phase status icons
+   - Token count and elapsed time display
+
+5. **StreamingIndicator**: Animated typing indicator
+   - Braille character animation
+   - Start/stop control
+
+6. **ContextPanel**: Collapsible side panel
+   - Git status, file tree, run history sections
+   - Dynamic section management
+
+7. **WelcomeMessage**: First-run welcome display
+   - Tips and shortcuts
+
+8. **Message dataclasses**: `ConversationMessage`, `MessageRole`, `MessageStatus`
+   - Factory functions: `make_user_message()`, `make_assistant_message()`, etc.
+
+**Core — Main App Layout Redesign** (`app.py`)
+
+1. **Conversation-centric layout**: Replaced `LogView` with `ConversationView`
+2. **Cleaner UI**: Removed separator lines between sections
+3. **Updated CSS**: New layout with proper padding and borders
+4. **Updated prompt**: "Ask anything... (Ctrl+K for palette)" placeholder
+5. **Backward compatibility**: `_append_output()` now creates system messages
+
+**Core — Theme Switcher Update** (`theme_switcher.py`)
+
+1. **New theme list**: Shows all 4 themes with descriptions
+2. **Color preview**: Shows accent/success/warning/error color bars
+3. **Default theme**: Changed from "default" to "opencode"
+
+**Core — Session Persistence** (`session.py`)
+
+1. **Default theme**: Changed from "default" to "opencode"
+
+**Tests Updated**
+
+1. `test_tui_app.py`: Updated compose test to check for `ConversationView`
+2. `test_tui_theme_switcher.py`: Updated for new theme names and order
+
+---
 
 ### 2026-06-08 (TUI Audit + Fixes — 5 Critical Vulnerabilities)
 

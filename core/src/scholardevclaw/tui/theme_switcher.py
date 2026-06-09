@@ -1,6 +1,7 @@
 """Theme switcher modal for the TUI.
 
 Allows users to preview and select from available themes.
+Updated to use the new theme system with 4 polished themes.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import ListItem, ListView, Static
 
-from .theme import get_theme
+from .theme import THEMES, get_theme_colors
 
 HINT_TEXT = "[dim]↑/↓ navigate · Enter select · Esc cancel[/dim]"
 
@@ -34,10 +35,10 @@ class ThemeSwitcherScreen(ModalScreen[str | None]):
     }
 
     ThemeSwitcherScreen > Vertical {
-        width: 60%;
+        width: 70%;
         height: auto;
         max-height: 80%;
-        max-width: 80;
+        max-width: 90;
         padding: 1 2;
         border: tall $accent;
         background: $surface;
@@ -76,10 +77,10 @@ class ThemeSwitcherScreen(ModalScreen[str | None]):
     }
     """
 
-    def __init__(self, current_theme: str = "default", **kwargs: Any) -> None:
+    def __init__(self, current_theme: str = "opencode", **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._current_theme = current_theme
-        self._themes = ["default", "minimal", "high_contrast"]
+        self._themes = list(THEMES.keys())
         self._selected_index = (
             self._themes.index(current_theme) if current_theme in self._themes else 0
         )
@@ -103,24 +104,24 @@ class ThemeSwitcherScreen(ModalScreen[str | None]):
     def _refresh_list(self) -> None:
         list_view = self.query_one("#theme-switcher-list", ListView)
         list_view.clear()
-        for theme_name in self._themes:
-            marker = " ● " if theme_name == self._current_theme else "   "
-            label = f"{marker}{theme_name}"
+        for theme_key in self._themes:
+            theme = THEMES[theme_key]
+            marker = " ● " if theme_key == self._current_theme else "   "
+            label = f"{marker}{theme['name']}  [dim]{theme['description']}[/dim]"
             list_view.append(ListItem(Static(label)))
 
     def _update_preview(self) -> None:
-        theme_name = self._themes[self._selected_index]
-        theme = get_theme(theme_name)
-        colors = theme["colors"]
+        theme_key = self._themes[self._selected_index]
+        colors = get_theme_colors(theme_key)
         preview = (
-            f"[b]{theme_name}[/b]\n"
+            f"[b]{THEMES[theme_key]['name']}[/b]  {THEMES[theme_key]['description']}\n"
             f"  background: {colors['background']}\n"
             f"  surface:    {colors['surface']}\n"
             f"  text:       {colors['text']}\n"
-            f"  accent:     {colors['accent']}\n"
-            f"  success:    {colors['success']}\n"
-            f"  warning:    {colors['warning']}\n"
-            f"  error:      {colors['error']}"
+            f"  accent:     {colors['accent']}  {'█' * 8}\n"
+            f"  success:    {colors['success']}  {'█' * 8}\n"
+            f"  warning:    {colors['warning']}  {'█' * 8}\n"
+            f"  error:      {colors['error']}  {'█' * 8}"
         )
         try:
             self.query_one("#theme-switcher-preview", Static).update(preview)

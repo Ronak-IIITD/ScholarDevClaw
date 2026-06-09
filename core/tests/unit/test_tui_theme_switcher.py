@@ -14,15 +14,15 @@ class TestThemeSwitcherScreenInstantiation:
         screen = ThemeSwitcherScreen()
         assert screen is not None
 
-    def test_default_theme_is_default(self) -> None:
+    def test_default_theme_is_opencode(self) -> None:
         screen = ThemeSwitcherScreen()
-        assert screen._current_theme == "default"
+        assert screen._current_theme == "opencode"
         assert screen._selected_index == 0
 
     def test_accepts_current_theme(self) -> None:
         screen = ThemeSwitcherScreen(current_theme="minimal")
         assert screen._current_theme == "minimal"
-        assert screen._selected_index == 1
+        assert screen._selected_index == 2
 
     def test_inherits_modal_screen(self) -> None:
         from textual.screen import ModalScreen
@@ -33,13 +33,14 @@ class TestThemeSwitcherScreenInstantiation:
 class TestThemeSwitcherThemes:
     def test_has_all_themes(self) -> None:
         screen = ThemeSwitcherScreen()
-        assert "default" in screen._themes
+        assert "opencode" in screen._themes
+        assert "claude" in screen._themes
         assert "minimal" in screen._themes
         assert "high_contrast" in screen._themes
 
     def test_theme_order(self) -> None:
         screen = ThemeSwitcherScreen()
-        assert screen._themes == ["default", "minimal", "high_contrast"]
+        assert screen._themes == ["opencode", "claude", "minimal", "high_contrast"]
 
 
 class TestThemeSwitcherActions:
