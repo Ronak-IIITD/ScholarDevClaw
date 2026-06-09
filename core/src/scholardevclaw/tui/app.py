@@ -78,7 +78,9 @@ from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspect
 from .widgets_new import (
     ConversationView,
     InlineConfirmBar,
+    InlineDiffCard,
     InlineInput,
+    InlinePatchReview,
     InlineProgressCard,
     WorkflowCard,
     make_assistant_message,
@@ -5315,6 +5317,117 @@ class ScholarDevClawApp(App[None]):
 
         conv.mount(card)
         conv.scroll_end(animate=False)
+
+    # ------------------------------------------------------------------
+    # Inline diff/patch review methods
+    # ------------------------------------------------------------------
+
+    def _show_inline_patch_review(self, payload: dict[str, Any]) -> InlinePatchReview:
+        """Show inline patch review in the conversation."""
+        from .diff_viewer import patch_diff_from_payload
+
+        conv = self.query_one("#conversation-view", ConversationView)
+
+        try:
+            patch = patch_diff_from_payload(payload)
+        except Exception as exc:
+            self._append_output(f"Could not render diff: {exc}", "error")
+            return InlinePatchReview(title="Error")
+
+        # Convert PatchDiff to inline format
+        files: list[dict[str, Any]] = []
+        for fd in patch.files:
+            diff_lines: list[tuple[str, str]] = []
+
+            # File header
+            diff_lines.append((fd.short_label(), "header"))
+            diff_lines.append((f"+{fd.additions} -{fd.deletions}", "hunk"))
+
+            # Generate diff content
+            from .diff_viewer import make_unified_diff, _show_new_file, _show_deleted_file
+
+            if fd.status == "added":
+                body = _show_new_file(fd.modified)
+            elif fd.status == "deleted":
+                body = _show_deleted_file(fd.original)
+            else:
+                body = make_unified_diff(fd)
+
+            # Parse diff lines into (text, style) tuples
+            for line in body.split("\n"):
+                if line.startswith("[green]"):
+                    clean = line.replace("[green]", "").replace("[/green]", "")
+                    diff_lines.append((clean, "addition"))
+                elif line.startswith("[red]"):
+                    clean = line.replace("[red]", "").replace("[/red]", "")
+                    diff_lines.append((clean, "deletion"))
+                elif line.startswith("[cyan]"):
+                    clean = line.replace("[cyan]", "").replace("[/cyan]", "")
+                    diff_lines.append((clean, "header"))
+                elif line.startswith("[dim]"):
+                    clean = line.replace("[dim]", "").replace("[/dim]", "")
+                    diff_lines.append((clean, "hunk"))
+                else:
+                    diff_lines.append((line, "context"))
+
+            files.append(
+                {
+                    "path": fd.path,
+                    "status": fd.status,
+                    "additions": fd.additions,
+                    "deletions": fd.deletions,
+                    "diff_lines": diff_lines,
+                }
+            )
+
+        # Create and mount the review widget
+        review = InlinePatchReview(title=patch.title)
+        review.set_files(files)
+        conv.mount(review)
+        conv.scroll_end(animate=False)
+
+        # Store reference for event handling
+        self._inline_patch_review = review
+        self._inline_patch_payload = payload
+
+        return review
+
+    @on(InlinePatchReview.FileAction)
+    def _on_inline_file_action(self, event: InlinePatchReview.FileAction) -> None:
+        """Handle per-file action (accept/reject/regenerate)."""
+        if not hasattr(self, "_inline_patch_review"):
+            return
+
+        path = event.file_path
+        action = event.action
+        self._inline_patch_review.set_file_decision(path, action)
+        self._append_output(f"File {path}: {action}", "accent")
+
+    @on(InlinePatchReview.AllFilesAction)
+    def _on_inline_all_files_action(self, event: InlinePatchReview.AllFilesAction) -> None:
+        """Handle all-files action (accept_all/reject_all)."""
+        if not hasattr(self, "_inline_patch_review"):
+            return
+
+        action = event.action
+        review = self._inline_patch_review
+        for f in review._files:
+            path = f.get("path", "")
+            if path:
+                decision = "accept" if action == "accept_all" else "reject"
+                review.set_file_decision(path, decision)
+        self._append_output(f"All files: {action}", "accent")
+
+    def action_view_last_patch_inline(self) -> None:
+        """Show the last patch as inline review in the conversation."""
+        if not self._last_patch:
+            self.notify_toast(
+                "No patch available yet — run :generate or integrate to produce one",
+                severity="info",
+                title="No patch",
+            )
+            return
+        self._show_inline_patch_review(self._last_patch)
 
     def action_focus_inspector(self) -> None:
         try:

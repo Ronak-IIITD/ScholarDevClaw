@@ -2,7 +2,42 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-09 (TUI UI/UX Redesign: Phase 2 inline conversation flow, OpenCode-style themes)
+**Last updated:** 2026-06-09 (TUI UI/UX Redesign: Phase 3 inline diff/patch review, Phase 2 inline conversation flow)
+
+### 2026-06-09 (TUI UI/UX Redesign — Phase 3: Inline Diff & Patch Review)
+
+**Summary:** Added inline diff and patch review widgets with per-file accept/reject/regenerate actions. Patches now appear as rich, navigable cards directly in the conversation flow with keyboard shortcuts for quick review.
+
+**Core — New Inline Diff Widgets** (`widgets_new.py`)
+
+1. **InlineDiffCard**: File diff displayed inline with color-coded lines
+   - File header with status icon (+, ~, -, →) and path
+   - Additions/deletions count
+   - Color-coded diff lines (green for additions, red for deletions)
+   - Style classes: addition, deletion, header, hunk, context
+
+2. **InlinePatchReview**: Complete patch review widget with file navigation
+   - Summary line with file count and total additions/deletions
+   - File tabs showing all files with their decisions
+   - Diff content for the currently selected file (capped at 50 lines)
+   - Per-file actions: Accept (a), Reject (x), Regenerate (g)
+   - All-files actions: Accept All (A), Reject All (X)
+   - Keyboard navigation: Tab/→ next file, Shift+Tab/← prev file
+   - Visual feedback for accepted/rejected/regenerated files
+
+**Core — App Integration** (`app.py`)
+
+1. **Inline Patch Review**: `_show_inline_patch_review()` shows patch as inline review instead of `DiffViewer` modal
+2. **Per-file Actions**: `_on_inline_file_action()` handles accept/reject/regenerate per file
+3. **All-files Actions**: `_on_inline_all_files_action()` handles accept_all/reject_all
+4. **F3 Keybinding**: `action_view_last_patch_inline()` shows last patch inline (alternative to modal)
+
+**Core — Tests** (`test_tui_inline_widgets.py`)
+
+1. 10 new tests for InlineDiffCard and InlinePatchReview widgets
+2. Full TUI test suite: 283/283 passing
+
+---
 
 ### 2026-06-09 (TUI UI/UX Redesign — Phase 2: Inline Conversation Flow)
 

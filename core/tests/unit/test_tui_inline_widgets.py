@@ -191,3 +191,128 @@ def test_conversationview_add_assistant_message():
     msg = make_assistant_message("I can help with that")
     assert msg.role.value == "assistant"
     assert msg.content == "I can help with that"
+
+
+# ---------------------------------------------------------------------------
+# InlineDiffCard
+# ---------------------------------------------------------------------------
+
+
+def test_inlinediffcard_set_file_info():
+    from scholardevclaw.tui.widgets_new import InlineDiffCard
+
+    card = InlineDiffCard()
+    card.set_file_info("test.py", "modified", additions=10, deletions=5)
+    assert card._file_path == "test.py"
+    assert card._status == "modified"
+    assert card._additions == 10
+    assert card._deletions == 5
+
+
+def test_inlinediffcard_set_diff_lines():
+    from scholardevclaw.tui.widgets_new import InlineDiffCard
+
+    card = InlineDiffCard()
+    lines = [
+        ("+ new line", "addition"),
+        ("- old line", "deletion"),
+        ("  context line", "context"),
+    ]
+    card.set_diff_lines(lines)
+    assert len(card._diff_lines) == 3
+    assert card._diff_lines[0] == ("+ new line", "addition")
+
+
+def test_inlinediffcard_add_diff_line():
+    from scholardevclaw.tui.widgets_new import InlineDiffCard
+
+    card = InlineDiffCard()
+    card.add_diff_line("+ added", "addition")
+    card.add_diff_line("- removed", "deletion")
+    assert len(card._diff_lines) == 2
+
+
+def test_inlinediffcard_clear_diff_lines():
+    from scholardevclaw.tui.widgets_new import InlineDiffCard
+
+    card = InlineDiffCard()
+    card.add_diff_line("+ line", "addition")
+    card.clear_diff_lines()
+    assert len(card._diff_lines) == 0
+
+
+# ---------------------------------------------------------------------------
+# InlinePatchReview
+# ---------------------------------------------------------------------------
+
+
+def test_inlinepatchreview_set_files():
+    from scholardevclaw.tui.widgets_new import InlinePatchReview
+
+    review = InlinePatchReview(title="Test Patch")
+    files = [
+        {"path": "a.py", "status": "modified", "additions": 5, "deletions": 2, "diff_lines": []},
+        {"path": "b.py", "status": "added", "additions": 10, "deletions": 0, "diff_lines": []},
+    ]
+    review.set_files(files)
+    assert len(review._files) == 2
+    assert review._current_file_index == 0
+
+
+def test_inlinepatchreview_add_file():
+    from scholardevclaw.tui.widgets_new import InlinePatchReview
+
+    review = InlinePatchReview()
+    review.add_file("test.py", "modified", additions=3, deletions=1)
+    assert len(review._files) == 1
+    assert review._files[0]["path"] == "test.py"
+
+
+def test_inlinepatchreview_next_prev_file():
+    from scholardevclaw.tui.widgets_new import InlinePatchReview
+
+    review = InlinePatchReview()
+    review.add_file("a.py", "modified")
+    review.add_file("b.py", "added")
+    review.add_file("c.py", "deleted")
+
+    assert review._current_file_index == 0
+    review.next_file()
+    assert review._current_file_index == 1
+    review.next_file()
+    assert review._current_file_index == 2
+    review.next_file()  # Wraps around
+    assert review._current_file_index == 0
+    review.prev_file()  # Wraps around
+    assert review._current_file_index == 2
+
+
+def test_inlinepatchreview_set_file_decision():
+    from scholardevclaw.tui.widgets_new import InlinePatchReview
+
+    review = InlinePatchReview()
+    review.add_file("a.py", "modified")
+    review.set_file_decision("a.py", "accept")
+    assert review._file_decisions["a.py"] == "accept"
+
+
+def test_inlinepatchreview_get_total_stats():
+    from scholardevclaw.tui.widgets_new import InlinePatchReview
+
+    review = InlinePatchReview()
+    review.add_file("a.py", "modified", additions=5, deletions=2)
+    review.add_file("b.py", "added", additions=10, deletions=0)
+    total_adds, total_dels = review._get_total_stats()
+    assert total_adds == 15
+    assert total_dels == 2
+
+
+def test_inlinepatchreview_messages():
+    from scholardevclaw.tui.widgets_new import InlinePatchReview
+
+    msg1 = InlinePatchReview.FileAction("test.py", "accept")
+    assert msg1.file_path == "test.py"
+    assert msg1.action == "accept"
+
+    msg2 = InlinePatchReview.AllFilesAction("accept_all")
+    assert msg2.action == "accept_all"

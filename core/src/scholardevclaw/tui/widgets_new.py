@@ -1246,6 +1246,499 @@ class InlineProgressCard(WorkflowCard):
 
 
 # -----------------------------------------------------------------------------
+# InlineDiffCard - File diff displayed inline
+# -----------------------------------------------------------------------------
+
+
+class InlineDiffCard(Vertical):
+    """A card that shows a file's diff inline with color-coded lines.
+
+    Used for inline patch review in the conversation flow.
+    """
+
+    DEFAULT_CSS = """
+    InlineDiffCard {
+        width: 100%;
+        height: auto;
+        min-height: 1;
+        padding: 0 2;
+        margin: 0 0 1 0;
+        background: $background;
+        border-left: tall $accent;
+    }
+
+    InlineDiffCard .diff-file-header {
+        width: 100%;
+        height: 1;
+        color: $accent;
+        text-style: bold;
+        padding: 0;
+        margin: 0 0 0 0;
+    }
+
+    InlineDiffCard .diff-file-header.-added {
+        color: $success;
+    }
+
+    InlineDiffCard .diff-file-header.-deleted {
+        color: $error;
+    }
+
+    InlineDiffCard .diff-file-header.-modified {
+        color: $accent;
+    }
+
+    InlineDiffCard .diff-stats {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        padding: 0;
+        margin: 0 0 0 0;
+    }
+
+    InlineDiffCard .diff-content {
+        width: 100%;
+        height: auto;
+        padding: 0;
+        margin: 0;
+        color: $text;
+    }
+
+    InlineDiffCard .diff-line {
+        width: 100%;
+        height: 1;
+        padding: 0;
+        margin: 0;
+    }
+
+    InlineDiffCard .diff-line.-addition {
+        color: $success;
+    }
+
+    InlineDiffCard .diff-line.-deletion {
+        color: $error;
+    }
+
+    InlineDiffCard .diff-line.-header {
+        color: $info;
+    }
+
+    InlineDiffCard .diff-line.-hunk {
+        color: $text-muted;
+    }
+
+    InlineDiffCard .diff-actions {
+        width: 100%;
+        height: auto;
+        padding: 0;
+        margin: 0;
+    }
+    """
+
+    STATUS_ICONS = {
+        "added": "+",
+        "modified": "~",
+        "deleted": "-",
+        "renamed": "→",
+    }
+
+    def __init__(self, file_path: str = "", status: str = "modified", **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._file_path = file_path
+        self._status = status
+        self._additions = 0
+        self._deletions = 0
+        self._diff_lines: list[tuple[str, str]] = []  # (line, style_class)
+
+    def set_file_info(self, path: str, status: str, additions: int = 0, deletions: int = 0) -> None:
+        """Set file metadata."""
+        self._file_path = path
+        self._status = status
+        self._additions = additions
+        self._deletions = deletions
+        self._refresh()
+
+    def set_diff_lines(self, lines: list[tuple[str, str]]) -> None:
+        """Set diff lines. Each tuple: (line_text, style_class).
+
+        Style classes: addition, deletion, header, hunk, context
+        """
+        self._diff_lines = lines
+        self._refresh()
+
+    def add_diff_line(self, line: str, style: str = "context") -> None:
+        """Add a single diff line."""
+        self._diff_lines.append((line, style))
+        self._refresh()
+
+    def clear_diff_lines(self) -> None:
+        """Clear all diff lines."""
+        self._diff_lines.clear()
+        self._refresh()
+
+    def _refresh(self) -> None:
+        """Re-render the diff card."""
+        try:
+            self.remove_children()
+
+            # File header
+            icon = self.STATUS_ICONS.get(self._status, "?")
+            header_class = f"diff-file-header -{self._status}"
+            self.mount(
+                Static(
+                    f"{icon} {self._file_path}",
+                    classes=header_class,
+                )
+            )
+
+            # Stats line
+            self.mount(
+                Static(
+                    f"+{self._additions} -{self._deletions}",
+                    classes="diff-stats",
+                )
+            )
+
+            # Diff content
+            for line_text, style in self._diff_lines:
+                self.mount(Static(line_text, classes=f"diff-line -{style}"))
+
+        except Exception:
+            pass
+
+
+# -----------------------------------------------------------------------------
+# InlinePatchReview - Complete patch review with navigation
+# -----------------------------------------------------------------------------
+
+
+class InlinePatchReview(Vertical):
+    """Complete patch review widget with file tabs and navigation.
+
+    Shows a summary, file tabs, diff content, and action buttons.
+    """
+
+    class FileAction(Message):
+        """Fired when a file-level action is taken."""
+
+        def __init__(self, file_path: str, action: str) -> None:
+            super().__init__()
+            self.file_path = file_path
+            self.action = action  # "accept", "reject", "regenerate"
+
+    class AllFilesAction(Message):
+        """Fired when an all-files action is taken."""
+
+        def __init__(self, action: str) -> None:
+            super().__init__()
+            self.action = action  # "accept_all", "reject_all"
+
+    DEFAULT_CSS = """
+    InlinePatchReview {
+        width: 100%;
+        height: auto;
+        min-height: 5;
+        padding: 0 2;
+        margin: 0 0 1 0;
+        background: $surface;
+        border-left: tall $accent;
+    }
+
+    InlinePatchReview .patch-header {
+        width: 100%;
+        height: 1;
+        color: $accent;
+        text-style: bold;
+        padding: 0;
+        margin: 0 0 0 0;
+    }
+
+    InlinePatchReview .patch-summary {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        padding: 0;
+        margin: 0 0 0 0;
+    }
+
+    InlinePatchReview .patch-tabs {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        padding: 0;
+        margin: 0 0 0 0;
+    }
+
+    InlinePatchReview .patch-tabs .tab-active {
+        color: $accent;
+        text-style: bold;
+    }
+
+    InlinePatchReview .patch-diff {
+        width: 100%;
+        height: auto;
+        max-height: 30;
+        padding: 0;
+        margin: 0 0 0 0;
+        background: $background;
+        border: solid $border;
+        overflow-y: auto;
+    }
+
+    InlinePatchReview .patch-diff-line {
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        margin: 0;
+    }
+
+    InlinePatchReview .patch-diff-line.-addition {
+        color: $success;
+    }
+
+    InlinePatchReview .patch-diff-line.-deletion {
+        color: $error;
+    }
+
+    InlinePatchReview .patch-diff-line.-header {
+        color: $info;
+    }
+
+    InlinePatchReview .patch-diff-line.-hunk {
+        color: $text-muted;
+    }
+
+    InlinePatchReview .patch-actions {
+        width: 100%;
+        height: auto;
+        padding: 0;
+        margin: 0;
+    }
+
+    InlinePatchReview .patch-action-btn {
+        width: auto;
+        height: 1;
+        padding: 0 1;
+        margin: 0 1 0 0;
+        color: $text-muted;
+        background: transparent;
+    }
+
+    InlinePatchReview .patch-action-btn:hover {
+        color: $text;
+        background: $surface;
+    }
+
+    InlinePatchReview .patch-action-btn.-accept {
+        color: $success;
+    }
+
+    InlinePatchReview .patch-action-btn.-reject {
+        color: $error;
+    }
+
+    InlinePatchReview .patch-action-btn.-regenerate {
+        color: $warning;
+    }
+
+    InlinePatchReview .patch-action-btn.-accept-all {
+        color: $success;
+        text-style: bold;
+    }
+
+    InlinePatchReview .patch-action-btn.-reject-all {
+        color: $error;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, title: str = "Patch Review", **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._title = title
+        self._files: list[
+            dict[str, Any]
+        ] = []  # Each: {path, status, additions, deletions, diff_lines}
+        self._current_file_index = 0
+        self._file_decisions: dict[str, str] = {}  # path -> "accept"/"reject"/"regenerate"
+
+    def set_files(self, files: list[dict[str, Any]]) -> None:
+        """Set the files list.
+
+        Each file dict: {path, status, additions, deletions, diff_lines}
+        diff_lines: list of (line_text, style_class) tuples
+        """
+        self._files = files
+        self._current_file_index = 0
+        self._refresh()
+
+    def add_file(
+        self,
+        path: str,
+        status: str,
+        additions: int = 0,
+        deletions: int = 0,
+        diff_lines: list[tuple[str, str]] | None = None,
+    ) -> None:
+        """Add a file to the review."""
+        self._files.append(
+            {
+                "path": path,
+                "status": status,
+                "additions": additions,
+                "deletions": deletions,
+                "diff_lines": diff_lines or [],
+            }
+        )
+        self._refresh()
+
+    def set_file_decision(self, path: str, decision: str) -> None:
+        """Record a decision for a file."""
+        self._file_decisions[path] = decision
+        self._refresh()
+
+    def next_file(self) -> None:
+        """Navigate to the next file."""
+        if self._files:
+            self._current_file_index = (self._current_file_index + 1) % len(self._files)
+            self._refresh()
+
+    def prev_file(self) -> None:
+        """Navigate to the previous file."""
+        if self._files:
+            self._current_file_index = (self._current_file_index - 1) % len(self._files)
+            self._refresh()
+
+    def _get_total_stats(self) -> tuple[int, int]:
+        """Get total additions and deletions."""
+        total_adds = sum(f.get("additions", 0) for f in self._files)
+        total_dels = sum(f.get("deletions", 0) for f in self._files)
+        return total_adds, total_dels
+
+    def _refresh(self) -> None:
+        """Re-render the patch review."""
+        try:
+            self.remove_children()
+
+            # Header
+            self.mount(Static(self._title, classes="patch-header"))
+
+            # Summary
+            total_adds, total_dels = self._get_total_stats()
+            file_count = len(self._files)
+            summary = (
+                f"{file_count} file{'s' if file_count != 1 else ''}: +{total_adds} -{total_dels}"
+            )
+            self.mount(Static(summary, classes="patch-summary"))
+
+            # File tabs
+            if self._files:
+                tab_parts: list[str] = []
+                for i, f in enumerate(self._files):
+                    path = f.get("path", "?")
+                    # Shorten path for display
+                    short = path.split("/")[-1] if "/" in path else path
+                    decision = self._file_decisions.get(path, "")
+                    suffix = f" [{decision}]" if decision else ""
+                    if i == self._current_file_index:
+                        tab_parts.append(f"[{short}{suffix}]")
+                    else:
+                        tab_parts.append(f"{short}{suffix}")
+                self.mount(Static("  ".join(tab_parts), classes="patch-tabs"))
+
+                # Current file diff
+                current = self._files[self._current_file_index]
+                diff_lines = current.get("diff_lines", [])
+                if diff_lines:
+                    for line_text, style in diff_lines[:50]:  # Cap at 50 lines
+                        self.mount(Static(line_text, classes=f"patch-diff-line -{style}"))
+                    if len(diff_lines) > 50:
+                        self.mount(
+                            Static(
+                                f"  ... {len(diff_lines) - 50} more lines",
+                                classes="patch-diff-line -hunk",
+                            )
+                        )
+                else:
+                    self.mount(Static("  (no diff available)", classes="patch-diff-line -hunk"))
+
+            # Action buttons
+            self.mount(Static("", classes="patch-actions"))
+            current_path = self._files[self._current_file_index]["path"] if self._files else ""
+            decision = self._file_decisions.get(current_path, "")
+
+            # Per-file actions
+            accept_label = "✓ Accept" if decision != "accept" else "✓ Accepted"
+            reject_label = "✗ Reject" if decision != "reject" else "✗ Rejected"
+            regen_label = "↻ Regenerate" if decision != "regenerate" else "↻ Regenerating"
+
+            self.mount(Static(accept_label, classes="patch-action-btn -accept"))
+            self.mount(Static(reject_label, classes="patch-action-btn -reject"))
+            self.mount(Static(regen_label, classes="patch-action-btn -regenerate"))
+
+            # All-files actions
+            self.mount(Static("", classes="patch-actions"))
+            self.mount(Static("✓ Accept All [A]", classes="patch-action-btn -accept-all"))
+            self.mount(Static("✗ Reject All [X]", classes="patch-action-btn -reject-all"))
+
+        except Exception:
+            pass
+
+    def on_click(self, event: events.Click) -> None:
+        """Handle click on action buttons."""
+        control = getattr(event, "control", None)
+        if control is None:
+            return
+        text = str(getattr(control, "_text", "") or "")
+        current_path = self._files[self._current_file_index]["path"] if self._files else ""
+
+        if "Accept All" in text:
+            self.post_message(self.AllFilesAction("accept_all"))
+        elif "Reject All" in text:
+            self.post_message(self.AllFilesAction("reject_all"))
+        elif "Accept" in text and "All" not in text:
+            self.post_message(self.FileAction(current_path, "accept"))
+        elif "Reject" in text and "All" not in text:
+            self.post_message(self.FileAction(current_path, "reject"))
+        elif "Regenerate" in text:
+            self.post_message(self.FileAction(current_path, "regenerate"))
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle keyboard shortcuts."""
+        if event.key == "right" or event.key == "tab":
+            self.next_file()
+            event.stop()
+        elif event.key == "left" or event.key == "shift+tab":
+            self.prev_file()
+            event.stop()
+        elif event.key == "a":
+            # Accept current file
+            current_path = self._files[self._current_file_index]["path"] if self._files else ""
+            if current_path:
+                self.post_message(self.FileAction(current_path, "accept"))
+            event.stop()
+        elif event.key == "x":
+            # Reject current file
+            current_path = self._files[self._current_file_index]["path"] if self._files else ""
+            if current_path:
+                self.post_message(self.FileAction(current_path, "reject"))
+            event.stop()
+        elif event.key == "g":
+            # Regenerate current file
+            current_path = self._files[self._current_file_index]["path"] if self._files else ""
+            if current_path:
+                self.post_message(self.FileAction(current_path, "regenerate"))
+            event.stop()
+        elif event.key == "A":
+            # Accept all
+            self.post_message(self.AllFilesAction("accept_all"))
+            event.stop()
+        elif event.key == "X":
+            # Reject all
+            self.post_message(self.AllFilesAction("reject_all"))
+            event.stop()
+
+
+# -----------------------------------------------------------------------------
 # Convenience: build ConversationMessage
 # -----------------------------------------------------------------------------
 
