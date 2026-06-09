@@ -2,7 +2,50 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-09 (TUI UI/UX Redesign: OpenCode-style themes, conversation-centric layout, new widgets)
+**Last updated:** 2026-06-09 (TUI UI/UX Redesign: Phase 2 inline conversation flow, OpenCode-style themes)
+
+### 2026-06-09 (TUI UI/UX Redesign — Phase 2: Inline Conversation Flow)
+
+**Summary:** Converted the paper-to-code workflow from modal screens to inline conversation flow. The workflow now appears as rich cards and interactive elements directly in the conversation view, creating a seamless, chat-like experience.
+
+**Core — New Inline Workflow Widgets** (`widgets_new.py`)
+
+1. **WorkflowCard**: Rich card widget for displaying workflow stages inline
+   - Title header with accent color
+   - Body rows with style variants (value, label, success, warning, error, accent)
+   - Optional progress bar with percentage
+   - Used for paper understanding, planning, and product display
+
+2. **InlineInput**: Input field embedded in the conversation flow
+   - Label, placeholder, and hint text
+   - Submit on Enter, cancel on Escape
+   - Used for paper source input instead of modal
+
+3. **InlineConfirmBar**: Inline approval/confirm buttons
+   - Approve (y) and Reject (n) buttons with keyboard shortcuts
+   - Used for understanding and planning approval gates
+
+4. **InlineProgressCard**: Progress visualization card
+   - Extends WorkflowCard with phase tracking
+   - Per-phase status icons (complete, running, pending, error, skipped)
+   - Token count and elapsed time display
+   - Used for generation and execution progress
+
+**Core — App Integration** (`app.py`)
+
+1. **Paper Input**: `_show_inline_paper_input()` shows inline input instead of `PaperIngestionScreen` modal
+2. **Understanding Display**: `_show_inline_understanding()` shows rich card with approve/edit buttons instead of `UnderstandingScreen` modal
+3. **Planning Display**: `_show_inline_planning()` shows plan card with approval gate instead of `PlanningScreen` modal
+4. **Generation Progress**: `_show_inline_generation_progress()` shows real-time progress card instead of `GenerationScreen` modal
+5. **Execution Progress**: `_show_inline_execution_progress()` shows test/healing progress instead of `ExecutionScreen` modal
+6. **Product Display**: `_show_inline_product()` shows generated artifacts summary instead of `ProductScreen` modal
+
+**Core — Tests** (`test_tui_inline_widgets.py`)
+
+1. 20 new tests covering all inline workflow widgets
+2. Full TUI test suite: 273/273 passing
+
+---
 
 ### 2026-06-09 (TUI UI/UX Redesign — Phase 1: Foundation)
 

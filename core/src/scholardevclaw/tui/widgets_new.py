@@ -21,11 +21,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable
 
-from textual import events
+from textual import events, on
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.reactive import reactive
-from textual.widgets import Markdown, Static
+from textual.widgets import Input, Markdown, Static
 
 from .theme import COLORS as TUI_COLORS
 
@@ -802,6 +802,447 @@ Research → Code assistant
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(self.WELCOME_TEXT, **kwargs)
+
+
+# -----------------------------------------------------------------------------
+# WorkflowCard - Rich workflow stage display
+# -----------------------------------------------------------------------------
+
+
+class WorkflowCard(Vertical):
+    """A rich card for displaying workflow stages inline in the conversation.
+
+    Shows structured data like paper metadata, understanding, plan, etc.
+    with a header, body, and optional action bar.
+    """
+
+    DEFAULT_CSS = """
+    WorkflowCard {
+        width: 100%;
+        height: auto;
+        min-height: 1;
+        padding: 0 2;
+        margin: 0 0 1 0;
+        background: $surface;
+        border-left: tall $accent;
+    }
+
+    WorkflowCard .card-header {
+        width: 100%;
+        height: 1;
+        color: $accent;
+        text-style: bold;
+        padding: 0;
+        margin: 0 0 0 0;
+    }
+
+    WorkflowCard .card-body {
+        width: 100%;
+        height: auto;
+        padding: 0;
+        margin: 0;
+        color: $text;
+    }
+
+    WorkflowCard .card-body-row {
+        width: 100%;
+        height: 1;
+        padding: 0;
+        margin: 0;
+    }
+
+    WorkflowCard .card-body-row.-label {
+        color: $text-muted;
+    }
+
+    WorkflowCard .card-body-row.-value {
+        color: $text;
+    }
+
+    WorkflowCard .card-body-row.-success {
+        color: $success;
+    }
+
+    WorkflowCard .card-body-row.-warning {
+        color: $warning;
+    }
+
+    WorkflowCard .card-body-row.-error {
+        color: $error;
+    }
+
+    WorkflowCard .card-body-row.-accent {
+        color: $accent;
+    }
+
+    WorkflowCard .card-progress {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        padding: 0;
+        margin: 0;
+    }
+
+    WorkflowCard .card-actions {
+        width: 100%;
+        height: auto;
+        padding: 0;
+        margin: 0;
+    }
+    """
+
+    def __init__(self, title: str = "", **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._title = title
+        self._body_rows: list[tuple[str, str]] = []  # (text, style_class)
+        self._progress: float | None = None
+        self._progress_text: str = ""
+
+    def set_title(self, title: str) -> None:
+        """Set the card title."""
+        self._title = title
+        self._refresh()
+
+    def add_row(self, text: str, style: str = "value") -> None:
+        """Add a body row with style: value, label, success, warning, error, accent."""
+        self._body_rows.append((text, f"-{style}"))
+        self._refresh()
+
+    def clear_rows(self) -> None:
+        """Clear all body rows."""
+        self._body_rows.clear()
+        self._refresh()
+
+    def set_rows(self, rows: list[tuple[str, str]]) -> None:
+        """Replace all body rows."""
+        self._body_rows = [(text, f"-{style}") for text, style in rows]
+        self._refresh()
+
+    def set_progress(self, progress: float, text: str = "") -> None:
+        """Set progress bar (0.0-1.0) with optional text."""
+        self._progress = max(0.0, min(1.0, progress))
+        self._progress_text = text
+        self._refresh()
+
+    def clear_progress(self) -> None:
+        """Remove progress bar."""
+        self._progress = None
+        self._progress_text = ""
+        self._refresh()
+
+    def _refresh(self) -> None:
+        """Re-render the card."""
+        try:
+            self.remove_children()
+
+            # Header
+            if self._title:
+                self.mount(Static(self._title, classes="card-header"))
+
+            # Body rows
+            for text, style_class in self._body_rows:
+                self.mount(Static(text, classes=f"card-body-row {style_class}"))
+
+            # Progress bar
+            if self._progress is not None:
+                width = 20
+                filled = int(self._progress * width)
+                bar = "█" * filled + "░" * (width - filled)
+                pct = int(self._progress * 100)
+                progress_str = f"  [{bar}] {pct}%"
+                if self._progress_text:
+                    progress_str += f" {self._progress_text}"
+                self.mount(Static(progress_str, classes="card-progress"))
+
+        except Exception:
+            pass
+
+
+# -----------------------------------------------------------------------------
+# InlineInput - Input field embedded in conversation
+# -----------------------------------------------------------------------------
+
+
+class InlineInput(Vertical):
+    """An input field that appears inline in the conversation flow.
+
+    Used for asking the user questions without opening a modal.
+    """
+
+    class Submitted(Message):
+        """Fired when the user submits the input."""
+
+        def __init__(self, value: str) -> None:
+            super().__init__()
+            self.value = value
+
+    class Cancelled(Message):
+        """Fired when the user cancels the input."""
+
+        pass
+
+    DEFAULT_CSS = """
+    InlineInput {
+        width: 100%;
+        height: auto;
+        min-height: 3;
+        padding: 0 2;
+        margin: 0 0 1 0;
+        background: $surface;
+        border-left: tall $accent;
+    }
+
+    InlineInput .inline-label {
+        width: 100%;
+        height: 1;
+        color: $accent;
+        text-style: bold;
+        padding: 0;
+        margin: 0 0 0 0;
+    }
+
+    InlineInput Input {
+        width: 100%;
+        height: 1;
+        border: solid $border;
+        padding: 0 1;
+        margin: 0;
+    }
+
+    InlineInput Input:focus {
+        border: solid $accent;
+    }
+
+    InlineInput .inline-hint {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        padding: 0;
+        margin: 0;
+    }
+    """
+
+    def __init__(
+        self,
+        label: str = "",
+        placeholder: str = "",
+        hint: str = "",
+        value: str = "",
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._label = label
+        self._placeholder = placeholder
+        self._hint = hint
+        self._initial_value = value
+
+    def compose(self):
+        if self._label:
+            yield Static(self._label, classes="inline-label")
+        yield Input(
+            value=self._initial_value,
+            placeholder=self._placeholder,
+            id="inline-input-field",
+        )
+        if self._hint:
+            yield Static(self._hint, classes="inline-hint")
+
+    def on_mount(self) -> None:
+        try:
+            self.query_one("#inline-input-field", Input).focus()
+        except Exception:
+            pass
+
+    @on(Input.Submitted, "#inline-input-field")
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.post_message(self.Submitted(event.value))
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            self.post_message(self.Cancelled())
+            event.stop()
+
+
+# -----------------------------------------------------------------------------
+# InlineConfirmBar - Approval/confirm buttons inline
+# -----------------------------------------------------------------------------
+
+
+class InlineConfirmBar(Horizontal):
+    """Inline confirmation bar with Approve/Reject buttons.
+
+    Appears below messages for approval gates.
+    """
+
+    class Confirmed(Message):
+        """Fired when the user confirms."""
+
+        def __init__(self, decision: str = "approve") -> None:
+            super().__init__()
+            self.decision = decision
+
+    DEFAULT_CSS = """
+    InlineConfirmBar {
+        width: 100%;
+        height: auto;
+        min-height: 1;
+        padding: 0 2;
+        margin: 0 0 1 0;
+    }
+
+    InlineConfirmBar .confirm-label {
+        width: auto;
+        height: 1;
+        color: $warning;
+        text-style: bold;
+        padding: 0 1 0 0;
+        margin: 0;
+    }
+
+    InlineConfirmBar .confirm-btn {
+        width: auto;
+        height: 1;
+        padding: 0 1;
+        margin: 0 1 0 0;
+        color: $text-muted;
+        background: transparent;
+    }
+
+    InlineConfirmBar .confirm-btn:hover {
+        color: $text;
+        background: $surface;
+    }
+
+    InlineConfirmBar .confirm-btn.-approve {
+        color: $success;
+    }
+
+    InlineConfirmBar .confirm-btn.-reject {
+        color: $error;
+    }
+    """
+
+    def __init__(self, label: str = "Approval gate:", **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._label = label
+
+    def compose(self):
+        yield Static(self._label, classes="confirm-label")
+        yield Static("✓ Approve [y]", classes="confirm-btn -approve")
+        yield Static("✗ Reject [n]", classes="confirm-btn -reject")
+
+    def on_click(self, event: events.Click) -> None:
+        control = getattr(event, "control", None)
+        if control is None:
+            return
+        text = str(getattr(control, "_text", "") or "")
+        if "Approve" in text:
+            self.post_message(self.Confirmed("approve"))
+        elif "Reject" in text:
+            self.post_message(self.Confirmed("reject"))
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "y":
+            self.post_message(self.Confirmed("approve"))
+            event.stop()
+        elif event.key == "n":
+            self.post_message(self.Confirmed("reject"))
+            event.stop()
+
+
+# -----------------------------------------------------------------------------
+# InlineProgressCard - Progress visualization inline
+# -----------------------------------------------------------------------------
+
+
+class InlineProgressCard(WorkflowCard):
+    """A progress card specifically for showing workflow progress.
+
+    Extends WorkflowCard with phase tracking and token/elapsed display.
+    """
+
+    PHASE_ICONS = {
+        "complete": "✓",
+        "running": "⟳",
+        "pending": "⏳",
+        "error": "✗",
+        "skipped": "⊘",
+    }
+
+    def __init__(self, title: str = "Progress", **kwargs: Any) -> None:
+        super().__init__(title=title, **kwargs)
+        self._phases: list[dict[str, Any]] = []
+        self._tokens: int = 0
+        self._elapsed: float = 0.0
+
+    def set_phases(self, phases: list[dict[str, Any]]) -> None:
+        """Set phases list. Each: {"name": str, "status": str, "duration": float|None}"""
+        self._phases = phases
+        self._refresh()
+
+    def update_phase(self, name: str, status: str, duration: float | None = None) -> None:
+        """Update a single phase's status."""
+        for phase in self._phases:
+            if phase["name"] == name:
+                phase["status"] = status
+                if duration is not None:
+                    phase["duration"] = duration
+                break
+        self._refresh()
+
+    def set_stats(self, tokens: int = 0, elapsed: float = 0.0) -> None:
+        """Set token count and elapsed time."""
+        self._tokens = tokens
+        self._elapsed = elapsed
+        self._refresh()
+
+    def _refresh(self) -> None:
+        """Re-render with phases and stats."""
+        try:
+            self.remove_children()
+
+            # Header
+            icon = "⟳" if (self._progress or 0) < 1.0 else "✓"
+            if self._title:
+                self.mount(Static(f"{icon} {self._title}", classes="card-header"))
+
+            # Progress bar
+            if self._progress is not None:
+                width = 20
+                filled = int(self._progress * width)
+                bar = "█" * filled + "░" * (width - filled)
+                pct = int(self._progress * 100)
+                self.mount(Static(f"  [{bar}] {pct}%", classes="card-progress"))
+
+            # Phases
+            for phase in self._phases:
+                name = phase.get("name", "?")
+                status = phase.get("status", "pending")
+                duration = phase.get("duration")
+                p_icon = self.PHASE_ICONS.get(status, "?")
+                duration_str = f"  {duration:.1f}s" if duration else ""
+                style = f"-{status}" if status in self.PHASE_ICONS else ""
+                self.mount(
+                    Static(
+                        f"  ├─ {p_icon} {name}{duration_str}",
+                        classes=f"card-body-row {style}",
+                    )
+                )
+
+            # Stats
+            if self._tokens or self._elapsed:
+                parts: list[str] = []
+                if self._tokens:
+                    if self._tokens >= 1000:
+                        parts.append(f"{self._tokens / 1000:.1f}k tokens")
+                    else:
+                        parts.append(f"{self._tokens} tokens")
+                if self._elapsed:
+                    parts.append(f"{self._elapsed:.1f}s")
+                self.mount(Static(f"  {' │ '.join(parts)}", classes="card-progress"))
+
+        except Exception:
+            pass
 
 
 # -----------------------------------------------------------------------------

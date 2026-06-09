@@ -77,6 +77,10 @@ from .toasts import show_toast
 from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspector, StatusBar
 from .widgets_new import (
     ConversationView,
+    InlineConfirmBar,
+    InlineInput,
+    InlineProgressCard,
+    WorkflowCard,
     make_assistant_message,
     make_system_message,
     make_user_message,
@@ -1460,19 +1464,13 @@ class ScholarDevClawApp(App[None]):
         done = threading.Event()
         decision: dict[str, bool] = {"proceed": True}
 
-        def _callback(result: dict[str, Any] | str | None) -> None:
-            if result is None:
-                decision["proceed"] = False
-            elif isinstance(result, str):
-                decision["proceed"] = result.strip().lower() in {"proceed", "approve", "approved"}
-            else:
-                value = str(result.get("decision", "")).strip().lower()
-                decision["proceed"] = value in {"proceed", "approve", "approved"}
+        def _callback(proceed: bool) -> None:
+            decision["proceed"] = proceed
             done.set()
 
         self._phase9_ui_call(
-            self.push_screen,
-            UnderstandingScreen(understanding=understanding),
+            self._show_inline_understanding,
+            understanding,
             _callback,
         )
         self._phase9_log("Understanding ready. Confirm to continue.", "accent")
@@ -1494,25 +1492,11 @@ class ScholarDevClawApp(App[None]):
         done = threading.Event()
         decision: dict[str, bool] = {"approved": False}
 
-        def _callback(result: dict[str, Any] | str | None) -> None:
-            if result is None:
-                decision["approved"] = False
-            elif isinstance(result, str):
-                decision["approved"] = result.strip().lower() in {
-                    "approve",
-                    "approved",
-                    "true",
-                    "yes",
-                }
-            else:
-                if "approved" in result:
-                    decision["approved"] = bool(result.get("approved"))
-                else:
-                    value = str(result.get("decision", "")).strip().lower()
-                    decision["approved"] = value in {"approve", "approved", "true", "yes"}
+        def _callback(approved: bool) -> None:
+            decision["approved"] = approved
             done.set()
 
-        self._phase9_ui_call(self.push_screen, PlanningScreen(plan=plan), _callback)
+        self._phase9_ui_call(self._show_inline_planning, plan, _callback)
         self._phase9_log("Approval gate: approve plan to start generation.", "warning")
 
         while not done.wait(0.1):
@@ -1560,8 +1544,8 @@ class ScholarDevClawApp(App[None]):
             raise RuntimeError("Generation prerequisites are missing")
 
         module_ids = [module.id for module in plan.modules if module.id.strip()]
-        generation_screen = GenerationScreen(module_ids=module_ids)
-        self._phase9_ui_call(self.push_screen, generation_screen, self._on_generation_result)
+        # Show inline progress instead of modal
+        progress_card = self._show_inline_generation_progress(module_ids)
         self._phase9_set_phase("paper_generate")
         self._phase9_status(f"{PAPER_WORKFLOW_NAME}: generating code", "accent")
         self._phase9_log(f"[4/7] Generating {len(module_ids)} modules...", "accent")
@@ -1606,25 +1590,22 @@ class ScholarDevClawApp(App[None]):
                     progress = 1.0
                     if module.id not in logged_modules:
                         logged_modules.add(module.id)
-                        self._phase9_call_screen(
-                            generation_screen,
-                            "append_module_log",
+                        # Update inline progress card
+                        self._phase9_ui_call(
+                            progress_card.update_phase,
                             module.id,
-                            f"Generated artifacts for {module.id}",
+                            "complete",
                         )
-                self._phase9_call_screen(
-                    generation_screen,
-                    "set_module_progress",
+                self._phase9_ui_call(
+                    progress_card.update_phase,
                     module.id,
-                    progress,
+                    "running" if progress < 1.0 else "complete",
                 )
+            # Update overall progress
             if module_ids:
-                self._phase9_call_screen(
-                    generation_screen,
-                    "append_module_log",
-                    module_ids[min(len(module_ids) - 1, ticker % len(module_ids))],
-                    f"Generating... tick {ticker}",
-                )
+                completed = sum(1 for mid in module_ids if mid in logged_modules)
+                overall = completed / len(module_ids)
+                self._phase9_ui_call(progress_card.set_progress, overall)
 
         if "error" in error_box:
             raise RuntimeError(str(error_box["error"]))
@@ -1632,24 +1613,8 @@ class ScholarDevClawApp(App[None]):
         if result is None:
             raise RuntimeError("Generation did not return a result")
 
-        for row in result.module_results:
-            self._phase9_call_screen(generation_screen, "set_module_progress", row.module_id, 1.0)
-            self._phase9_call_screen(
-                generation_screen,
-                "append_module_log",
-                row.module_id,
-                f"Generated: {row.file_path} / {row.test_file_path}",
-            )
-            if row.final_errors:
-                for error in row.final_errors:
-                    self._phase9_call_screen(
-                        generation_screen,
-                        "add_syntax_error",
-                        row.module_id,
-                        error,
-                    )
-
-        self._phase9_call_screen(generation_screen, "set_generation_result", result)
+        # Final progress update
+        self._phase9_ui_call(progress_card.set_progress, 1.0)
         self._phase9_log(f"Generation success rate: {result.success_rate:.0%}", "success")
         return result
 
@@ -1674,8 +1639,8 @@ class ScholarDevClawApp(App[None]):
         if output_dir is None or generation_result is None or plan is None or understanding is None:
             raise RuntimeError("Execution prerequisites are missing")
 
-        execution_screen = ExecutionScreen()
-        self._phase9_ui_call(self.push_screen, execution_screen, self._on_execution_result)
+        # Show inline progress instead of modal
+        progress_card = self._show_inline_execution_progress()
         self._phase9_set_phase("paper_execute")
         self._phase9_status(f"{PAPER_WORKFLOW_NAME}: executing tests", "accent")
         self._phase9_log("[5/7] Running sandbox tests...", "accent")
@@ -1683,21 +1648,19 @@ class ScholarDevClawApp(App[None]):
         runner = SandboxRunner()
         report = runner.run_tests(output_dir)
         state.healing_payload = None
-        for line in (report.stdout or "").splitlines()[-200:]:
-            self._phase9_call_screen(execution_screen, "append_pytest_output", line)
+
+        # Update progress card with test results
         for test_name, passed in self._phase9_extract_test_status(report.stdout or ""):
-            self._phase9_call_screen(
-                execution_screen,
-                "set_test_status",
-                test_name,
-                passed=passed,
-            )
+            status = "complete" if passed else "error"
+            self._phase9_ui_call(progress_card.update_phase, "pytest", status)
 
         healing_enabled = self._env_flag_enabled(PHASE9_HEALING_ENV, default=False)
         if healing_enabled and not report.success:
             initial_failed_tests = report.tests_failed
             initial_error_tests = report.tests_errors
             self._phase9_log("Sandbox tests failed; starting self-healing...", "warning")
+            self._phase9_ui_call(progress_card.update_phase, "healing", "running")
+
             orchestrator = state.generation_orchestrator or CodeOrchestrator(
                 api_key=state.api_key,
                 model=state.model,
@@ -1705,26 +1668,18 @@ class ScholarDevClawApp(App[None]):
             )
             healer = SelfHealingLoop(orchestrator, runner)
             generation_result = healer.heal(generation_result, plan, understanding)
+
             for row in healer.round_reports:
                 round_id = int(row.get("round", 0) or 0)
                 total = max(1, len(healer.round_reports))
-                self._phase9_call_screen(
-                    execution_screen,
-                    "set_healing_round",
-                    round_id,
-                    total_rounds=total,
+                self._phase9_log(
+                    f"[heal round {round_id}] passed={row.get('tests_passed', 0)} "
+                    f"failed={row.get('tests_failed', 0)} errors={row.get('tests_errors', 0)}",
+                    "info",
                 )
-                self._phase9_call_screen(
-                    execution_screen,
-                    "append_pytest_output",
-                    (
-                        f"[heal round {round_id}] passed={row.get('tests_passed', 0)} "
-                        f"failed={row.get('tests_failed', 0)} errors={row.get('tests_errors', 0)}"
-                    ),
-                )
+
             report = runner.run_tests(output_dir)
-            for line in (report.stdout or "").splitlines()[-120:]:
-                self._phase9_call_screen(execution_screen, "append_pytest_output", line)
+            self._phase9_ui_call(progress_card.update_phase, "healing", "complete")
             state.healing_payload = {
                 "round_count": len(healer.round_reports),
                 "round_reports": healer.round_reports,
@@ -1733,6 +1688,11 @@ class ScholarDevClawApp(App[None]):
                 "final_failed_tests": report.tests_failed,
                 "final_error_tests": report.tests_errors,
             }
+        else:
+            self._phase9_ui_call(progress_card.update_phase, "healing", "skipped")
+
+        self._phase9_ui_call(progress_card.update_phase, "pytest", "complete")
+        self._phase9_ui_call(progress_card.set_progress, 1.0)
 
         self._phase9_log(
             (
@@ -1808,11 +1768,13 @@ class ScholarDevClawApp(App[None]):
                 )
             except (OSError, RuntimeError, ValueError) as exc:
                 self._phase9_log(f"Warning: failed to write trust artifacts: {exc}", "warning")
+
+        # Show inline product summary instead of modal
         install_command = f'pip install -e "{state.output_dir}"'
         self._phase9_ui_call(
-            self.push_screen,
-            ProductScreen(output_dir=state.output_dir, install_command=install_command),
-            self._on_product_result,
+            self._show_inline_product,
+            state.output_dir,
+            install_command,
         )
 
         files = [path for path in sorted(state.output_dir.rglob("*")) if path.is_file()][:12]
@@ -5139,7 +5101,8 @@ class ScholarDevClawApp(App[None]):
         if source_text:
             self._start_phase9_workflow(source_text)
             return
-        self.push_screen(PaperIngestionScreen(), self._on_paper_ingestion_result)
+        # Show inline input in conversation instead of modal
+        self._show_inline_paper_input()
 
     def action_open_paper_ingestion(self) -> None:
         self._open_paper_workflow()
@@ -5158,6 +5121,200 @@ class ScholarDevClawApp(App[None]):
 
     def action_open_product(self) -> None:
         self.push_screen(ProductScreen(), self._on_product_result)
+
+    # ------------------------------------------------------------------
+    # Inline paper-to-code workflow methods
+    # ------------------------------------------------------------------
+
+    def _show_inline_paper_input(self) -> None:
+        """Show inline paper source input in the conversation."""
+        conv = self.query_one("#conversation-view", ConversationView)
+        # Add a system message asking for input
+        msg = make_system_message("Enter a paper source (arXiv ID, DOI, URL, or local PDF path):")
+        conv.add_message(msg)
+        # Mount inline input widget
+        inline_input = InlineInput(
+            label="Paper Source",
+            placeholder="Examples: 2406.12345, 10.1145/1234567, https://arxiv.org/abs/..., ./paper.pdf",
+            hint="Press Enter to submit, Esc to cancel",
+        )
+        conv.mount(inline_input)
+        conv.scroll_end(animate=False)
+        # Store reference for event handling
+        self._inline_paper_input = inline_input
+
+    @on(InlineInput.Submitted)
+    def _on_inline_paper_submitted(self, event: InlineInput.Submitted) -> None:
+        """Handle inline paper input submission."""
+        if not hasattr(self, "_inline_paper_input"):
+            return
+        source = event.value.strip()
+        if source:
+            self._start_phase9_workflow(source)
+        else:
+            self._append_output("Paper source is required", "warning")
+
+    @on(InlineInput.Cancelled)
+    def _on_inline_paper_cancelled(self, event: InlineInput.Cancelled) -> None:
+        """Handle inline paper input cancellation."""
+        self._append_output("Paper workflow cancelled", "warning")
+
+    def _show_inline_understanding(
+        self, understanding: Any, callback: Callable[[bool], None]
+    ) -> None:
+        """Show inline understanding card with approve/edit buttons."""
+        conv = self.query_one("#conversation-view", ConversationView)
+
+        # Build understanding content
+        card = WorkflowCard(title="Paper Understanding")
+        if understanding is None:
+            card.add_row("(waiting for understanding data)", "label")
+        else:
+            # Contributions
+            card.add_row("Contributions:", "label")
+            for item in understanding.contributions[:6]:
+                if hasattr(item, "claim") and item.claim.strip():
+                    card.add_row(f"  • {item.claim}", "value")
+
+            # Requirements
+            card.add_row("", "label")
+            card.add_row("Requirements:", "label")
+            for item in understanding.requirements[:8]:
+                if hasattr(item, "name") and item.name.strip():
+                    card.add_row(f"  • {item.name} ({item.requirement_type})", "value")
+
+            # Metrics
+            card.add_row("", "label")
+            card.add_row(f"Complexity: {understanding.complexity}", "accent")
+            card.add_row(f"Estimated hours: {understanding.estimated_impl_hours}", "accent")
+            card.add_row(f"Confidence: {understanding.confidence:.0%}", "accent")
+
+        conv.mount(card)
+
+        # Add confirm bar
+        confirm_bar = InlineConfirmBar(label="Looks good?")
+        conv.mount(confirm_bar)
+        conv.scroll_end(animate=False)
+
+        # Store callback for later use
+        self._inline_understanding_callback = callback
+        self._inline_understanding_bar = confirm_bar
+
+    @on(InlineConfirmBar.Confirmed)
+    def _on_inline_understanding_confirmed(self, event: InlineConfirmBar.Confirmed) -> None:
+        """Handle inline understanding confirmation."""
+        if hasattr(self, "_inline_understanding_callback"):
+            self._inline_understanding_callback(event.decision == "approve")
+            del self._inline_understanding_callback
+
+    def _show_inline_planning(self, plan: Any, callback: Callable[[bool], None]) -> None:
+        """Show inline planning card with approve/reject buttons."""
+        conv = self.query_one("#conversation-view", ConversationView)
+
+        card = WorkflowCard(title="Implementation Plan")
+        if plan is None:
+            card.add_row("(waiting for plan)", "label")
+        else:
+            # Module dependency graph
+            card.add_row("Module Dependency Graph:", "label")
+            for module in sorted(plan.modules, key=lambda m: m.priority):
+                dep = ", ".join(module.depends_on) if module.depends_on else "root"
+                card.add_row(f"  ├─ {module.id or module.name}", "value")
+                card.add_row(f"  │  └─ depends_on: {dep}", "label")
+
+            # Estimates
+            card.add_row("", "label")
+            card.add_row("Per-Module Estimates:", "label")
+            for module in sorted(plan.modules, key=lambda m: m.priority):
+                est_lines = max(0, module.estimated_lines)
+                est_minutes = max(15, est_lines * 2)
+                card.add_row(
+                    f"  • {module.id or module.name}: {est_lines} lines, {est_minutes} min",
+                    "value",
+                )
+            card.add_row(f"\nTotal estimated lines: {plan.estimated_total_lines}", "accent")
+
+            # Tech stack
+            card.add_row("", "label")
+            card.add_row(f"Language: {plan.target_language}", "accent")
+            card.add_row(f"Stack: {plan.tech_stack or 'unspecified'}", "accent")
+
+        conv.mount(card)
+
+        # Add approval gate
+        gate_msg = make_system_message("Approval gate: confirm this plan before generation starts.")
+        conv.add_message(gate_msg)
+
+        confirm_bar = InlineConfirmBar(label="Approve plan?")
+        conv.mount(confirm_bar)
+        conv.scroll_end(animate=False)
+
+        # Store callback for later use
+        self._inline_planning_callback = callback
+        self._inline_planning_bar = confirm_bar
+
+    @on(InlineConfirmBar.Confirmed)
+    def _on_inline_planning_confirmed(self, event: InlineConfirmBar.Confirmed) -> None:
+        """Handle inline planning confirmation."""
+        if hasattr(self, "_inline_planning_callback"):
+            self._inline_planning_callback(event.decision == "approve")
+            del self._inline_planning_callback
+
+    def _show_inline_generation_progress(self, module_ids: list[str]) -> InlineProgressCard:
+        """Show inline generation progress card."""
+        conv = self.query_one("#conversation-view", ConversationView)
+
+        phases = [{"name": mid, "status": "pending", "duration": None} for mid in module_ids]
+        progress_card = InlineProgressCard(title="Code Generation")
+        progress_card.set_phases(phases)
+        progress_card.set_progress(0.0)
+        conv.mount(progress_card)
+        conv.scroll_end(animate=False)
+        return progress_card
+
+    def _show_inline_execution_progress(self) -> InlineProgressCard:
+        """Show inline execution progress card."""
+        conv = self.query_one("#conversation-view", ConversationView)
+
+        phases = [
+            {"name": "pytest", "status": "pending", "duration": None},
+            {"name": "healing", "status": "pending", "duration": None},
+            {"name": "reproducibility", "status": "pending", "duration": None},
+        ]
+        progress_card = InlineProgressCard(title="Execution & Validation")
+        progress_card.set_phases(phases)
+        progress_card.set_progress(0.0)
+        conv.mount(progress_card)
+        conv.scroll_end(animate=False)
+        return progress_card
+
+    def _show_inline_product(self, output_dir: Any, install_command: str = "") -> None:
+        """Show inline product summary card."""
+        conv = self.query_one("#conversation-view", ConversationView)
+
+        card = WorkflowCard(title="Generated Artifacts")
+        if output_dir is None:
+            card.add_row("(no output directory)", "label")
+        else:
+            from pathlib import Path
+
+            out_path = Path(output_dir) if not isinstance(output_dir, Path) else output_dir
+            card.add_row(f"Output: {out_path}", "value")
+
+            # List generated files
+            if out_path.exists():
+                py_files = list(out_path.glob("**/*.py"))
+                card.add_row(f"Python files: {len(py_files)}", "success")
+                for f in py_files[:10]:
+                    card.add_row(f"  • {f.name}", "value")
+                if len(py_files) > 10:
+                    card.add_row(f"  ... and {len(py_files) - 10} more", "label")
+
+            if install_command:
+                card.add_row(f"\nInstall: {install_command}", "accent")
+
+        conv.mount(card)
+        conv.scroll_end(animate=False)
 
     def action_focus_inspector(self) -> None:
         try:

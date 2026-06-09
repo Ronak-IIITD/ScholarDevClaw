@@ -48,6 +48,11 @@ __all__ = [
     "make_assistant_message",
     "make_system_message",
     "make_tool_message",
+    # Inline workflow widgets
+    "WorkflowCard",
+    "InlineInput",
+    "InlineConfirmBar",
+    "InlineProgressCard",
 ]
 
 
@@ -121,18 +126,26 @@ def __getattr__(name):
         "make_assistant_message",
         "make_system_message",
         "make_tool_message",
+        "WorkflowCard",
+        "InlineInput",
+        "InlineConfirmBar",
+        "InlineProgressCard",
     ):
         from .widgets_new import (
             ActionBar,  # noqa: F401
             ConversationMessage,  # noqa: F401
             ConversationView,  # noqa: F401
             ContextPanel,  # noqa: F401
+            InlineConfirmBar,  # noqa: F401
+            InlineInput,  # noqa: F401
+            InlineProgressCard,  # noqa: F401
             MessageBubble,  # noqa: F401
             MessageRole,  # noqa: F401
             MessageStatus,  # noqa: F401
             ProgressViz,  # noqa: F401
             StreamingIndicator,  # noqa: F401
             WelcomeMessage,  # noqa: F401
+            WorkflowCard,  # noqa: F401
             make_assistant_message,  # noqa: F401
             make_system_message,  # noqa: F401
             make_tool_message,  # noqa: F401
