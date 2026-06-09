@@ -63,7 +63,6 @@ from .screens import (
     ExecutionScreen,
     GenerationScreen,
     HelpOverlay,
-    PaperIngestionScreen,
     PlanningScreen,
     ProductScreen,
     ProviderSetupScreen,
@@ -74,19 +73,16 @@ from .settings_panel import Setting, SettingsPanel
 from .theme import COLORS as TUI_COLORS
 from .theme_switcher import ThemeSwitcherScreen
 from .toasts import show_toast
-from .widgets import HistoryPane, LogView, PhaseTracker, PromptInput, RunInspector, StatusBar
+from .widgets import HistoryPane, PhaseTracker, PromptInput, RunInspector, StatusBar
 from .widgets_new import (
     ConversationView,
     InlineConfirmBar,
-    InlineDiffCard,
     InlineInput,
     InlinePatchReview,
     InlineProgressCard,
     WelcomeMessage,
     WorkflowCard,
-    make_assistant_message,
     make_system_message,
-    make_user_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -1675,7 +1671,6 @@ class ScholarDevClawApp(App[None]):
 
             for row in healer.round_reports:
                 round_id = int(row.get("round", 0) or 0)
-                total = max(1, len(healer.round_reports))
                 self._phase9_log(
                     f"[heal round {round_id}] passed={row.get('tests_passed', 0)} "
                     f"failed={row.get('tests_failed', 0)} errors={row.get('tests_errors', 0)}",
@@ -5366,7 +5361,7 @@ class ScholarDevClawApp(App[None]):
             diff_lines.append((f"+{fd.additions} -{fd.deletions}", "hunk"))
 
             # Generate diff content
-            from .diff_viewer import make_unified_diff, _show_new_file, _show_deleted_file
+            from .diff_viewer import _show_deleted_file, _show_new_file, make_unified_diff
 
             if fd.status == "added":
                 body = _show_new_file(fd.modified)

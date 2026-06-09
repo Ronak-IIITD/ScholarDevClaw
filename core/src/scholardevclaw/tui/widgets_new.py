@@ -19,16 +19,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from textual import events, on
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
-from textual.reactive import reactive
 from textual.widgets import Input, Markdown, Static
-
-from .theme import COLORS as TUI_COLORS
-
 
 # -----------------------------------------------------------------------------
 # Message Types

@@ -2,7 +2,27 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-09 (TUI UI/UX Redesign: Phase 4 command palette + keyboard UX, Phase 3 inline diff/patch review)
+**Last updated:** 2026-06-09 (CI fix: removed unused imports, fixed import ordering across TUI modules)
+
+### 2026-06-09 (CI Fix — Unused Imports & Import Ordering)
+
+**Summary:** Fixed 14 ruff lint errors (13 auto-fixed + 1 manual) across 3 TUI files. All ruff checks now pass cleanly. 2974 tests pass (2 pre-existing caching failures unrelated to this fix).
+
+**Files changed:**
+
+1. **`core/src/scholardevclaw/tui/app.py`**
+   - Removed unused imports: `PaperIngestionScreen`, `LogView`, `InlineDiffCard`, `make_assistant_message`, `make_user_message`
+   - Removed unused local variable `total` in self-healing loop
+   - Fixed import ordering at `diff_viewer` inline import
+
+2. **`core/src/scholardevclaw/tui/__init__.py`**
+   - Fixed `isort` import block ordering in lazy import `widgets_new` section
+
+3. **`core/src/scholardevclaw/tui/widgets_new.py`**
+   - Removed unused imports: `Callable`, `reactive`, `TUI_COLORS` (COLORS)
+   - Fixed import block ordering
+
+---
 
 ### 2026-06-09 (TUI UI/UX Redesign — Phase 4: Command Palette + Keyboard UX)
 

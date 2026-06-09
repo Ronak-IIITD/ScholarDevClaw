@@ -138,9 +138,9 @@ def __getattr__(name):
     ):
         from .widgets_new import (
             ActionBar,  # noqa: F401
+            ContextPanel,  # noqa: F401
             ConversationMessage,  # noqa: F401
             ConversationView,  # noqa: F401
-            ContextPanel,  # noqa: F401
             InlineConfirmBar,  # noqa: F401
             InlineDiffCard,  # noqa: F401
             InlineInput,  # noqa: F401
