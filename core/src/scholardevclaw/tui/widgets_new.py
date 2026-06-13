@@ -132,6 +132,18 @@ class ConversationView(VerticalScroll):
         self._last_render_time = 0.0
         self._fps_samples: list[float] = []
         self._memory_samples: list[float] = []
+        # Search state
+        self._search_query = ""
+        self._search_results: list[int] = []  # Indices of matching messages
+        self._search_index = -1  # Current result index
+        self._search_filters: dict[str, Any] = {
+            "role": None,
+            "status": None,
+            "date_from": None,
+            "date_to": None,
+            "use_regex": False,
+            "case_sensitive": False,
+        }
 
     def add_message(self, message: ConversationMessage) -> MessageBubble:
         """Add a message to the conversation."""
@@ -294,6 +306,141 @@ class ConversationView(VerticalScroll):
             if bubble:
                 bubble.add_class("selected")
 
+    # -------------------------------------------------------------------------
+    # Search & Filtering
+    # -------------------------------------------------------------------------
+
+    def search(self, query: str, **filters: Any) -> list[int]:
+        """Search messages with optional filters.
+
+        Args:
+            query: Search query (text or regex pattern)
+            **filters: Optional filters:
+                - role: MessageRole to filter by
+                - status: MessageStatus to filter by
+                - date_from: datetime to filter from
+                - date_to: datetime to filter to
+                - use_regex: Whether to treat query as regex
+                - case_sensitive: Whether search is case sensitive
+
+        Returns:
+            List of message indices matching the search
+        """
+        import re
+
+        self._search_query = query
+        self._search_filters.update(filters)
+        self._search_results = []
+        self._search_index = -1
+
+        if not query and not any(filters.values()):
+            return []
+
+        use_regex = filters.get("use_regex", self._search_filters.get("use_regex", False))
+        case_sensitive = filters.get(
+            "case_sensitive", self._search_filters.get("case_sensitive", False)
+        )
+        role_filter = filters.get("role", self._search_filters.get("role"))
+        status_filter = filters.get("status", self._search_filters.get("status"))
+        date_from = filters.get("date_from", self._search_filters.get("date_from"))
+        date_to = filters.get("date_to", self._search_filters.get("date_to"))
+
+        flags = 0 if case_sensitive else re.IGNORECASE
+
+        try:
+            pattern = re.compile(query, flags) if use_regex and query else None
+        except re.error:
+            pattern = None
+
+        for i, msg in enumerate(self._messages):
+            # Apply role filter
+            if role_filter and msg.role != role_filter:
+                continue
+
+            # Apply status filter
+            if status_filter and msg.status != status_filter:
+                continue
+
+            # Apply date filters
+            msg_time = msg.timestamp
+            if date_from and msg_time < date_from:
+                continue
+            if date_to and msg_time > date_to:
+                continue
+
+            # Apply text search
+            if query:
+                content = msg.content
+                if pattern:
+                    if not pattern.search(content):
+                        continue
+                elif query.lower() not in content.lower():
+                    continue
+
+            self._search_results.append(i)
+
+        if self._search_results:
+            self._search_index = 0
+            self._highlight_current_result()
+
+        return self._search_results
+
+    def _highlight_current_result(self) -> None:
+        """Highlight the current search result."""
+        # Clear previous highlights
+        for bubble in self._message_widgets.values():
+            bubble.remove_class("search-match")
+            bubble.remove_class("search-current")
+
+        if 0 <= self._search_index < len(self._search_results):
+            msg_idx = self._search_results[self._search_index]
+            msg = self._messages[msg_idx]
+            bubble = self._message_widgets.get(msg.id)
+            if bubble:
+                bubble.add_class("search-current")
+                bubble.scroll_visible()
+
+        # Highlight all matches
+        for idx in self._search_results:
+            msg = self._messages[idx]
+            bubble = self._message_widgets.get(msg.id)
+            if bubble:
+                bubble.add_class("search-match")
+
+    def next_search_result(self) -> bool:
+        """Navigate to next search result. Returns True if moved."""
+        if not self._search_results:
+            return False
+        self._search_index = (self._search_index + 1) % len(self._search_results)
+        self._highlight_current_result()
+        return True
+
+    def prev_search_result(self) -> bool:
+        """Navigate to previous search result. Returns True if moved."""
+        if not self._search_results:
+            return False
+        self._search_index = (self._search_index - 1) % len(self._search_results)
+        self._highlight_current_result()
+        return True
+
+    def clear_search(self) -> None:
+        """Clear search results and highlights."""
+        self._search_query = ""
+        self._search_results = []
+        self._search_index = -1
+        for bubble in self._message_widgets.values():
+            bubble.remove_class("search-match")
+            bubble.remove_class("search-current")
+
+    def get_search_info(self) -> dict[str, Any]:
+        """Get current search state info."""
+        return {
+            "query": self._search_query,
+            "total_matches": len(self._search_results),
+            "current_index": self._search_index + 1 if self._search_index >= 0 else 0,
+            "filters": self._search_filters.copy(),
+        }
+
 
 # -----------------------------------------------------------------------------
 # MessageBubble - Individual message display
@@ -381,6 +528,16 @@ class MessageBubble(Vertical):
     MessageBubble.selected {
         border: tall $accent;
         background: $surface;
+    }
+
+    MessageBubble.search-match {
+        border: tall $warning;
+        background: $warning-bg;
+    }
+
+    MessageBubble.search-current {
+        border: tall $accent;
+        background: $accent-bg;
     }
     """
 

@@ -451,6 +451,10 @@ class ScholarDevClawApp(App[None]):
         ("ctrl+d", "toggle_debug_mode", "Debug"),
         ("ctrl+shift+d", "show_widget_tree", "Widget Tree"),
         ("ctrl+shift+e", "show_event_log", "Event Log"),
+        ("ctrl+f", "search_conversation", "Search"),
+        ("f3", "next_search_result", "Next Match"),
+        ("shift+f3", "prev_search_result", "Prev Match"),
+        ("ctrl+shift+f", "clear_search", "Clear Search"),
     ]
 
     CSS = """
@@ -1453,6 +1457,58 @@ Conversation View:
         # Keep only last N events
         if len(self._event_log) > self._max_event_log:
             self._event_log = self._event_log[-self._max_event_log :]
+
+    # ------------------------------------------------------------------
+    # Search actions
+    # ------------------------------------------------------------------
+
+    def action_search_conversation(self) -> None:
+        """Open search dialog for conversation."""
+        # For now, show a simple prompt - in a full implementation this would
+        # open a search input dialog
+        self._append_output("Search: Use /search <query> command or Ctrl+F in future", "info")
+
+    def action_next_search_result(self) -> None:
+        """Navigate to next search result."""
+        try:
+            conv = self.query_one("#conversation-view", ConversationView)
+            if conv.next_search_result():
+                info = conv.get_search_info()
+                self._set_status(
+                    f"Search: {info['current_index']}/{info['total_matches']} - '{info['query']}'",
+                    "info",
+                )
+            else:
+                self._set_status("No active search", "warning")
+        except Exception as exc:
+            logger.error(f"Error navigating search: {exc}")
+            self._set_status("Search error", "error")
+
+    def action_prev_search_result(self) -> None:
+        """Navigate to previous search result."""
+        try:
+            conv = self.query_one("#conversation-view", ConversationView)
+            if conv.prev_search_result():
+                info = conv.get_search_info()
+                self._set_status(
+                    f"Search: {info['current_index']}/{info['total_matches']} - '{info['query']}'",
+                    "info",
+                )
+            else:
+                self._set_status("No active search", "warning")
+        except Exception as exc:
+            logger.error(f"Error navigating search: {exc}")
+            self._set_status("Search error", "error")
+
+    def action_clear_search(self) -> None:
+        """Clear search highlights."""
+        try:
+            conv = self.query_one("#conversation-view", ConversationView)
+            conv.clear_search()
+            self._set_status("Search cleared", "info")
+        except Exception as exc:
+            logger.error(f"Error clearing search: {exc}")
+            self._set_status("Search error", "error")
 
     # ------------------------------------------------------------------
     # Animated screen transitions

@@ -63,6 +63,45 @@
 
 ---
 
+### 2026-06-13 (TUI Advanced Search & Filtering)
+
+**Summary:** Added comprehensive search and filtering capabilities to the conversation view with full-text search, regex support, role/status/date filters, and result navigation.
+
+**Files changed:**
+
+1. **`core/src/scholardevclaw/tui/widgets_new.py`**
+   - Added search state to `ConversationView`:
+     - Full-text search with case-insensitive matching
+     - Regex pattern support (`use_regex` filter)
+     - Role filtering (user, assistant, system, tool)
+     - Status filtering (complete, streaming, error)
+     - Date range filtering (date_from, date_to)
+     - Case-sensitive option
+   - Search result navigation:
+     - `next_search_result()` / `prev_search_result()` - cycle through matches
+     - `clear_search()` - remove highlights
+     - `get_search_info()` - current search state
+   - Visual highlighting:
+     - `search-match` class for all matches (yellow border)
+     - `search-current` class for active result (cyan border)
+     - Auto-scroll to current result
+
+2. **`core/src/scholardevclaw/tui/app.py`**
+   - New key bindings:
+     - `Ctrl+F` - Search conversation (placeholder)
+     - `F3` - Next search result
+     - `Shift+F3` - Previous search result
+     - `Ctrl+Shift+F` - Clear search
+   - New actions:
+     - `action_search_conversation()` - Open search dialog
+     - `action_next_search_result()` - Navigate to next match
+     - `action_prev_search_result()` - Navigate to previous match
+     - `action_clear_search()` - Clear search highlights
+
+**Tests:** All 138 TUI unit tests pass. Full test suite: 2973 passed, 3 pre-existing failures.
+
+---
+
 ### 2026-06-09 (CI Fix — Unused Imports & Import Ordering)
 
 **Summary:** Fixed 14 ruff lint errors (13 auto-fixed + 1 manual) across 3 TUI files. All ruff checks now pass cleanly. 2974 tests pass (2 pre-existing caching failures unrelated to this fix).
