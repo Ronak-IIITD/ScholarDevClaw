@@ -16,6 +16,7 @@ Key widgets:
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -126,9 +127,15 @@ class ConversationView(VerticalScroll):
         super().__init__(**kwargs)
         self._messages: list[ConversationMessage] = []
         self._message_widgets: dict[str, MessageBubble] = {}
+        self._render_start_time = 0.0
+        self._render_count = 0
+        self._last_render_time = 0.0
+        self._fps_samples: list[float] = []
+        self._memory_samples: list[float] = []
 
     def add_message(self, message: ConversationMessage) -> MessageBubble:
         """Add a message to the conversation."""
+
         self._messages.append(message)
         bubble = MessageBubble(message)
         self._message_widgets[message.id] = bubble
@@ -136,6 +143,38 @@ class ConversationView(VerticalScroll):
         # Auto-scroll to bottom
         self.scroll_end(animate=False)
         return bubble
+
+    def _start_render_timing(self) -> None:
+        """Start timing a render operation."""
+        import time
+
+        self._render_start_time = time.time()
+
+    def _end_render_timing(self) -> None:
+        """End timing a render operation and record metrics."""
+        import time
+
+        self._render_count += 1
+        render_time = time.time() - self._render_start_time
+        self._last_render_time = render_time
+        self._fps_samples.append(1.0 / max(render_time, 0.001))
+        # Keep only last 60 samples for performance monitoring
+        if len(self._fps_samples) > 60:
+            self._fps_samples.pop(0)
+
+    def get_performance_stats(self) -> dict[str, float]:
+        """Get performance statistics for the conversation view."""
+
+        stats = {
+            "render_count": self._render_count,
+            "last_render_time_ms": self._last_render_time * 1000,
+            "average_fps": sum(self._fps_samples) / len(self._fps_samples)
+            if self._fps_samples
+            else 0,
+            "min_fps": min(self._fps_samples) if self._fps_samples else 0,
+            "max_fps": max(self._fps_samples) if self._fps_samples else 0,
+        }
+        return stats
 
     def update_message(self, message_id: str, content: str) -> None:
         """Update an existing message's content (for streaming)."""
@@ -165,6 +204,95 @@ class ConversationView(VerticalScroll):
         bubble = self._message_widgets.get(message_id)
         if bubble:
             bubble.scroll_visible()
+
+    def _get_message_bubble_at(self, x: int, y: int) -> MessageBubble | None:
+        """Get the MessageBubble widget at the given coordinates."""
+        for bubble in self._message_widgets.values():
+            if bubble.region.contains_point((x, y)):
+                return bubble
+        return None
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        """Handle mouse down events for message selection."""
+        # Find the message bubble under the mouse
+        target = self._get_message_bubble_at(event.x, event.y)
+        if target:
+            # Select this message
+            self._select_message(target._message.id)
+            # Start drag selection if shift is held
+            if event.shift:
+                self._start_drag_selection(target._message.id)
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        """Handle mouse up events to end drag selection."""
+        if hasattr(self, "_drag_selection_start"):
+            delattr(self, "_drag_selection_start")
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        """Handle mouse move events for drag selection."""
+        if hasattr(self, "_drag_selection_start"):
+            # Find the message bubble under the mouse
+            target = self._get_message_bubble_at(event.x, event.y)
+            if target:
+                self._update_drag_selection(target._message.id)
+
+    def _select_message(self, message_id: str) -> None:
+        """Select a single message."""
+        # Clear previous selection
+        for bubble in self._message_widgets.values():
+            bubble.remove_class("selected")
+
+        # Select the target message
+        bubble = self._message_widgets.get(message_id)
+        if bubble:
+            bubble.add_class("selected")
+
+    def _start_drag_selection(self, message_id: str) -> None:
+        """Start drag selection from a message."""
+        self._drag_selection_start = message_id
+        self._drag_selection_end = message_id
+
+    def _update_drag_selection(self, message_id: str) -> None:
+        """Update drag selection range."""
+        if hasattr(self, "_drag_selection_start"):
+            self._drag_selection_end = message_id
+            # Update selection highlighting
+            self._update_selection_range()
+
+    def _update_selection_range(self) -> None:
+        """Update selection highlighting for drag selection range."""
+        if not hasattr(self, "_drag_selection_start") or not hasattr(self, "_drag_selection_end"):
+            return
+
+        start_id = self._drag_selection_start
+        end_id = self._drag_selection_end
+
+        # Find indices of start and end messages
+        start_idx = None
+        end_idx = None
+        for i, msg in enumerate(self._messages):
+            if msg.id == start_id:
+                start_idx = i
+            if msg.id == end_id:
+                end_idx = i
+
+        if start_idx is None or end_idx is None:
+            return
+
+        # Ensure start_idx <= end_idx
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
+
+        # Clear all selections first
+        for bubble in self._message_widgets.values():
+            bubble.remove_class("selected")
+
+        # Select messages in range
+        for i in range(start_idx, end_idx + 1):
+            msg = self._messages[i]
+            bubble = self._message_widgets.get(msg.id)
+            if bubble:
+                bubble.add_class("selected")
 
 
 # -----------------------------------------------------------------------------
@@ -249,6 +377,11 @@ class MessageBubble(Vertical):
         color: $accent;
         margin: 0 0 0 0;
     }
+
+    MessageBubble.selected {
+        border: tall $accent;
+        background: $surface;
+    }
     """
 
     ROLE_LABELS = {
@@ -269,12 +402,19 @@ class MessageBubble(Vertical):
         super().__init__(**kwargs)
         self._message = message
         self._content_widget: Static | Markdown | None = None
+        self._render_start_time = 0.0
+        self._render_count = 0
+        self._last_render_time = 0.0
 
         # Apply role-based class
         role_class = f"-{message.role.value}"
         self.add_class(role_class)
 
     def compose(self):
+        import time
+
+        self._render_start_time = time.time()
+
         # Header with role and timestamp
         icon = self.ROLE_ICONS.get(self._message.role, "•")
         label = self.ROLE_LABELS.get(self._message.role, "Unknown")
@@ -308,6 +448,7 @@ class MessageBubble(Vertical):
 
     def update_content(self, content: str) -> None:
         """Update the message content (for streaming)."""
+
         self._message.content = content
         if self._content_widget:
             if isinstance(self._content_widget, Markdown):
@@ -324,6 +465,22 @@ class MessageBubble(Vertical):
                     self._content_widget.update(content)
             else:
                 self._content_widget.update(content)
+
+    def _end_render_timing(self) -> None:
+        """End timing a render operation and record metrics."""
+        import time
+
+        self._render_count += 1
+        render_time = time.time() - self._render_start_time
+        self._last_render_time = render_time
+
+    def get_performance_stats(self) -> dict[str, float]:
+        """Get performance statistics for the message bubble."""
+        stats = {
+            "render_count": self._render_count,
+            "last_render_time_ms": self._last_render_time * 1000,
+        }
+        return stats
 
     def set_status(self, status: MessageStatus) -> None:
         """Update the message status."""
@@ -1777,3 +1934,47 @@ def make_tool_message(content: str, **kwargs: Any) -> ConversationMessage:
         content=content,
         **kwargs,
     )
+
+
+# -----------------------------------------------------------------------------
+# Error Handling Widgets
+# -----------------------------------------------------------------------------
+
+
+class ErrorBanner(Static):
+    """A banner widget for displaying error messages with recovery options."""
+
+    DEFAULT_CSS = """
+    ErrorBanner {
+        width: 100%;
+        height: auto;
+        padding: 1;
+        margin: 0 0 1 0;
+        background: $error-bg;
+        color: $error-fg;
+        border: tall $error;
+        text-align: center;
+    }
+
+    ErrorBanner:hover {
+        background: $error-bg-hover;
+    }
+    """
+
+    def __init__(
+        self, message: str, action: Callable[[], None] | None = None, **kwargs: Any
+    ) -> None:
+        super().__init__(message, **kwargs)
+        self._action = action
+        self._dismissed = False
+
+    def on_click(self, event: events.Click) -> None:
+        """Handle click events on the error banner."""
+        if self._action and not self._dismissed:
+            self._action()
+            self._dismissed = True
+            self.remove()
+
+    def dismiss(self) -> None:
+        """Dismiss the error banner."""
+        self.remove()

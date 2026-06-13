@@ -14,6 +14,9 @@ import subprocess
 import sys
 import threading
 import time
+
+# Error handling utilities
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -21,6 +24,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+# Performance monitoring utilities
+import psutil
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -84,6 +90,17 @@ from .widgets_new import (
     WorkflowCard,
     make_system_message,
 )
+
+
+def _safe_execute(func: Callable, error_message: str, fallback: Any = None) -> Any:
+    """Safely execute a function with error handling and recovery."""
+    try:
+        return func()
+    except Exception as exc:
+        logger.error(f"{error_message}: {exc}")
+        logger.debug(traceback.format_exc())
+        return fallback
+
 
 logger = logging.getLogger(__name__)
 
@@ -1048,20 +1065,33 @@ class ScholarDevClawApp(App[None]):
         )
 
     def _model_for_provider(self, provider: str) -> str:
-        if provider in self._models_by_provider and self._models_by_provider[provider].strip():
-            return self._models_by_provider[provider].strip()
-        auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider)
-        if auth_provider is not None:
-            return DEFAULT_MODELS[auth_provider]
-        return self._model or ""
+        try:
+            if provider in self._models_by_provider and self._models_by_provider[provider].strip():
+                return self._models_by_provider[provider].strip()
+            auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider)
+            if auth_provider is not None:
+                return DEFAULT_MODELS[auth_provider]
+            return self._model or ""
+        except Exception as exc:
+            self._append_output(
+                f"Error getting model for provider '{provider}': {exc}",
+                "error",
+            )
+            return self._model or ""
 
     def _remember_model_for_provider(self, provider: str, model: str) -> None:
-        provider_name = (provider or "").strip().lower()
-        model_name = (model or "").strip()
-        if not provider_name or not model_name:
-            return
-        if provider_name in SUPPORTED_TUI_PROVIDERS:
-            self._models_by_provider[provider_name] = model_name
+        try:
+            provider_name = (provider or "").strip().lower()
+            model_name = (model or "").strip()
+            if not provider_name or not model_name:
+                return
+            if provider_name in SUPPORTED_TUI_PROVIDERS:
+                self._models_by_provider[provider_name] = model_name
+        except Exception as exc:
+            self._append_output(
+                f"Error remembering model for provider '{provider}': {exc}",
+                "error",
+            )
 
     def _save_runtime_state(self) -> None:
         config_path = self._runtime_state_path()
@@ -1135,14 +1165,25 @@ class ScholarDevClawApp(App[None]):
     def _pretty_directory(self) -> str:
         try:
             return str(Path(self._directory).expanduser()).replace(str(Path.home()), "~", 1)
-        except Exception:
+        except Exception as exc:
+            self._append_output(
+                f"Error formatting directory '{self._directory}': {exc}",
+                "error",
+            )
             return self._directory
 
     def _resolve_auth_provider(self) -> AuthProvider | None:
         return SUPPORTED_TUI_PROVIDERS.get(self._provider)
 
     def _supported_provider_names(self) -> str:
-        return ", ".join(SUPPORTED_TUI_PROVIDERS)
+        try:
+            return ", ".join(SUPPORTED_TUI_PROVIDERS)
+        except Exception as exc:
+            self._append_output(
+                f"Error getting supported provider names: {exc}",
+                "error",
+            )
+            return ""
 
     def _get_saved_key_for_provider(self, provider: AuthProvider) -> str | None:
         try:
@@ -1165,22 +1206,36 @@ class ScholarDevClawApp(App[None]):
         return None
 
     def _provider_has_credentials(self, provider: str | None = None) -> bool:
-        provider_name = provider or self._provider
-        auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider_name)
-        if auth_provider is None:
+        try:
+            provider_name = provider or self._provider
+            auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider_name)
+            if auth_provider is None:
+                return False
+            if auth_provider == AuthProvider.OLLAMA:
+                return True
+            if (os.environ.get(auth_provider.env_var_name) or "").strip():
+                return True
+            return bool(self._get_saved_key_for_provider(auth_provider))
+        except Exception as exc:
+            self._append_output(
+                f"Error checking credentials for provider '{provider or self._provider}': {exc}",
+                "error",
+            )
             return False
-        if auth_provider == AuthProvider.OLLAMA:
-            return True
-        if (os.environ.get(auth_provider.env_var_name) or "").strip():
-            return True
-        return bool(self._get_saved_key_for_provider(auth_provider))
 
     def _llm_ready(self) -> bool:
-        return (
-            self._provider in SUPPORTED_TUI_PROVIDERS
-            and bool(self._model)
-            and self._provider_has_credentials()
-        )
+        try:
+            return (
+                self._provider in SUPPORTED_TUI_PROVIDERS
+                and bool(self._model)
+                and self._provider_has_credentials()
+            )
+        except Exception as exc:
+            self._append_output(
+                f"Error checking LLM readiness: {exc}",
+                "error",
+            )
+            return False
 
     def _ollama_reachable(self, timeout: float = 1.0) -> bool:
         host = (os.environ.get("OLLAMA_HOST") or "").strip() or (
@@ -1205,9 +1260,13 @@ class ScholarDevClawApp(App[None]):
                     f"Startup: previous directory missing; using {self._pretty_directory()}",
                     "warning",
                 )
-        except Exception:
+        except Exception as exc:
             self._directory = os.getcwd()
             changed = True
+            self._append_output(
+                f"Startup: error processing directory '{self._directory}': {exc}",
+                "error",
+            )
 
         # Normalize provider/model.
         if self._provider not in SUPPORTED_TUI_PROVIDERS and self._provider != "setup":
@@ -1215,45 +1274,110 @@ class ScholarDevClawApp(App[None]):
             changed = True
 
         if self._provider in SUPPORTED_TUI_PROVIDERS:
-            target_model = self._model or self._model_for_provider(self._provider)
-            if target_model != self._model:
-                self._model = target_model
-                changed = True
-            self._remember_model_for_provider(self._provider, self._model)
+            try:
+                target_model = self._model or self._model_for_provider(self._provider)
+                if target_model != self._model:
+                    self._model = target_model
+                    changed = True
+                self._remember_model_for_provider(self._provider, self._model)
 
-            if self._provider == "ollama" and not self._ollama_reachable(timeout=1.0):
+                if self._provider == "ollama" and not self._ollama_reachable(timeout=1.0):
+                    self._append_output(
+                        "Startup: Ollama selected but not reachable at OLLAMA_HOST. "
+                        "Run `ollama serve`, `setup`, or switch provider with `set provider <name>`.",
+                        "warning",
+                    )
+                    self._set_status("Ollama unavailable", "warning")
+            except Exception as exc:
                 self._append_output(
-                    "Startup: Ollama selected but not reachable at OLLAMA_HOST. "
-                    "Run `ollama serve`, `setup`, or switch provider with `set provider <name>`.",
-                    "warning",
+                    f"Startup: error configuring provider '{self._provider}': {exc}",
+                    "error",
                 )
-                self._set_status("Ollama unavailable", "warning")
+                self._set_status("Configuration error", "error")
 
         if changed:
             self._save_runtime_state()
 
     def _maybe_show_setup(self) -> None:
-        if self._llm_ready():
-            return
-        self._open_setup()
+        try:
+            if self._llm_ready():
+                return
+            self._open_setup()
+        except Exception as exc:
+            self._append_output(
+                f"Error checking LLM readiness: {exc}",
+                "error",
+            )
+            self._set_status("Setup error", "error")
 
     def _open_setup(self) -> None:
-        setup_provider = (
-            self._provider if self._provider in SUPPORTED_TUI_PROVIDERS else DEFAULT_TUI_PROVIDER
-        )
-        self.push_screen(
-            ProviderSetupScreen(
-                provider=setup_provider,
-                model=self._model or self._model_for_provider(setup_provider),
-                has_saved_key=self._provider_has_credentials(setup_provider),
-                supported_providers=SUPPORTED_TUI_PROVIDERS,
-                has_saved_key_by_provider={
-                    provider_name: self._provider_has_credentials(provider_name)
-                    for provider_name in SUPPORTED_TUI_PROVIDERS
-                },
-            ),
-            self._apply_setup_result,
-        )
+        try:
+            setup_provider = (
+                self._provider
+                if self._provider in SUPPORTED_TUI_PROVIDERS
+                else DEFAULT_TUI_PROVIDER
+            )
+            self.push_screen(
+                ProviderSetupScreen(
+                    provider=setup_provider,
+                    model=self._model or self._model_for_provider(setup_provider),
+                    has_saved_key=self._provider_has_credentials(setup_provider),
+                    supported_providers=SUPPORTED_TUI_PROVIDERS,
+                    has_saved_key_by_provider={
+                        provider_name: self._provider_has_credentials(provider_name)
+                        for provider_name in SUPPORTED_TUI_PROVIDERS
+                    },
+                ),
+                self._apply_setup_result,
+            )
+        except Exception as exc:
+            self._append_output(
+                f"Error opening setup screen: {exc}",
+                "error",
+            )
+            self._set_status("Setup error", "error")
+
+    def _get_performance_stats(self) -> dict[str, Any]:
+        """Get performance statistics for the entire app."""
+        import time
+
+        stats = {
+            "timestamp": time.time(),
+            "memory_usage_mb": psutil.virtual_memory().used / (1024 * 1024),
+            "cpu_percent": psutil.cpu_percent(),
+            "disk_usage_percent": psutil.disk_usage("/").percent,
+            "conversation_view_stats": self.query_one(
+                "#conversation-view", ConversationView
+            ).get_performance_stats(),
+        }
+        return stats
+
+    def _show_performance_dashboard(self) -> None:
+        """Show a performance dashboard."""
+        stats = self._get_performance_stats()
+
+        # Create a simple performance dashboard
+        content = f"""
+Performance Dashboard
+====================
+
+Memory Usage: {stats["memory_usage_mb"]:.1f} MB
+CPU Usage: {stats["cpu_percent"]:.1f}%
+Disk Usage: {stats["disk_usage_percent"]:.1f}%
+
+Conversation View:
+  Render Count: {stats["conversation_view_stats"]["render_count"]}
+  Last Render Time: {stats["conversation_view_stats"]["last_render_time_ms"]:.2f} ms
+  Average FPS: {stats["conversation_view_stats"]["average_fps"]:.1f}
+  Min FPS: {stats["conversation_view_stats"]["min_fps"]:.1f}
+  Max FPS: {stats["conversation_view_stats"]["max_fps"]:.1f}
+        """
+
+        self._append_output(content, "info")
+
+    def action_show_performance_dashboard(self) -> None:
+        """Show the performance dashboard."""
+        self._show_performance_dashboard()
 
     # ------------------------------------------------------------------
     # Animated screen transitions
@@ -1297,26 +1421,30 @@ class ScholarDevClawApp(App[None]):
         _pop_screen_with_transition(self, transition)
 
     def _apply_setup_result(self, result: dict[str, str] | None) -> None:
-        if result is None:
-            self._append_output("LLM setup skipped", "warning")
-            self._set_status("Offline mode", "warning")
-            return
+        try:
+            if result is None:
+                self._append_output("LLM setup skipped", "warning")
+                self._set_status("Offline mode", "warning")
+                return
 
-        ok, message = self._save_provider_setup(
-            result.get("provider", ""),
-            result.get("model", ""),
-            result.get("api_key", ""),
-        )
-        if not ok:
-            self._append_output(f"Error: {message}", "error")
-            self._set_status("Setup failed", "error")
-            return
+            ok, message = self._save_provider_setup(
+                result.get("provider", ""),
+                result.get("model", ""),
+                result.get("api_key", ""),
+            )
+            if not ok:
+                self._append_output(f"Error: {message}", "error")
+                self._set_status("Setup failed", "error")
+                return
 
-        self._append_output(f"Provider: {self._provider}", "accent")
-        self._append_output(f"Model: {self._model}")
-        self._set_status("LLM ready", "success")
-        self._sync_status_bar()
-        self._update_command_meta()
+            self._append_output(f"Provider: {self._provider}", "accent")
+            self._append_output(f"Model: {self._model}")
+            self._set_status("LLM ready", "success")
+            self._sync_status_bar()
+            self._update_command_meta()
+        except Exception as exc:
+            self._append_output(f"Error applying setup result: {exc}", "error")
+            self._set_status("Setup error", "error")
 
     def _on_paper_ingestion_result(self, result: dict[str, Any] | None) -> None:
         if result is None:
@@ -1949,23 +2077,23 @@ class ScholarDevClawApp(App[None]):
     def _save_provider_setup(
         self, provider: str, model: str, api_key: str = ""
     ) -> tuple[bool, str]:
-        provider_name = provider.strip().lower()
-        auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider_name)
-        if auth_provider is None:
-            return False, f"Provider must be one of: {self._supported_provider_names()}"
-        if not model.strip():
-            return False, "Model is required"
-
-        store = AuthStore(enable_audit=False, enable_rate_limit=False)
-        normalized_api_key = api_key.strip()
-        existing = None
-        for key in store.list_api_keys():
-            if key.provider == auth_provider:
-                existing = key
-                if normalized_api_key and key.key == normalized_api_key:
-                    break
-
         try:
+            provider_name = provider.strip().lower()
+            auth_provider = SUPPORTED_TUI_PROVIDERS.get(provider_name)
+            if auth_provider is None:
+                return False, f"Provider must be one of: {self._supported_provider_names()}"
+            if not model.strip():
+                return False, "Model is required"
+
+            store = AuthStore(enable_audit=False, enable_rate_limit=False)
+            normalized_api_key = api_key.strip()
+            existing = None
+            for key in store.list_api_keys():
+                if key.provider == auth_provider:
+                    existing = key
+                    if normalized_api_key and key.key == normalized_api_key:
+                        break
+
             if auth_provider.requires_api_key:
                 if normalized_api_key:
                     if existing and existing.key == normalized_api_key:
@@ -2243,33 +2371,42 @@ class ScholarDevClawApp(App[None]):
     # ------------------------------------------------------------------
 
     def _sync_status_bar(self) -> None:
-        status_bar = self.query_one("#status-bar", StatusBar)
-        status_bar.set_context(
-            mode=self._mode,
-            provider=self._provider,
-            model=self._model or "unset",
-            directory=self._pretty_directory(),
-        )
-        status_bar.set_usage(
-            session_tokens=self._session_input_tokens + self._session_output_tokens,
-            last_tokens=self._last_total_tokens,
-        )
-        # Sync yolo mode from environment variable
-        yolo_enabled = os.environ.get("SCHOLARDEVCLAW_YOLO_MODE", "").lower() in (
-            "true",
-            "1",
-            "yes",
-        )
-        status_bar.set_yolo_mode(yolo_enabled)
-        # Refresh git context (best-effort, with a short timeout in
-        # the helper to avoid blocking the UI on slow disks)
-        from .git_status import get_git_context
-
         try:
-            ctx = get_git_context(self._directory or ".")
-            status_bar.set_git_text(ctx.short())
-        except Exception:
-            status_bar.set_git_text("")
+            status_bar = self.query_one("#status-bar", StatusBar)
+            status_bar.set_context(
+                mode=self._mode,
+                provider=self._provider,
+                model=self._model or "unset",
+                directory=self._pretty_directory(),
+            )
+            status_bar.set_usage(
+                session_tokens=self._session_input_tokens + self._session_output_tokens,
+                last_tokens=self._last_total_tokens,
+            )
+            # Sync yolo mode from environment variable
+            yolo_enabled = os.environ.get("SCHOLARDEVCLAW_YOLO_MODE", "").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            status_bar.set_yolo_mode(yolo_enabled)
+            # Refresh git context (best-effort, with a short timeout in
+            # the helper to avoid blocking the UI on slow disks)
+            from .git_status import get_git_context
+
+            try:
+                ctx = get_git_context(self._directory or ".")
+                status_bar.set_git_text(ctx.short())
+            except Exception:
+                status_bar.set_git_text("")
+        except Exception as exc:
+            logger.error(f"Error syncing status bar: {exc}")
+            # Fallback: try to set basic status
+            try:
+                self._status_level = "error"
+                self._status_message = f"Status bar error: {exc}"
+            except Exception:
+                pass
 
     def set_status_progress(self, progress: float | None) -> None:
         """Update the status bar progress bar (0.0-1.0 or None to hide)."""
@@ -2615,16 +2752,33 @@ class ScholarDevClawApp(App[None]):
         return list(lines)
 
     def _set_status(self, message: str, level: str = "info") -> None:
-        self._status_level = level
-        self.query_one("#status-bar", StatusBar).set_status(message, level)
+        try:
+            self._status_level = level
+            self.query_one("#status-bar", StatusBar).set_status(message, level)
+        except Exception as exc:
+            logger.error(f"Error setting status '{message}' ({level}): {exc}")
+            # Fallback: try to set status directly
+            try:
+                self._status_level = level
+                self._status_message = message
+            except Exception:
+                pass
 
     def _append_output(self, line: str, level: str = "auto") -> None:
         """Append a system message to the conversation view."""
-        conv = self.query_one("#conversation-view", ConversationView)
-        msg = make_system_message(line)
-        conv.add_message(msg)
-        # Hide welcome message when first message is added
-        self._hide_welcome_message()
+        try:
+            conv = self.query_one("#conversation-view", ConversationView)
+            msg = make_system_message(line)
+            conv.add_message(msg)
+            # Hide welcome message when first message is added
+            self._hide_welcome_message()
+        except Exception as exc:
+            logger.error(f"Error appending output '{line}': {exc}")
+            # Fallback: try to show error directly
+            try:
+                self._set_status(f"Error: {line}", "error")
+            except Exception:
+                pass
 
     def _hide_welcome_message(self) -> None:
         """Hide the welcome message when conversation starts."""
@@ -3115,107 +3269,145 @@ class ScholarDevClawApp(App[None]):
         self._set_progress(action, fraction, label)
 
     def _rotate_hint(self) -> None:
-        if self._suggestions:
-            return
-        self._hint_index = (self._hint_index + 1) % len(MODE_HINTS[self._mode])
-        self._update_command_meta()
+        try:
+            if self._suggestions:
+                return
+            self._hint_index = (self._hint_index + 1) % len(MODE_HINTS[self._mode])
+            self._update_command_meta()
+        except Exception as exc:
+            logger.error(f"Error rotating hint: {exc}")
+            # Fallback: try to reset hint index
+            try:
+                self._hint_index = 0
+            except Exception:
+                pass
 
     def _all_commands(self) -> list[str]:
-        command_dir = self._directory if self._directory not in {"", "."} else "./repo"
-        contextual = [
-            "paper",
-            "paper arxiv:1706.03762",
-            "paper ./paper.pdf",
-            "from-paper arxiv:1706.03762",
-            f"/run analyze {command_dir}",
-            f"/run generate {command_dir} rmsnorm",
-            "/ask explain this repository",
-            f"analyze {command_dir}",
-            f"suggest {command_dir}",
-            f"validate {command_dir}",
-            f"map {command_dir} rmsnorm",
-            f"generate {command_dir} rmsnorm",
-            f"integrate {command_dir} rmsnorm",
-            "setup",
-            "providers",
-            "status",
-            "runs",
-            "inspect",
-            "run show 1",
-            "run events 1",
-            "run rerun 1",
-            "chat hello",
-        ]
-        commands = MODE_COMMANDS[self._mode] + contextual + self._context_hints + GLOBAL_COMMANDS
-        return list(dict.fromkeys(commands))
+        try:
+            command_dir = self._directory if self._directory not in {"", "."} else "./repo"
+            contextual = [
+                "paper",
+                "paper arxiv:1706.03762",
+                "paper ./paper.pdf",
+                "from-paper arxiv:1706.03762",
+                f"/run analyze {command_dir}",
+                f"/run generate {command_dir} rmsnorm",
+                "/ask explain this repository",
+                f"analyze {command_dir}",
+                f"suggest {command_dir}",
+                f"validate {command_dir}",
+                f"map {command_dir} rmsnorm",
+                f"generate {command_dir} rmsnorm",
+                f"integrate {command_dir} rmsnorm",
+                "setup",
+                "providers",
+                "status",
+                "runs",
+                "inspect",
+                "run show 1",
+                "run events 1",
+                "run rerun 1",
+                "chat hello",
+            ]
+            commands = (
+                MODE_COMMANDS[self._mode] + contextual + self._context_hints + GLOBAL_COMMANDS
+            )
+            return list(dict.fromkeys(commands))
+        except Exception as exc:
+            logger.error(f"Error getting all commands: {exc}")
+            # Fallback: return basic commands
+            return list(dict.fromkeys(MODE_COMMANDS[self._mode] + GLOBAL_COMMANDS))
 
     @staticmethod
     def _fuzzy_score(prompt: str, candidate: str) -> tuple[int, int, int]:
-        needle = prompt.lower().strip()
-        hay = candidate.lower()
-        if not needle:
-            return (0, 0, 0)
+        try:
+            needle = prompt.lower().strip()
+            hay = candidate.lower()
+            if not needle:
+                return (0, 0, 0)
 
-        if hay == needle:
-            return (7, len(needle), -len(candidate))
-        if hay.startswith(needle):
-            return (6, len(needle), -len(candidate))
+            if hay == needle:
+                return (7, len(needle), -len(candidate))
+            if hay.startswith(needle):
+                return (6, len(needle), -len(candidate))
 
-        tokens = hay.replace(":", " ").split()
-        for token in tokens:
-            if token.startswith(needle):
-                return (5, len(needle), -len(candidate))
-        if f" {needle}" in hay:
-            return (4, len(needle), -len(candidate))
+            tokens = hay.replace(":", " ").split()
+            for token in tokens:
+                if token.startswith(needle):
+                    return (5, len(needle), -len(candidate))
+            if f" {needle}" in hay:
+                return (4, len(needle), -len(candidate))
 
-        cursor = 0
-        matches = 0
-        for char in hay:
-            if cursor < len(needle) and char == needle[cursor]:
-                cursor += 1
-                matches += 1
-        if cursor == len(needle):
-            return (3, matches, -len(candidate))
+            cursor = 0
+            matches = 0
+            for char in hay:
+                if cursor < len(needle) and char == needle[cursor]:
+                    cursor += 1
+                    matches += 1
+            if cursor == len(needle):
+                return (3, matches, -len(candidate))
 
-        overlap = sum(1 for char in set(needle) if char in hay)
-        if overlap:
-            return (2, overlap, -len(candidate))
-        return (0, 0, -len(candidate))
+            overlap = sum(1 for char in set(needle) if char in hay)
+            if overlap:
+                return (2, overlap, -len(candidate))
+            return (0, 0, -len(candidate))
+        except Exception as exc:
+            logger.error(f"Error computing fuzzy score: {exc}")
+            return (0, 0, -len(candidate))
 
     def _compute_suggestions(self, prompt: str) -> list[str]:
-        prompt = prompt.strip()
-        commands = self._all_commands()
-        if not prompt:
+        try:
+            prompt = prompt.strip()
+            commands = self._all_commands()
+            if not prompt:
+                return []
+            scored = [(self._fuzzy_score(prompt, candidate), candidate) for candidate in commands]
+            ranked = [
+                candidate
+                for score, candidate in sorted(scored, key=lambda item: item[0], reverse=True)
+                if score[0] > 0
+            ]
+            return ranked[:3]
+        except Exception as exc:
+            logger.error(f"Error computing suggestions for prompt '{prompt}': {exc}")
             return []
-        scored = [(self._fuzzy_score(prompt, candidate), candidate) for candidate in commands]
-        ranked = [
-            candidate
-            for score, candidate in sorted(scored, key=lambda item: item[0], reverse=True)
-            if score[0] > 0
-        ]
-        return ranked[:3]
+        except Exception as exc:
+            logger.error(f"Error computing suggestions for prompt '{prompt}': {exc}")
+            return []
+        except Exception as exc:
+            logger.error(f"Error computing suggestions for prompt '{prompt}': {exc}")
+            return []
 
     def _update_command_meta(self) -> None:
-        widget = self.query_one("#command-meta", Static)
-        if self._suggestions:
-            lines = []
-            for idx, suggestion in enumerate(self._suggestions[:3]):
-                prefix = "Suggestion ->" if idx == 0 else "             "
-                if idx == 0:
-                    lines.append(f"{prefix} [bold $accent]{suggestion}[/]")
-                else:
-                    lines.append(f"{prefix} [dim]{suggestion}[/]")
-            widget.update("\n".join(lines))
-            return
-        if self._context_hints:
-            lines = []
-            for idx, hint in enumerate(self._context_hints[:3]):
-                prefix = "Next ->" if idx == 0 else "       "
-                style = "[bold $accent]" if idx == 0 else "[dim]"
-                lines.append(f"{prefix} {style}{hint}[/]")
-            widget.update("\n".join(lines))
-            return
-        widget.update(f"[dim]{MODE_HINTS[self._mode][self._hint_index]}[/]")
+        try:
+            widget = self.query_one("#command-meta", Static)
+            if self._suggestions:
+                lines = []
+                for idx, suggestion in enumerate(self._suggestions[:3]):
+                    prefix = "Suggestion ->" if idx == 0 else "             "
+                    if idx == 0:
+                        lines.append(f"{prefix} [bold $accent]{suggestion}[/]")
+                    else:
+                        lines.append(f"{prefix} [dim]{suggestion}[/]")
+                widget.update("\n".join(lines))
+                return
+            if self._context_hints:
+                lines = []
+                for idx, hint in enumerate(self._context_hints[:3]):
+                    prefix = "Next ->" if idx == 0 else "       "
+                    style = "[bold $accent]" if idx == 0 else "[dim]"
+                    lines.append(f"{prefix} {style}{hint}[/]")
+                widget.update("\n".join(lines))
+                return
+            widget.update(f"[dim]{MODE_HINTS[self._mode][self._hint_index]}[/]")
+        except Exception as exc:
+            logger.error(f"Error updating command meta: {exc}")
+            # Fallback: try to set basic command meta
+            try:
+                widget = self.query_one("#command-meta", Static)
+                widget.update("[dim]Command meta error[/]")
+            except Exception:
+                pass
 
     def _set_mode(self, mode: str) -> None:
         self._mode = mode

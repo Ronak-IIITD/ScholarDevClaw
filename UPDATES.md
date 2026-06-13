@@ -2,7 +2,43 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-09 (CI fix: removed unused imports, fixed import ordering across TUI modules)
+**Last updated:** 2026-06-13 (TUI Performance & Error Handling Improvements)
+
+### 2026-06-13 (TUI Performance Monitoring & Error Handling)
+
+**Summary:** Added performance monitoring tools and comprehensive error handling to the TUI. Implemented mouse support for message selection and drag selection. Added performance dashboard accessible via command palette.
+
+**Files changed:**
+
+1. **`core/src/scholardevclaw/tui/widgets_new.py`**
+   - Added mouse support to `ConversationView`:
+     - Click-to-select messages
+     - Shift+drag for range selection
+     - Hover highlighting with CSS
+   - Added performance timing to `ConversationView` and `MessageBubble`:
+     - Render time tracking
+     - FPS monitoring (average, min, max)
+     - Performance stats API
+   - Added `ErrorBanner` widget for inline error display with recovery actions
+   - Added `selected` CSS class for message highlighting
+
+2. **`core/src/scholardevclaw/tui/app.py`**
+   - Added comprehensive error handling to critical methods:
+     - `_startup_preflight`, `_llm_ready`, `_maybe_show_setup`, `_open_setup`
+     - `_apply_setup_result`, `_save_provider_setup`, `_provider_has_credentials`
+     - `_remember_model_for_provider`, `_model_for_provider`, `_supported_provider_names`
+     - `_pretty_directory`, `_append_output`, `_set_status`, `_sync_status_bar`
+     - `_update_command_meta`, `_rotate_hint`, `_all_commands`, `_fuzzy_score`
+     - `_compute_suggestions`
+   - Added performance monitoring:
+     - `_get_performance_stats()` - system and TUI metrics
+     - `_show_performance_dashboard()` - formatted performance display
+     - `action_show_performance_dashboard` - command palette action
+   - Added `psutil` dependency for system metrics
+
+**Tests:** All 138 TUI unit tests pass. Full test suite: 2973 passed, 3 pre-existing failures (caching/hook issues unrelated to these changes).
+
+---
 
 ### 2026-06-09 (CI Fix — Unused Imports & Import Ordering)
 
