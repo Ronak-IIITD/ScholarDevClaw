@@ -40,6 +40,29 @@
 
 ---
 
+### 2026-06-13 (TUI Developer Debugging Tools)
+
+**Summary:** Added comprehensive developer debugging tools including debug mode toggle, widget tree inspection, and event logging.
+
+**Files changed:**
+
+1. **`core/src/scholardevclaw/tui/app.py`**
+   - Added debug mode state (`_debug_mode`, `_event_log`, `_max_event_log`)
+   - New key bindings:
+     - `Ctrl+D` - Toggle debug mode
+     - `Ctrl+Shift+D` - Show widget tree
+     - `Ctrl+Shift+E` - Show event log
+   - New actions:
+     - `action_toggle_debug_mode()` - Enable/disable debug mode
+     - `action_show_widget_tree()` - Display full widget hierarchy with IDs and classes
+     - `action_show_event_log()` - Display recent events (last 50)
+   - Added `_log_event()` method for internal event tracking
+   - Integrated event logging into `_append_output()` and `_set_status()`
+
+**Tests:** All 138 TUI unit tests pass. Full test suite: 2973 passed, 3 pre-existing failures.
+
+---
+
 ### 2026-06-09 (CI Fix — Unused Imports & Import Ordering)
 
 **Summary:** Fixed 14 ruff lint errors (13 auto-fixed + 1 manual) across 3 TUI files. All ruff checks now pass cleanly. 2974 tests pass (2 pre-existing caching failures unrelated to this fix).

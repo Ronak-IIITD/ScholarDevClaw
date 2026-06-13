@@ -448,6 +448,9 @@ class ScholarDevClawApp(App[None]):
         ("f6", "open_theme_switcher", "Theme"),
         ("slash", "open_log_search", "Find"),
         ("f2", "open_reverse_search", "History"),
+        ("ctrl+d", "toggle_debug_mode", "Debug"),
+        ("ctrl+shift+d", "show_widget_tree", "Widget Tree"),
+        ("ctrl+shift+e", "show_event_log", "Event Log"),
     ]
 
     CSS = """
@@ -578,6 +581,9 @@ class ScholarDevClawApp(App[None]):
         self._pending_integrate_reviews: dict[str, dict[str, Any]] = {}
         self._phase9_workflow = Phase9WorkflowState()
         self._yes_mode = yes_mode
+        self._debug_mode = False
+        self._event_log: list[dict[str, Any]] = []
+        self._max_event_log = 1000
         self._load_runtime_state()
         if not self._model and self._provider in SUPPORTED_TUI_PROVIDERS:
             self._model = DEFAULT_MODELS[SUPPORTED_TUI_PROVIDERS[self._provider]]
@@ -1378,6 +1384,75 @@ Conversation View:
     def action_show_performance_dashboard(self) -> None:
         """Show the performance dashboard."""
         self._show_performance_dashboard()
+
+    def action_toggle_debug_mode(self) -> None:
+        """Toggle debug mode on/off."""
+        self._debug_mode = not self._debug_mode
+        status = "enabled" if self._debug_mode else "disabled"
+        self._append_output(f"Debug mode {status}", "info" if self._debug_mode else "warning")
+        self._set_status(f"Debug mode {status}", "info" if self._debug_mode else "warning")
+
+    def action_show_widget_tree(self) -> None:
+        """Show the widget tree for debugging."""
+        if not self._debug_mode:
+            self._append_output("Debug mode must be enabled first (Ctrl+D)", "warning")
+            return
+
+        def walk_widget(widget: Any, indent: int = 0) -> list[str]:
+            lines = []
+            prefix = "  " * indent
+            widget_info = f"{prefix}{widget.__class__.__name__}"
+            if hasattr(widget, "id") and widget.id:
+                widget_info += f" #{widget.id}"
+            if hasattr(widget, "classes") and widget.classes:
+                widget_info += f" .{'.'.join(widget.classes)}"
+            lines.append(widget_info)
+
+            if hasattr(widget, "children"):
+                for child in widget.children:
+                    lines.extend(walk_widget(child, indent + 1))
+            return lines
+
+        tree_lines = walk_widget(self)
+        content = "Widget Tree\n" + "=" * 40 + "\n" + "\n".join(tree_lines)
+        self._append_output(content, "info")
+
+    def action_show_event_log(self) -> None:
+        """Show the event log for debugging."""
+        if not self._debug_mode:
+            self._append_output("Debug mode must be enabled first (Ctrl+D)", "warning")
+            return
+
+        if not self._event_log:
+            self._append_output("Event log is empty", "info")
+            return
+
+        lines = ["Event Log", "=" * 40]
+        for event in self._event_log[-50:]:  # Show last 50 events
+            timestamp = event.get("timestamp", 0)
+            event_type = event.get("type", "unknown")
+            details = event.get("details", {})
+            lines.append(f"[{timestamp:.3f}] {event_type}: {details}")
+
+        content = "\n".join(lines)
+        self._append_output(content, "info")
+
+    def _log_event(self, event_type: str, details: dict[str, Any]) -> None:
+        """Log an event for debugging."""
+        if not self._debug_mode:
+            return
+        import time
+
+        self._event_log.append(
+            {
+                "timestamp": time.time(),
+                "type": event_type,
+                "details": details,
+            }
+        )
+        # Keep only last N events
+        if len(self._event_log) > self._max_event_log:
+            self._event_log = self._event_log[-self._max_event_log :]
 
     # ------------------------------------------------------------------
     # Animated screen transitions
@@ -2752,6 +2827,7 @@ Conversation View:
         return list(lines)
 
     def _set_status(self, message: str, level: str = "info") -> None:
+        self._log_event("set_status", {"message": message[:100], "level": level})
         try:
             self._status_level = level
             self.query_one("#status-bar", StatusBar).set_status(message, level)
@@ -2766,6 +2842,7 @@ Conversation View:
 
     def _append_output(self, line: str, level: str = "auto") -> None:
         """Append a system message to the conversation view."""
+        self._log_event("append_output", {"line": line[:100], "level": level})
         try:
             conv = self.query_one("#conversation-view", ConversationView)
             msg = make_system_message(line)
