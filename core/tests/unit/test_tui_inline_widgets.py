@@ -7,7 +7,6 @@ import pytest
 pytest.importorskip("textual")
 
 from scholardevclaw.tui.widgets_new import (
-    ConversationView,
     InlineConfirmBar,
     InlineInput,
     InlineProgressCard,
@@ -15,7 +14,6 @@ from scholardevclaw.tui.widgets_new import (
     make_assistant_message,
     make_system_message,
 )
-
 
 # ---------------------------------------------------------------------------
 # WorkflowCard
@@ -179,7 +177,6 @@ def test_inline_progress_card_set_stats():
 
 def test_conversationview_add_system_message():
     """Test that system messages can be added to conversation view."""
-    view = ConversationView()
     msg = make_system_message("Hello world")
     assert msg.role.value == "system"
     assert msg.content == "Hello world"
@@ -187,7 +184,6 @@ def test_conversationview_add_system_message():
 
 def test_conversationview_add_assistant_message():
     """Test that assistant messages can be added to conversation view."""
-    view = ConversationView()
     msg = make_assistant_message("I can help with that")
     assert msg.role.value == "assistant"
     assert msg.content == "I can help with that"
