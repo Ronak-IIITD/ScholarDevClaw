@@ -2,7 +2,27 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-13 (TUI Performance & Error Handling Improvements)
+**Last updated:** 2026-06-15 (Legacy Web Dashboard Cleanup)
+
+### 2026-06-15 (Legacy Web Dashboard Cleanup)
+
+**Summary:** Retired the unmaintained React/Vite dashboard so the supported
+interfaces are the Python CLI/TUI/API and TypeScript orchestrator.
+
+**Changes:**
+
+1. Removed the `web/` application and its dedicated Docker/nginx build files.
+2. Removed the frontend build job from CI and the `web-ui` service from the
+   production compose stack.
+3. Updated nginx to expose the core API directly and return API discovery
+   metadata at `/`.
+4. Updated active contributor, deployment, upgrade, and architecture
+   documentation while preserving historical changelog records.
+
+**Validation:** Documentation lint, Ruff, API server unit tests, Docker Compose
+config rendering, diff checks, and repository reference checks. Runtime
+`nginx -t` was unavailable because the local Docker daemon socket is not
+accessible.
 
 ### 2026-06-13 (TUI Performance Monitoring & Error Handling)
 

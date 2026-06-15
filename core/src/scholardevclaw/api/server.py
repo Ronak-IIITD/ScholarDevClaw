@@ -83,11 +83,11 @@ from .routes.dashboard import router as dashboard_router  # noqa: E402
 
 app.include_router(dashboard_router)
 
-# CORS: restrict origins in production via env var; allow Vite dev server in development
+# CORS: restrict origins in production via env var; allow local browser clients in development
 _allowed_origins = os.environ.get("SCHOLARDEVCLAW_CORS_ORIGINS", "").split(",")
 _allowed_origins = [o.strip() for o in _allowed_origins if o.strip()]
 if not _allowed_origins:
-    # Development defaults: allow local Vite dev server
+    # Development defaults for local browser-based API clients.
     _allowed_origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
 app.add_middleware(
     CORSMiddleware,

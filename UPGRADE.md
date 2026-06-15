@@ -39,7 +39,6 @@ ScholarDevClaw/
 │   └── pyproject.toml
 ├── agent/                 # agent orchestration layer
 ├── convex/                # backend state (Convex)
-├── web/                   # TypeScript frontend
 ├── docker/                # Docker compose configs
 ├── scripts/               # runbook.sh and helpers
 └── docs/

@@ -27,7 +27,7 @@ Services:
 - `agent` (TypeScript orchestrator, internal worker)
 - `convex` (optional state backend)
 
-## 3) Production-like deployment (nginx + web + monitoring)
+## 3) Production-like deployment (nginx + monitoring)
 
 From repository root:
 
@@ -39,6 +39,7 @@ Edit `docker/.env` and set these **required** values:
 
 - `SCHOLARDEVCLAW_API_AUTH_KEY`
 - `SCHOLARDEVCLAW_ALLOWED_REPO_DIRS`
+- `SCHOLARDEVCLAW_CORS_ORIGINS`
 - `GRAFANA_ADMIN_USER`
 - `GRAFANA_ADMIN_PASSWORD`
 

@@ -1,5 +1,5 @@
 """
-Dashboard API routes for the ScholarDevClaw web dashboard.
+Dashboard API routes for ScholarDevClaw browser and integration clients.
 
 Provides:
 - GET  /api/specs          - list all available paper specs

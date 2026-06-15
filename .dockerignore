@@ -40,4 +40,3 @@ auth.json
 # Misc
 test_repos/
 vendor/
-web/node_modules/

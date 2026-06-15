@@ -10,7 +10,7 @@ scholardevclaw demo
 scholardevclaw integrate /path/to/repo rmsnorm
 ```
 
-ScholarDevClaw analyzes an existing repository, finds research-backed improvements, maps them onto concrete files, generates patch artifacts, and validates the expected impact. It ships as a Python CLI, an optional Textual TUI, a FastAPI service, a React dashboard, and a TypeScript orchestrator. The same shared pipeline powers every interface.
+ScholarDevClaw analyzes an existing repository, finds research-backed improvements, maps them onto concrete files, generates patch artifacts, and validates the expected impact. It ships as a Python CLI, an optional Textual TUI, a FastAPI service, and a TypeScript orchestrator. The same shared pipeline powers every interface.
 
 ## Architecture
 
@@ -26,14 +26,14 @@ ScholarDevClaw analyzes an existing repository, finds research-backed improvemen
 │  • Validation                                               │
 │  • Reporting                                                │
 └─────────────────────────────────────────────────────────────┘
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-┌───────────────┐   ┌───────────────┐   ┌────────────────────┐
-│ Python Core   │   │ Web Dashboard │   │ TypeScript Agent   │
-│ CLI / TUI /   │   │ React + Vite  │   │ Orchestrator +     │
-│ FastAPI       │   │ + WebSockets  │   │ bridge adapters    │
-└───────────────┘   └───────────────┘   └────────────────────┘
+                           │
+              ┌────────────┴────────────┐
+              ▼                         ▼
+    ┌───────────────────┐     ┌────────────────────┐
+    │ Python Core       │     │ TypeScript Agent   │
+    │ CLI / TUI /       │     │ Orchestrator +     │
+    │ FastAPI           │     │ bridge adapters    │
+    └───────────────────┘     └────────────────────┘
 ```
 
 ## Supported Languages
@@ -60,11 +60,10 @@ scholardevclaw demo
 scholardevclaw tui
 ```
 
-Run the API and dashboard locally:
+Run the API locally:
 
 ```bash
 uvicorn scholardevclaw.api.server:app --reload
-cd web && npm install && npm run dev
 ```
 
 Run the TypeScript orchestrator:
@@ -86,7 +85,6 @@ The committed [`demo.tape`](demo.tape) and `demo.gif` walk through a real `schol
 | CLI | `core/src/scholardevclaw/cli.py` | Direct repo analysis and end-to-end workflows |
 | TUI | `scholardevclaw tui` | Interactive keyboard-first workflow runner |
 | API | `core/src/scholardevclaw/api/server.py` | Programmatic access for integrations |
-| Dashboard | `web/` | Browser pipeline launcher and WebSocket visualization |
 | Agent | `agent/src/index.ts` | Control-plane orchestration and resumable phases |
 
 ## Docs

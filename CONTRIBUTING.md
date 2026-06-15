@@ -1,6 +1,6 @@
 # Contributing to ScholarDevClaw
 
-ScholarDevClaw is a research-to-code system spanning a Python execution plane, a TypeScript control plane, and a React dashboard. This guide covers the local workflow expected for pull requests.
+ScholarDevClaw is a research-to-code system spanning a Python execution plane and a TypeScript control plane. This guide covers the local workflow expected for pull requests.
 
 ## Before You Start
 
@@ -28,14 +28,6 @@ bun run build
 bun run test
 ```
 
-### Dashboard
-
-```bash
-cd web
-npm install
-npm run build
-```
-
 ## Test Matrix
 
 Run the narrowest checks that prove your change, then broaden before opening a PR.
@@ -45,7 +37,6 @@ cd core && pytest -q
 cd core && ruff check src tests benchmarks
 cd core && mypy src/scholardevclaw/cli.py src/scholardevclaw/api/server.py src/scholardevclaw/application/pipeline.py --ignore-missing-imports --follow-imports=skip
 cd agent && bun run build && bun run test
-cd web && npm run build
 ```
 
 If you touched launch/demo behavior, also run:
@@ -103,11 +94,6 @@ Do not weaken existing parsers or remove multi-language support to land a new la
 
 - Keep strict ESM imports with `.js` suffixes.
 - Preserve bridge payload compatibility between `agent/` and `core/`.
-
-### Frontend
-
-- Reuse the existing dashboard API contracts instead of creating parallel ones.
-- Keep the WebSocket pipeline flow observable and deterministic.
 
 ## Issue and PR Templates
 

@@ -124,7 +124,6 @@ ScholarDevClaw/
 │   └── pyproject.toml
 │
 ├── agent/                         # orchestration layer (extend)
-├── web/                           # TypeScript frontend (extend)
 ├── convex/                        # backend state
 ├── docker/
 │   ├── sandbox.Dockerfile         # NEW — isolated execution environment
