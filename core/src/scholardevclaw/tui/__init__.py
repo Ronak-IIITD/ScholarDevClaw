@@ -27,12 +27,6 @@ __all__ = [
     "theme",
     "COLORS",
     "ANIMATION",
-    # Animated widgets
-    "Spinner",
-    "Pulse",
-    "ProgressBar",
-    "TypingIndicator",
-    "Marquee",
     # New conversation widgets
     "ConversationView",
     "MessageBubble",
@@ -99,17 +93,6 @@ def __getattr__(name):
             LogView,  # noqa: F401
             PhaseTracker,  # noqa: F401
             StatusBar,  # noqa: F401
-        )
-
-        return locals()[name]
-
-    if name in ("Spinner", "Pulse", "ProgressBar", "TypingIndicator", "Marquee"):
-        from .widgets_animated import (
-            Marquee,  # noqa: F401
-            ProgressBar,  # noqa: F401
-            Pulse,  # noqa: F401
-            Spinner,  # noqa: F401
-            TypingIndicator,  # noqa: F401
         )
 
         return locals()[name]

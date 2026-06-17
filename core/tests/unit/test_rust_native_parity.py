@@ -7,17 +7,19 @@ languages.
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Skip entire module if Rust extension is not installed
 pytest.importorskip("scholardevclaw_native", reason="Rust native extension not built")
 
-from scholardevclaw_native import walk_file, walk_batch, is_available  # noqa: E402
+from scholardevclaw_native import is_available, walk_batch, walk_file  # noqa: E402
+
 from scholardevclaw.repo_intelligence.tree_sitter_analyzer import (  # noqa: E402
-    TreeSitterAnalyzer,
     CodeElement,
     ImportStatement,
+    TreeSitterAnalyzer,
 )
 
 # ─── Fixtures: sample source code per language ───────────────────────────────
@@ -202,8 +204,8 @@ def _normalize_elements(py_elements: list[CodeElement], rs_elements: list) -> tu
         t = e.elem_type if hasattr(e, "elem_type") else e.type
         n = e.name if hasattr(e, "name") else e.name
         f = e.file if hasattr(e, "file") else e.file
-        l = e.line if hasattr(e, "line") else e.line
-        return (f, l, t, n)
+        ln = e.line if hasattr(e, "line") else e.line
+        return (f, ln, t, n)
 
     def normalize(e):
         if hasattr(e, "elem_type"):  # Rust PyCodeElement
@@ -602,6 +604,7 @@ class TestUnifiedDiff:
 
     def test_simple_change(self):
         import difflib
+
         from scholardevclaw_native import unified_diff
 
         original = "line 1\nline 2\nline 3\n"
@@ -612,6 +615,7 @@ class TestUnifiedDiff:
 
     def test_addition(self):
         import difflib
+
         from scholardevclaw_native import unified_diff
 
         original = "a\nb\n"
@@ -622,6 +626,7 @@ class TestUnifiedDiff:
 
     def test_deletion(self):
         import difflib
+
         from scholardevclaw_native import unified_diff
 
         original = "a\nb\nc\n"
@@ -664,7 +669,7 @@ class TestUnifiedDiff:
         assert len(r3) > len(r1)
 
     def test_count_diff_changes(self):
-        from scholardevclaw_native import unified_diff, count_diff_changes
+        from scholardevclaw_native import count_diff_changes, unified_diff
 
         original = "a\nb\nc\n"
         modified = "a\nx\nc\ny\n"
@@ -676,6 +681,7 @@ class TestUnifiedDiff:
     def test_matches_python_large(self):
         """Test on larger content (500 lines) to exercise Myers algorithm."""
         import difflib
+
         from scholardevclaw_native import unified_diff
 
         rng_lines = [f"line {i}: {'x' * (i % 50)}" for i in range(500)]

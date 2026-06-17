@@ -147,8 +147,10 @@ def _build_diff_evidence(patch_payload: dict[str, Any] | None) -> dict[str, Any]
         # Use Rust native diff if available, fall back to Python difflib
         try:
             from scholardevclaw_native import (
-                unified_diff as _rust_diff,
                 count_diff_changes as _rust_count,
+            )
+            from scholardevclaw_native import (
+                unified_diff as _rust_diff,
             )
 
             diff_text = _rust_diff(original, modified, 3, f"a/{path}", f"b/{path}")

@@ -12,14 +12,14 @@ Cache is stored in ~/.cache/scholardevclaw/ with content-addressable keys.
 from __future__ import annotations
 
 import hashlib
-import json
-import orjson
 import pickle
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "scholardevclaw"
 CACHE_VERSION = 2
