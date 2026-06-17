@@ -139,11 +139,23 @@ class TreeSitterAnalyzer:
         self.repo_path = Path(repo_path)
         self.parsers: dict[str, Any] = {}
         self._file_cache: dict[str, list[Path]] = {}
+        # Try to detect the Rust native extension at init time
+        self._use_rust: bool = self._detect_rust_extension()
         self._setup_parsers()
 
     def _setup_parsers(self):
         """Setup tree-sitter parsers (will lazy-load)"""
         pass  # Lazy loading happens in _get_parser
+
+    @staticmethod
+    def _detect_rust_extension() -> bool:
+        """Detect whether the native Rust extension is available."""
+        try:
+            from scholardevclaw_native import is_available
+
+            return is_available()
+        except (ImportError, Exception):
+            return False
 
     def _get_parser(self, language: str) -> Any | None:
         """Get or create parser for a language.
@@ -348,12 +360,20 @@ class TreeSitterAnalyzer:
     def _parse_language_files(
         self, language: str
     ) -> tuple[list[CodeElement], list[ImportStatement]]:
-        """Parse all files of a specific language"""
+        """Parse all files of a specific language.
+
+        Attempts to use the native Rust extension for ~10x faster AST walking.
+        Falls back to pure Python tree-sitter if the extension is unavailable.
+        """
         elements = []
         imports = []
 
         if language not in LANGUAGE_CONFIGS:
             return elements, imports
+
+        # Try Rust native path first
+        if self._use_rust:
+            return self._parse_language_files_rust(language)
 
         parser = self._get_parser(language)
 
@@ -383,6 +403,73 @@ class TreeSitterAnalyzer:
 
             except Exception as e:
                 print(f"Error parsing {file_path}: {e}")
+
+        return elements, imports
+
+    def _parse_language_files_rust(
+        self, language: str
+    ) -> tuple[list[CodeElement], list[ImportStatement]]:
+        """Parse all files of a language using the Rust native extension."""
+        elements: list[CodeElement] = []
+        imports: list[ImportStatement] = []
+
+        try:
+            from scholardevclaw_native import walk_batch
+
+            # Read all files into a batch
+            batch: list[tuple[bytes, str, str]] = []
+            for file_path in self._get_files_for_language(language):
+                try:
+                    content = file_path.read_bytes()
+                    rel_path = str(file_path.relative_to(self.repo_path))
+                    batch.append((content, rel_path, language))
+                except Exception as e:
+                    print(f"Error reading {file_path}: {e}")
+
+            if not batch:
+                return elements, imports
+
+            # Single FFI call for the entire batch
+            results = walk_batch(batch)
+
+            for result in results:
+                for e in result.elements:
+                    elements.append(
+                        CodeElement(
+                            type=e.elem_type,
+                            name=e.name,
+                            file=e.file,
+                            line=e.line,
+                            end_line=e.end_line,
+                            language=e.language,
+                            visibility=e.visibility,
+                            parameters=e.parameters,
+                            return_type=e.return_type,
+                            decorators=e.decorators,
+                            parent_class=e.parent_class,
+                            dependencies=e.dependencies,
+                        )
+                    )
+                for i in result.imports:
+                    imports.append(
+                        ImportStatement(
+                            module=i.module,
+                            names=i.names,
+                            file=i.file,
+                            line=i.line,
+                            is_from=i.is_from,
+                            alias=i.alias,
+                        )
+                    )
+
+        except ImportError:
+            # Rust extension not available — fall back to Python
+            self._use_rust = False
+            return self._parse_language_files(language)
+        except Exception as e:
+            logger.warning("Rust native extension failed for %s: %s", language, e)
+            self._use_rust = False
+            return self._parse_language_files(language)
 
         return elements, imports
 

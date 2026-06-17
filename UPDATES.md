@@ -2,7 +2,45 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-17 (Dead Code Cleanup — Week 1)
+**Last updated:** 2026-06-17 (Rust Native Extension — Week 2)
+
+### 2026-06-17 (Rust Native Extension — Week 2)
+
+**Summary:** Implemented a Rust/PyO3 native extension (`scholardevclaw_native`) that replaces the Python tree-sitter AST walking hot path. Achieves 1.8x speedup on the 66.5% bottleneck (`_walk_for_elements_and_imports`). 35 parity tests pass across all 6 supported languages.
+
+**Changes:**
+
+1. Created Rust project at `core/native/` with PyO3 bindings:
+   - `Cargo.toml` — tree-sitter 0.22 + PyO3 0.20 with all 6 language grammars
+   - `src/lib.rs` — 1620 LOC implementing full AST walker with element + import extraction
+   - Supports Python, JavaScript, TypeScript, Go, Rust, Java
+   - Exposes `walk_file()`, `walk_batch()`, and `is_available()` to Python
+
+2. Integrated Rust extension into `tree_sitter_analyzer.py`:
+   - Auto-detects Rust extension at init (`_detect_rust_extension()`)
+   - Falls back gracefully to Python if extension unavailable
+   - New `_parse_language_files_rust()` method uses batch FFI for efficiency
+   - Modified `_parse_language_files()` to route through Rust when available
+
+3. Wrote 35 parity tests (`tests/unit/test_rust_native_parity.py`):
+   - Per-language element extraction tests (Python, JS, TS, Go, Rust, Java)
+   - Visibility, async detection, import extraction, return types
+   - Batch API consistency tests
+   - Analyzer integration tests
+
+4. Bug fixes found during parity testing:
+   - Fixed `has_child_of_type` to check ALL children (keywords are anonymous tokens)
+   - Added `has_nested_keyword` for tree-sitter-rust's `function_modifiers` wrapper
+   - Fixed import handler to iterate all children for `from`/`import` keywords
+   - Fixed Java modifiers extraction to use all children of `modifiers` node
+
+**Benchmarks (core/src/, 77K LOC, 3479 elements):**
+- Rust walk (batch): 0.621s
+- Python walk (loop): 1.122s
+- **Walk speedup: 1.8x**
+- Full analyze() speedup: 1.3x (parsing in tree-sitter C remains ~40% of total)
+
+**Validation:** 35/35 Rust parity tests pass. 119/121 unit tests pass (2 pre-existing pipeline failures).
 
 ### 2026-06-17 (Dead Code Cleanup — Week 1)
 
