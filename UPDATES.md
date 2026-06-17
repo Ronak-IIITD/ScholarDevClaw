@@ -2,7 +2,22 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-17 (Week 2+3: Rust Diff, Cosine Similarity, orjson Cache)
+**Last updated:** 2026-06-17 (CI fix: resolve lint errors, dead code refs, import ordering)
+
+### 2026-06-17 (CI Fix: resolve lint errors, dead code refs, import ordering)
+
+**Summary:** Fixed CI failures from the Rust feature commits. Removed orphaned `widgets_animated` references from `tui/__init__.py`, deleted unreachable dead code in `cli.py`, removed unused `json` import from `cache.py`, fixed import ordering across 4 files, and renamed ambiguous variable `l` in test file.
+
+**Changes:**
+
+1. **`tui/__init__.py`**: Removed `Spinner`, `Pulse`, `ProgressBar`, `TypingIndicator`, `Marquee` from `__all__` and `__getattr__` (module deleted in Week 1)
+2. **`cache.py`**: Removed unused `import json`, fixed import block ordering
+3. **`cli.py`**: Removed 116 lines of unreachable dead code in `cmd_context()` (after `sys.exit(1)`)
+4. **`pipeline.py`**: Fixed lazy import ordering for Rust native diff
+5. **`runner.py`**: Fixed lazy import ordering for Rust native diff
+6. **`test_rust_native_parity.py`**: Renamed ambiguous variable `l` → `ln`, fixed import ordering
+
+**Validation:** `ruff check` — 0 errors (was 14). All relevant unit tests pass.
 
 ### 2026-06-17 (Week 2+3: Rust Diff, Cosine Similarity, orjson Cache)
 
