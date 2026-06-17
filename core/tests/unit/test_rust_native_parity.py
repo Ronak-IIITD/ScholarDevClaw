@@ -590,6 +590,106 @@ class TestCosineSimilarity:
             assert abs(actual - expected) < 1e-6, f"Mismatch: {actual} vs {expected}"
 
 
+# ─── Tests: Unified Diff ─────────────────────────────────────────────────────
+
+
+class TestUnifiedDiff:
+    def test_identical(self):
+        from scholardevclaw_native import unified_diff
+
+        result = unified_diff("a\nb\n", "a\nb\n")
+        assert result == ""
+
+    def test_simple_change(self):
+        import difflib
+        from scholardevclaw_native import unified_diff
+
+        original = "line 1\nline 2\nline 3\n"
+        modified = "line 1\nline 2 modified\nline 3\n"
+        rust = unified_diff(original, modified)
+        py = "".join(difflib.unified_diff(original.splitlines(True), modified.splitlines(True)))
+        assert rust == py
+
+    def test_addition(self):
+        import difflib
+        from scholardevclaw_native import unified_diff
+
+        original = "a\nb\n"
+        modified = "a\nb\nc\n"
+        rust = unified_diff(original, modified)
+        py = "".join(difflib.unified_diff(original.splitlines(True), modified.splitlines(True)))
+        assert rust == py
+
+    def test_deletion(self):
+        import difflib
+        from scholardevclaw_native import unified_diff
+
+        original = "a\nb\nc\n"
+        modified = "a\nc\n"
+        rust = unified_diff(original, modified)
+        py = "".join(difflib.unified_diff(original.splitlines(True), modified.splitlines(True)))
+        assert rust == py
+
+    def test_empty_original(self):
+        from scholardevclaw_native import unified_diff
+
+        result = unified_diff("", "new line\n")
+        assert result.startswith("---")
+        assert "+++ " in result
+        assert "+new line" in result
+
+    def test_empty_modified(self):
+        from scholardevclaw_native import unified_diff
+
+        result = unified_diff("old line\n", "")
+        assert "---" in result
+        assert "-old line" in result
+
+    def test_custom_labels(self):
+        from scholardevclaw_native import unified_diff
+
+        result = unified_diff("a\n", "b\n", from_file="old.py", to_file="new.py")
+        assert "--- old.py" in result
+        assert "+++ new.py" in result
+
+    def test_context_lines(self):
+        from scholardevclaw_native import unified_diff
+
+        original = "\n".join(f"line {i}" for i in range(20)) + "\n"
+        modified = "\n".join(f"line {i}" for i in range(20)) + "\n"
+        modified = modified.replace("line 10", "CHANGED")
+        r1 = unified_diff(original, modified, context_lines=1)
+        r3 = unified_diff(original, modified, context_lines=3)
+        # More context = more lines in output
+        assert len(r3) > len(r1)
+
+    def test_count_diff_changes(self):
+        from scholardevclaw_native import unified_diff, count_diff_changes
+
+        original = "a\nb\nc\n"
+        modified = "a\nx\nc\ny\n"
+        diff = unified_diff(original, modified)
+        added, removed = count_diff_changes(diff)
+        assert added == 2  # +x, +y
+        assert removed == 1  # -b
+
+    def test_matches_python_large(self):
+        """Test on larger content (500 lines) to exercise Myers algorithm."""
+        import difflib
+        from scholardevclaw_native import unified_diff
+
+        rng_lines = [f"line {i}: {'x' * (i % 50)}" for i in range(500)]
+        original = "\n".join(rng_lines) + "\n"
+        # Modify every 10th line
+        modified_lines = list(rng_lines)
+        for i in range(0, 500, 10):
+            modified_lines[i] = f"line {i}: MODIFIED"
+        modified = "\n".join(modified_lines) + "\n"
+        rust = unified_diff(original, modified)
+        py = "".join(difflib.unified_diff(original.splitlines(True), modified.splitlines(True)))
+        assert rust == py
+
+
 # ─── Helper: run Python element extraction directly ──────────────────────────
 
 

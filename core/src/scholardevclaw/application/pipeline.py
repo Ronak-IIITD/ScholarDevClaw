@@ -143,22 +143,36 @@ def _build_diff_evidence(patch_payload: dict[str, Any] | None) -> dict[str, Any]
         original = str(transformation.get("original", ""))
         modified = str(transformation.get("modified", ""))
         files_changed.append(path)
-        diff_lines = list(
-            difflib.unified_diff(
-                original.splitlines(),
-                modified.splitlines(),
-                fromfile=f"a/{path}",
-                tofile=f"b/{path}",
-                lineterm="",
+
+        # Use Rust native diff if available, fall back to Python difflib
+        try:
+            from scholardevclaw_native import (
+                unified_diff as _rust_diff,
+                count_diff_changes as _rust_count,
             )
-        )
-        for line in diff_lines:
-            if line.startswith("+++") or line.startswith("---"):
-                continue
-            if line.startswith("+"):
-                line_additions += 1
-            elif line.startswith("-"):
-                line_removals += 1
+
+            diff_text = _rust_diff(original, modified, 3, f"a/{path}", f"b/{path}")
+            added, removed = _rust_count(diff_text)
+            line_additions += added
+            line_removals += removed
+            diff_lines = diff_text.splitlines()
+        except (ImportError, Exception):
+            diff_lines = list(
+                difflib.unified_diff(
+                    original.splitlines(),
+                    modified.splitlines(),
+                    fromfile=f"a/{path}",
+                    tofile=f"b/{path}",
+                    lineterm="",
+                )
+            )
+            for line in diff_lines:
+                if line.startswith("+++") or line.startswith("---"):
+                    continue
+                if line.startswith("+"):
+                    line_additions += 1
+                elif line.startswith("-"):
+                    line_removals += 1
 
         if len(representative_hunks) < 6:
             hunk_lines = [

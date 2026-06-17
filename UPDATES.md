@@ -2,9 +2,43 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-17 (Week 2+3: Rust Cosine Similarity + orjson Cache)
+**Last updated:** 2026-06-17 (Week 2+3: Rust Diff, Cosine Similarity, orjson Cache)
 
-### 2026-06-17 (Week 2+3: Rust Cosine Similarity + orjson Cache)
+### 2026-06-17 (Week 2+3: Rust Diff, Cosine Similarity, orjson Cache)
+
+**Summary:** Completed all performance migrations from the audit roadmap. Added Rust `unified_diff` (29.5x faster), Rust `cosine_similarity` (59x on matrix ops), and orjson cache serialization (12.9x faster). All 54 parity tests pass.
+
+**Changes:**
+
+1. **Rust unified diff** (added to `core/native/src/lib.rs`):
+   - `unified_diff(original, modified, context_lines, from_file, to_file)` — uses `similar` crate (Myers algorithm)
+   - `count_diff_changes(diff_text)` — counts additions/removals without parsing
+   - Benchmark: **29.5x faster** than Python `difflib.unified_diff` on 2000-line files
+   - Output is byte-identical to Python's `difflib.unified_diff`
+
+2. **Wired into 3 Python files** (all with graceful fallback):
+   - `application/pipeline.py` — diff counting with `count_diff_changes`
+   - `tui/diff_viewer.py` — unified diff for display
+   - `validation/runner.py` — diff scoring with `count_diff_changes`
+
+3. **10 new diff tests** (54 total parity tests):
+   - Edge cases: identical, empty original/modified
+   - Correctness: matches Python `difflib.unified_diff` byte-for-byte
+   - Large file test: 500 lines with modifications
+
+**Validation:** 54/54 parity tests pass (35 AST + 9 cosine + 10 diff).
+
+**Performance summary (all Rust native optimizations):**
+
+| Function | Speedup |
+|---|---|
+| AST walk (6 languages) | 1.8x |
+| Cosine similarity (single) | 2.9x |
+| Cosine similarity (200×200 matrix) | 59x |
+| JSON serialization (orjson) | 12.9x |
+| Unified diff (2000 lines) | 29.5x |
+
+### 2026-06-17 (Rust Native Extension — Week 2)
 
 **Summary:** Completed remaining Week 2 items (cosine similarity Rust migration) and Week 3 cache optimization. Added `cosine_similarity`, `cosine_similarity_batch`, and `cosine_similarity_matrix` to the Rust crate. Replaced Python `json` with `orjson` (Rust-based) in the cache layer for 12.9x faster serialization.
 

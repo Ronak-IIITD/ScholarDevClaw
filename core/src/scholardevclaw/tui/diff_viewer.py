@@ -103,15 +103,32 @@ def make_unified_diff(
         original_lines = file_diff.original.splitlines(keepends=True)
         modified_lines = file_diff.modified.splitlines(keepends=True)
 
-    raw = difflib.unified_diff(
-        original_lines,
-        modified_lines,
-        fromfile=from_label,
-        tofile=to_label,
-        n=context,
-        lineterm="",
-    )
-    return _colorize_unified("\n".join(raw))
+    raw_text = "\n".join(original_lines) + "\n" if original_lines else ""
+    mod_text = "\n".join(modified_lines) + "\n" if modified_lines else ""
+
+    # Use Rust native diff if available, fall back to Python difflib
+    try:
+        from scholardevclaw_native import unified_diff as _rust_diff
+
+        diff_text = _rust_diff(
+            raw_text,
+            mod_text,
+            context,
+            from_label,
+            to_label,
+        )
+    except (ImportError, Exception):
+        raw = difflib.unified_diff(
+            original_lines,
+            modified_lines,
+            fromfile=from_label,
+            tofile=to_label,
+            n=context,
+            lineterm="",
+        )
+        diff_text = "\n".join(raw)
+
+    return _colorize_unified(diff_text)
 
 
 def _colorize_unified(text: str) -> str:

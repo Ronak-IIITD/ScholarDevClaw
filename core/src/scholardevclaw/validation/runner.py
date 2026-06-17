@@ -927,20 +927,32 @@ class ValidationRunner:
             if not original and not modified:
                 continue
             changed_files += 1
-            diff_lines = list(
-                difflib.unified_diff(
-                    original.splitlines(),
-                    modified.splitlines(),
-                    lineterm="",
+
+            # Use Rust native diff if available
+            try:
+                from scholardevclaw_native import (
+                    unified_diff as _rust_diff,
+                    count_diff_changes as _rust_count,
                 )
-            )
-            total_changed_lines += len(
-                [
-                    line
-                    for line in diff_lines
-                    if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
-                ]
-            )
+
+                diff_text = _rust_diff(original, modified)
+                added, removed = _rust_count(diff_text)
+                total_changed_lines += added + removed
+            except (ImportError, Exception):
+                diff_lines = list(
+                    difflib.unified_diff(
+                        original.splitlines(),
+                        modified.splitlines(),
+                        lineterm="",
+                    )
+                )
+                total_changed_lines += len(
+                    [
+                        line
+                        for line in diff_lines
+                        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+                    ]
+                )
 
         score = 5
         if changed_files > 5 or total_changed_lines > 220:
