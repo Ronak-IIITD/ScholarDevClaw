@@ -2,7 +2,34 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-17 (Full Codebase Audit)
+**Last updated:** 2026-06-17 (Dead Code Cleanup — Week 1)
+
+### 2026-06-17 (Dead Code Cleanup — Week 1)
+
+**Summary:** Removed 12,567 lines of confirmed-dead code and 21 orphaned test files. Verified with 1,146 passing tests.
+
+**Changes:**
+
+1. Deleted 33 dead source files across 10 modules:
+   - `utils/` — 12 files (error_codes, validation, logger, progress, structured_logging, config, parallel, connection_pool, tracing, atomic_write, benchmark, cache)
+   - `automation/` — entire directory (scheduler, auto_apply, batch)
+   - `context_engine/` — entire directory (brain, store)
+   - `security/` — bandit.py, types.py, semgrep.py
+   - `validation/` — benchmark_suite.py, property_testing.py
+   - `research_intelligence/` — enhanced_extractor.py
+   - `github_app/` — webhook.py
+   - `tui/` — widgets_animated.py
+   - `api/` — health_routes.py, __init__.py, routes/__init__.py
+
+2. Deleted 21 orphaned test files referencing deleted modules.
+
+3. Cleaned up `__init__.py` imports in `validation/` and `research_intelligence/`.
+
+4. Fixed `cli.py` context command to raise clean error for removed module.
+
+5. Restored `rollback/types.py` and `tui/clipboard.py` (incorrectly flagged as dead — actively imported).
+
+**Validation:** 1,146 pytest tests pass. 1 pre-existing cache test failure (unrelated).
 
 ### 2026-06-17 (Full Codebase Audit)
 
