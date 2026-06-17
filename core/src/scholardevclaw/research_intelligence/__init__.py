@@ -6,12 +6,6 @@ from .citation_graph import (
     CitationPath,
 )
 from .embeddings import EmbeddingIndex
-from .enhanced_extractor import (
-    EnhancedSpecExtractor,
-    ExtractedAlgorithm,
-    PaperSpec,
-    extract_spec_from_arxiv,
-)
 from .extractor import ResearchExtractor
 from .paper_sources import (
     ArxivSource,
@@ -47,8 +41,4 @@ __all__ = [
     "SimilarPaper",
     "ResearchSimilaritySearch",
     "ResearchRecommendationEngine",
-    "ExtractedAlgorithm",
-    "PaperSpec",
-    "EnhancedSpecExtractor",
-    "extract_spec_from_arxiv",
 ]

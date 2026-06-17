@@ -2303,8 +2303,8 @@ def cmd_synthesize(args):
 
 def cmd_context(args):
     """Manage project context and memory"""
-    from scholardevclaw.context_engine import ContextEngine
-    from scholardevclaw.research_intelligence.extractor import ResearchExtractor
+    print("Error: context module has been removed (dead code cleanup).", file=sys.stderr)
+    sys.exit(1)
 
     engine = ContextEngine()
 
