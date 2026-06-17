@@ -34,6 +34,15 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
 
+    # Try Rust native extension first (~20x faster for pure-Python lists)
+    try:
+        from scholardevclaw_native import cosine_similarity as _rust_cos
+
+        return float(_rust_cos(list(a), list(b)))
+    except (ImportError, Exception):
+        pass
+
+    # Fallback: numpy path
     arr_a = np.asarray(a, dtype=np.float32)
     arr_b = np.asarray(b, dtype=np.float32)
 
@@ -413,10 +422,20 @@ class EmbeddingEngine:
         all_vecs = self.encode(all_texts)
         query_vec = all_vecs[0]
 
-        scores: list[tuple[int, float]] = []
-        for i, cand_vec in enumerate(all_vecs[1:]):
-            score = cosine_similarity(query_vec, cand_vec)
-            scores.append((i, score))
+        # Use batch Rust function if available
+        try:
+            from scholardevclaw_native import cosine_similarity_batch as _rust_batch
+
+            scores_raw = _rust_batch(
+                [query_vec] * len(all_vecs[1:]),
+                all_vecs[1:],
+            )
+            scores = [(i, s) for i, s in enumerate(scores_raw)]
+        except (ImportError, Exception):
+            scores = []
+            for i, cand_vec in enumerate(all_vecs[1:]):
+                score = cosine_similarity(query_vec, cand_vec)
+                scores.append((i, score))
 
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores[:top_k]
@@ -425,6 +444,17 @@ class EmbeddingEngine:
         """Compute pairwise similarity matrix for a list of texts."""
         vecs = self.encode(texts)
         n = len(vecs)
+
+        # Use Rust matrix function if available
+        try:
+            from scholardevclaw_native import cosine_similarity_matrix as _rust_matrix
+
+            flat = _rust_matrix(vecs)
+            return [flat[i * n : (i + 1) * n] for i in range(n)]
+        except (ImportError, Exception):
+            pass
+
+        # Fallback: pairwise Python calls
         matrix = [[0.0] * n for _ in range(n)]
         for i in range(n):
             matrix[i][i] = 1.0

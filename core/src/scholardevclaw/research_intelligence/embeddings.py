@@ -21,6 +21,16 @@ def _tokenize(text: str) -> list[str]:
 def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     if a.size == 0 or b.size == 0 or a.shape != b.shape:
         return 0.0
+
+    # Try Rust native extension first
+    try:
+        from scholardevclaw_native import cosine_similarity as _rust_cos
+
+        return float(_rust_cos(a.tolist(), b.tolist()))
+    except (ImportError, Exception):
+        pass
+
+    # Fallback: numpy path
     denom = float(np.linalg.norm(a) * np.linalg.norm(b))
     if denom <= 1e-9:
         return 0.0

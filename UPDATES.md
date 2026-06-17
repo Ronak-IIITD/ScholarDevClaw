@@ -2,7 +2,39 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-17 (Rust Native Extension — Week 2)
+**Last updated:** 2026-06-17 (Week 2+3: Rust Cosine Similarity + orjson Cache)
+
+### 2026-06-17 (Week 2+3: Rust Cosine Similarity + orjson Cache)
+
+**Summary:** Completed remaining Week 2 items (cosine similarity Rust migration) and Week 3 cache optimization. Added `cosine_similarity`, `cosine_similarity_batch`, and `cosine_similarity_matrix` to the Rust crate. Replaced Python `json` with `orjson` (Rust-based) in the cache layer for 12.9x faster serialization.
+
+**Changes:**
+
+1. **Rust cosine similarity** (added to `core/native/src/lib.rs`):
+   - `cosine_similarity(a, b)` — single pair with normalization
+   - `cosine_similarity_batch(va, vb)` — aligned pairwise batch
+   - `cosine_similarity_matrix(vecs)` — full pairwise matrix (O(n²))
+   - Matrix benchmark: **59x faster** than numpy for 200×200 at dim=384
+   - Single pair: **2.9x faster** than numpy, **1.9x faster** than pure Python
+
+2. **Wired into Python** (3 files):
+   - `agent/embeddings.py` — `cosine_similarity()`, `find_most_similar()`, `batch_similarity_matrix()`
+   - `research_intelligence/embeddings.py` — `_cosine_similarity()`
+   - `repo_intelligence/code_embeddings.py` — `_cosine_similarity()`
+   - All fall back to existing implementations if Rust extension unavailable
+
+3. **orjson cache serialization** (`application/cache.py`):
+   - `_save_index()` — orjson.dumps (12.9x faster than json.dump)
+   - `_load_index()` — orjson.loads (faster deserialization)
+   - `_make_key()` — orjson.dumps with OPT_SORT_KEYS for deterministic hashing
+   - Added `orjson>=3.9.0` to pyproject.toml dependencies
+
+4. **9 new tests** for cosine similarity (44 total parity tests pass):
+   - Edge cases: empty, zero-length, mismatched, zero vectors
+   - Correctness: matches numpy within 1e-6 tolerance
+   - Batch and matrix operations
+
+**Validation:** 44/44 parity tests pass. Cache functional test passes.
 
 ### 2026-06-17 (Rust Native Extension — Week 2)
 

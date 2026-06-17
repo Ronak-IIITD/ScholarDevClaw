@@ -1626,6 +1626,104 @@ fn is_available() -> bool {
     true
 }
 
+// ─── Cosine similarity (SIMD-friendly, replaces pure-Python dot products) ───
+
+/// Cosine similarity between two equal-length float vectors (with normalization).
+///
+/// Equivalent to: `np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))`
+/// Returns 0.0 for zero-length or mismatched vectors.
+#[pyfunction]
+fn cosine_similarity(a: Vec<f64>, b: Vec<f64>) -> PyResult<f64> {
+    if a.len() != b.len() || a.is_empty() {
+        return Ok(0.0);
+    }
+    let mut dot = 0.0f64;
+    let mut norm_a = 0.0f64;
+    let mut norm_b = 0.0f64;
+    for i in 0..a.len() {
+        dot += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom < 1e-9 {
+        return Ok(0.0);
+    }
+    Ok(dot / denom)
+}
+
+/// Batch cosine similarity: compute pairwise similarity for aligned vector lists.
+///
+/// `vectors_a[i]` is compared with `vectors_b[i]` for each i.
+/// Returns a Vec of similarity scores. Skips pairs with mismatched lengths.
+#[pyfunction]
+fn cosine_similarity_batch(
+    vectors_a: Vec<Vec<f64>>,
+    vectors_b: Vec<Vec<f64>>,
+) -> PyResult<Vec<f64>> {
+    let n = vectors_a.len().min(vectors_b.len());
+    let mut results = Vec::with_capacity(n);
+    for i in 0..n {
+        let a = &vectors_a[i];
+        let b = &vectors_b[i];
+        if a.len() != b.len() || a.is_empty() {
+            results.push(0.0);
+            continue;
+        }
+        let mut dot = 0.0f64;
+        let mut norm_a = 0.0f64;
+        let mut norm_b = 0.0f64;
+        for j in 0..a.len() {
+            dot += a[j] * b[j];
+            norm_a += a[j] * a[j];
+            norm_b += b[j] * b[j];
+        }
+        let denom = norm_a.sqrt() * norm_b.sqrt();
+        if denom < 1e-9 {
+            results.push(0.0);
+        } else {
+            results.push(dot / denom);
+        }
+    }
+    Ok(results)
+}
+
+/// Pairwise cosine similarity matrix: compare every vector in `vectors` against every other.
+///
+/// Returns a flat row-major matrix: result[i * n + j] = sim(vectors[i], vectors[j]).
+/// The diagonal is always 1.0 (self-similarity).
+#[pyfunction]
+fn cosine_similarity_matrix(vectors: Vec<Vec<f64>>) -> PyResult<Vec<f64>> {
+    let n = vectors.len();
+    let mut result = vec![0.0f64; n * n];
+
+    // Pre-compute norms
+    let norms: Vec<f64> = vectors
+        .iter()
+        .map(|v| v.iter().map(|x| x * x).sum::<f64>().sqrt())
+        .collect();
+
+    for i in 0..n {
+        result[i * n + i] = 1.0; // self-similarity
+        for j in (i + 1)..n {
+            if norms[i] < 1e-9 || norms[j] < 1e-9 {
+                result[i * n + j] = 0.0;
+                result[j * n + i] = 0.0;
+                continue;
+            }
+            let mut dot = 0.0f64;
+            let min_len = vectors[i].len().min(vectors[j].len());
+            for k in 0..min_len {
+                dot += vectors[i][k] * vectors[j][k];
+            }
+            let sim = dot / (norms[i] * norms[j]);
+            result[i * n + j] = sim;
+            result[j * n + i] = sim;
+        }
+    }
+    Ok(result)
+}
+
 // ─── Module definition ───────────────────────────────────────────────────────
 
 #[pymodule]
@@ -1633,6 +1731,9 @@ fn scholardevclaw_native(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(walk_file, m)?)?;
     m.add_function(wrap_pyfunction!(walk_batch, m)?)?;
     m.add_function(wrap_pyfunction!(is_available, m)?)?;
+    m.add_function(wrap_pyfunction!(cosine_similarity, m)?)?;
+    m.add_function(wrap_pyfunction!(cosine_similarity_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(cosine_similarity_matrix, m)?)?;
     m.add_class::<PyCodeElement>()?;
     m.add_class::<PyImportStatement>()?;
     m.add_class::<WalkResult>()?;

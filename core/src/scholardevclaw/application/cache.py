@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import orjson
 import pickle
 import time
 from collections.abc import Callable
@@ -75,13 +76,13 @@ class PipelineCache:
         self._load_index()
 
     def _load_index(self) -> None:
-        """Load cache index from disk."""
+        """Load cache index from disk (uses orjson for faster deserialization)."""
         index_path = self.cache_dir / "index.json"
         if not index_path.exists():
             return
         try:
-            with open(index_path) as f:
-                index = json.load(f)
+            with open(index_path, "rb") as f:
+                index = orjson.loads(f.read())
             for key, entry_data in index.items():
                 entry = CacheEntry.from_dict(entry_data)
                 if not entry.is_expired():
@@ -91,19 +92,22 @@ class PipelineCache:
             self._memory_cache = {}
 
     def _save_index(self) -> None:
-        """Save cache index to disk."""
+        """Save cache index to disk (uses orjson for 5-10x faster serialization)."""
         index_path = self.cache_dir / "index.json"
         try:
             index = {key: entry.to_dict() for key, entry in self._memory_cache.items()}
-            with open(index_path, "w") as f:
-                json.dump(index, f)
+            with open(index_path, "wb") as f:
+                f.write(orjson.dumps(index))
         except Exception:
             pass  # Best effort
 
     def _make_key(self, stage: str, *args: Any, **kwargs: Any) -> str:
         """Create a content-addressable cache key."""
-        content = f"{stage}:{json.dumps(args, sort_keys=True)}:{json.dumps(kwargs, sort_keys=True)}"
-        return hashlib.sha256(content.encode()).hexdigest()[:32]
+        key_parts = orjson.dumps(
+            {"stage": stage, "args": args, "kwargs": kwargs},
+            option=orjson.OPT_SORT_KEYS,
+        )
+        return hashlib.sha256(key_parts).hexdigest()[:32]
 
     def _get_cache_path(self, key: str) -> Path:
         """Get the file path for a cache key."""

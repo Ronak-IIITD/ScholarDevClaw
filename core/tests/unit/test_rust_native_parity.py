@@ -516,6 +516,80 @@ class TestAnalyzerIntegration:
         assert is_available() is True
 
 
+# ─── Tests: Cosine Similarity ────────────────────────────────────────────────
+
+
+class TestCosineSimilarity:
+    def test_identical_vectors(self):
+        from scholardevclaw_native import cosine_similarity
+
+        assert abs(cosine_similarity([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]) - 1.0) < 1e-9
+
+    def test_orthogonal_vectors(self):
+        from scholardevclaw_native import cosine_similarity
+
+        assert abs(cosine_similarity([1.0, 0.0], [0.0, 1.0])) < 1e-9
+
+    def test_known_value(self):
+        from scholardevclaw_native import cosine_similarity
+
+        sim = cosine_similarity([1.0, 2.0, 3.0], [4.0, 5.0, 6.0])
+        assert abs(sim - 0.974632) < 0.001
+
+    def test_empty_vectors(self):
+        from scholardevclaw_native import cosine_similarity
+
+        assert cosine_similarity([], []) == 0.0
+
+    def test_mismatched_lengths(self):
+        from scholardevclaw_native import cosine_similarity
+
+        assert cosine_similarity([1.0], [1.0, 2.0]) == 0.0
+
+    def test_zero_vector(self):
+        from scholardevclaw_native import cosine_similarity
+
+        assert cosine_similarity([0.0, 0.0], [1.0, 2.0]) == 0.0
+
+    def test_batch(self):
+        from scholardevclaw_native import cosine_similarity_batch
+
+        va = [[1, 0, 0], [0, 1, 0], [1, 1, 0]]
+        vb = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+        result = cosine_similarity_batch(va, vb)
+        assert abs(result[0] - 1.0) < 1e-9
+        assert abs(result[1] - 1.0) < 1e-9
+        assert abs(result[2]) < 1e-9
+
+    def test_matrix(self):
+        from scholardevclaw_native import cosine_similarity_matrix
+
+        vecs = [[1, 0, 0], [0, 1, 0], [1, 1, 0]]
+        m = cosine_similarity_matrix(vecs)
+        n = 3
+        # Diagonal should be 1.0
+        assert abs(m[0 * n + 0] - 1.0) < 1e-9
+        assert abs(m[1 * n + 1] - 1.0) < 1e-9
+        assert abs(m[2 * n + 2] - 1.0) < 1e-9
+        # Orthogonal vectors should be ~0
+        assert abs(m[0 * n + 1]) < 1e-9
+        # [1,0,0] and [1,1,0] should be ~0.7071
+        assert abs(m[0 * n + 2] - 0.7071) < 0.001
+
+    def test_matches_numpy(self):
+        import numpy as np
+        from scholardevclaw_native import cosine_similarity
+
+        rng = np.random.default_rng(42)
+        for _ in range(100):
+            a = rng.random(128).tolist()
+            b = rng.random(128).tolist()
+            a_np, b_np = np.array(a), np.array(b)
+            expected = float(np.dot(a_np, b_np) / (np.linalg.norm(a_np) * np.linalg.norm(b_np)))
+            actual = cosine_similarity(a, b)
+            assert abs(actual - expected) < 1e-6, f"Mismatch: {actual} vs {expected}"
+
+
 # ─── Helper: run Python element extraction directly ──────────────────────────
 
 

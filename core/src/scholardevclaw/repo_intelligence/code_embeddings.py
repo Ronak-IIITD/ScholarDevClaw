@@ -338,6 +338,15 @@ class CodeSimilarityFinder:
 
     def _cosine_similarity(self, vec1: list[float], vec2: list[float]) -> float:
         """Compute cosine similarity between two vectors"""
+        # Try Rust native extension first
+        try:
+            from scholardevclaw_native import cosine_similarity as _rust_cos
+
+            return float(_rust_cos(list(vec1), list(vec2)))
+        except (ImportError, Exception):
+            pass
+
+        # Fallback: pure Python dot product
         dot = sum(a * b for a, b in zip(vec1, vec2))
         return dot
 
