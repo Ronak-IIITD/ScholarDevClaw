@@ -2,7 +2,29 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-15 (Legacy Web Dashboard Cleanup)
+**Last updated:** 2026-06-17 (Full Codebase Audit)
+
+### 2026-06-17 (Full Codebase Audit)
+
+**Summary:** Comprehensive codebase audit producing dead code report, criticality map, performance hotspot analysis, and language migration plan.
+
+**Changes:**
+
+1. Generated `CODEBASE_AUDIT.md` with six deliverables:
+   - **Inventory Table:** 83,300 Python LOC across 187 files + 18,066 TypeScript LOC across 72 files.
+   - **Dead Code Report:** 88 files (~23,100 LOC) identified as safe to delete (0 imports, untouched ≥3 months). 1,102 vulture flags at 60% confidence. Estimated 33.6% of Python codebase is dead.
+   - **Criticality Map:** 4-tier classification (T1: 28 core pipeline modules, T2: 44 important modules, T3: 17 peripheral, T4: ~70 dead/redundant).
+   - **Performance Hotspot Report:** Profiled 4.8M function calls — 66.5% of runtime in `_walk_for_elements_and_imports` (tree-sitter recursive AST walk over 696,973 nodes).
+   - **Language Migration Plan:** 5 migration candidates — Rust (tree-sitter walk, cosine similarity), TS (cache serialization, validation orchestration), Rust (diff generation).
+   - **Cleanup Roadmap:** Week 1 deletions (~22.5K LOC), Week 2 Rust migrations, Week 3 TS migrations.
+
+2. Key findings:
+   - Tree-sitter AST traversal is the single dominant bottleneck (66.5% of 2.6s runtime).
+   - ~33.6% of Python codebase is estimated dead code.
+   - 15 of 20 utils/ files have zero imports and are untouched for 3+ months.
+   - The entire `rollback/`, `automation/`, `context_engine/`, `critic/`, `planner/` modules are unused.
+
+**Validation:** cProfile profiling, pylint unused import detection, vulture dead code analysis, git blame recency checks, import graph analysis.
 
 ### 2026-06-15 (Legacy Web Dashboard Cleanup)
 
