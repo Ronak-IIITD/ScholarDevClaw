@@ -2,7 +2,29 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-17 (CI fix: resolve lint errors, dead code refs, import ordering)
+**Last updated:** 2026-06-18 (OpenTUI rewrite — full orchestrator integration)
+
+### 2026-06-18 (OpenTUI Rewrite — Full Orchestrator Integration)
+
+**Summary:** Complete rewrite of the TypeScript OpenTUI app (`agent/src/tui/opentui-app.ts`) from a minimal stub (~600 LOC, only `analyze`/`search` working) to a full orchestration interface (~1220 LOC) with all 6 pipeline phases, live progress, approval gates, and run history. Uses `PythonHttpBridge` to drive the Python FastAPI pipeline directly. TypeScript build clean, 508 agent tests pass.
+
+**Changes:**
+
+1. **Full 6-phase pipeline** — `runFullPipeline()` drives analyze → extract → map → generate → validate → report sequentially via `PythonHttpBridge`, with typed result objects (`RepoAnalysisResult`, `ResearchSpecResult`, `MappingResult`, `PatchResult`, `ValidationResult`)
+
+2. **Live phase progress panel** — `PhaseProgressPanel` renders ✓/▶/○ status indicators with per-phase timing and overall elapsed time
+
+3. **Approval gate UI** — In `step_approval` mode, `ApprovalGatePanel` prompts user `y/n` between phases with phase name, description, and approve/reject/skip actions
+
+4. **Run history** — `runs`/`history` command lists past runs from `RunStore`, `resume <run-id>` re-runs a previous integration
+
+5. **All commands implemented**: `integrate`, `analyze`, `search`, `suggest`, `map`, `generate`, `validate`, `runs`, `resume`, `status`, `help`, `quit`
+
+6. **Tab autocomplete** for spec names (rmsnorm, flashattention, swiglu, geglu, gqa, rope, preln, alibi, qknorm)
+
+7. **Cancellation** via Ctrl+C during any pipeline phase
+
+**Validation:** `bun run build` (tsc) — clean. `bun run test` (vitest) — 508/508 pass.
 
 ### 2026-06-17 (CI Fix: resolve lint errors, dead code refs, import ordering)
 
