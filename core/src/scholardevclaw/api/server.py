@@ -240,6 +240,62 @@ class ValidationRequest(BaseModel):
     repo_path: str = Field(alias="repoPath")
 
 
+class ValidationArtifactsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    patch: dict[str, Any]
+
+
+class ValidationTestsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    repo_path: str = Field(alias="repoPath")
+
+
+class ValidationBenchmarkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    repo_path: str = Field(alias="repoPath")
+
+
+class ValidationTrainingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    repo_path: str = Field(alias="repoPath")
+    use_variant: bool = Field(default=False, alias="useVariant")
+    use_torch: bool = Field(default=False, alias="useTorch")
+    iterations: int = 10
+    batch_size: int = 4
+    seq_len: int = 32
+
+
+class ValidationNumericalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    patch: dict[str, Any]
+
+
+class ValidationRegressionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    patch: dict[str, Any]
+
+
+class ValidationReadabilityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    patch: dict[str, Any]
+
+
+class ValidationHealRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    patch: dict[str, Any]
+    test_result: dict[str, Any] = Field(alias="testResult")
+    mapping_result: dict[str, Any] | None = Field(default=None, alias="mappingResult")
+    repo_path: str = Field(alias="repoPath")
+
+
 class FromPaperRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -1117,6 +1173,256 @@ async def run_validation(request: ValidationRequest, http_request: Request):
                 "Fix: check server logs using X-Request-ID and retry."
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# Validation sub-step endpoints (for TS orchestration)
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/validation/artifacts",
+    tags=["validation"],
+    summary="Validate patch artifacts",
+    description="Check patch artifacts for syntax correctness",
+)
+async def validate_artifacts(request: ValidationArtifactsRequest):
+    try:
+        runner = ValidationRunner(Path("."))
+        result = runner._validate_patch_artifacts(request.patch)
+        return {
+            "passed": result.passed,
+            "stage": result.stage,
+            "logs": result.logs,
+            "error": result.error,
+        }
+    except Exception as e:
+        logger.exception("validate_artifacts failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/validation/policy",
+    tags=["validation"],
+    summary="Check execution policy",
+    description="Check if validation execution policy allows running",
+)
+async def check_policy():
+    try:
+        runner = ValidationRunner(Path("."))
+        result = runner._enforce_execution_policy()
+        warning = runner._execution_policy_warning()
+        return {
+            "blocked": result is not None,
+            "passed": result.passed if result else True,
+            "stage": result.stage if result else "policy",
+            "logs": result.logs if result else "",
+            "error": result.error if result else None,
+            "warning": warning,
+        }
+    except Exception as e:
+        logger.exception("check_policy failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/validation/tests",
+    tags=["validation"],
+    summary="Run tests",
+    description="Run test suite for the repository",
+)
+async def run_tests(request: ValidationTestsRequest):
+    try:
+        repo_path = _resolve_existing_repo_path(request.repo_path)
+        runner = ValidationRunner(repo_path)
+        result = runner._run_tests()
+        return {
+            "passed": result.passed,
+            "stage": result.stage,
+            "logs": result.logs,
+            "error": result.error,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("run_tests failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/validation/benchmark",
+    tags=["validation"],
+    summary="Run benchmarks",
+    description="Run benchmark suite for the repository",
+)
+async def run_benchmark(request: ValidationBenchmarkRequest):
+    try:
+        repo_path = _resolve_existing_repo_path(request.repo_path)
+        runner = ValidationRunner(repo_path)
+        result = runner._run_benchmark()
+        return {
+            "passed": result.passed,
+            "stage": result.stage,
+            "comparison": result.comparison,
+            "logs": result.logs,
+            "error": result.error,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("run_benchmark failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/validation/training",
+    tags=["validation"],
+    summary="Run training test",
+    description="Run a training benchmark (baseline or variant)",
+)
+async def run_training(request: ValidationTrainingRequest):
+    try:
+        repo_path = _resolve_existing_repo_path(request.repo_path)
+        runner = ValidationRunner(repo_path)
+        metrics = runner._run_training_test(
+            use_variant=request.use_variant,
+            use_torch=request.use_torch,
+            iterations=request.iterations,
+            batch_size=request.batch_size,
+            seq_len=request.seq_len,
+        )
+        if metrics is None:
+            return {"status": "error", "reason": "Training benchmark failed"}
+        return {
+            "status": "completed",
+            "loss": metrics.loss,
+            "perplexity": metrics.perplexity,
+            "tokens_per_second": metrics.tokens_per_second,
+            "memory_mb": metrics.memory_mb,
+            "runtime_seconds": metrics.runtime_seconds,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("run_training failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/validation/correctness",
+    tags=["validation"],
+    summary="Numerical correctness check",
+    description="Check numerical correctness of patch against expected benchmark",
+)
+async def run_numerical_correctness(request: ValidationNumericalRequest):
+    try:
+        runner = ValidationRunner(Path("."))
+        return runner._run_numerical_correctness(request.patch)
+    except Exception as e:
+        logger.exception("run_numerical_correctness failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/validation/regression",
+    tags=["validation"],
+    summary="Regression snapshot",
+    description="Check for symbol removals and signature changes",
+)
+async def run_regression_snapshot(request: ValidationRegressionRequest):
+    try:
+        runner = ValidationRunner(Path("."))
+        return runner._run_regression_snapshot(request.patch)
+    except Exception as e:
+        logger.exception("run_regression_snapshot failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/validation/readability",
+    tags=["validation"],
+    summary="Diff readability score",
+    description="Score the readability of the patch diff",
+)
+async def score_diff_readability(request: ValidationReadabilityRequest):
+    try:
+        runner = ValidationRunner(Path("."))
+        return runner._score_diff_readability(request.patch)
+    except Exception as e:
+        logger.exception("score_diff_readability failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/validation/heal",
+    tags=["validation"],
+    summary="Heal a failed patch",
+    description="Use LLM to attempt to fix a failing patch",
+)
+async def heal_patch(request: ValidationHealRequest):
+    try:
+        from scholardevclaw.patch_generation.generator import NewFile, Patch, Transformation
+
+        repo_path = _resolve_existing_repo_path(request.repo_path)
+        new_files = [
+            NewFile(path=f.get("path", ""), content=f.get("content", ""))
+            for f in request.patch.get("new_files", [])
+        ]
+        transformations = [
+            Transformation(
+                file=t.get("file", ""),
+                original=t.get("original", ""),
+                modified=t.get("modified", ""),
+                changes=t.get("changes", []),
+            )
+            for t in request.patch.get("transformations", [])
+        ]
+        patch_obj = Patch(
+            new_files=new_files,
+            transformations=transformations,
+            branch_name=request.patch.get("branch_name", ""),
+            algorithm_name=request.patch.get("algorithm_name", ""),
+            paper_reference=request.patch.get("paper_reference", ""),
+        )
+
+        llm_assistant = None
+        try:
+            from scholardevclaw.llm.research_assistant import LLMResearchAssistant
+
+            llm_assistant = LLMResearchAssistant.create()
+        except Exception:
+            logger.warning("Could not create LLM assistant for healing")
+
+        from scholardevclaw.validation.runner import ValidationResult as VResult
+
+        test_result = VResult(
+            passed=request.test_result.get("passed", False),
+            stage=request.test_result.get("stage", "tests"),
+            logs=request.test_result.get("logs", ""),
+            error=request.test_result.get("error"),
+        )
+
+        generator = PatchGenerator(repo_path, llm_assistant=llm_assistant)
+        healed = generator.heal_patch(patch_obj, test_result, request.mapping_result or {})
+
+        return {
+            "new_files": [{"path": f.path, "content": f.content} for f in healed.new_files],
+            "transformations": [
+                {
+                    "file": t.file,
+                    "original": t.original,
+                    "modified": t.modified,
+                    "changes": t.changes,
+                }
+                for t in healed.transformations
+            ],
+            "branch_name": healed.branch_name,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("heal_patch failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post(

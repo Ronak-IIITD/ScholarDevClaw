@@ -2,7 +2,43 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-18 (OpenTUI rewrite — full orchestrator integration)
+**Last updated:** 2026-06-18 (Validation orchestration → TypeScript migration)
+
+### 2026-06-18 (Validation Orchestration → TypeScript Migration)
+
+**Summary:** Rewrote Phase 5 validation from a thin Python monolith wrapper to a TypeScript-orchestrated parallel pipeline. Added 9 individual FastAPI endpoints for validation sub-steps, 9 bridge methods in `PythonHttpBridge`, and rewrote `phase5-validation.ts` to run independent validation steps in parallel via `Promise.allSettled`. Tests + benchmarks + training now execute concurrently where possible, with automatic healing loop support.
+
+**Changes:**
+
+1. **FastAPI server** (`core/src/scholardevclaw/api/server.py`):
+   - Added 9 new validation sub-step endpoints: `/validation/artifacts`, `/validation/policy`, `/validation/tests`, `/validation/benchmark`, `/validation/training`, `/validation/correctness`, `/validation/regression`, `/validation/readability`, `/validation/heal`
+   - Added 7 new Pydantic request models for each endpoint
+   - Original `/validation/run` monolithic endpoint preserved for backward compatibility
+
+2. **PythonHttpBridge** (`agent/src/bridges/python-http.ts`):
+   - Added 9 new methods: `validateArtifacts()`, `checkPolicy()`, `runTests()`, `runBenchmark()`, `runTraining()`, `runNumericalCorrectness()`, `runRegressionSnapshot()`, `scoreDiffReadability()`, `healPatch()`
+
+3. **Phase 5 validation orchestrator** (`agent/src/phases/phase5-validation.ts`):
+   - Rewritten from 48-line stub to ~390-line parallel orchestrator
+   - **Step 1**: artifacts + policy check (parallel)
+   - **Step 2**: tests (sequential, must pass before benchmarks)
+   - **Step 3**: healing loop with LLM (up to 2 attempts, sequential)
+   - **Step 4**: benchmark + baseline training + variant training (parallel via `Promise.allSettled`)
+   - **Step 5**: numerical correctness + regression snapshot + diff readability (parallel)
+   - **Step 6**: aggregate results with metrics comparison
+   - Graceful fallback to monolithic `validate()` for non-HTTP bridges
+   - Progress callback support for real-time step status updates
+   - Returns `AggregatedValidation` with per-step timing and status
+
+4. **Tests** (`agent/src/phases/phase5-validation.test.ts`):
+   - 10 tests covering: happy path, step results, metrics aggregation, artifact failure, test failure + healing, healing success, progress callbacks, subprocess bridge fallback
+
+**Parallelization opportunities:**
+- Artifacts + policy check run in parallel (both fast)
+- Benchmark + baseline training + variant training run in parallel (all subprocess-bound)
+- Numerical correctness + regression snapshot + diff readability run in parallel (all CPU-bound)
+
+**Validation:** `bun run build` (tsc) — clean. `bun run test` (vitest) — 10/10 phase5 tests pass. `ruff check` — 0 errors.
 
 ### 2026-06-18 (OpenTUI Rewrite — Full Orchestrator Integration)
 

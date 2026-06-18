@@ -150,6 +150,73 @@ export class PythonHttpBridge {
     });
   }
 
+  // --- Validation sub-step endpoints (for parallel orchestration) ---
+
+  async validateArtifacts(patch: PatchResult): Promise<PhaseResult> {
+    logger.info('Validating patch artifacts');
+    return this.request('/validation/artifacts', 'POST', { patch });
+  }
+
+  async checkPolicy(): Promise<PhaseResult> {
+    logger.info('Checking execution policy');
+    return this.request('/validation/policy', 'POST', {});
+  }
+
+  async runTests(repoPath: string): Promise<PhaseResult> {
+    logger.info('Running tests');
+    return this.request('/validation/tests', 'POST', { repoPath });
+  }
+
+  async runBenchmark(repoPath: string): Promise<PhaseResult> {
+    logger.info('Running benchmarks');
+    return this.request('/validation/benchmark', 'POST', { repoPath });
+  }
+
+  async runTraining(
+    repoPath: string,
+    opts: { useVariant?: boolean; useTorch?: boolean; iterations?: number; batchSize?: number; seqLen?: number } = {},
+  ): Promise<PhaseResult> {
+    logger.info('Running training test', { useVariant: opts.useVariant });
+    return this.request('/validation/training', 'POST', {
+      repoPath,
+      useVariant: opts.useVariant ?? false,
+      useTorch: opts.useTorch ?? false,
+      iterations: opts.iterations ?? 10,
+      batchSize: opts.batchSize ?? 4,
+      seqLen: opts.seqLen ?? 32,
+    });
+  }
+
+  async runNumericalCorrectness(patch: PatchResult): Promise<PhaseResult> {
+    logger.info('Running numerical correctness check');
+    return this.request('/validation/correctness', 'POST', { patch });
+  }
+
+  async runRegressionSnapshot(patch: PatchResult): Promise<PhaseResult> {
+    logger.info('Running regression snapshot');
+    return this.request('/validation/regression', 'POST', { patch });
+  }
+
+  async scoreDiffReadability(patch: PatchResult): Promise<PhaseResult> {
+    logger.info('Scoring diff readability');
+    return this.request('/validation/readability', 'POST', { patch });
+  }
+
+  async healPatch(
+    patch: PatchResult,
+    testResult: { passed: boolean; stage: string; logs?: string; error?: string },
+    mappingResult: unknown,
+    repoPath: string,
+  ): Promise<PhaseResult> {
+    logger.info('Healing patch');
+    return this.request('/validation/heal', 'POST', {
+      patch,
+      testResult,
+      mappingResult,
+      repoPath,
+    });
+  }
+
   async healthCheck(): Promise<boolean> {
     const result = await this.request<{ status: string }>('/health', 'GET');
     const data = result.data as { status?: string } | undefined;
