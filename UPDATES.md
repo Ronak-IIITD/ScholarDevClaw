@@ -2,7 +2,33 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-18 (Validation orchestration → TypeScript migration)
+**Last updated:** 2026-06-21 (Coverage tests for validation endpoints and bridge methods)
+
+### 2026-06-21 (Coverage Tests — Validation API Endpoints + Bridge Methods)
+
+**Summary:** Added 46 new tests covering the validation orchestration layer. 34 Python tests for the 9 FastAPI validation sub-step endpoints, 12 TypeScript tests for the 9 PythonHttpBridge validation methods. All 308 tests pass (277 Python + 31 TypeScript).
+
+**Changes:**
+
+1. **Python** (`core/tests/unit/test_api_validation_endpoints.py`, new, 34 tests):
+   - `TestValidationArtifacts` (5): valid patch, syntax error, empty patch, transformations, non-Python files
+   - `TestValidationPolicy` (3): default allows, strict blocks, warn returns warning
+   - `TestValidationTests` (5): no test files, pass, fail, missing repo path, nonexistent repo
+   - `TestValidationBenchmark` (2): no benchmarks, mock benchmark
+   - `TestValidationTraining` (3): baseline, variant, failure
+   - `TestValidationCorrectness` (2): no algorithm key, unknown algorithm
+   - `TestValidationRegression` (4): no transformations, no removal, symbol removal, signature change
+   - `TestValidationReadability` (3): empty, small diff, large diff
+   - `TestValidationHeal` (2): calls generator, missing repo
+   - `TestRequestValidation` (4): 422 errors for missing fields
+
+2. **TypeScript** (`agent/src/bridges/python-http.test.ts`, +12 tests):
+   - All 9 validation sub-step methods: correct endpoint, HTTP method, and body
+   - Default options for `runTraining`
+   - `healPatch` with all fields
+   - HTTP error handling
+
+**Validation:** 277 Python + 31 TypeScript = 308 tests passing. `ruff check` clean. `bun run build` clean.
 
 ### 2026-06-18 (Validation Orchestration → TypeScript Migration)
 
