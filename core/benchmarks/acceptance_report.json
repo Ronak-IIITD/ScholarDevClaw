@@ -1,0 +1,132 @@
+{
+  "generated_at": "2026-06-23T09:24:11.198943+00:00",
+  "thresholds": {
+    "patch_apply_rate": 0.9,
+    "test_pass_rate": 0.8,
+    "human_acceptance_rate": 0.7
+  },
+  "total_cases": 5,
+  "patch_apply_rate": 1.0,
+  "test_pass_rate": 1.0,
+  "test_coverage_rate": 1.0,
+  "human_acceptance_rate": null,
+  "human_review_coverage_rate": 0.0,
+  "gate_status": "incomplete",
+  "failure_counts": {},
+  "results": [
+    {
+      "id": "nanogpt-rmsnorm",
+      "repository": "karpathy/nanoGPT",
+      "spec": "rmsnorm",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 1,
+      "mapping_confidence": 70.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "model.py",
+        "rmsnorm.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "unreviewed",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.649,
+      "notes": "First pinned external-repository canary."
+    },
+    {
+      "id": "nanogpt-rope",
+      "repository": "karpathy/nanoGPT",
+      "spec": "rope",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 1,
+      "mapping_confidence": 60.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "model.py",
+        "rotary_positional_embedding.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "unreviewed",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.228,
+      "notes": "Pinned nanoGPT canary for positional embeddings."
+    },
+    {
+      "id": "nanogpt-swiglu",
+      "repository": "karpathy/nanoGPT",
+      "spec": "swiglu",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 2,
+      "mapping_confidence": 70.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "model.py",
+        "swiglu.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "unreviewed",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.304,
+      "notes": "Pinned nanoGPT canary for MLP replacement."
+    },
+    {
+      "id": "nanogpt-lora",
+      "repository": "karpathy/nanoGPT",
+      "spec": "lora",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 1,
+      "mapping_confidence": 60.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "lora.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "unreviewed",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.201,
+      "notes": "Pinned nanoGPT canary for parameter-efficient adaptation."
+    },
+    {
+      "id": "nanogpt-flashattention",
+      "repository": "karpathy/nanoGPT",
+      "spec": "flashattention",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 2,
+      "mapping_confidence": 70.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "flash_attention.py",
+        "model.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "unreviewed",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.306,
+      "notes": "Pinned nanoGPT canary for attention replacement."
+    }
+  ]
+}

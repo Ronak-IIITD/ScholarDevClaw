@@ -1,0 +1,60 @@
+{
+  "version": "0.1",
+  "thresholds": {
+    "patch_apply_rate": 0.9,
+    "test_pass_rate": 0.8,
+    "human_acceptance_rate": 0.7
+  },
+  "cases": [
+    {
+      "id": "nanogpt-rmsnorm",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "rmsnorm",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "First pinned external-repository canary."
+    },
+    {
+      "id": "nanogpt-rope",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "rope",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "Pinned nanoGPT canary for positional embeddings."
+    },
+    {
+      "id": "nanogpt-swiglu",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "swiglu",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "Pinned nanoGPT canary for MLP replacement."
+    },
+    {
+      "id": "nanogpt-lora",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "lora",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "Pinned nanoGPT canary for parameter-efficient adaptation."
+    },
+    {
+      "id": "nanogpt-flashattention",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "flashattention",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "Pinned nanoGPT canary for attention replacement."
+    }
+  ]
+}

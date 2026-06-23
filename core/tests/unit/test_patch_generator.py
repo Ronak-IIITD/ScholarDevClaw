@@ -512,6 +512,34 @@ class TestCreateTransformations:
         assert len(transformations) >= 1
         assert "RMSNorm" in transformations[0].modified
 
+    def test_composes_multiple_targets_for_same_file(self, tmp_path):
+        model_file = tmp_path / "model.py"
+        model_file.write_text("class Foo:\n    def run(self):\n        return old_value\n")
+        gen = PatchGenerator(tmp_path)
+        mapping = {
+            "targets": [
+                {
+                    "file": "model.py",
+                    "line": 1,
+                    "context": {"original": "Foo", "replacement": "Bar"},
+                },
+                {
+                    "file": "model.py",
+                    "line": 3,
+                    "context": {"original": "old_value", "replacement": "new_value"},
+                },
+            ],
+            "research_spec": {"algorithm": {"name": "Unknown"}, "changes": {}},
+        }
+
+        transformations = gen._create_transformations(mapping)
+
+        assert len(transformations) == 1
+        assert transformations[0].original == model_file.read_text()
+        assert "class Bar" in transformations[0].modified
+        assert "new_value" in transformations[0].modified
+        assert len(transformations[0].changes) == 2
+
     def test_skips_nonexistent_file(self, tmp_path):
         gen = PatchGenerator(tmp_path)
         mapping = {
