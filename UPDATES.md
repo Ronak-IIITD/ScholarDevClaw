@@ -2,7 +2,36 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-21 (Coverage tests for validation endpoints and bridge methods)
+**Last updated:** 2026-06-23 (Acceptance benchmark framework + multi-target composition fix)
+
+### 2026-06-23 (Acceptance Benchmark Framework + Multi-Target Composition Fix)
+
+**Summary:** Added an acceptance benchmark harness for end-to-end canary testing against real repositories (nanoGPT at a pinned commit). Refactored the patch generator to compose multiple targets for the same file into a single Transformation instead of separate ones.
+
+**Changes:**
+
+1. **Patch generator refactor** (`core/src/scholardevclaw/patch_generation/generator.py`):
+   - `_create_transformations` now groups targets by file, composing multiple edits against one evolving source buffer
+   - New `_transform_target_group` method applies edits sequentially (sorted by line number) for same-file targets
+   - Backward-compatible `_transform_single_target` wrapper preserved
+   - Multi-target files produce a single `Transformation` with aggregated `changes` list
+
+2. **Acceptance benchmark harness** (`core/benchmarks/acceptance.py`, ~500 LOC):
+   - `AcceptanceCase`, `AcceptanceResult`, `AcceptanceReport` dataclasses
+   - 5 nanoGPT canary cases at pinned commit (rmsnorm, rope, swiglu, lora, flashattention)
+   - Repository preparation: local copy or git clone with `--filter=blob:none`
+   - Patch application with stale-transformation rejection
+   - Compilation check, test execution, human review tracking
+   - JSON report + Markdown summary generation
+   - Gate status logic: passed/incomplete/failed based on thresholds
+
+3. **Benchmark results** (`acceptance_report.json`): 5/5 cases pass — 100% apply, compile, and test rates
+
+4. **7 new tests** (`test_acceptance_benchmark.py`):
+   - Manifest loading, stale transformation rejection, patch+compile+test flow
+   - Compile failure recording, report coverage/threshold logic
+
+**Validation:** 68 generator+benchmark tests pass. `ruff check` clean. `bun run build` clean.
 
 ### 2026-06-21 (Coverage Tests — Validation API Endpoints + Bridge Methods)
 
