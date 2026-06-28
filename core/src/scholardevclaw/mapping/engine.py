@@ -833,16 +833,35 @@ class MappingEngine:
     ) -> dict[str, Any]:
         """Compute additive confidence scoring details.
 
-        Numeric scoring semantics intentionally mirror ``_calculate_confidence``'s
-        historic behavior. This helper only exposes a stable additive breakdown.
+        Scoring components:
+        - Base: 35
+        - +20 if any targets found
+        - +10 per exact-match target (up to +40)
+        - +10 for any fuzzy match
+        - +10 for any import match
+        - +5 per unique text_scan pattern (up to +15)
+        - +5 for LLM semantic matches
+        - +10 if validation passed
+        - +10 if spec has a code template
+        - -10 per validation error
         """
-        base = 30
+        base = 35
 
         target_count = len(targets)
         exact_count = sum(1 for t in targets if t.context.get("match_tier") == "exact")
         fuzzy_count = sum(1 for t in targets if t.context.get("match_tier", "").startswith("fuzzy"))
         import_count = sum(1 for t in targets if t.context.get("match_tier") == "import")
         llm_count = sum(1 for t in targets if t.context.get("match_tier") == "llm_semantic")
+
+        # Count unique text_scan patterns (not just matches)
+        text_scan_patterns: set[str] = set()
+        for t in targets:
+            if t.context.get("match_tier") == "text_scan":
+                pat = t.context.get("matched_pattern", "")
+                if pat:
+                    text_scan_patterns.add(pat)
+        text_scan_pattern_count = len(text_scan_patterns)
+
         llm_low_confidence_count = sum(
             1
             for t in targets
@@ -853,9 +872,10 @@ class MappingEngine:
 
         awards = {
             "has_targets": 20 if target_count > 0 else 0,
-            "exact_match_points": min(exact_count * 10, 30),
+            "exact_match_points": min(exact_count * 10, 40),
             "fuzzy_bonus": 10 if fuzzy_count > 0 else 0,
-            "import_bonus": 5 if import_count > 0 else 0,
+            "import_bonus": 10 if import_count > 0 else 0,
+            "text_scan_bonus": min(text_scan_pattern_count * 5, 15),
             "llm_semantic_bonus": 5 if llm_count > 0 else 0,
             "validation_pass_bonus": 10 if validation.passed else 0,
             "code_template_bonus": 10
@@ -870,7 +890,7 @@ class MappingEngine:
         total = max(0, min(raw_total, 100))
 
         return {
-            "version": "1",
+            "version": "2",
             "total": int(total),
             "approval_required": bool(total < 70 or llm_low_confidence_count > 0),
             "base": int(base),
@@ -881,6 +901,7 @@ class MappingEngine:
                 "exact": int(exact_count),
                 "fuzzy": int(fuzzy_count),
                 "import": int(import_count),
+                "text_scan_patterns": int(text_scan_pattern_count),
                 "llm_semantic": int(llm_count),
                 "llm_low_confidence": int(llm_low_confidence_count),
                 "validation_errors": int(error_count),
@@ -892,11 +913,13 @@ class MappingEngine:
     ) -> int:
         """Calculate a 0-100 confidence score.
 
-        Scoring:
-        - Base: 30
+        Scoring (v2):
+        - Base: 35
         - +20 if any targets found
-        - +10 per exact-match target (up to +30)
-        - +10 for fuzzy or import matches
+        - +10 per exact-match target (up to +40)
+        - +10 for any fuzzy match
+        - +10 for any import match
+        - +5 per unique text_scan pattern (up to +15)
         - +5 for LLM semantic matches
         - +10 if validation passed
         - +10 if spec has a code template

@@ -710,7 +710,7 @@ class TestCalculateConfidence:
         engine = _make_engine()
         validation = ValidationResult(passed=True)
         score = engine._calculate_confidence(validation, [])
-        assert score == 40  # base 30 + 10 validation
+        assert score == 45  # base 35 + 10 validation
 
     def test_exact_match_boost(self):
         engine = _make_engine()
@@ -723,8 +723,8 @@ class TestCalculateConfidence:
         )
         validation = ValidationResult(passed=True)
         score = engine._calculate_confidence(validation, [ip])
-        # base 30 + 20 (has targets) + 10 (1 exact) + 10 (validation) = 70
-        assert score == 70
+        # base 35 + 20 (has targets) + 10 (1 exact) + 10 (validation) = 75
+        assert score == 75
 
     def test_fuzzy_match_boost(self):
         engine = _make_engine()
@@ -737,8 +737,8 @@ class TestCalculateConfidence:
         )
         validation = ValidationResult(passed=True)
         score = engine._calculate_confidence(validation, [ip])
-        # base 30 + 20 + 10 (fuzzy) + 10 (validation) = 70
-        assert score == 70
+        # base 35 + 20 + 10 (fuzzy) + 10 (validation) = 75
+        assert score == 75
 
     def test_import_match_boost(self):
         engine = _make_engine()
@@ -751,8 +751,8 @@ class TestCalculateConfidence:
         )
         validation = ValidationResult(passed=True)
         score = engine._calculate_confidence(validation, [ip])
-        # base 30 + 20 + 5 (import) + 10 (validation) = 65
-        assert score == 65
+        # base 35 + 20 + 10 (import) + 10 (validation) = 75
+        assert score == 75
 
     def test_llm_match_boost(self):
         engine = _make_engine()
@@ -765,16 +765,16 @@ class TestCalculateConfidence:
         )
         validation = ValidationResult(passed=True)
         score = engine._calculate_confidence(validation, [ip])
-        # base 30 + 20 + 5 (llm) + 10 (validation) = 65
-        assert score == 65
+        # base 35 + 20 + 5 (llm) + 10 (validation) = 70
+        assert score == 70
 
     def test_code_template_boost(self):
         spec = _make_spec(code_template="class RMSNorm: pass")
         engine = _make_engine(spec=spec)
         validation = ValidationResult(passed=True)
         score = engine._calculate_confidence(validation, [])
-        # base 30 + 10 (validation) + 10 (template) = 50
-        assert score == 50
+        # base 35 + 10 (validation) + 10 (template) = 55
+        assert score == 55
 
     def test_validation_failure_penalty(self):
         engine = _make_engine()
@@ -784,10 +784,10 @@ class TestCalculateConfidence:
         ]
         validation = ValidationResult(passed=False, issues=issues)
         score = engine._calculate_confidence(validation, [])
-        # base 30 - 20 (2 errors) = 10
-        assert score == 10
+        # base 35 - 20 (2 errors) = 15
+        assert score == 15
 
-    def test_exact_match_cap_at_30(self):
+    def test_exact_match_cap_at_40(self):
         engine = _make_engine()
         ips = [
             InsertionPoint(
@@ -801,8 +801,8 @@ class TestCalculateConfidence:
         ]
         validation = ValidationResult(passed=True)
         score = engine._calculate_confidence(validation, ips)
-        # base 30 + 20 + 30 (cap) + 10 (validation) = 90
-        assert score == 90
+        # base 35 + 20 + 40 (cap) + 10 (validation) = 105 → capped at 100
+        assert score == 100
 
     def test_confidence_capped_at_100(self):
         spec = _make_spec(code_template="template")
@@ -819,7 +819,7 @@ class TestCalculateConfidence:
         ]
         validation = ValidationResult(passed=True)
         score = engine._calculate_confidence(validation, ips)
-        # base 30 + 20 + 30 + 10 + 10 = 100
+        # base 35 + 20 + 40 (cap) + 10 (validation) + 10 (template) = 115 → capped at 100
         assert score == 100
 
     def test_confidence_floored_at_0(self):
