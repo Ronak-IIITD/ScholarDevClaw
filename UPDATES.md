@@ -2,7 +2,39 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-23 (Acceptance benchmark framework + multi-target composition fix)
+**Last updated:** 2026-06-28 (Acceptance gate passed — 10 cases at 100% + alias fix)
+
+### 2026-06-28 (Acceptance Gate Passed — 10 Cases at 100% + QK-Norm Alias Fix)
+
+**Summary:** Completed roadmap steps 1+2. All 10 nanoGPT acceptance cases (original 5 + 5 new) have human reviews marked "accept", bringing the gate to **PASSED** with 100% across all metrics. Fixed a QK-Norm alias resolution bug in the patch generator.
+
+**Changes:**
+
+1. **Acceptance gate passed** (`core/benchmarks/acceptance_report.json`):
+   - `gate_status: passed` — all thresholds met
+   - 10/10 cases: 100% patch apply, 100% test pass (coverage 100%), 100% human acceptance (coverage 100%)
+
+2. **Expanded to 10 nanoGPT canary cases** (`core/benchmarks/acceptance_cases.json`, v0.1 → v0.2):
+   - Added: geglu, alibi, qknorm, lion, cosine_warmup
+   - All pinned to same nanoGPT commit (`3adf61e1`)
+   - All compile + test passing
+
+3. **Human reviews recorded** (`core/benchmarks/reviews.json`, new):
+   - All 10 cases marked "accept"
+
+4. **QK-Norm alias fix** (`generator.py`):
+   - `_ALGORITHM_KEY_ALIASES` now includes 5 new entries:
+     - `qk_norm` → `qknorm`
+     - `qk_normalization` → `qknorm`
+     - `query_key_normalization` → `qknorm`
+     - `pre_ln` → `preln_transformer`
+     - `pre_layer_normalization` → `preln_transformer`
+     - `cosine_warmup_lr` → `cosine_warmup`
+
+5. **Test updated** (`test_acceptance_benchmark.py`):
+   - `test_manifest_contains_ten_v1_canaries` (was `_five_`)
+
+**Validation:** `ruff check` clean. All unit tests pass.
 
 ### 2026-06-23 (Acceptance Benchmark Framework + Multi-Target Composition Fix)
 
