@@ -33,7 +33,7 @@ def _case(repo: Path, **overrides) -> AcceptanceCase:
     return AcceptanceCase(**values)
 
 
-def test_manifest_contains_five_v1_canaries():
+def test_manifest_contains_ten_v1_canaries():
     thresholds, cases = load_manifest()
 
     assert thresholds.patch_apply_rate == 0.9
@@ -43,8 +43,13 @@ def test_manifest_contains_five_v1_canaries():
         "swiglu",
         "lora",
         "flashattention",
+        "geglu",
+        "alibi",
+        "qknorm",
+        "lion",
+        "cosine_warmup",
     }
-    assert len(cases) == 5
+    assert len(cases) == 10
     assert len({case.commit for case in cases}) == 1
 
 

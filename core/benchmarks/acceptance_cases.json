@@ -1,5 +1,5 @@
 {
-  "version": "0.1",
+  "version": "0.2",
   "thresholds": {
     "patch_apply_rate": 0.9,
     "test_pass_rate": 0.8,
@@ -14,7 +14,7 @@
       "local_path": "test_repos/nanogpt",
       "spec": "rmsnorm",
       "test_command": ["python", "-m", "compileall", "-q", "."],
-      "notes": "First pinned external-repository canary."
+      "notes": "Replace LayerNorm with RMSNorm in model.py"
     },
     {
       "id": "nanogpt-rope",
@@ -24,7 +24,7 @@
       "local_path": "test_repos/nanogpt",
       "spec": "rope",
       "test_command": ["python", "-m", "compileall", "-q", "."],
-      "notes": "Pinned nanoGPT canary for positional embeddings."
+      "notes": "Add rotary position embeddings to attention"
     },
     {
       "id": "nanogpt-swiglu",
@@ -34,7 +34,7 @@
       "local_path": "test_repos/nanogpt",
       "spec": "swiglu",
       "test_command": ["python", "-m", "compileall", "-q", "."],
-      "notes": "Pinned nanoGPT canary for MLP replacement."
+      "notes": "Replace GELU with SwiGLU in MLP"
     },
     {
       "id": "nanogpt-lora",
@@ -44,7 +44,7 @@
       "local_path": "test_repos/nanogpt",
       "spec": "lora",
       "test_command": ["python", "-m", "compileall", "-q", "."],
-      "notes": "Pinned nanoGPT canary for parameter-efficient adaptation."
+      "notes": "Add LoRA adapters to linear layers"
     },
     {
       "id": "nanogpt-flashattention",
@@ -54,7 +54,57 @@
       "local_path": "test_repos/nanogpt",
       "spec": "flashattention",
       "test_command": ["python", "-m", "compileall", "-q", "."],
-      "notes": "Pinned nanoGPT canary for attention replacement."
+      "notes": "Replace attention with FlashAttention"
+    },
+    {
+      "id": "nanogpt-geglu",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "geglu",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "Replace GELU with GEGLU in MLP"
+    },
+    {
+      "id": "nanogpt-alibi",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "alibi",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "Add ALiBi position encoding bias"
+    },
+    {
+      "id": "nanogpt-qknorm",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "qknorm",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "Add QK normalization to attention"
+    },
+    {
+      "id": "nanogpt-lion",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "lion",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "Add Lion optimizer as an alternative"
+    },
+    {
+      "id": "nanogpt-cosine_warmup",
+      "repository": "karpathy/nanoGPT",
+      "repo_url": "https://github.com/karpathy/nanoGPT.git",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "local_path": "test_repos/nanogpt",
+      "spec": "cosine_warmup",
+      "test_command": ["python", "-m", "compileall", "-q", "."],
+      "notes": "Add cosine warmup learning rate schedule"
     }
   ]
 }

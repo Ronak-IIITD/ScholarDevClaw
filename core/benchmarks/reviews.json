@@ -1,0 +1,12 @@
+{
+  "nanogpt-rmsnorm": "accept",
+  "nanogpt-rope": "accept",
+  "nanogpt-swiglu": "accept",
+  "nanogpt-lora": "accept",
+  "nanogpt-flashattention": "accept",
+  "nanogpt-geglu": "accept",
+  "nanogpt-alibi": "accept",
+  "nanogpt-qknorm": "accept",
+  "nanogpt-lion": "accept",
+  "nanogpt-cosine_warmup": "accept"
+}

@@ -381,6 +381,12 @@ _ALGORITHM_KEY_ALIASES: dict[str, str] = {
     "cosine_annealing_with_warmup": "cosine_warmup",
     "cosine_lr_schedule": "cosine_warmup",
     "low_rank_adaptation_of_large_language_models": "lora",
+    "qk_norm": "qknorm",
+    "qk_normalization": "qknorm",
+    "query_key_normalization": "qknorm",
+    "pre_ln": "preln_transformer",
+    "pre_layer_normalization": "preln_transformer",
+    "cosine_warmup_lr": "cosine_warmup",
 }
 
 _ARXIV_TO_ALGORITHM_KEY: dict[str, str] = {

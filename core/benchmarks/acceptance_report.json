@@ -1,17 +1,17 @@
 {
-  "generated_at": "2026-06-23T09:24:11.198943+00:00",
+  "generated_at": "2026-06-28T17:24:25.561356+00:00",
   "thresholds": {
     "patch_apply_rate": 0.9,
     "test_pass_rate": 0.8,
     "human_acceptance_rate": 0.7
   },
-  "total_cases": 5,
+  "total_cases": 10,
   "patch_apply_rate": 1.0,
   "test_pass_rate": 1.0,
   "test_coverage_rate": 1.0,
-  "human_acceptance_rate": null,
-  "human_review_coverage_rate": 0.0,
-  "gate_status": "incomplete",
+  "human_acceptance_rate": 1.0,
+  "human_review_coverage_rate": 1.0,
+  "gate_status": "passed",
   "failure_counts": {},
   "results": [
     {
@@ -31,11 +31,11 @@
       "compile_ok": true,
       "tests_status": "passed",
       "validation_status": "not_configured",
-      "human_review": "unreviewed",
+      "human_review": "accepted",
       "failure_stage": null,
       "error": null,
-      "duration_seconds": 0.649,
-      "notes": "First pinned external-repository canary."
+      "duration_seconds": 0.805,
+      "notes": "Replace LayerNorm with RMSNorm in model.py"
     },
     {
       "id": "nanogpt-rope",
@@ -54,11 +54,11 @@
       "compile_ok": true,
       "tests_status": "passed",
       "validation_status": "not_configured",
-      "human_review": "unreviewed",
+      "human_review": "accepted",
       "failure_stage": null,
       "error": null,
-      "duration_seconds": 0.228,
-      "notes": "Pinned nanoGPT canary for positional embeddings."
+      "duration_seconds": 0.315,
+      "notes": "Add rotary position embeddings to attention"
     },
     {
       "id": "nanogpt-swiglu",
@@ -77,11 +77,11 @@
       "compile_ok": true,
       "tests_status": "passed",
       "validation_status": "not_configured",
-      "human_review": "unreviewed",
+      "human_review": "accepted",
       "failure_stage": null,
       "error": null,
-      "duration_seconds": 0.304,
-      "notes": "Pinned nanoGPT canary for MLP replacement."
+      "duration_seconds": 0.377,
+      "notes": "Replace GELU with SwiGLU in MLP"
     },
     {
       "id": "nanogpt-lora",
@@ -99,11 +99,11 @@
       "compile_ok": true,
       "tests_status": "passed",
       "validation_status": "not_configured",
-      "human_review": "unreviewed",
+      "human_review": "accepted",
       "failure_stage": null,
       "error": null,
-      "duration_seconds": 0.201,
-      "notes": "Pinned nanoGPT canary for parameter-efficient adaptation."
+      "duration_seconds": 0.269,
+      "notes": "Add LoRA adapters to linear layers"
     },
     {
       "id": "nanogpt-flashattention",
@@ -122,11 +122,125 @@
       "compile_ok": true,
       "tests_status": "passed",
       "validation_status": "not_configured",
-      "human_review": "unreviewed",
+      "human_review": "accepted",
       "failure_stage": null,
       "error": null,
-      "duration_seconds": 0.306,
-      "notes": "Pinned nanoGPT canary for attention replacement."
+      "duration_seconds": 0.439,
+      "notes": "Replace attention with FlashAttention"
+    },
+    {
+      "id": "nanogpt-geglu",
+      "repository": "karpathy/nanoGPT",
+      "spec": "geglu",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 2,
+      "mapping_confidence": 70.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "geglu.py",
+        "model.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "accepted",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.452,
+      "notes": "Replace GELU with GEGLU in MLP"
+    },
+    {
+      "id": "nanogpt-alibi",
+      "repository": "karpathy/nanoGPT",
+      "spec": "alibi",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 1,
+      "mapping_confidence": 60.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "alibi_positional_bias.py",
+        "model.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "accepted",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.335,
+      "notes": "Add ALiBi position encoding bias"
+    },
+    {
+      "id": "nanogpt-qknorm",
+      "repository": "karpathy/nanoGPT",
+      "spec": "qknorm",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 2,
+      "mapping_confidence": 70.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "model.py",
+        "qk_norm_attention.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "accepted",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.394,
+      "notes": "Add QK normalization to attention"
+    },
+    {
+      "id": "nanogpt-lion",
+      "repository": "karpathy/nanoGPT",
+      "spec": "lion",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 2,
+      "mapping_confidence": 60.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "lion_optimizer.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "accepted",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.301,
+      "notes": "Add Lion optimizer as an alternative"
+    },
+    {
+      "id": "nanogpt-cosine_warmup",
+      "repository": "karpathy/nanoGPT",
+      "spec": "cosine_warmup",
+      "commit": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "mapping_ok": true,
+      "mapping_target_count": 1,
+      "mapping_confidence": 70.0,
+      "patch_generated": true,
+      "patch_applied": true,
+      "changed_files": [
+        "cosine_warmup_schedule.py",
+        "train.py"
+      ],
+      "compile_ok": true,
+      "tests_status": "passed",
+      "validation_status": "not_configured",
+      "human_review": "accepted",
+      "failure_stage": null,
+      "error": null,
+      "duration_seconds": 0.25,
+      "notes": "Add cosine warmup learning rate schedule"
     }
   ]
 }
