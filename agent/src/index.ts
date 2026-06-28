@@ -9,6 +9,16 @@ import { config } from './utils/config.js';
 import { RunStore } from './utils/run-store.js';
 import * as readline from 'readline';
 
+// All known algorithm specs for autocomplete and lookup
+const ALL_SPECS = [
+  'rmsnorm', 'layernorm', 'gelu', 'swiglu', 'geglu',
+  'flashattention', 'flashattention2', 'grouped_query_attention',
+  'qknorm', 'preln_transformer', 'rope', 'alibi',
+  'lion', 'lora', 'weight_decay_fused', 'cosine_warmup',
+  'dropout_variants', 'mistral', 'kv_cache',
+  'multiquery_attention', 'gradient_checkpointing', 'topk_sampling',
+];
+
 function getArg(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
   if (index < 0 || index + 1 >= process.argv.length) {
@@ -42,8 +52,7 @@ function parseNaturalInput(input: string): ParsedCommand {
     result.repoPath = pathMatch[1];
   }
 
-  const specs = ['rmsnorm', 'flashattention', 'swiglu', 'geglu', 'gqa', 'rope', 'preln', 'alibi', 'qknorm'];
-  for (const spec of specs) {
+  for (const spec of ALL_SPECS) {
     if (lower.includes(spec)) {
       result.spec = spec;
       break;
@@ -245,16 +254,29 @@ async function runRepl(): Promise<void> {
           break;
 
         case 'specs':
-          console.log('Available specs:');
-          console.log('  rmsnorm        - Root Mean Square Layer Normalization');
-          console.log('  flashattention - Flash Attention');
-          console.log('  swiglu         - SwiGLU Activation');
-          console.log('  geglu          - GEGLU Activation');
-          console.log('  gqa            - Grouped Query Attention');
-          console.log('  rope           - Rotary Position Embedding');
-          console.log('  preln          - Pre-Layer Normalization');
-          console.log('  alibi          - ALiBi Position Embedding');
-          console.log('  qknorm         - Query-Key Normalization');
+          console.log('Available specs (' + ALL_SPECS.length + '):');
+          console.log('  rmsnorm                 - Root Mean Square Layer Normalization');
+          console.log('  layernorm               - Layer Normalization');
+          console.log('  gelu                    - Gaussian Error Linear Unit');
+          console.log('  swiglu                  - SwiGLU Activation');
+          console.log('  geglu                   - GEGLU Activation');
+          console.log('  flashattention          - Flash Attention');
+          console.log('  flashattention2         - Flash Attention v2');
+          console.log('  grouped_query_attention - Grouped Query Attention');
+          console.log('  qknorm                  - Query-Key Normalization');
+          console.log('  preln_transformer       - Pre-Layer Normalization Transformer');
+          console.log('  rope                    - Rotary Position Embedding');
+          console.log('  alibi                   - ALiBi Position Bias');
+          console.log('  lion                    - Lion Optimizer');
+          console.log('  lora                    - Low-Rank Adaptation (LoRA)');
+          console.log('  weight_decay_fused      - Fused Decoupled Weight Decay');
+          console.log('  cosine_warmup           - Cosine Warmup Schedule');
+          console.log('  dropout_variants        - Dropout Variants');
+          console.log('  mistral                 - Mistral Sliding Window Attention');
+          console.log('  kv_cache                - KV-Cache Optimization');
+          console.log('  multiquery_attention    - Multi-Query Attention');
+          console.log('  gradient_checkpointing  - Gradient Checkpointing');
+          console.log('  topk_sampling           - Top-K / Nucleus Sampling');
           break;
 
         default:

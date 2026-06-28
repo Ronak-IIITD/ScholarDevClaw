@@ -3706,16 +3706,57 @@ def cmd_deploy_check(args):
 
 
 def cmd_tui(args):
-    """Launch interactive terminal UI (wizard mode)"""
-    try:
-        from scholardevclaw.tui import run_tui
-    except ImportError as e:
-        print("Error: TUI dependencies are not installed.", file=sys.stderr)
-        print('Install with: pip install -e ".[tui]"', file=sys.stderr)
-        print(f"Details: {e}", file=sys.stderr)
+    """Launch the TypeScript OpenTUI keyboard-first pipeline shell.
+
+    Auto-starts the Python FastAPI server in the background and provides
+    a keyboard-driven terminal interface for pipeline execution, run
+    history, approval gates, and more.
+
+    Requires: bun (https://bun.sh) and the agent/ TypeScript sources.
+    """
+    import subprocess
+    from pathlib import Path
+
+    # Resolve agent/ directory relative to this file.
+    # cli.py is at: core/src/scholardevclaw/cli.py
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    agent_dir = repo_root / "agent"
+
+    if not (agent_dir / "src" / "index.ts").exists():
+        print(
+            f"Error: TypeScript agent sources not found at {agent_dir / 'src' / 'index.ts'}.",
+            file=sys.stderr,
+        )
+        print("Ensure the agent/ directory is present (git submodule or sibling).", file=sys.stderr)
         sys.exit(1)
 
-    run_tui(yes_mode=getattr(args, "yes", False))
+    # Check for bun
+    bun_path = shutil.which("bun")
+    if not bun_path:
+        print(
+            "Error: 'bun' is required to launch the TUI but was not found on PATH.",
+            file=sys.stderr,
+        )
+        print("Install bun: https://bun.sh", file=sys.stderr)
+        sys.exit(1)
+
+    # Map --yes to autonomous mode (default in TS TUI, but be explicit)
+    env = os.environ.copy()
+    if getattr(args, "yes", False):
+        env["DEFAULT_MODE"] = "autonomous"
+
+    try:
+        proc = subprocess.run(
+            [bun_path, "run", "src/index.ts", "tui"],
+            cwd=str(agent_dir),
+            env=env,
+        )
+        sys.exit(proc.returncode)
+    except KeyboardInterrupt:
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error launching TypeScript TUI: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_agent(args):

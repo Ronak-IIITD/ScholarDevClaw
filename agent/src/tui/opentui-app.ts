@@ -55,14 +55,27 @@ const PHASE_NAMES = [
 
 const KNOWN_SPECS = [
   "rmsnorm",
-  "flashattention",
+  "layernorm",
+  "gelu",
   "swiglu",
   "geglu",
-  "gqa",
-  "rope",
-  "preln",
-  "alibi",
+  "flashattention",
+  "flashattention2",
+  "grouped_query_attention",
   "qknorm",
+  "preln_transformer",
+  "rope",
+  "alibi",
+  "lion",
+  "lora",
+  "weight_decay_fused",
+  "cosine_warmup",
+  "dropout_variants",
+  "mistral",
+  "kv_cache",
+  "multiquery_attention",
+  "gradient_checkpointing",
+  "topk_sampling",
 ];
 
 // ---------------------------------------------------------------------------
@@ -773,7 +786,13 @@ export async function main() {
         addLog("  set model <id>             — set model", "info");
         addLog("  setup | status | clear | help | quit", "info");
         addLog("", "info");
-        addLog("  Available specs: " + KNOWN_SPECS.join(", "), "muted");
+        addLog("  Available specs (" + KNOWN_SPECS.length + "):", "muted");
+        // Display specs in columns of ~6
+        const chunkSize = Math.ceil(KNOWN_SPECS.length / 4);
+        for (let i = 0; i < KNOWN_SPECS.length; i += chunkSize) {
+          const chunk = KNOWN_SPECS.slice(i, i + chunkSize);
+          addLog("    " + chunk.join(", "), "muted");
+        }
         break;
       }
 

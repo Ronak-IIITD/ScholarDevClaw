@@ -2,9 +2,30 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-28 (Acceptance gate passed — 10 cases at 100% + alias fix)
+**Last updated:** 2026-06-28 (Step 6: TS TUI replaces Python TUI as primary)
 
-### 2026-06-28 (Acceptance Gate Passed — 10 Cases at 100% + QK-Norm Alias Fix)
+### 2026-06-28 (Step 6: TypeScript OpenTUI replaces Python TUI as primary launcher)
+
+**Summary:** The `scholardevclaw tui` CLI command now launches the TypeScript OpenTUI keyboard-first pipeline shell instead of the legacy Python Textual TUI. The TypeScript TUI auto-starts the Python FastAPI server in the background and provides a keyboard-driven interface with full 6-phase pipeline execution, run history, approval gates, and spec autocomplete. All `KNOWN_SPECS` lists (TUI + agent REPL) updated from 9 to 22 specs.
+
+**Changes:**
+
+1. **CLI entry point redirected** (`core/src/scholardevclaw/cli.py`):
+   - `cmd_tui` now spawns `bun run src/index.ts tui` in the `agent/` directory
+   - Resolves agent path relative to cli.py location
+   - Falls back with clear error messages if `bun` or agent sources are missing
+   - Maps `--yes` flag to `DEFAULT_MODE=autonomous` env var
+
+2. **TS TUI spec list expanded** (`agent/src/tui/opentui-app.ts`):
+   - `KNOWN_SPECS` grew from 9 → 22 entries (all available algorithm templates)
+   - Help display now shows specs in compact columns instead of one long line
+
+3. **Agent REPL spec list expanded** (`agent/src/index.ts`):
+   - Extracted `ALL_SPECS` as module-level constant (shared by `parseNaturalInput` and `specs` command)
+   - Updated `specs` command output with all 22 specs + descriptions
+   - Updated `parseNaturalInput` to use `ALL_SPECS` for multi-spec detection
+
+### 2026-06-28 (Acceptance Gate Passed — 10 Cases at 100% + QK-Norm Alias Fix — Steps 1-5)
 
 **Summary:** Completed roadmap steps 1+2. All 10 nanoGPT acceptance cases (original 5 + 5 new) have human reviews marked "accept", bringing the gate to **PASSED** with 100% across all metrics. Fixed a QK-Norm alias resolution bug in the patch generator.
 
