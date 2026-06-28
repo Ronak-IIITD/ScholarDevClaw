@@ -387,6 +387,19 @@ _ALGORITHM_KEY_ALIASES: dict[str, str] = {
     "pre_ln": "preln_transformer",
     "pre_layer_normalization": "preln_transformer",
     "cosine_warmup_lr": "cosine_warmup",
+    "kv_cache": "kv_cache",
+    "key_value_cache": "kv_cache",
+    "key_value_caching": "kv_cache",
+    "multiquery_attention": "multiquery_attention",
+    "multi_query_attention": "multiquery_attention",
+    "mqa": "multiquery_attention",
+    "gradient_checkpointing": "gradient_checkpointing",
+    "activation_checkpointing": "gradient_checkpointing",
+    "checkpointing": "gradient_checkpointing",
+    "topk_sampling": "topk_sampling",
+    "top_k_sampling": "topk_sampling",
+    "nucleus_sampling": "topk_sampling",
+    "top_p_sampling": "topk_sampling",
 }
 
 _ARXIV_TO_ALGORITHM_KEY: dict[str, str] = {
@@ -400,6 +413,10 @@ _ARXIV_TO_ALGORITHM_KEY: dict[str, str] = {
     "2108.12409": "alibi",
     "2205.14135": "flashattention",
     "2305.13245": "grouped_query_attention",
+    "1911.02150": "multiquery_attention",
+    "2009.06732": "kv_cache",
+    "1604.06174": "gradient_checkpointing",
+    "1904.09751": "topk_sampling",
 }
 
 
@@ -1302,6 +1319,216 @@ def _template_mistral(spec: dict) -> str:
     ''')
 
 
+def _template_kv_cache(spec: dict) -> str:
+    """KV-cache for efficient autoregressive decoding."""
+    return textwrap.dedent('''\
+        import torch
+        import torch.nn as nn
+
+
+        class KVCache:
+            """
+            Key-Value cache for autoregressive transformer decoding.
+
+            Stores key and value tensors from previous timesteps so they
+            do not need to be recomputed at each generation step.
+            """
+
+            def __init__(self, max_batch_size: int, max_seq_len: int, n_heads: int, head_dim: int):
+                self.cache_k = torch.zeros(max_batch_size, n_heads, max_seq_len, head_dim)
+                self.cache_v = torch.zeros(max_batch_size, n_heads, max_seq_len, head_dim)
+                self.seen_tokens = 0
+
+            def update(self, batch_size: int, new_k: torch.Tensor, new_v: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+                T_new = new_k.shape[-2]
+                start = self.seen_tokens
+                end = start + T_new
+                self.cache_k[:batch_size, :, start:end] = new_k
+                self.cache_v[:batch_size, :, start:end] = new_v
+                self.seen_tokens = end
+                return (self.cache_k[:batch_size, :, :end], self.cache_v[:batch_size, :, :end])
+
+            def reset(self):
+                self.seen_tokens = 0
+    ''')
+
+
+def _template_multiquery_attention(spec: dict) -> str:
+    """Multi-Query Attention — single KV head shared across all query heads."""
+    paper = spec.get("paper", {})
+    authors = ", ".join(paper.get("authors", []))
+    year = paper.get("year", 2019)
+    title = paper.get("title", "Fast Transformer Decoding")
+    arxiv = paper.get("arxiv", "1911.02150")
+    header = (
+        '"""\n'
+        "Multi-Query Attention\n\n"
+        f'Integrated from "{title}"\n'
+        f"by {authors} ({year})\n\n"
+        f"Paper: arXiv:{arxiv}\n"
+        "Description: Shares a single key/value head across all query heads.\n"
+        '"""'
+    )
+    return textwrap.dedent(
+        '''\
+        """
+        Multi-Query Attention
+        Integrated from "'''
+        + title
+        + """"
+        by """
+        + authors
+        + """ ("""
+        + str(year)
+        + """)
+        Paper: arXiv:"""
+        + arxiv
+        + '''
+        Description: Shares a single key/value head across all query heads.
+        """
+
+        import torch
+        import torch.nn as nn
+        import torch.nn.functional as F
+        import math
+
+
+        class MultiQueryAttention(nn.Module):
+            """
+            Multi-Query Attention with a single KV head.
+
+            All query heads share one key and one value head, reducing
+            the KV-cache size by a factor of n_heads compared to MHA.
+            """
+
+            def __init__(self, config):
+                super().__init__()
+                self.n_head = config.n_head
+                self.n_embd = config.n_embd
+                self.head_dim = config.n_embd // config.n_head
+
+                self.q_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+                self.k_proj = nn.Linear(config.n_embd, self.head_dim, bias=config.bias)
+                self.v_proj = nn.Linear(config.n_embd, self.head_dim, bias=config.bias)
+                self.o_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                B, T, C = x.shape
+                q = self.q_proj(x).view(B, T, self.n_head, self.head_dim).transpose(1, 2)
+                k = self.k_proj(x).view(B, T, 1, self.head_dim).transpose(1, 2)
+                v = self.v_proj(x).view(B, T, 1, self.head_dim).transpose(1, 2)
+
+                attn = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+                attn = F.softmax(attn, dim=-1)
+                y = (attn @ v).transpose(1, 2).contiguous().view(B, T, C)
+                return self.o_proj(y)
+    '''
+    )
+
+
+def _template_gradient_checkpointing(spec: dict) -> str:
+    """Gradient checkpointing for trading compute for memory."""
+    return textwrap.dedent('''\
+        import torch
+        import torch.nn as nn
+        from typing import Optional
+
+
+        class CheckpointedBlock(nn.Module):
+            """
+            Wraps a module with gradient checkpointing.
+
+            During the backward pass, activations are recomputed rather than
+            stored, reducing peak GPU memory at the cost of extra computation.
+            """
+
+            def __init__(self, module: nn.Module):
+                super().__init__()
+                self.module = module
+
+            def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+                return torch.utils.checkpoint.checkpoint(
+                    self.module, x, *args, use_reentrant=False, **kwargs
+                )
+
+
+        def apply_checkpointing(model: nn.Module, segments: int = 1) -> None:
+            """
+            Wraps sequential blocks of a transformer model with checkpointing.
+
+            Args:
+                model: A transformer model with a 'blocks' or 'layers' attribute.
+                segments: Number of checkpoint segments (1 = checkpoint entire forward).
+            """
+            if hasattr(model, "blocks") and isinstance(model.blocks, nn.ModuleList):
+                n = len(model.blocks)
+                seg_size = max(1, n // segments)
+                for i in range(0, n, seg_size):
+                    for j in range(i, min(i + seg_size, n)):
+                        orig = model.blocks[j]
+                        model.blocks[j] = CheckpointedBlock(orig)
+            elif hasattr(model, "layers") and isinstance(model.layers, nn.ModuleList):
+                n = len(model.layers)
+                seg_size = max(1, n // segments)
+                for i in range(0, n, seg_size):
+                    for j in range(i, min(i + seg_size, n)):
+                        orig = model.layers[j]
+                        model.layers[j] = CheckpointedBlock(orig)
+    ''')
+
+
+def _template_topk_sampling(spec: dict) -> str:
+    """Top-K and nucleus (top-p) sampling for text generation."""
+    return textwrap.dedent('''\
+        import torch
+        import torch.nn.functional as F
+
+
+        def topk_filter(logits: torch.Tensor, k: int = 50) -> torch.Tensor:
+            """Keep only the top-k logits, setting the rest to -inf."""
+            topk_vals, _ = torch.topk(logits, min(k, logits.size(-1)), dim=-1)
+            thresholds = topk_vals[..., -1:]
+            return torch.where(logits < thresholds, float("-inf"), logits)
+
+
+        def nucleus_filter(logits: torch.Tensor, p: float = 0.9) -> torch.Tensor:
+            """Keep the smallest set of tokens whose cumulative probability exceeds p."""
+            sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+            probs = F.softmax(sorted_logits, dim=-1)
+            cumsum = torch.cumsum(probs, dim=-1)
+            mask = cumsum - probs > p
+            sorted_logits[mask] = float("-inf")
+            return sorted_logits.scatter(-1, sorted_indices, sorted_logits)
+
+
+        def sample_with_temperature(
+            logits: torch.Tensor,
+            temperature: float = 1.0,
+            top_k: int = 0,
+            top_p: float = 0.0,
+        ) -> torch.Tensor:
+            """Sample from logits with temperature, top-k, and nucleus filtering.
+
+            Args:
+                logits: Raw logits tensor of shape (batch, vocab_size).
+                temperature: >0. Lower values make output more deterministic.
+                top_k: If >0, keep only top-k logits.
+                top_p: If >0, keep tokens with cumulative probability <= top_p.
+
+            Returns:
+                Sampled token indices of shape (batch, 1).
+            """
+            if temperature > 0:
+                logits = logits / temperature
+            if top_k > 0:
+                logits = topk_filter(logits, top_k)
+            if top_p > 0:
+                logits = nucleus_filter(logits, top_p)
+            probs = F.softmax(logits, dim=-1)
+            return torch.multinomial(probs, num_samples=1)
+    ''')
+
+
 # Template registry
 _TEMPLATE_REGISTRY: dict[str, Any] = {
     "rmsnorm": _template_rmsnorm,
@@ -1322,6 +1549,10 @@ _TEMPLATE_REGISTRY: dict[str, Any] = {
     "cosine_warmup": _template_cosine_warmup,
     "dropout_variants": _template_dropout_variants,
     "mistral": _template_mistral,
+    "kv_cache": _template_kv_cache,
+    "multiquery_attention": _template_multiquery_attention,
+    "gradient_checkpointing": _template_gradient_checkpointing,
+    "topk_sampling": _template_topk_sampling,
 }
 
 # Algorithm name → canonical file name
@@ -1344,6 +1575,10 @@ _ALGORITHM_FILE_NAMES: dict[str, str] = {
     "cosine_warmup": "cosine_warmup_schedule.py",
     "dropout_variants": "dropout_variants.py",
     "mistral": "sliding_window_attention.py",
+    "kv_cache": "kv_cache.py",
+    "multiquery_attention": "multiquery_attention.py",
+    "gradient_checkpointing": "gradient_checkpointing.py",
+    "topk_sampling": "topk_sampling.py",
 }
 
 

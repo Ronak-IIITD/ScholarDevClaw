@@ -715,6 +715,145 @@ PAPER_SPECS: dict[str, dict] = {
             "max_benchmark_time": 300,
         },
     },
+    # --- Inference optimization ---
+    "kv_cache": {
+        "paper": {
+            "title": "Efficient Transformers: A Survey",
+            "authors": ["Yi Tay", "Mostafa Dehghani", "Dara Bahri", "Donald Metzler"],
+            "arxiv": "2009.06732",
+            "year": 2020,
+        },
+        "algorithm": {
+            "name": "KV-Cache",
+            "replaces": "Full attention recomputation",
+            "description": "Caches key and value tensors during autoregressive decoding to avoid redundant computation",
+            "category": "inference_optimization",
+        },
+        "implementation": {
+            "module_name": "KVCache",
+            "parent_class": "nn.Module",
+            "parameters": ["max_batch_size", "max_seq_len", "n_heads", "head_dim"],
+        },
+        "changes": {
+            "type": "augment",
+            "target_patterns": ["CausalSelfAttention", "forward", "self.c_attn"],
+            "replacement": "KV-cache attention",
+            "insertion_points": ["CausalSelfAttention class"],
+            "expected_benefits": [
+                "O(seq_len) instead of O(seq_len^2) per generation step",
+                "No redundant key/value recomputation",
+            ],
+        },
+        "validation": {
+            "test_type": "benchmark",
+            "metrics": ["tokens_per_second", "memory_usage"],
+            "max_benchmark_time": 300,
+        },
+    },
+    "multiquery_attention": {
+        "paper": {
+            "title": "Fast Transformer Decoding: One Write-Head is All You Need",
+            "authors": ["Noam Shazeer"],
+            "arxiv": "1911.02150",
+            "year": 2019,
+        },
+        "algorithm": {
+            "name": "Multi-Query Attention",
+            "replaces": "Multi-Head Attention",
+            "description": "Shares a single key and value head across all query heads, dramatically reducing KV-cache size",
+            "category": "attention",
+        },
+        "implementation": {
+            "module_name": "MultiQueryAttention",
+            "parent_class": "nn.Module",
+            "parameters": ["config"],
+        },
+        "changes": {
+            "type": "replace",
+            "target_patterns": ["CausalSelfAttention", "self.c_attn", "self.n_head"],
+            "replacement": "MultiQueryAttention",
+            "insertion_points": ["CausalSelfAttention class"],
+            "expected_benefits": [
+                "80-90% reduction in KV-cache memory",
+                "Faster decoding with minimal quality loss",
+            ],
+        },
+        "validation": {
+            "test_type": "training_comparison",
+            "metrics": ["loss", "perplexity", "memory_usage", "tokens_per_second"],
+            "max_benchmark_time": 300,
+        },
+    },
+    # --- Memory optimization ---
+    "gradient_checkpointing": {
+        "paper": {
+            "title": "Training Deep Nets with Sublinear Memory Cost",
+            "authors": ["Tianqi Chen", "Bing Xu", "Chiyuan Zhang", "Carlos Guestrin"],
+            "arxiv": "1604.06174",
+            "year": 2016,
+        },
+        "algorithm": {
+            "name": "Gradient Checkpointing",
+            "replaces": "Full activation storage",
+            "description": "Trades compute for memory by selectively recomputing activations during backward pass",
+            "category": "memory_optimization",
+        },
+        "implementation": {
+            "module_name": "CheckpointedBlock",
+            "parent_class": "nn.Module",
+            "parameters": ["module", "segments"],
+        },
+        "changes": {
+            "type": "augment",
+            "target_patterns": ["Block", "class MLP", "CausalSelfAttention", "forward"],
+            "replacement": "CheckpointedBlock wrapper",
+            "insertion_points": ["Block wrapping", "Training loop"],
+            "expected_benefits": [
+                "Up to 60% reduction in peak GPU memory",
+                "Enables larger batch sizes / deeper models",
+            ],
+        },
+        "validation": {
+            "test_type": "benchmark",
+            "metrics": ["memory_usage", "tokens_per_second"],
+            "max_benchmark_time": 300,
+        },
+    },
+    # --- Text generation ---
+    "topk_sampling": {
+        "paper": {
+            "title": "The Curious Case of Neural Text Degeneration",
+            "authors": ["Ari Holtzman", "Jan Buys", "Li Du", "Maxwell Forbes", "Yejin Choi"],
+            "arxiv": "1904.09751",
+            "year": 2019,
+        },
+        "algorithm": {
+            "name": "Top-K / Nucleus Sampling",
+            "replaces": "Greedy / beam search decoding",
+            "description": "Filters the vocabulary to the top-k tokens (or top-p probability mass) before sampling, producing more diverse and coherent text",
+            "category": "decoding",
+        },
+        "implementation": {
+            "module_name": "TopKSampler",
+            "parent_class": "nn.Module",
+            "parameters": ["k", "p", "temperature"],
+        },
+        "changes": {
+            "type": "replace",
+            "target_patterns": ["generate", "sample", "self.logits", "next_token"],
+            "replacement": "Top-k / nucleus sampling",
+            "insertion_points": ["GPT class generate", "sampling logic"],
+            "expected_benefits": [
+                "More diverse and natural text generation",
+                "Avoids degenerate repetitive loops",
+            ],
+        },
+        "validation": {
+            "test_type": "unit_test",
+            "metrics": ["numerical_correctness", "output_diversity"],
+            "max_benchmark_time": 120,
+        },
+    },
 }
 
 
