@@ -2,7 +2,25 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-28 (Step 6: TS TUI replaces Python TUI as primary)
+**Last updated:** 2026-06-28 (All 22 spec templates now have complete transformers)
+
+### 2026-06-28 (All 22 spec templates now have complete transformers)
+
+**Summary:** The last 9 spec templates that were missing dedicated CST transformers now have them. _TRANSFORMER_REGISTRY grew from 13 → 22 entries, matching _TEMPLATE_REGISTRY coverage. Added 5 new specialized transformer classes and 4 explicit GenericRename entries.
+
+**Changes:**
+
+1. **5 new specialized transformers** (`core/src/scholardevclaw/patch_generation/generator.py`):
+   - `DropoutTransformer` — handles `nn.Dropout` Attribute access pattern + plain `Dropout` names → `DropPath`
+   - `MultiQueryAttentionTransformer` — renames `CausalSelfAttention` → `MultiQueryAttention` (mirrors GQA pattern)
+   - `MistralSlidingWindowTransformer` — renames `MLP`/`FeedForward` → `SlidingWindowAttention`
+   - `KVCacheAugmentTransformer` — renames `CausalSelfAttention`/`Attention` → `KVCache*` variants
+   - `GradientCheckpointingTransformer` — renames `Block` → `CheckpointedBlock`
+
+2. **4 explicit GenericRename entries** added to registry:
+   - `lion`, `weight_decay_fused`, `cosine_warmup`, `topk_sampling`
+
+3. **Full transformer coverage achieved**: all 22 templates → 22 transformers
 
 ### 2026-06-28 (Step 6: TypeScript OpenTUI replaces Python TUI as primary launcher)
 

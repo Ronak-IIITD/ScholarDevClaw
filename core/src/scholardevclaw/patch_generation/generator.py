@@ -312,6 +312,192 @@ class ALiBiTransformer(CSTTransformer):
         return updated_node
 
 
+class DropoutTransformer(CSTTransformer):
+    """Replaces nn.Dropout / Dropout references with DropPath variants.
+
+    Handles both plain ``Dropout`` names and ``nn.Dropout`` attribute-access
+    patterns (the common idiom in PyTorch codebases).
+    """
+
+    def __init__(self, original: str, replacement: str) -> None:
+        self.original = original
+        self.replacement = replacement
+        self.changes: list[dict] = []
+
+    def leave_ClassDef(  # noqa: N802
+        self, original_node: cst.ClassDef, updated_node: cst.ClassDef
+    ) -> cst.ClassDef:
+        if original_node.name.value in (self.original, "Dropout"):
+            self.changes.append(
+                {"type": "rename_class", "from": original_node.name.value, "to": self.replacement}
+            )
+            return updated_node.with_changes(name=cst.Name(self.replacement))
+        return updated_node
+
+    def leave_Attribute(  # noqa: N802
+        self, original_node: cst.Attribute, updated_node: cst.Attribute
+    ) -> cst.Attribute | cst.Name:
+        # nn.Dropout → replacement (strip module prefix)
+        if (
+            isinstance(original_node.value, cst.Name)
+            and original_node.value.value == "nn"
+            and original_node.attr.value in (self.original, "Dropout")
+        ):
+            self.changes.append(
+                {
+                    "type": "replace_attribute",
+                    "from": f"nn.{original_node.attr.value}",
+                    "to": self.replacement,
+                }
+            )
+            return cst.Name(self.replacement)
+        return updated_node
+
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
+        if original_node.value in (self.original, "Dropout"):
+            self.changes.append(
+                {"type": "rename_reference", "from": original_node.value, "to": self.replacement}
+            )
+            return cst.Name(self.replacement)
+        return updated_node
+
+
+class MultiQueryAttentionTransformer(CSTTransformer):
+    """Renames ``CausalSelfAttention`` → ``MultiQueryAttention``.
+
+    Mirrors the GQA transformer pattern.  The template file provides the
+    full MQA implementation; this transformer updates existing references.
+    """
+
+    def __init__(self) -> None:
+        self.changes: list[dict] = []
+
+    def leave_ClassDef(  # noqa: N802
+        self, original_node: cst.ClassDef, updated_node: cst.ClassDef
+    ) -> cst.ClassDef:
+        if original_node.name.value in ("CausalSelfAttention", "MultiHeadAttention"):
+            new_name = cst.Name("MultiQueryAttention")
+            self.changes.append(
+                {
+                    "type": "rename_class",
+                    "from": original_node.name.value,
+                    "to": "MultiQueryAttention",
+                }
+            )
+            return updated_node.with_changes(name=new_name)
+        return updated_node
+
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
+        if original_node.value in ("CausalSelfAttention", "MultiHeadAttention"):
+            self.changes.append(
+                {
+                    "type": "rename_reference",
+                    "from": original_node.value,
+                    "to": "MultiQueryAttention",
+                }
+            )
+            return cst.Name("MultiQueryAttention")
+        return updated_node
+
+
+class MistralSlidingWindowTransformer(CSTTransformer):
+    """Renames MLP/feedforward references → SlidingWindowAttention variants.
+
+    The template provides the full sliding-window + GQA implementation.
+    This transformer updates existing class and reference names in the codebase.
+    """
+
+    def __init__(self) -> None:
+        self.changes: list[dict] = []
+        self._mlp_targets = {"MLP", "FeedForward", "feedforward"}
+
+    def leave_ClassDef(  # noqa: N802
+        self, original_node: cst.ClassDef, updated_node: cst.ClassDef
+    ) -> cst.ClassDef:
+        name = original_node.name.value
+        if name in self._mlp_targets:
+            new_name = cst.Name("SlidingWindowAttention")
+            self.changes.append(
+                {"type": "rename_class", "from": name, "to": "SlidingWindowAttention"}
+            )
+            return updated_node.with_changes(name=new_name)
+        return updated_node
+
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
+        if original_node.value in self._mlp_targets:
+            self.changes.append(
+                {
+                    "type": "rename_reference",
+                    "from": original_node.value,
+                    "to": "SlidingWindowAttention",
+                }
+            )
+            return cst.Name("SlidingWindowAttention")
+        return updated_node
+
+
+class KVCacheAugmentTransformer(CSTTransformer):
+    """Augments attention classes by renaming to KV-cache-enabled variants.
+
+    Renames ``CausalSelfAttention`` / ``Attention`` → ``KVCacheAttention``
+    to signal that the attention should use the KV-cache implementation
+    from the generated template file.
+    """
+
+    def __init__(self) -> None:
+        self.changes: list[dict] = []
+
+    def leave_ClassDef(  # noqa: N802
+        self, original_node: cst.ClassDef, updated_node: cst.ClassDef
+    ) -> cst.ClassDef:
+        if original_node.name.value in ("CausalSelfAttention", "Attention"):
+            new_name = cst.Name("KVCache" + original_node.name.value)
+            self.changes.append(
+                {"type": "rename_class", "from": original_node.name.value, "to": new_name.value}
+            )
+            return updated_node.with_changes(name=new_name)
+        return updated_node
+
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
+        if original_node.value in ("CausalSelfAttention", "Attention"):
+            replacement = "KVCache" + original_node.value
+            self.changes.append(
+                {"type": "rename_reference", "from": original_node.value, "to": replacement}
+            )
+            return cst.Name(replacement)
+        return updated_node
+
+
+class GradientCheckpointingTransformer(CSTTransformer):
+    """Wraps Block references to signal checkpointing usage.
+
+    Renames ``Block`` → ``CheckpointedBlock`` so the training code
+    can wrap transformer blocks with gradient checkpointing.
+    """
+
+    def __init__(self) -> None:
+        self.changes: list[dict] = []
+
+    def leave_ClassDef(  # noqa: N802
+        self, original_node: cst.ClassDef, updated_node: cst.ClassDef
+    ) -> cst.ClassDef:
+        if original_node.name.value == "Block":
+            new_name = cst.Name("CheckpointedBlock")
+            self.changes.append(
+                {"type": "rename_class", "from": "Block", "to": "CheckpointedBlock"}
+            )
+            return updated_node.with_changes(name=new_name)
+        return updated_node
+
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
+        if original_node.value == "Block":
+            self.changes.append(
+                {"type": "rename_reference", "from": "Block", "to": "CheckpointedBlock"}
+            )
+            return cst.Name("CheckpointedBlock")
+        return updated_node
+
+
 class GenericRenameTransformer(CSTTransformer):
     """Generic transformer that renames all occurrences of one name to another."""
 
@@ -367,6 +553,17 @@ _TRANSFORMER_REGISTRY: dict[str, Any] = {
     "rope": lambda orig, repl: RoPETransformer(),
     "alibi": lambda orig, repl: ALiBiTransformer(),
     "lora": lambda orig, repl: GenericRenameTransformer(orig, repl),
+    # ---- Explicit GenericRename entries for simple renames ----
+    "lion": lambda orig, repl: GenericRenameTransformer(orig, repl),
+    "weight_decay_fused": lambda orig, repl: GenericRenameTransformer(orig, repl),
+    "cosine_warmup": lambda orig, repl: GenericRenameTransformer(orig, repl),
+    "topk_sampling": lambda orig, repl: GenericRenameTransformer(orig, repl),
+    # ---- Specialized transformers ----
+    "dropout_variants": lambda orig, repl: DropoutTransformer(orig, repl),
+    "multiquery_attention": lambda orig, repl: MultiQueryAttentionTransformer(),
+    "mistral": lambda orig, repl: MistralSlidingWindowTransformer(),
+    "kv_cache": lambda orig, repl: KVCacheAugmentTransformer(),
+    "gradient_checkpointing": lambda orig, repl: GradientCheckpointingTransformer(),
 }
 
 
