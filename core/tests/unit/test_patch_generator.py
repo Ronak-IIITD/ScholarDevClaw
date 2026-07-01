@@ -373,8 +373,8 @@ class TestTemplateRegistry:
         content = fn({"paper": {"title": "T", "authors": ["A"]}, "algorithm": {}})
         assert "cosine" in content.lower()
 
-    def test_all_15_templates_exist(self):
-        assert len(_TEMPLATE_REGISTRY) == 18
+    def test_all_22_templates_exist(self):
+        assert len(_TEMPLATE_REGISTRY) == 22
 
 
 # =========================================================================

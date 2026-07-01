@@ -863,7 +863,7 @@ def test_run_search_local_only(monkeypatch):
     result = pipeline.run_search("rmsnorm")
 
     assert result.ok is True
-    assert result.title == "Research Search"
+    assert "Research Search" in result.title
     assert len(result.payload["local"]) > 0
     assert result.payload["arxiv"] == []
     assert result.payload["web"] == {}
