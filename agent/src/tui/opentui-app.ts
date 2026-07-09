@@ -29,9 +29,11 @@ import type {
 } from "../bridges/python-subprocess.js";
 import { RunStore, type RunSnapshot } from "../utils/run-store.js";
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { homedir } from "os";
+import { readFile, writeFile } from "fs/promises";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -142,6 +144,67 @@ const C = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Session persistence
+// ---------------------------------------------------------------------------
+
+interface TuiSession {
+  repoPath: string;
+  spec: string;
+  mode: ExecutionMode;
+  provider: string;
+  model: string;
+  commandHistory: string[];
+  lastRunId: string | null;
+  updatedAt: string;
+}
+
+const SESSION_FILE = join(homedir(), ".scholardevclaw", "tui-session.json");
+
+function ensureSessionDir(): void {
+  mkdirSync(join(homedir(), ".scholardevclaw"), { recursive: true });
+}
+
+async function loadSession(): Promise<Partial<TuiSession>> {
+  try {
+    const raw = await readFile(SESSION_FILE, "utf8");
+    return JSON.parse(raw) as Partial<TuiSession>;
+  } catch {
+    return {};
+  }
+}
+
+async function saveSession(state: AppState): Promise<void> {
+  ensureSessionDir();
+  const session: TuiSession = {
+    repoPath: state.repoPath,
+    spec: state.spec,
+    mode: state.mode,
+    provider: state.provider,
+    model: state.model,
+    commandHistory: state.commandHistory.slice(-200),
+    lastRunId: state.lastRunId,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    await writeFile(SESSION_FILE, JSON.stringify(session, null, 2));
+  } catch {
+    // best-effort — session save failures are non-fatal
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Timestamp helper
+// ---------------------------------------------------------------------------
+
+function logTimestamp(): string {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, "0");
+  const m = String(now.getMinutes()).padStart(2, "0");
+  const s = String(now.getSeconds()).padStart(2, "0");
+  return `[${h}:${m}:${s}]`;
+}
+
+// ---------------------------------------------------------------------------
 // Python subprocess manager
 // ---------------------------------------------------------------------------
 
@@ -233,24 +296,27 @@ function phaseIcon(status: PhaseState["status"]): string {
 // ---------------------------------------------------------------------------
 
 export async function main() {
+  // Load persisted session
+  const saved = await loadSession();
+
   const state: AppState = {
-    repoPath: process.argv[2] || ".",
-    spec: "rmsnorm",
-    mode: (process.env.DEFAULT_MODE as ExecutionMode) || "autonomous",
-    provider: process.env.SCHOLARDEVCLAW_API_PROVIDER || DEFAULT_PROVIDER,
-    model: process.env.SCHOLARDEVCLAW_API_MODEL || DEFAULT_MODEL,
+    repoPath: saved.repoPath || process.argv[2] || ".",
+    spec: saved.spec || "rmsnorm",
+    mode: (saved.mode || process.env.DEFAULT_MODE || "autonomous") as ExecutionMode,
+    provider: saved.provider || process.env.SCHOLARDEVCLAW_API_PROVIDER || DEFAULT_PROVIDER,
+    model: saved.model || process.env.SCHOLARDEVCLAW_API_MODEL || DEFAULT_MODEL,
     running: false,
     cancellationRequested: false,
     phases: initPhases(),
     approvalPrompt: null,
-    commandHistory: [],
+    commandHistory: saved.commandHistory || [],
     historyIndex: -1,
     repoAnalysis: null,
     researchSpec: null,
     mapping: null,
     patch: null,
     validation: null,
-    lastRunId: null,
+    lastRunId: saved.lastRunId || null,
   };
 
   const server = new PythonServer();
@@ -315,7 +381,13 @@ export async function main() {
   });
 
   const keyHints = Text({
-    content: "Enter: run  Tab: autocomplete  ↑↓: history  Ctrl+C: cancel  Ctrl+K: clear  Esc: quit",
+    content: "Enter: run  Tab: autocomplete  ↑↓: history  Ctrl+C: cancel  Ctrl+L: clear  Ctrl+R: search  Esc: quit",
+    fg: C.muted,
+  });
+
+  // Persistent status bar at the bottom
+  const statusBar = Text({
+    content: ` ${state.repoPath} │ ${state.spec} │ ${state.mode} │ ${state.provider}/${state.model}`,
     fg: C.muted,
   });
 
@@ -329,6 +401,7 @@ export async function main() {
       promptInput,
       separator,
       keyHints,
+      statusBar,
     ),
   );
 
@@ -347,7 +420,8 @@ export async function main() {
             : level === "accent"
               ? C.accent
               : C.text;
-    const line = Text({ content: text, fg: color });
+    const ts = text.startsWith("═") || text.startsWith("─") || !text.trim() ? "" : logTimestamp() + " ";
+    const line = Text({ content: ts + text, fg: color });
     logScroll.add(line);
   }
 
@@ -368,6 +442,9 @@ export async function main() {
       `Tip: integrate ${state.repoPath} ${state.spec} — or: analyze, map, generate, validate, runs`,
     );
     promptInput.placeholder = `> integrate ${state.repoPath} ${state.spec} ...`;
+    statusBar.content = stringToStyledText(
+      ` ${state.repoPath} │ ${state.spec} │ ${state.mode} │ ${state.provider}/${state.model}`,
+    );
   }
 
   function updatePhaseProgress() {
@@ -662,6 +739,14 @@ export async function main() {
     if (trimmed === "quit" || trimmed === "exit") return { action: "quit", args: {} };
     if (trimmed === "runs" || trimmed === "history") return { action: "runs", args: {} };
 
+    // Run details: run-details <run-id>
+    const detailsMatch = trimmed.match(/^(?:run-details|details|inspect)\s+(\S+)/i);
+    if (detailsMatch) return { action: "run_details", args: { runId: detailsMatch[1] } };
+
+    // Artifacts: artifacts <run-id>
+    const artifactsMatch = trimmed.match(/^(?:artifacts|files)\s+(\S+)/i);
+    if (artifactsMatch) return { action: "artifacts", args: { runId: artifactsMatch[1] } };
+
     // Resume: resume <run-id>
     const resumeMatch = trimmed.match(/^resume\s+(\S+)/i);
     if (resumeMatch) return { action: "resume", args: { runId: resumeMatch[1] } };
@@ -769,30 +854,44 @@ export async function main() {
       }
 
       case "help": {
-        addLog("Commands:", "accent");
-        addLog("  integrate <path> <spec>    — full 6-phase pipeline", "info");
-        addLog("  analyze <path>             — phase 1: repo analysis", "info");
-        addLog("  search <query>             — phase 2: research extraction", "info");
-        addLog("  map <path> <spec>          — phases 1-3: mapping", "info");
-        addLog("  generate <path> <spec>     — phases 1-4: patch generation", "info");
-        addLog("  validate <path>            — phases 1-5: validation", "info");
-        addLog("  runs / history             — list recent runs", "info");
-        addLog("  resume <run-id>            — resume a previous run", "info");
+        addLog("═".repeat(60), "muted");
+        addLog("Pipeline Commands:", "accent");
+        addLog("  integrate <path> <spec>     — full 6-phase pipeline", "info");
+        addLog("  analyze <path>              — phase 1: repo analysis", "info");
+        addLog("  search <query>              — phase 2: research extraction", "info");
+        addLog("  map <path> <spec>           — phases 1-3: mapping", "info");
+        addLog("  generate <path> <spec>      — phases 1-4: patch generation", "info");
+        addLog("  validate <path>             — phases 1-5: validation", "info");
         addLog("", "info");
-        addLog("  set repo <path>            — set default repository", "info");
-        addLog("  set spec <name>            — set default spec", "info");
+        addLog("Inspect Commands:", "accent");
+        addLog("  runs / history              — list recent runs", "info");
+        addLog("  run-details <run-id>        — inspect a run's inputs/outputs/errors", "info");
+        addLog("  artifacts <run-id>          — browse generated files and transformations", "info");
+        addLog("  resume <run-id>             — resume an incomplete run", "info");
+        addLog("", "info");
+        addLog("Configuration:", "accent");
+        addLog("  set repo <path>             — set default repository", "info");
+        addLog("  set spec <name>             — set default spec", "info");
         addLog("  set mode <autonomous|step_approval>", "info");
-        addLog("  set provider <name>        — set LLM provider", "info");
-        addLog("  set model <id>             — set model", "info");
+        addLog("  set provider <name>         — set LLM provider", "info");
+        addLog("  set model <id>              — set model", "info");
         addLog("  setup | status | clear | help | quit", "info");
         addLog("", "info");
+        addLog("Keyboard:", "accent");
+        addLog("  Ctrl+C    cancel task / exit", "info");
+        addLog("  Ctrl+L    clear output", "info");
+        addLog("  Ctrl+R    reverse history search", "info");
+        addLog("  Tab       autocomplete spec names", "info");
+        addLog("  ↑↓        command history", "info");
+        addLog("  Esc       exit / cancel search", "info");
+        addLog("", "info");
         addLog("  Available specs (" + KNOWN_SPECS.length + "):", "muted");
-        // Display specs in columns of ~6
         const chunkSize = Math.ceil(KNOWN_SPECS.length / 4);
         for (let i = 0; i < KNOWN_SPECS.length; i += chunkSize) {
           const chunk = KNOWN_SPECS.slice(i, i + chunkSize);
           addLog("    " + chunk.join(", "), "muted");
         }
+        addLog("═".repeat(60), "muted");
         break;
       }
 
@@ -821,6 +920,85 @@ export async function main() {
           }
         } catch (err) {
           addLog(`Error listing runs: ${err instanceof Error ? err.message : err}`, "error");
+        }
+        break;
+      }
+
+      case "run_details": {
+        const rId = args.runId;
+        if (!rId) { addLog("Usage: run-details <run-id>", "error"); break; }
+        try {
+          const snapshot = await runStore.get(rId);
+          if (!snapshot) { addLog(`Run not found: ${rId}`, "error"); break; }
+          addLog("═".repeat(60), "muted");
+          addLog(`Run: ${snapshot.runId}`, "accent");
+          addLog(`  Status: ${snapshot.status}`, snapshot.status === "completed" ? "success" : snapshot.status === "failed" ? "error" : "info");
+          addLog(`  Repo: ${snapshot.repoUrl}`, "info");
+          addLog(`  Spec: ${snapshot.paperUrl || "n/a"}`, "info");
+          addLog(`  Mode: ${snapshot.mode}`, "info");
+          addLog(`  Created: ${new Date(snapshot.createdAt).toLocaleString()}`, "info");
+          addLog(`  Phase: ${snapshot.currentPhase}/6`, "info");
+          if (snapshot.errorMessage) addLog(`  Error: ${snapshot.errorMessage}`, "error");
+          if (snapshot.guardrailReasons?.length) {
+            addLog(`  Guardrails: ${snapshot.guardrailReasons.join("; ")}`, "warning");
+          }
+          if (snapshot.approvals?.length) {
+            addLog("  Approvals:", "info");
+            for (const a of snapshot.approvals) {
+              addLog(`    Phase ${a.phase}: ${a.action}`, a.action === "approved" ? "success" : "error");
+            }
+          }
+          addLog("═".repeat(60), "muted");
+        } catch (err) {
+          addLog(`Error: ${err instanceof Error ? err.message : err}`, "error");
+        }
+        break;
+      }
+
+      case "artifacts": {
+        const aId = args.runId;
+        if (!aId) { addLog("Usage: artifacts <run-id>", "error"); break; }
+        try {
+          const snapshot = await runStore.get(aId);
+          if (!snapshot) { addLog(`Run not found: ${aId}`, "error"); break; }
+          const phaseResults = snapshot.phaseResults || {};
+          addLog("═".repeat(60), "muted");
+          addLog(`Artifacts for ${snapshot.runId}`, "accent");
+          // Phase 1: repo analysis
+          const ra = phaseResults[1] as Record<string, unknown> | undefined;
+          if (ra) {
+            addLog("  Phase 1 — Repo Analysis:", "info");
+            const models = ((ra as Record<string, unknown>)?.architecture as Record<string, unknown>)?.models as unknown[];
+            addLog(`    Models: ${models?.length || "?"}`, "info");
+          }
+          // Phase 4: patch generated files & transformations
+          const patch = phaseResults[4] as Record<string, unknown> | undefined;
+          if (patch) {
+            addLog("  Phase 4 — Patch Generation:", "info");
+            const newFiles = (patch as Record<string, unknown>).newFiles as { path?: string }[] | undefined;
+            if (newFiles?.length) {
+              addLog(`    New files (${newFiles.length}):`, "success");
+              for (const f of newFiles) addLog(`      + ${f.path || "?"}`, "success");
+            }
+            const transforms = (patch as Record<string, unknown>).transformations as { file?: string }[] | undefined;
+            if (transforms?.length) {
+              addLog(`    Modifications (${transforms.length}):`, "info");
+              for (const t of transforms) addLog(`      ~ ${t.file || "?"}`, "info");
+            }
+            addLog(`    Branch: ${(patch as Record<string, unknown>).branchName || "?"}`, "info");
+          }
+          // Phase 5: validation
+          const val = phaseResults[5] as Record<string, unknown> | undefined;
+          if (val) {
+            addLog("  Phase 5 — Validation:", "info");
+            addLog(`    Passed: ${(val as Record<string, unknown>).passed ? "✓" : "✗"}`, (val as Record<string, unknown>).passed ? "success" : "error");
+          }
+          if (!patch && !ra) {
+            addLog("  No artifacts found for this run.", "info");
+          }
+          addLog("═".repeat(60), "muted");
+        } catch (err) {
+          addLog(`Error: ${err instanceof Error ? err.message : err}`, "error");
         }
         break;
       }
@@ -1123,6 +1301,7 @@ export async function main() {
         addLog(`Unknown command: ${action}. Type 'help' for commands.`, "warning");
       }
     }
+    autoSave();
   }
 
   // --- Utility ---
@@ -1150,6 +1329,15 @@ export async function main() {
     executeCommand(value.trim());
   });
 
+  // Reverse-search state
+  let reverseSearchActive = false;
+  let reverseSearchQuery = "";
+
+  // Auto-save session whenever state changes
+  function autoSave() {
+    saveSession(state).catch(() => {});
+  }
+
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
     // Ctrl+C: cancel or quit
     if (key.ctrl && key.name === "c") {
@@ -1163,54 +1351,99 @@ export async function main() {
       } else {
         addLog("Goodbye!", "warning");
         server.stop();
+        autoSave();
         setTimeout(() => process.exit(0), 300);
       }
       return;
     }
 
-    // Ctrl+K: clear logs
-    if (key.ctrl && key.name === "k") {
+    // Ctrl+L: clear logs
+    if (key.ctrl && key.name === "l") {
       clearLogs();
       addLog("Output cleared", "info");
       return;
     }
 
-    // Escape: quit
-    if (key.name === "escape" && !state.approvalPrompt) {
-      addLog("Goodbye!", "warning");
-      server.stop();
-      setTimeout(() => process.exit(0), 300);
+    // Ctrl+R: reverse history search
+    if (key.ctrl && key.name === "r") {
+      if (state.running) return;
+      reverseSearchActive = !reverseSearchActive;
+      if (reverseSearchActive) {
+        reverseSearchQuery = "";
+        promptInput.placeholder = "(reverse-i-search) ";
+        promptInput.value = "";
+        addLog("Ctrl+R: type to search history. Ctrl+R again to cycle. Enter to select. Esc to cancel.", "info");
+      } else {
+        promptInput.placeholder = `> integrate ${state.repoPath} ${state.spec} ...`;
+      }
+      return;
+    }
+
+    // Escape: cancel reverse search or quit
+    if (key.name === "escape") {
+      if (reverseSearchActive) {
+        reverseSearchActive = false;
+        reverseSearchQuery = "";
+        promptInput.placeholder = `> integrate ${state.repoPath} ${state.spec} ...`;
+        promptInput.value = "";
+        return;
+      }
+      if (!state.approvalPrompt) {
+        addLog("Goodbye!", "warning");
+        server.stop();
+        autoSave();
+        setTimeout(() => process.exit(0), 300);
+      }
+      return;
+    }
+
+    // Enter key during reverse search
+    if (key.name === "return" && reverseSearchActive) {
+      reverseSearchActive = false;
+      const selected = promptInput.value;
+      reverseSearchQuery = "";
+      promptInput.placeholder = `> integrate ${state.repoPath} ${state.spec} ...`;
+      if (selected) {
+        // Execute the found command immediately
+        promptInput.value = selected;
+        executeCommand(selected);
+      } else {
+        promptInput.value = "";
+      }
       return;
     }
 
     // Tab: autocomplete
-    if (key.name === "tab" && !state.running) {
+    if (key.name === "tab" && !state.running && !reverseSearchActive) {
       const current = promptInput.value;
       if (!current) {
         promptInput.value = `integrate ${state.repoPath} ${state.spec}`;
       } else {
         // Try to autocomplete spec names
         const lower = current.toLowerCase();
-        const match = KNOWN_SPECS.find((s) => s.startsWith(lower.split(/\s+/).pop() || ""));
-        if (match) {
+        const lastWord = lower.split(/\s+/).pop() || "";
+        const matches = KNOWN_SPECS.filter((s) => s.startsWith(lastWord));
+        if (matches.length === 1) {
           const parts = current.split(/\s+/);
-          parts[parts.length - 1] = match;
+          parts[parts.length - 1] = matches[0];
           promptInput.value = parts.join(" ");
+        } else if (matches.length > 1) {
+          addLog(`  Suggestions: ${matches.join(", ")}`, "info");
         }
       }
       return;
     }
 
-    // Up: history prev
-    if (key.name === "up" && state.commandHistory.length > 0 && !state.approvalPrompt) {
+    // Up: history prev (skip during reverse search)
+    if (key.name === "up" && state.commandHistory.length > 0 && !state.approvalPrompt && !reverseSearchActive) {
       if (state.historyIndex <= 0) state.historyIndex = state.commandHistory.length;
       state.historyIndex--;
       promptInput.value = state.commandHistory[state.historyIndex] || "";
       return;
     }
 
-    // Down: history next
-    if (key.name === "down" && !state.approvalPrompt) {
+    // Down: history next (skip during reverse search)
+    if (key.name === "down" && !state.approvalPrompt && !reverseSearchActive) {
       if (state.historyIndex < state.commandHistory.length - 1) {
         state.historyIndex++;
         promptInput.value = state.commandHistory[state.historyIndex] || "";
@@ -1220,14 +1453,43 @@ export async function main() {
       }
       return;
     }
+
+    // During reverse search, any printable character updates the query
+    if (reverseSearchActive && key.name && key.name.length === 1 && !key.ctrl) {
+      reverseSearchQuery += key.name;
+      // Find a matching command
+      const matches = state.commandHistory.filter((cmd) =>
+        cmd.toLowerCase().includes(reverseSearchQuery.toLowerCase()),
+      );
+      if (matches.length > 0) {
+        promptInput.value = matches[matches.length - 1];
+      }
+      promptInput.placeholder = `(reverse-i-search) ${reverseSearchQuery}`;
+      return;
+    }
   });
 
   // Welcome message
-  addLog("ScholarDevClaw OpenTUI — keyboard-first research shell", "accent");
-  addLog(`Provider: ${state.provider} | Model: ${state.model} | Mode: ${state.mode}`, "info");
-  addLog(`Repository: ${state.repoPath} | Spec: ${state.spec}`, "info");
-  addLog("Type 'help' for commands, 'integrate <path> <spec>' to start", "info");
-  addLog("─".repeat(76), "muted");
+  addLog("═".repeat(60), "muted");
+  addLog("  ScholarDevClaw  —  keyboard-first research shell", "accent");
+  addLog("═".repeat(60), "muted");
+  addLog(`  Provider: ${state.provider}  Model: ${state.model}  Mode: ${state.mode}`, "info");
+  addLog(`  Repo: ${state.repoPath}  Spec: ${state.spec}`, "info");
+  addLog("", "info");
+  addLog("  Type 'help' for commands  |  'integrate <path> <spec>' to start", "info");
+  addLog("─".repeat(60), "muted");
+
+  // Auto-resume last incomplete run
+  if (state.lastRunId) {
+    try {
+      const lastRun = await runStore.get(state.lastRunId);
+      if (lastRun && lastRun.status !== "completed" && lastRun.status !== "failed") {
+        addLog(`Found incomplete run ${state.lastRunId} — type 'resume ${state.lastRunId}' to continue`, "warning");
+      }
+    } catch {
+      // best-effort
+    }
+  }
 }
 
 main().catch((err) => {

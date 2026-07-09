@@ -2,7 +2,48 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-28 (All 22 spec templates now have complete transformers)
+**Last updated:** 2026-06-28 (TUI polish — session persistence, run details, artifacts, reverse search, status bar)
+
+### 2026-06-28 (TUI polish — session persistence, run details, artifacts, reverse search, status bar)
+
+**Summary:** Major polish pass on the TypeScript OpenTUI to bring it closer to real-world tools like Claude Code. Added session persistence (auto-save/load config across restarts), a persistent status bar, timestamped log entries, Ctrl+R reverse history search, `run-details` and `artifacts` inspect commands, improved tab completion (shows multiple matches), and a polished welcome/help screen.
+
+**Changes** (`agent/src/tui/opentui-app.ts`, +306/−44):
+
+1. **Session persistence**:
+   - Saves repoPath, spec, mode, provider, model, commandHistory, lastRunId to `~/.scholardevclaw/tui-session.json`
+   - Auto-loads on startup so config survives restarts
+   - Auto-saves after every command
+   - Notifies about incomplete runs on startup for easy resume
+
+2. **Persistent status bar** at bottom of screen:
+   - Shows current repo │ spec │ mode │ provider/model
+   - Updates live when config changes
+
+3. **Timestamped log output**:
+   - `[HH:MM:SS]` prefix on all log entries (except separators)
+
+4. **Ctrl+R reverse history search**:
+   - Activates search mode, type to find matching commands
+   - Ctrl+R again to cycle, Enter to execute, Esc to cancel
+
+5. **`run-details <run-id>` command**:
+   - Shows full run status, repo, spec, mode, timestamps, errors, guardrails, approvals
+
+6. **`artifacts <run-id>` command**:
+   - Lists generated files, transformations, branch name, validation status
+
+7. **Better tab completion**:
+   - Shows all matching specs when multiple matches found
+
+8. **Polished help screen**:
+   - Grouped into Pipeline / Inspect / Configuration / Keyboard sections
+   - Cleaner visual layout with separators
+
+9. **Updated keyboard shortcuts**:
+   - Ctrl+L for clear (was Ctrl+K)
+   - Ctrl+R for reverse search
+   - Better Esc handling (cancel reverse search first, then quit)
 
 ### 2026-06-28 (All 22 spec templates now have complete transformers)
 
