@@ -2,7 +2,16 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-28 (TUI redesign — split-pane dashboard with live pipeline visualization)
+**Last updated:** 2026-07-09 (fix: orjson optional in cache.py)
+
+### 2026-07-09 (fix: orjson optional in cache.py)
+
+**Summary:** Fixed `ModuleNotFoundError: No module named 'orjson'` when running `scholardevclaw tui` from the global pip install. The system Python (`#!/usr/bin/python3`) doesn't have `orjson`, which is only in the project venv. Made `orjson` optional in `cache.py` with a try/except + stdlib `json` shim providing `dumps`/`loads`/`OPT_SORT_KEYS` compatibility.
+
+**Changes** (`core/src/scholardevclaw/application/cache.py`, +27/−1):
+1. **Optional orjson import**: Wrapped `import orjson` in try/except ImportError
+2. **Fallback shim**: Provides `_orjson_fallback_dumps` (encodes via `json.dumps().encode()`) and `_orjson_fallback_loads` (decodes bytes before `json.loads()`)
+3. **Monkey-patch**: Creates `orjson = type(sys)("orjson")` module shim with `dumps`/`loads`/`OPT_SORT_KEYS` so existing code works unchanged
 
 ### 2026-06-28 (TUI redesign — split-pane dashboard with live pipeline visualization)
 
