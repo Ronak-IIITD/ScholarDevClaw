@@ -279,16 +279,40 @@ function initPhases(): PhaseState[] {
 function renderPhaseProgress(phases: PhaseState[]): string {
   return phases
     .map((p) => {
-      const icon = p.status === "completed" ? "✓" : p.status === "running" ? "▶" : p.status === "failed" ? "✗" : "○";
-      const time = p.durationMs != null ? ` (${(p.durationMs / 1000).toFixed(1)}s)` : "";
-      const err = p.error ? ` — ${p.error}` : "";
-      return `  ${p.phase}. ${icon} ${p.name}${time}${err}`;
+      let icon: string;
+      let iconColor: string;
+      switch (p.status) {
+        case "completed":
+          icon = "●";
+          iconColor = "green";
+          break;
+        case "running":
+          icon = "▶";
+          iconColor = "blue";
+          break;
+        case "failed":
+          icon = "●";
+          iconColor = "red";
+          break;
+        default:
+          icon = "○";
+          iconColor = "muted";
+      }
+      const time = p.durationMs != null ? ` ${(p.durationMs / 1000).toFixed(1)}s` : "";
+      const err = p.error ? `  ${p.error}` : "";
+      const label = p.name.padEnd(20);
+      return `  ${icon}  ${label}${time}${err}`;
     })
-    .join("\n");
+    .join("\n") + "\n  " + "─".repeat(28);
 }
 
-function phaseIcon(status: PhaseState["status"]): string {
-  return status === "completed" ? "✓" : status === "running" ? "▶" : status === "failed" ? "✗" : "○";
+function renderPhaseSummary(phases: PhaseState[]): string {
+  const completed = phases.filter((p) => p.status === "completed").length;
+  const failed = phases.filter((p) => p.status === "failed").length;
+  const total = phases.reduce((s, p) => s + (p.durationMs || 0), 0);
+  const elapsed = total > 0 ? ` ${(total / 1000).toFixed(1)}s` : "";
+  const status = failed > 0 ? `⚠ ${failed} failed` : completed === 6 ? "✓ Complete" : `▶ ${completed}/6`;
+  return `  ${status}${elapsed}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -330,58 +354,70 @@ export async function main() {
 
   // --- Build UI components ---
 
-  const headerText = Text({ content: " ScholarDevClaw", fg: C.accent });
+  // ── Top bar: tool name + server status ──
+  const topBar = Box(
+    { flexDirection: "row", gap: 1, marginBottom: 1 },
+    Text({ content: " ScholarDevClaw", fg: C.accent }),
+    Text({ content: "│", fg: C.border }),
+    Text({
+      content: serverReady ? "● Pipeline ready" : "○ Pipeline offline",
+      fg: serverReady ? C.green : C.red,
+    }),
+  );
 
-  const statusText = Text({
-    content: `REPO: ${state.repoPath}  SPEC: ${state.spec}  MODE: ${state.mode}`,
-    fg: C.muted,
-  });
-
-  const serverStatusText = Text({
-    content: serverReady ? "● Pipeline ready" : "○ Pipeline offline",
-    fg: serverReady ? C.green : C.red,
-  });
-
+  // ── Phase dashboard (left pane) ──
   const phaseProgressText = Text({
     content: renderPhaseProgress(state.phases),
     fg: C.text,
   });
 
-  const header = Box(
-    { flexDirection: "column", gap: 0, marginBottom: 1 },
-    headerText,
-    statusText,
-    serverStatusText,
+  const phaseBox = Box(
+    {
+      flexDirection: "column",
+      gap: 0,
+      borderStyle: "rounded",
+      borderColor: C.border,
+      padding: 1,
+      title: " Pipeline ",
+      titleAlignment: "center",
+    },
     phaseProgressText,
   );
 
-  const separator = Text({ content: "─".repeat(80), fg: C.border });
-
-  const logBox = Box(
-    { flexDirection: "column", gap: 0, height: 16, borderStyle: "rounded", padding: 1 },
-    Text({ content: "Output", fg: C.muted }),
-    Text({ content: "─".repeat(76), fg: C.border }),
-  );
-
-  const logScroll = ScrollBox({ width: 76, height: 13 });
-  logBox.add(logScroll);
-
-  const hintText = Text({
-    content: `Tip: integrate ${state.repoPath} ${state.spec} — or: analyze, map, generate, validate, runs`,
-    fg: C.muted,
+  // ── Log output (right pane) ──
+  const logScroll = ScrollBox({
+    width: 56,
+    height: 15,
+    borderStyle: "rounded",
+    borderColor: C.border,
+    padding: 1,
+    title: " Output ",
+    titleAlignment: "center",
+    stickyScroll: true,
+    stickyStart: "bottom",
   });
 
+  // ── Split pane ──
+  const splitPane = Box(
+    { flexDirection: "row", gap: 1, height: 19 },
+    phaseBox,
+    logScroll,
+  );
+
+  // ── Input area ──
   const promptInput = Input({
     placeholder: `> integrate ${state.repoPath} ${state.spec} ...`,
-    width: 78,
+    width: 80,
     backgroundColor: C.surface,
     focusedBackgroundColor: "#2a2a3e",
     textColor: C.text,
     cursorColor: C.accent,
   });
 
+  const separator = Text({ content: "─".repeat(80), fg: C.border });
+
   const keyHints = Text({
-    content: "Enter: run  Tab: autocomplete  ↑↓: history  Ctrl+C: cancel  Ctrl+L: clear  Ctrl+R: search  Esc: quit",
+    content: "Enter: run  Tab: complete  ↑↓: history  Ctrl+R: search  Ctrl+L: clear  Ctrl+C: cancel  Esc: quit",
     fg: C.muted,
   });
 
@@ -394,10 +430,8 @@ export async function main() {
   renderer.root.add(
     Box(
       { flexDirection: "column", gap: 0, padding: 1 },
-      header,
-      separator,
-      logBox,
-      hintText,
+      topBar,
+      splitPane,
       promptInput,
       separator,
       keyHints,
@@ -435,12 +469,6 @@ export async function main() {
   }
 
   function updateStatus() {
-    statusText.content = stringToStyledText(
-      `REPO: ${state.repoPath}  SPEC: ${state.spec}  MODE: ${state.mode}`,
-    );
-    hintText.content = stringToStyledText(
-      `Tip: integrate ${state.repoPath} ${state.spec} — or: analyze, map, generate, validate, runs`,
-    );
     promptInput.placeholder = `> integrate ${state.repoPath} ${state.spec} ...`;
     statusBar.content = stringToStyledText(
       ` ${state.repoPath} │ ${state.spec} │ ${state.mode} │ ${state.provider}/${state.model}`,
@@ -448,7 +476,9 @@ export async function main() {
   }
 
   function updatePhaseProgress() {
-    phaseProgressText.content = stringToStyledText(renderPhaseProgress(state.phases));
+    phaseProgressText.content = stringToStyledText(
+      renderPhaseProgress(state.phases) + "\n" + renderPhaseSummary(state.phases),
+    );
   }
 
   function resetPhases() {
@@ -823,15 +853,15 @@ export async function main() {
       }
 
       case "setup": {
-        addLog("Configuration:", "accent");
-        addLog(`  Provider: ${state.provider}`, "info");
-        addLog(`  Model: ${state.model}`, "info");
-        addLog(`  Repository: ${state.repoPath}`, "info");
-        addLog(`  Spec: ${state.spec}`, "info");
-        addLog(`  Mode: ${state.mode}`, "info");
-        addLog(`  Pipeline: ${serverReady ? "ready" : "offline"}`, serverReady ? "success" : "error");
-        addLog("", "info");
-        addLog("  Change with: set repo/spec/mode/provider/model <value>", "muted");
+        addLog("─".repeat(50), "muted");
+        addLog("  Provider    " + state.provider, "info");
+        addLog("  Model       " + state.model, "info");
+        addLog("  Repository  " + state.repoPath, "info");
+        addLog("  Spec        " + state.spec, "info");
+        addLog("  Mode        " + state.mode, "info");
+        addLog("  Pipeline    " + (serverReady ? "ready" : "offline"), serverReady ? "success" : "error");
+        addLog("─".repeat(50), "muted");
+        addLog("  Change values: set <key> <value>", "muted");
         break;
       }
 

@@ -2,7 +2,33 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-06-28 (TUI polish — session persistence, run details, artifacts, reverse search, status bar)
+**Last updated:** 2026-06-28 (TUI redesign — split-pane dashboard with live pipeline visualization)
+
+### 2026-06-28 (TUI redesign — split-pane dashboard with live pipeline visualization)
+
+**Summary:** Major visual redesign of the TypeScript OpenTUI with a split-pane dashboard layout: left pane shows a live 6-phase pipeline dashboard with compact colored progress indicators and elapsed timing, right pane shows scrolling log output with auto-scroll. The design is inspired by professional tools like Claude Code with proper use of borders, titles, spacing, and visual hierarchy.
+
+**Changes** (`agent/src/tui/opentui-app.ts`, +88/−58):
+
+1. **Split-pane dashboard layout**:
+   - Left pane: bordered "Pipeline" box with compact phase progress (● completed, ▶ running, ○ pending, ● failed) and per-phase timing
+   - Right pane: bordered "Output" scroll box with auto-scroll to bottom (`stickyScroll`)
+   - Top bar: tool name + live server status indicator
+   - Clean input area with key hints and persistent status bar
+
+2. **Phase progress visualization**:
+   - Compact single-line-per-phase format with consistent padding
+   - Summary line showing elapsed time and completion status
+   - Color-coded status icons (green/blue/red/muted)
+
+3. **Polished visual design**:
+   - Rounded borders on all panes with centered titles
+   - Proper spacing and layout via flexDirection row/column
+   - Status bar at bottom shows repo │ spec │ mode │ provider/model
+
+4. **Code quality**:
+   - Removed redundant statusText, hintText, and separator components
+   - Simplified layout tree
 
 ### 2026-06-28 (TUI polish — session persistence, run details, artifacts, reverse search, status bar)
 
