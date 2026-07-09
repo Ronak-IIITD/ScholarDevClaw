@@ -350,7 +350,7 @@ export async function main() {
   // Start Python server
   const serverReady = await server.start();
 
-  const renderer = await createCliRenderer({ exitOnCtrlC: false });
+  const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: false });
 
   // --- Build UI components ---
 
