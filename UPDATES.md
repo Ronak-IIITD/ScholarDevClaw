@@ -2,7 +2,11 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-07-09 (fix: orjson optional in cache.py)
+**Last updated:** 2026-07-09 (fix: disable mouse input in OpenTUI)
+
+### 2026-07-09 (fix: disable mouse input in OpenTUI)
+**Summary:** Disabled mouse pointer capture in the TypeScript OpenTUI. `@opentui/core`s `createCliRenderer` enables mouse click handling by default, which interfered with the keyboard-first terminal design. Added `useMouse: false` to the renderer options.
+**Changes** (`agent/src/tui/opentui-app.ts`, +1/−1): Added `useMouse: false` to `createCliRenderer` call.
 
 ### 2026-07-09 (fix: orjson optional in cache.py)
 
