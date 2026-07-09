@@ -13,13 +13,39 @@ from __future__ import annotations
 
 import hashlib
 import pickle
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import orjson
+try:
+    import orjson
+
+    _HAVE_ORJSON = True
+except ImportError:
+    import json as _json
+
+    _HAVE_ORJSON = False
+
+    # Provide shim for orjson-less environments
+    def _orjson_fallback_dumps(obj: object, **kwargs: object) -> bytes:
+        # sort_keys is the json equivalent of orjson.OPT_SORT_KEYS
+        if kwargs.get("option") is not None:
+            kwargs.pop("option")
+        return _json.dumps(obj, **kwargs).encode()  # type: ignore[arg-type]
+
+    def _orjson_fallback_loads(data: bytes | str) -> object:
+        if isinstance(data, bytes):
+            data = data.decode()
+        return _json.loads(data)
+
+    # Monkey-patch orjson onto the module so existing code works
+    orjson = type(sys)("orjson")  # type: ignore[assignment]
+    orjson.dumps = _orjson_fallback_dumps  # type: ignore[attr-defined]
+    orjson.loads = _orjson_fallback_loads  # type: ignore[attr-defined]
+    orjson.OPT_SORT_KEYS = 0  # type: ignore[attr-defined]
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "scholardevclaw"
 CACHE_VERSION = 2
