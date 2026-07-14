@@ -352,6 +352,9 @@ export async function main() {
 
   const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: false });
 
+  // Ensure mouse is fully disabled (explicit call to override any native defaults)
+  renderer.useMouse = false;
+
   // --- Build UI components ---
 
   // ── Top bar: tool name + server status ──
