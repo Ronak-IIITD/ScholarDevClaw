@@ -231,7 +231,11 @@ class PythonServer {
       this.process = spawn(
         py,
         ["-m", "uvicorn", "scholardevclaw.api.server:app", "--port", String(this.port)],
-        { cwd: CORE_ROOT, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONUNBUFFERED: "1" } },
+        {
+          cwd: CORE_ROOT,
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { ...process.env, PYTHONUNBUFFERED: "1" },
+        },
       );
 
       this.process.stdout?.on("data", () => {});
@@ -277,33 +281,37 @@ function initPhases(): PhaseState[] {
 }
 
 function renderPhaseProgress(phases: PhaseState[]): string {
-  return phases
-    .map((p) => {
-      let icon: string;
-      let iconColor: string;
-      switch (p.status) {
-        case "completed":
-          icon = "●";
-          iconColor = "green";
-          break;
-        case "running":
-          icon = "▶";
-          iconColor = "blue";
-          break;
-        case "failed":
-          icon = "●";
-          iconColor = "red";
-          break;
-        default:
-          icon = "○";
-          iconColor = "muted";
-      }
-      const time = p.durationMs != null ? ` ${(p.durationMs / 1000).toFixed(1)}s` : "";
-      const err = p.error ? `  ${p.error}` : "";
-      const label = p.name.padEnd(20);
-      return `  ${icon}  ${label}${time}${err}`;
-    })
-    .join("\n") + "\n  " + "─".repeat(28);
+  return (
+    phases
+      .map((p) => {
+        let icon: string;
+        let iconColor: string;
+        switch (p.status) {
+          case "completed":
+            icon = "●";
+            iconColor = "green";
+            break;
+          case "running":
+            icon = "▶";
+            iconColor = "blue";
+            break;
+          case "failed":
+            icon = "●";
+            iconColor = "red";
+            break;
+          default:
+            icon = "○";
+            iconColor = "muted";
+        }
+        const time = p.durationMs != null ? ` ${(p.durationMs / 1000).toFixed(1)}s` : "";
+        const err = p.error ? `  ${p.error}` : "";
+        const label = p.name.padEnd(20);
+        return `  ${icon}  ${label}${time}${err}`;
+      })
+      .join("\n") +
+    "\n  " +
+    "─".repeat(28)
+  );
 }
 
 function renderPhaseSummary(phases: PhaseState[]): string {
@@ -311,7 +319,8 @@ function renderPhaseSummary(phases: PhaseState[]): string {
   const failed = phases.filter((p) => p.status === "failed").length;
   const total = phases.reduce((s, p) => s + (p.durationMs || 0), 0);
   const elapsed = total > 0 ? ` ${(total / 1000).toFixed(1)}s` : "";
-  const status = failed > 0 ? `⚠ ${failed} failed` : completed === 6 ? "✓ Complete" : `▶ ${completed}/6`;
+  const status =
+    failed > 0 ? `⚠ ${failed} failed` : completed === 6 ? "✓ Complete" : `▶ ${completed}/6`;
   return `  ${status}${elapsed}`;
 }
 
@@ -350,7 +359,10 @@ export async function main() {
   // Start Python server
   const serverReady = await server.start();
 
-  const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: false });
+  const renderer = await createCliRenderer({
+    exitOnCtrlC: false,
+    useMouse: false,
+  });
 
   // Ensure mouse is fully disabled (explicit call to override any native defaults)
   renderer.useMouse = false;
@@ -401,11 +413,7 @@ export async function main() {
   });
 
   // ── Split pane ──
-  const splitPane = Box(
-    { flexDirection: "row", gap: 1, height: 19 },
-    phaseBox,
-    logScroll,
-  );
+  const splitPane = Box({ flexDirection: "row", gap: 1, height: 19 }, phaseBox, logScroll);
 
   // ── Input area ──
   const promptInput = Input({
@@ -420,7 +428,8 @@ export async function main() {
   const separator = Text({ content: "─".repeat(80), fg: C.border });
 
   const keyHints = Text({
-    content: "Enter: run  Tab: complete  ↑↓: history  Ctrl+R: search  Ctrl+L: clear  Ctrl+C: cancel  Esc: quit",
+    content:
+      "Enter: run  Tab: complete  ↑↓: history  Ctrl+R: search  Ctrl+L: clear  Ctrl+C: cancel  Esc: quit",
     fg: C.muted,
   });
 
@@ -457,7 +466,8 @@ export async function main() {
             : level === "accent"
               ? C.accent
               : C.text;
-    const ts = text.startsWith("═") || text.startsWith("─") || !text.trim() ? "" : logTimestamp() + " ";
+    const ts =
+      text.startsWith("═") || text.startsWith("─") || !text.trim() ? "" : logTimestamp() + " ";
     const line = Text({ content: ts + text, fg: color });
     logScroll.add(line);
   }
@@ -618,9 +628,7 @@ export async function main() {
 
     // --- Phase 4: Patch Generation ---
     addLog("[Phase 4] Generating patches...", "accent");
-    const p4 = await runPhase(4, () =>
-      bridge.generatePatch(state.mapping!, path),
-    );
+    const p4 = await runPhase(4, () => bridge.generatePatch(state.mapping!, path));
     if (!p4.ok || !p4.data) {
       addLog(`[Phase 4] ✗ Failed: ${p4.error}`, "error");
       await saveRunSnapshot(runId, path, spec, "failed");
@@ -696,7 +704,10 @@ export async function main() {
     }
     addLog(`   Algorithm: ${state.researchSpec?.algorithm.name || spec}`, "info");
     addLog(`   Branch: ${state.patch?.branchName || "n/a"}`, "info");
-    addLog(`   Total time: ${state.phases.reduce((s, p) => s + (p.durationMs || 0), 0) / 1000}s`, "info");
+    addLog(
+      `   Total time: ${state.phases.reduce((s, p) => s + (p.durationMs || 0), 0) / 1000}s`,
+      "info",
+    );
     addLog("═".repeat(60), "muted");
 
     await saveRunSnapshot(runId, path, spec, allPassed ? "completed" : "failed");
@@ -718,7 +729,10 @@ export async function main() {
         paperUrl: `spec:${spec}`,
         mode: state.mode,
         status,
-        currentPhase: (() => { const last = state.phases.filter((p: PhaseState) => p.status === "completed").pop(); return last?.phase || 0; })(),
+        currentPhase: (() => {
+          const last = state.phases.filter((p: PhaseState) => p.status === "completed").pop();
+          return last?.phase || 0;
+        })(),
         phaseResults: {
           ...(state.repoAnalysis ? { 1: state.repoAnalysis } : {}),
           ...(state.researchSpec ? { 2: state.researchSpec } : {}),
@@ -739,7 +753,10 @@ export async function main() {
 
   // --- Command parsing ---
 
-  function parseCommand(input: string): { action: string; args: Record<string, string> } {
+  function parseCommand(input: string): {
+    action: string;
+    args: Record<string, string>;
+  } {
     const trimmed = input.trim();
 
     // Mode shorthand: :autonomous, :step_approval
@@ -751,7 +768,11 @@ export async function main() {
     }
 
     const setProviderMatch = trimmed.match(/^set\s+provider\s+(\S+)/i);
-    if (setProviderMatch) return { action: "set_provider", args: { provider: setProviderMatch[1] } };
+    if (setProviderMatch)
+      return {
+        action: "set_provider",
+        args: { provider: setProviderMatch[1] },
+      };
 
     const setModelMatch = trimmed.match(/^set\s+model\s+(.+)/i);
     if (setModelMatch) return { action: "set_model", args: { model: setModelMatch[1].trim() } };
@@ -785,7 +806,15 @@ export async function main() {
     if (resumeMatch) return { action: "resume", args: { runId: resumeMatch[1] } };
 
     // Pipeline commands with path+spec: integrate <path> <spec>, map <path> <spec>, etc.
-    const pipelineWords = ["integrate", "map", "generate", "validate", "analyze", "search", "suggest"];
+    const pipelineWords = [
+      "integrate",
+      "map",
+      "generate",
+      "validate",
+      "analyze",
+      "search",
+      "suggest",
+    ];
     for (const action of pipelineWords) {
       if (trimmed.toLowerCase().startsWith(action + " ") || trimmed.toLowerCase() === action) {
         const rest = trimmed.slice(action.length).trim();
@@ -862,7 +891,10 @@ export async function main() {
         addLog("  Repository  " + state.repoPath, "info");
         addLog("  Spec        " + state.spec, "info");
         addLog("  Mode        " + state.mode, "info");
-        addLog("  Pipeline    " + (serverReady ? "ready" : "offline"), serverReady ? "success" : "error");
+        addLog(
+          "  Pipeline    " + (serverReady ? "ready" : "offline"),
+          serverReady ? "success" : "error",
+        );
         addLog("─".repeat(50), "muted");
         addLog("  Change values: set <key> <value>", "muted");
         break;
@@ -874,7 +906,10 @@ export async function main() {
         addLog(`  Provider: ${state.provider} / ${state.model}`, "info");
         addLog(`  Repository: ${state.repoPath}`, "info");
         addLog(`  Spec: ${state.spec}`, "info");
-        addLog(`  Pipeline: ${serverReady ? "ready" : "offline"}`, serverReady ? "success" : "error");
+        addLog(
+          `  Pipeline: ${serverReady ? "ready" : "offline"}`,
+          serverReady ? "success" : "error",
+        );
         const completed = state.phases.filter((p) => p.status === "completed").length;
         addLog(`  Phases: ${completed}/6 completed`, "info");
         if (state.lastRunId) addLog(`  Last run: ${state.lastRunId}`, "info");
@@ -899,7 +934,10 @@ export async function main() {
         addLog("Inspect Commands:", "accent");
         addLog("  runs / history              — list recent runs", "info");
         addLog("  run-details <run-id>        — inspect a run's inputs/outputs/errors", "info");
-        addLog("  artifacts <run-id>          — browse generated files and transformations", "info");
+        addLog(
+          "  artifacts <run-id>          — browse generated files and transformations",
+          "info",
+        );
         addLog("  resume <run-id>             — resume an incomplete run", "info");
         addLog("", "info");
         addLog("Configuration:", "accent");
@@ -959,13 +997,26 @@ export async function main() {
 
       case "run_details": {
         const rId = args.runId;
-        if (!rId) { addLog("Usage: run-details <run-id>", "error"); break; }
+        if (!rId) {
+          addLog("Usage: run-details <run-id>", "error");
+          break;
+        }
         try {
           const snapshot = await runStore.get(rId);
-          if (!snapshot) { addLog(`Run not found: ${rId}`, "error"); break; }
+          if (!snapshot) {
+            addLog(`Run not found: ${rId}`, "error");
+            break;
+          }
           addLog("═".repeat(60), "muted");
           addLog(`Run: ${snapshot.runId}`, "accent");
-          addLog(`  Status: ${snapshot.status}`, snapshot.status === "completed" ? "success" : snapshot.status === "failed" ? "error" : "info");
+          addLog(
+            `  Status: ${snapshot.status}`,
+            snapshot.status === "completed"
+              ? "success"
+              : snapshot.status === "failed"
+                ? "error"
+                : "info",
+          );
           addLog(`  Repo: ${snapshot.repoUrl}`, "info");
           addLog(`  Spec: ${snapshot.paperUrl || "n/a"}`, "info");
           addLog(`  Mode: ${snapshot.mode}`, "info");
@@ -978,7 +1029,10 @@ export async function main() {
           if (snapshot.approvals?.length) {
             addLog("  Approvals:", "info");
             for (const a of snapshot.approvals) {
-              addLog(`    Phase ${a.phase}: ${a.action}`, a.action === "approved" ? "success" : "error");
+              addLog(
+                `    Phase ${a.phase}: ${a.action}`,
+                a.action === "approved" ? "success" : "error",
+              );
             }
           }
           addLog("═".repeat(60), "muted");
@@ -990,10 +1044,16 @@ export async function main() {
 
       case "artifacts": {
         const aId = args.runId;
-        if (!aId) { addLog("Usage: artifacts <run-id>", "error"); break; }
+        if (!aId) {
+          addLog("Usage: artifacts <run-id>", "error");
+          break;
+        }
         try {
           const snapshot = await runStore.get(aId);
-          if (!snapshot) { addLog(`Run not found: ${aId}`, "error"); break; }
+          if (!snapshot) {
+            addLog(`Run not found: ${aId}`, "error");
+            break;
+          }
           const phaseResults = snapshot.phaseResults || {};
           addLog("═".repeat(60), "muted");
           addLog(`Artifacts for ${snapshot.runId}`, "accent");
@@ -1001,19 +1061,25 @@ export async function main() {
           const ra = phaseResults[1] as Record<string, unknown> | undefined;
           if (ra) {
             addLog("  Phase 1 — Repo Analysis:", "info");
-            const models = ((ra as Record<string, unknown>)?.architecture as Record<string, unknown>)?.models as unknown[];
+            const models = (
+              (ra as Record<string, unknown>)?.architecture as Record<string, unknown>
+            )?.models as unknown[];
             addLog(`    Models: ${models?.length || "?"}`, "info");
           }
           // Phase 4: patch generated files & transformations
           const patch = phaseResults[4] as Record<string, unknown> | undefined;
           if (patch) {
             addLog("  Phase 4 — Patch Generation:", "info");
-            const newFiles = (patch as Record<string, unknown>).newFiles as { path?: string }[] | undefined;
+            const newFiles = (patch as Record<string, unknown>).newFiles as
+              | { path?: string }[]
+              | undefined;
             if (newFiles?.length) {
               addLog(`    New files (${newFiles.length}):`, "success");
               for (const f of newFiles) addLog(`      + ${f.path || "?"}`, "success");
             }
-            const transforms = (patch as Record<string, unknown>).transformations as { file?: string }[] | undefined;
+            const transforms = (patch as Record<string, unknown>).transformations as
+              | { file?: string }[]
+              | undefined;
             if (transforms?.length) {
               addLog(`    Modifications (${transforms.length}):`, "info");
               for (const t of transforms) addLog(`      ~ ${t.file || "?"}`, "info");
@@ -1024,7 +1090,10 @@ export async function main() {
           const val = phaseResults[5] as Record<string, unknown> | undefined;
           if (val) {
             addLog("  Phase 5 — Validation:", "info");
-            addLog(`    Passed: ${(val as Record<string, unknown>).passed ? "✓" : "✗"}`, (val as Record<string, unknown>).passed ? "success" : "error");
+            addLog(
+              `    Passed: ${(val as Record<string, unknown>).passed ? "✓" : "✗"}`,
+              (val as Record<string, unknown>).passed ? "success" : "error",
+            );
           }
           if (!patch && !ra) {
             addLog("  No artifacts found for this run.", "info");
@@ -1052,7 +1121,10 @@ export async function main() {
             addLog(`Run ${runId} already completed`, "info");
             break;
           }
-          addLog(`Resuming run ${runId} from phase ${(snapshot.currentPhase || 0) + 1}...`, "accent");
+          addLog(
+            `Resuming run ${runId} from phase ${(snapshot.currentPhase || 0) + 1}...`,
+            "accent",
+          );
           state.repoPath = snapshot.repoUrl;
           const specStr = snapshot.paperUrl?.replace("spec:", "") || state.spec;
           state.spec = specStr;
@@ -1232,7 +1304,11 @@ export async function main() {
         if (!state.repoAnalysis) {
           addLog("[Phase 1] Analyzing repository...", "accent");
           const p1 = await runPhase(1, () => bridge.analyzeRepo(path));
-          if (!p1.ok || !p1.data) { addLog(`[Phase 1] ✗ ${p1.error}`, "error"); state.running = false; break; }
+          if (!p1.ok || !p1.data) {
+            addLog(`[Phase 1] ✗ ${p1.error}`, "error");
+            state.running = false;
+            break;
+          }
           state.repoAnalysis = p1.data as unknown as RepoAnalysisResult;
           addLog(`[Phase 1] ✓ ${state.repoAnalysis.repoName}`, "success");
         }
@@ -1240,14 +1316,24 @@ export async function main() {
           addLog("[Phase 2] Extracting research spec...", "accent");
           const source = spec.startsWith("spec:") ? spec : `spec:${spec}`;
           const p2 = await runPhase(2, () => bridge.extractResearch(source, "arxiv"));
-          if (!p2.ok || !p2.data) { addLog(`[Phase 2] ✗ ${p2.error}`, "error"); state.running = false; break; }
+          if (!p2.ok || !p2.data) {
+            addLog(`[Phase 2] ✗ ${p2.error}`, "error");
+            state.running = false;
+            break;
+          }
           state.researchSpec = p2.data as unknown as ResearchSpecResult;
           addLog(`[Phase 2] ✓ ${state.researchSpec.algorithm.name}`, "success");
         }
         if (!state.mapping) {
           addLog("[Phase 3] Mapping...", "accent");
-          const p3 = await runPhase(3, () => bridge.mapArchitecture(state.repoAnalysis!, state.researchSpec!));
-          if (!p3.ok || !p3.data) { addLog(`[Phase 3] ✗ ${p3.error}`, "error"); state.running = false; break; }
+          const p3 = await runPhase(3, () =>
+            bridge.mapArchitecture(state.repoAnalysis!, state.researchSpec!),
+          );
+          if (!p3.ok || !p3.data) {
+            addLog(`[Phase 3] ✗ ${p3.error}`, "error");
+            state.running = false;
+            break;
+          }
           state.mapping = p3.data as unknown as MappingResult;
           addLog(`[Phase 3] ✓ ${state.mapping.targets.length} target(s)`, "success");
         }
@@ -1285,7 +1371,11 @@ export async function main() {
         if (!state.repoAnalysis) {
           addLog("[Phase 1] Analyzing repository...", "accent");
           const p1 = await runPhase(1, () => bridge.analyzeRepo(path));
-          if (!p1.ok || !p1.data) { addLog(`[Phase 1] ✗ ${p1.error}`, "error"); state.running = false; break; }
+          if (!p1.ok || !p1.data) {
+            addLog(`[Phase 1] ✗ ${p1.error}`, "error");
+            state.running = false;
+            break;
+          }
           state.repoAnalysis = p1.data as unknown as RepoAnalysisResult;
           addLog(`[Phase 1] ✓ ${state.repoAnalysis.repoName}`, "success");
         }
@@ -1294,21 +1384,35 @@ export async function main() {
           addLog("[Phase 2] Extracting research spec...", "accent");
           const source = spec.startsWith("spec:") ? spec : `spec:${spec}`;
           const p2 = await runPhase(2, () => bridge.extractResearch(source, "arxiv"));
-          if (!p2.ok || !p2.data) { addLog(`[Phase 2] ✗ ${p2.error}`, "error"); state.running = false; break; }
+          if (!p2.ok || !p2.data) {
+            addLog(`[Phase 2] ✗ ${p2.error}`, "error");
+            state.running = false;
+            break;
+          }
           state.researchSpec = p2.data as unknown as ResearchSpecResult;
           addLog(`[Phase 2] ✓ ${state.researchSpec.algorithm.name}`, "success");
         }
         if (!state.mapping) {
           addLog("[Phase 3] Mapping...", "accent");
-          const p3 = await runPhase(3, () => bridge.mapArchitecture(state.repoAnalysis!, state.researchSpec!));
-          if (!p3.ok || !p3.data) { addLog(`[Phase 3] ✗ ${p3.error}`, "error"); state.running = false; break; }
+          const p3 = await runPhase(3, () =>
+            bridge.mapArchitecture(state.repoAnalysis!, state.researchSpec!),
+          );
+          if (!p3.ok || !p3.data) {
+            addLog(`[Phase 3] ✗ ${p3.error}`, "error");
+            state.running = false;
+            break;
+          }
           state.mapping = p3.data as unknown as MappingResult;
           addLog(`[Phase 3] ✓ ${state.mapping.targets.length} target(s)`, "success");
         }
         if (!state.patch) {
           addLog("[Phase 4] Generating patches...", "accent");
           const p4 = await runPhase(4, () => bridge.generatePatch(state.mapping!, path));
-          if (!p4.ok || !p4.data) { addLog(`[Phase 4] ✗ ${p4.error}`, "error"); state.running = false; break; }
+          if (!p4.ok || !p4.data) {
+            addLog(`[Phase 4] ✗ ${p4.error}`, "error");
+            state.running = false;
+            break;
+          }
           state.patch = p4.data as unknown as PatchResult;
           addLog(`[Phase 4] ✓ branch: ${state.patch.branchName}`, "success");
         }
@@ -1405,7 +1509,10 @@ export async function main() {
         reverseSearchQuery = "";
         promptInput.placeholder = "(reverse-i-search) ";
         promptInput.value = "";
-        addLog("Ctrl+R: type to search history. Ctrl+R again to cycle. Enter to select. Esc to cancel.", "info");
+        addLog(
+          "Ctrl+R: type to search history. Ctrl+R again to cycle. Enter to select. Esc to cancel.",
+          "info",
+        );
       } else {
         promptInput.placeholder = `> integrate ${state.repoPath} ${state.spec} ...`;
       }
@@ -1468,7 +1575,12 @@ export async function main() {
     }
 
     // Up: history prev (skip during reverse search)
-    if (key.name === "up" && state.commandHistory.length > 0 && !state.approvalPrompt && !reverseSearchActive) {
+    if (
+      key.name === "up" &&
+      state.commandHistory.length > 0 &&
+      !state.approvalPrompt &&
+      !reverseSearchActive
+    ) {
       if (state.historyIndex <= 0) state.historyIndex = state.commandHistory.length;
       state.historyIndex--;
       promptInput.value = state.commandHistory[state.historyIndex] || "";
@@ -1517,7 +1629,10 @@ export async function main() {
     try {
       const lastRun = await runStore.get(state.lastRunId);
       if (lastRun && lastRun.status !== "completed" && lastRun.status !== "failed") {
-        addLog(`Found incomplete run ${state.lastRunId} — type 'resume ${state.lastRunId}' to continue`, "warning");
+        addLog(
+          `Found incomplete run ${state.lastRunId} — type 'resume ${state.lastRunId}' to continue`,
+          "warning",
+        );
       }
     } catch {
       // best-effort
