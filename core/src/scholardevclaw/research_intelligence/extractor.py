@@ -854,6 +854,79 @@ PAPER_SPECS: dict[str, dict] = {
             "max_benchmark_time": 120,
         },
     },
+    # Domain-agnostic: I/O & Performance
+    "async_io": {
+        "paper": {
+            "title": "Async I/O for Scalable Applications",
+            "authors": ["Various"],
+            "arxiv": None,
+            "year": 2020,
+        },
+        "algorithm": {
+            "name": "Async I/O",
+            "replaces": "Synchronous I/O blocks",
+            "description": "Replace blocking I/O with async equivalents for better throughput",
+            "category": "performance",
+        },
+        "implementation": {
+            "module_name": "async_io",
+            "parent_class": "N/A",
+            "parameters": ["io_loop", "max_connections"],
+            "forward_signature": "(io_loop: asyncio.AbstractEventLoop) -> None",
+        },
+        "changes": {
+            "type": "replace",
+            "target_patterns": ["open(", "file.read()", "file.write()", "requests.get("],
+            "replacement": "async with aiohttp.ClientSession() / aiofiles.open()",
+            "insertion_points": ["I/O modules", "request handlers"],
+            "expected_benefits": [
+                "Non-blocking I/O",
+                "Higher concurrent request handling",
+                "Better resource utilization",
+            ],
+        },
+        "validation": {
+            "test_type": "io_benchmark",
+            "metrics": ["throughput", "latency"],
+            "max_benchmark_time": 120,
+        },
+    },
+    "caching_layer": {
+        "paper": {
+            "title": "Effective Caching Strategies for Software Systems",
+            "authors": ["Various"],
+            "arxiv": None,
+            "year": 2019,
+        },
+        "algorithm": {
+            "name": "Caching Layer",
+            "replaces": "Direct database/ API calls",
+            "description": "Add cache layer (Redis, Memcached) to reduce latency and load",
+            "category": "performance",
+        },
+        "implementation": {
+            "module_name": "caching_layer",
+            "parent_class": "N/A",
+            "parameters": ["cache_type", "ttl"],
+            "forward_signature": "(cache_type: str = 'redis', ttl: int = 300) -> None",
+        },
+        "changes": {
+            "type": "insert",
+            "target_patterns": ["import sqlite3", "direct api call", "db.query("],
+            "replacement": "import redis; cache = redis.Redis(); cache.get/set",
+            "insertion_points": ["service layers", "api endpoints"],
+            "expected_benefits": [
+                "Reduced latency (10-100x for cache hits)",
+                "Lower database load",
+                "Improved scalability",
+            ],
+        },
+        "validation": {
+            "test_type": "latency_benchmark",
+            "metrics": ["request_latency", "cache_hit_rate"],
+            "max_benchmark_time": 120,
+        },
+    },
 }
 
 

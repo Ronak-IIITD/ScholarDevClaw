@@ -719,16 +719,33 @@ def _ensure_repo(repo_path: str) -> Path:
 
 
 def _detect_frameworks(repo_path: Path) -> list[str]:
-    """Detect ML frameworks used in the repository by scanning imports."""
+    """Detect frameworks and languages used in the repository by scanning imports."""
     frameworks: set[str] = set()
     framework_patterns: dict[str, list[str]] = {
+        # ML frameworks
         "pytorch": ["import torch", "from torch"],
         "tensorflow": ["import tensorflow", "import tf", "from tensorflow"],
         "jax": ["import jax", "from jax"],
         "transformers": ["import transformers", "from transformers"],
+        # Web frameworks (Python)
+        "django": ["import django", "from django"],
+        "flask": ["import flask", "from flask"],
+        "fastapi": ["import fastapi", "from fastapi"],
+        "flask_rest": ["import flask_rest", "from flask_rest"],
+        # JS/Node frameworks
+        "express": ["import express", "from express"],
+        "react": ["import react", "from react"],
+        "vue": ["import vue", "from vue"],
+        "angular": ["import angular", "from angular"],
+        # Go frameworks
+        "gin": ["import gin"],
+        "echo": ["import echo"],
+        # Rust frameworks
+        "actix": ["import actix"],
+        "rocket": ["import rocket"],
     }
     try:
-        for py_file in list(repo_path.rglob("*.py"))[:50]:
+        for py_file in list(repo_path.rglob("*.py"))[:100]:
             try:
                 content = py_file.read_text(errors="ignore")[:8192]
             except OSError:
