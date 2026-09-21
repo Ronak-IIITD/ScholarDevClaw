@@ -1,0 +1,55 @@
+{
+  "grouped_query_attention": {
+    "paper": {
+      "title": "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints",
+      "authors": [
+        "Joshua Ainslie",
+        "James Lee-Thorp",
+        "et al."
+      ],
+      "arxiv": "2305.13245",
+      "year": 2023
+    },
+    "algorithm": {
+      "name": "Grouped-Query Attention",
+      "replaces": "Multi-Head Attention / Multi-Query Attention",
+      "description": "Interpolates between multi-head and multi-query attention, sharing KV heads across groups of query heads to reduce KV-cache size",
+      "category": "attention"
+    },
+    "implementation": {
+      "module_name": "GroupedQueryAttention",
+      "parent_class": "nn.Module",
+      "parameters": [
+        "config",
+        "n_kv_heads"
+      ]
+    },
+    "changes": {
+      "type": "replace",
+      "target_patterns": [
+        "CausalSelfAttention",
+        "MultiHeadAttention",
+        "self.n_head",
+        "self.c_attn"
+      ],
+      "replacement": "GroupedQueryAttention",
+      "insertion_points": [
+        "CausalSelfAttention class",
+        "Attention class"
+      ],
+      "expected_benefits": [
+        "Reduced KV-cache memory",
+        "Faster inference with minimal quality loss"
+      ]
+    },
+    "validation": {
+      "test_type": "training_comparison",
+      "metrics": [
+        "loss",
+        "perplexity",
+        "memory_usage"
+      ],
+      "max_benchmark_time": 300
+    }
+  }
+}

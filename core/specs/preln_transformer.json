@@ -1,0 +1,51 @@
+{
+  "preln_transformer": {
+    "paper": {
+      "title": "On Layer Normalization in the Transformer Architecture",
+      "authors": [
+        "Ruibin Xiong",
+        "Yunchang Yang",
+        "et al."
+      ],
+      "arxiv": "2002.04745",
+      "year": 2020
+    },
+    "algorithm": {
+      "name": "Pre-LN Transformer",
+      "replaces": "Post-LN Transformer",
+      "description": "Moves layer normalization before the attention and FFN sub-layers for more stable training",
+      "category": "normalization"
+    },
+    "implementation": {
+      "module_name": "PreLNBlock",
+      "parent_class": "nn.Module",
+      "parameters": [
+        "config"
+      ]
+    },
+    "changes": {
+      "type": "reorder",
+      "target_patterns": [
+        "LayerNorm",
+        "self.ln_1",
+        "self.ln_2"
+      ],
+      "replacement": "Pre-LN ordering",
+      "insertion_points": [
+        "Block class"
+      ],
+      "expected_benefits": [
+        "More stable training without learning rate warmup",
+        "Enables deeper models"
+      ]
+    },
+    "validation": {
+      "test_type": "training_comparison",
+      "metrics": [
+        "loss",
+        "perplexity"
+      ],
+      "max_benchmark_time": 300
+    }
+  }
+}

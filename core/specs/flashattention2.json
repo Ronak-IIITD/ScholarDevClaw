@@ -1,0 +1,50 @@
+{
+  "flashattention2": {
+    "paper": {
+      "title": "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning",
+      "authors": [
+        "Tri Dao"
+      ],
+      "arxiv": "2307.08691",
+      "year": 2023
+    },
+    "algorithm": {
+      "name": "FlashAttention-2",
+      "replaces": "FlashAttention / standard attention",
+      "description": "Improved FlashAttention with better work partitioning, reduced non-matmul FLOPs, and support for head dimensions up to 256",
+      "category": "attention"
+    },
+    "implementation": {
+      "module_name": "FlashAttention2",
+      "parent_class": "nn.Module",
+      "parameters": [
+        "config"
+      ]
+    },
+    "changes": {
+      "type": "replace",
+      "target_patterns": [
+        "CausalSelfAttention",
+        "flash_attn",
+        "attention"
+      ],
+      "replacement": "FlashAttention2",
+      "insertion_points": [
+        "CausalSelfAttention class",
+        "Attention class"
+      ],
+      "expected_benefits": [
+        "1.5-2x over FlashAttention-1",
+        "Better GPU utilization"
+      ]
+    },
+    "validation": {
+      "test_type": "benchmark",
+      "metrics": [
+        "tokens_per_second",
+        "memory_usage"
+      ],
+      "max_benchmark_time": 300
+    }
+  }
+}

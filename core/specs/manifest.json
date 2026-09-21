@@ -1,0 +1,18 @@
+{
+  "version": "0.1.0",
+  "scope": "nanogpt + generic PyTorch transformer",
+  "specs": [
+    "rmsnorm",
+    "preln_transformer",
+    "qknorm",
+    "swiglu",
+    "flashattention2",
+    "grouped_query_attention",
+    "rope",
+    "alibi",
+    "lion",
+    "cosine_warmup"
+  ],
+  "source": "core/src/scholardevclaw/research_intelligence/extractor.py:PAPER_SPECS (frozen)",
+  "notes": "Step 1 freeze: only these 10 are supported by nanogpt-opt v1. All other PAPER_SPECS keys are explicitly out of scope."
+}

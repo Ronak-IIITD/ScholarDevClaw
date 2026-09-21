@@ -1,0 +1,53 @@
+{
+  "qknorm": {
+    "paper": {
+      "title": "Scaling Vision Transformers to 22 Billion Parameters",
+      "authors": [
+        "Mostafa Dehghani",
+        "Josip Djolonga",
+        "et al."
+      ],
+      "arxiv": "2302.05442",
+      "year": 2023
+    },
+    "algorithm": {
+      "name": "QK-Norm",
+      "replaces": "Standard attention (no Q/K normalization)",
+      "description": "Applies layer normalization to query and key projections before dot product, stabilising large-scale training",
+      "category": "normalization"
+    },
+    "implementation": {
+      "module_name": "QKNormAttention",
+      "parent_class": "nn.Module",
+      "parameters": [
+        "config"
+      ]
+    },
+    "changes": {
+      "type": "augment",
+      "target_patterns": [
+        "CausalSelfAttention",
+        "self.c_attn",
+        "self.q_proj",
+        "self.k_proj"
+      ],
+      "replacement": "QK-Norm attention",
+      "insertion_points": [
+        "CausalSelfAttention class",
+        "Attention class"
+      ],
+      "expected_benefits": [
+        "Training stability at scale",
+        "Prevents attention logit growth"
+      ]
+    },
+    "validation": {
+      "test_type": "training_comparison",
+      "metrics": [
+        "loss",
+        "perplexity"
+      ],
+      "max_benchmark_time": 300
+    }
+  }
+}

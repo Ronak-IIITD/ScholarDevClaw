@@ -1,0 +1,52 @@
+{
+  "alibi": {
+    "paper": {
+      "title": "Train Short, Test Long: Attention with Linear Biases Enables Input Length Generalization",
+      "authors": [
+        "Ofir Press",
+        "Noah A. Smith",
+        "Mike Lewis"
+      ],
+      "arxiv": "2108.12409",
+      "year": 2021
+    },
+    "algorithm": {
+      "name": "ALiBi",
+      "replaces": "Positional Encoding / learned embeddings",
+      "description": "Replaces positional embeddings with linear biases added to attention scores, enabling length generalization",
+      "category": "position_encoding"
+    },
+    "implementation": {
+      "module_name": "ALiBi",
+      "parent_class": "nn.Module",
+      "parameters": [
+        "n_heads"
+      ]
+    },
+    "changes": {
+      "type": "replace",
+      "target_patterns": [
+        "self.wpe",
+        "nn.Embedding",
+        "positional"
+      ],
+      "replacement": "ALiBi",
+      "insertion_points": [
+        "GPT class",
+        "Attention class"
+      ],
+      "expected_benefits": [
+        "Length generalization without fine-tuning",
+        "No learned position parameters"
+      ]
+    },
+    "validation": {
+      "test_type": "training_comparison",
+      "metrics": [
+        "loss",
+        "perplexity"
+      ],
+      "max_benchmark_time": 300
+    }
+  }
+}

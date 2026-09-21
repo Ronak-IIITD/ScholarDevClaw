@@ -1,0 +1,52 @@
+{
+  "swiglu": {
+    "paper": {
+      "title": "GLU Variants Improve Transformer",
+      "authors": [
+        "Noam Shazeer"
+      ],
+      "arxiv": "2002.05202",
+      "year": 2020
+    },
+    "algorithm": {
+      "name": "SwiGLU",
+      "replaces": "MLP (GELU)",
+      "description": "Swish-Gated Linear Unit \u2014 combines Swish activation with gated linear units for better FFN quality",
+      "formula": "Swish(xW) * (xV)",
+      "category": "activation"
+    },
+    "implementation": {
+      "module_name": "SwiGLU",
+      "parent_class": "nn.Module",
+      "parameters": [
+        "config"
+      ],
+      "forward_signature": "(x: Tensor) -> Tensor"
+    },
+    "changes": {
+      "type": "replace",
+      "target_patterns": [
+        "class MLP",
+        "self.gelu = nn.GELU()",
+        "nn.GELU",
+        "GELU"
+      ],
+      "replacement": "class SwiGLU",
+      "insertion_points": [
+        "MLP class"
+      ],
+      "expected_benefits": [
+        "Improved FFN quality",
+        "Better gradient flow"
+      ]
+    },
+    "validation": {
+      "test_type": "training_comparison",
+      "metrics": [
+        "loss",
+        "perplexity"
+      ],
+      "max_benchmark_time": 300
+    }
+  }
+}

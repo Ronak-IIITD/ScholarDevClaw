@@ -1,0 +1,54 @@
+{
+  "cosine_warmup": {
+    "paper": {
+      "title": "SGDR: Stochastic Gradient Descent with Warm Restarts",
+      "authors": [
+        "Ilya Loshchilov",
+        "Frank Hutter"
+      ],
+      "arxiv": "1608.03983",
+      "year": 2017
+    },
+    "algorithm": {
+      "name": "Cosine Annealing with Warmup",
+      "replaces": "Step LR / constant LR",
+      "description": "Cosine learning rate schedule with optional linear warmup and warm restarts",
+      "category": "scheduler"
+    },
+    "implementation": {
+      "module_name": "CosineAnnealingWarmup",
+      "parent_class": "torch.optim.lr_scheduler._LRScheduler",
+      "parameters": [
+        "optimizer",
+        "warmup_steps",
+        "max_steps"
+      ]
+    },
+    "changes": {
+      "type": "replace",
+      "target_patterns": [
+        "learning_rate",
+        "lr_schedule",
+        "get_lr",
+        "StepLR",
+        "MultiStepLR"
+      ],
+      "replacement": "CosineAnnealingWarmup",
+      "insertion_points": [
+        "training loop",
+        "configure_optimizers"
+      ],
+      "expected_benefits": [
+        "Smoother convergence",
+        "Better final performance"
+      ]
+    },
+    "validation": {
+      "test_type": "training_comparison",
+      "metrics": [
+        "loss"
+      ],
+      "max_benchmark_time": 300
+    }
+  }
+}

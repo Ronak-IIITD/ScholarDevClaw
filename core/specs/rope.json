@@ -1,0 +1,57 @@
+{
+  "rope": {
+    "paper": {
+      "title": "RoFormer: Enhanced Transformer with Rotary Position Embedding",
+      "authors": [
+        "Jianlin Su",
+        "Yu Lu",
+        "Shengfeng Pan",
+        "Ahmed Murtadha",
+        "Bohan Zhou",
+        "Yunfeng Liu"
+      ],
+      "arxiv": "2104.09864",
+      "year": 2021
+    },
+    "algorithm": {
+      "name": "RoPE",
+      "replaces": "Positional Encoding",
+      "description": "Rotary Position Embedding \u2014 encodes position information through rotation matrices",
+      "formula": "RoPE(x_m, x_n) = f(x_m, m) * f(x_n, n)^conj where f(x, k) = x * e^(ik\u03b8)",
+      "category": "position_encoding"
+    },
+    "implementation": {
+      "module_name": "RoPE",
+      "parent_class": "nn.Module",
+      "parameters": [
+        "dim",
+        "max_seq_len"
+      ],
+      "forward_signature": "(x: Tensor, positions: Tensor) -> Tensor"
+    },
+    "changes": {
+      "type": "replace",
+      "target_patterns": [
+        "self.wpe",
+        "nn.Embedding"
+      ],
+      "replacement": "RoPE",
+      "insertion_points": [
+        "GPT class __init__",
+        "GPT class forward"
+      ],
+      "expected_benefits": [
+        "Better length extrapolation",
+        "Improved long-range dependencies"
+      ]
+    },
+    "validation": {
+      "test_type": "training_comparison",
+      "metrics": [
+        "loss",
+        "perplexity"
+      ],
+      "max_benchmark_time": 300
+    }
+  }
+}
