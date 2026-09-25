@@ -1557,15 +1557,6 @@ def _template_multiquery_attention(spec: dict) -> str:
     year = paper.get("year", 2019)
     title = paper.get("title", "Fast Transformer Decoding")
     arxiv = paper.get("arxiv", "1911.02150")
-    header = (
-        '"""\n'
-        "Multi-Query Attention\n\n"
-        f'Integrated from "{title}"\n'
-        f"by {authors} ({year})\n\n"
-        f"Paper: arXiv:{arxiv}\n"
-        "Description: Shares a single key/value head across all query heads.\n"
-        '"""'
-    )
     return textwrap.dedent(
         '''\
         """

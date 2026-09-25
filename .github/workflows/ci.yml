@@ -333,9 +333,13 @@ jobs:
       run:
         working-directory: core
     steps:
+      # NOTE: submodules disabled — vendor/openclaw is a gitlink with no
+      # .gitmodules URL, so `submodules: recursive` fails checkout with
+      # "No url found for submodule path 'vendor/openclaw'". All other jobs
+      # already check out without submodules.
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

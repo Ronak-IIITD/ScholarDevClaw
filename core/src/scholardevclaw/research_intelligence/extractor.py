@@ -859,7 +859,7 @@ PAPER_SPECS: dict[str, dict] = {
         "paper": {
             "title": "Async I/O for Scalable Applications",
             "authors": ["Various"],
-            "arxiv": None,
+            "arxiv": "",
             "year": 2020,
         },
         "algorithm": {
@@ -895,7 +895,7 @@ PAPER_SPECS: dict[str, dict] = {
         "paper": {
             "title": "Effective Caching Strategies for Software Systems",
             "authors": ["Various"],
-            "arxiv": None,
+            "arxiv": "",
             "year": 2019,
         },
         "algorithm": {

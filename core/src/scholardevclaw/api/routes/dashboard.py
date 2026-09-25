@@ -208,12 +208,12 @@ async def list_specs():
         result.append(
             SpecSummary(
                 name=name,
-                title=paper.get("title", ""),
-                algorithm=algo.get("name", ""),
-                category=algo.get("category", ""),
-                replaces=algo.get("replaces", ""),
-                arxiv_id=paper.get("arxiv", ""),
-                description=algo.get("description", ""),
+                title=paper.get("title") or "",
+                algorithm=algo.get("name") or "",
+                category=algo.get("category") or "",
+                replaces=algo.get("replaces") or "",
+                arxiv_id=paper.get("arxiv") or "",
+                description=algo.get("description") or "",
             )
         )
     return result
