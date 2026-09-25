@@ -75,23 +75,56 @@ class MappingResult:
 # Patterns that indicate a code snippet contains a specific construct
 # (used for fuzzy matching when element names don't directly match).
 _CODE_PATTERN_ALIASES: dict[str, list[str]] = {
-    "layernorm": ["LayerNorm", "layer_norm", "nn.LayerNorm"],
+    "layernorm": ["LayerNorm", "layer_norm", "nn.LayerNorm", "LlamaRMSNorm", "RMSNorm"],
     "nn.layernorm": ["LayerNorm", "layer_norm", "nn.LayerNorm"],
     "nn.gelu": ["GELU", "gelu", "nn.GELU"],
     "gelu": ["GELU", "gelu", "nn.GELU"],
     "self.ln_1": ["ln_1", "self.ln_1", "layer_norm_1", "norm1"],
     "self.ln_2": ["ln_2", "self.ln_2", "layer_norm_2", "norm2"],
+    # Normalized twins (lookup strips "self." — without these the self.* keys are dead).
+    "ln_1": ["ln_1", "self.ln_1", "layer_norm_1", "norm1", "ln_f", "final_norm"],
+    "ln_2": ["ln_2", "self.ln_2", "layer_norm_2", "norm2"],
     "self.c_attn": ["c_attn", "self.c_attn", "qkv_proj"],
+    "c_attn": ["c_attn", "self.c_attn", "qkv_proj", "qkv", "wqkv"],
     "self.q_proj": ["q_proj", "self.q_proj", "query_proj"],
     "self.k_proj": ["k_proj", "self.k_proj", "key_proj"],
+    # Generic Llama-style projections (qknorm/gqa map the whole attention block).
+    "q_proj": ["q_proj", "self.q_proj", "query_proj", "wq", "v_proj", "o_proj"],
+    "k_proj": ["k_proj", "self.k_proj", "key_proj", "wk", "v_proj", "o_proj"],
+    "v_proj": ["v_proj", "value_proj", "wv", "q_proj", "k_proj", "o_proj"],
     "self.wpe": ["wpe", "position_embedding", "pos_embed"],
+    "wpe": ["wpe", "position_embedding", "pos_embed", "wte", "rotary", "rope"],
     "nn.embedding": ["nn.Embedding", "Embedding"],
     "nn.dropout": ["nn.Dropout", "Dropout"],
     "self.drop": ["self.drop", "dropout", "self.attn_dropout", "self.resid_dropout"],
     "self.flash": ["flash", "flash_attn", "flash_attention"],
+    "flash_attn": ["flash", "flash_attn", "flash_attention", "sdpa", "scaled_dot_product"],
     "self.gelu = nn.gelu()": ["GELU", "gelu", "nn.GELU"],
     "self.mlp": ["mlp", "self.mlp", "feedforward", "ffn"],
+    # Llama-style MLP sublayers map to the MLP block for swiglu/geglu.
+    "mlp": ["mlp", "self.mlp", "feedforward", "ffn", "gate_proj", "up_proj", "down_proj"],
+    "c_fc": ["c_fc", "gate_proj", "up_proj", "fc_in"],
+    "n_head": ["n_head", "n_heads", "num_heads", "n_kv_heads", "num_key_value_heads"],
+    "adamw": ["adamw", "adam", "fused_adamw", "configure_optimizers"],
+    "get_lr": ["get_lr", "get_learning_rate", "lr_schedule"],
+    "learning_rate": ["learning_rate", "lr", "lr_schedule", "scheduler"],
 }
+
+
+def _alias_lookup(norm_pattern: str) -> list[str]:
+    """Look up aliases by normalized pattern.
+
+    Legacy keys are stored with ``self.`` prefixes but lookup normalizes
+    them away, so resolve against both raw and normalized keys.
+    """
+    seen: set[str] = set()
+    merged: list[str] = []
+    for key in (norm_pattern, f"self.{norm_pattern}"):
+        for alias in _CODE_PATTERN_ALIASES.get(key, []):
+            if alias not in seen:
+                seen.add(alias)
+                merged.append(alias)
+    return merged
 
 
 def _normalise(s: str) -> str:
@@ -115,7 +148,7 @@ def _fuzzy_match(element_name: str, pattern: str) -> bool:
         return True
 
     # Alias expansion — check if any alias of the pattern matches the name
-    aliases = _CODE_PATTERN_ALIASES.get(norm_pat, [])
+    aliases = _alias_lookup(norm_pat)
     for alias in aliases:
         if _normalise(alias) in norm_name or norm_name in _normalise(alias):
             return True
