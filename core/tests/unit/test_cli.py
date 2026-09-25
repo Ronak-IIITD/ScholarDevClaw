@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import builtins
 import json
 from types import SimpleNamespace
 
@@ -345,23 +344,19 @@ def test_cmd_integrate_success_json_output(monkeypatch, capsys):
     assert json.dumps(payload, indent=2) in captured.out
 
 
-def test_cmd_tui_importerror_prints_install_hint(monkeypatch, capsys):
-    original_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "scholardevclaw.tui":
-            raise ImportError("textual missing")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
+def test_cmd_tui_missing_bun_prints_install_hint(monkeypatch, capsys):
+    # cmd_tui launches the TypeScript OpenTUI (agent/ + bun), not the old
+    # textual shell. Missing bun must exit 1 with an actionable hint and,
+    # critically, must NOT spawn a subprocess in tests.
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: None)
 
     with pytest.raises(SystemExit) as exc:
         cli.cmd_tui(SimpleNamespace())
 
     assert exc.value.code == 1
     captured = capsys.readouterr()
-    assert "TUI dependencies are not installed" in captured.err
-    assert 'pip install -e ".[tui]"' in captured.err
+    assert "'bun' is required" in captured.err
+    assert "https://bun.sh" in captured.err
 
 
 def test_workspace_parser_list(monkeypatch):

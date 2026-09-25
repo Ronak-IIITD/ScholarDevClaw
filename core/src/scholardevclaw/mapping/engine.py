@@ -107,7 +107,9 @@ _CODE_PATTERN_ALIASES: dict[str, list[str]] = {
     "n_head": ["n_head", "n_heads", "num_heads", "n_kv_heads", "num_key_value_heads"],
     "adamw": ["adamw", "adam", "fused_adamw", "configure_optimizers"],
     "get_lr": ["get_lr", "get_learning_rate", "lr_schedule"],
-    "learning_rate": ["learning_rate", "lr", "lr_schedule", "scheduler"],
+    # NOTE: no broad "learning_rate" alias — "scheduler" matched
+    # build_scheduler() in the cosine benchmark fixture and regressed
+    # benchmarks/runner.py (candidate train.py instead of new module).
 }
 
 

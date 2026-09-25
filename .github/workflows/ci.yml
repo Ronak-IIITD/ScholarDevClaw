@@ -346,6 +346,15 @@ jobs:
           cache: pip
           cache-dependency-path: core/pyproject.toml
       - run: pip install -e ".[dev]"
+      # test_repos/ is gitignored (see .gitignore), so a fresh CI checkout
+      # has no nanoGPT canary. Clone it at the pinned acceptance commit —
+      # acceptance.py copies local_path when present, else requires
+      # --allow-network. Pinned commit comes from benchmarks/acceptance_cases.json.
+      - name: Clone nanoGPT canary at pinned commit
+        run: |
+          mkdir -p ../test_repos
+          git clone --filter=blob:none --no-checkout https://github.com/karpathy/nanoGPT.git ../test_repos/nanogpt
+          git -C ../test_repos/nanogpt checkout --detach 3adf61e154c3fe3fca428ad6bc3818b27a3b8291
       - name: Ensure nanoGPT working copy is clean
         run: git -C ../test_repos/nanogpt status --short
       - name: Run acceptance benchmark

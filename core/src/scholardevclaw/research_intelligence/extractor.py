@@ -2073,8 +2073,12 @@ class ResearchExtractor:
         arxiv_id_clean = _normalize_arxiv_id(arxiv_id)
 
         # Step 1: check local registry
+        # Guard against falsy arxiv values: `"" in <requested-id>` is always
+        # True, which made specs with a missing/empty arxiv id (e.g. async_io)
+        # match EVERY unknown identifier instead of failing structured.
         for key, spec in self.specs.items():
-            if key in arxiv_id_clean or spec["paper"].get("arxiv", "") in arxiv_id_clean:
+            spec_arxiv = (spec.get("paper") or {}).get("arxiv") or ""
+            if (key and key in arxiv_id_clean) or (spec_arxiv and spec_arxiv in arxiv_id_clean):
                 return spec
 
         cached_spec = _load_dynamic_spec_from_cache(arxiv_id_clean)

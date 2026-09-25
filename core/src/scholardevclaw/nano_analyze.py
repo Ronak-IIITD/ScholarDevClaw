@@ -144,11 +144,7 @@ def _collect_file_signals(rel: str, source: str) -> list[NanoSignal]:
                 continue
             is_init = item.name == "__init__"
             for sub in ast.walk(item):
-                if (
-                    is_init
-                    and isinstance(sub, ast.Attribute)
-                    and isinstance(sub.value, ast.Name)
-                ):
+                if is_init and isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name):
                     if sub.value.id == "self" and sub.attr in _SELF_ATTR_SIGNALS:
                         signals.append(
                             NanoSignal(rel, getattr(sub, "lineno", 0), "self_attr", sub.attr)
@@ -161,17 +157,13 @@ def _collect_file_signals(rel: str, source: str) -> list[NanoSignal]:
                     elif isinstance(func, ast.Name):
                         name = func.id
                     if name in _CALL_SIGNALS:
-                        signals.append(
-                            NanoSignal(rel, getattr(sub, "lineno", 0), "call", name)
-                        )
+                        signals.append(NanoSignal(rel, getattr(sub, "lineno", 0), "call", name))
                     # keyword patterns: wte/wpe inside nn.ModuleDict(...),
                     # q_proj=... in generic configs, etc.
                     for kw in sub.keywords:
                         if kw.arg in _SELF_ATTR_SIGNALS:
                             signals.append(
-                                NanoSignal(
-                                    rel, getattr(sub, "lineno", 0), "self_attr", kw.arg
-                                )
+                                NanoSignal(rel, getattr(sub, "lineno", 0), "self_attr", kw.arg)
                             )
     return signals
 
@@ -219,9 +211,7 @@ def analyze_repo(repo_path: str | Path) -> NanoAnalysis:
     except Exception:
         legacy_models = []
 
-    py_files = [
-        p for p in root.glob("**/*.py") if not _should_ignore(p, root) and p.is_file()
-    ]
+    py_files = [p for p in root.glob("**/*.py") if not _should_ignore(p, root) and p.is_file()]
     all_signals: list[NanoSignal] = []
     details: set[str] = set()
     for path in sorted(py_files):

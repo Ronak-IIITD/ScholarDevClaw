@@ -2,7 +2,21 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-07-09 (fix: disable mouse input in OpenTUI)
+**Last updated:** 2026-09-25 (fix: green CI across lint, tests, benchmark, acceptance gates)
+
+### 2026-09-25 (fix: green CI across lint, tests, benchmark, acceptance gates)
+**Summary:** Repaired the four failing GitHub Actions gates and fixed two pre-existing bugs they exposed. Also landed the first three nanogpt-opt plan steps (spec freeze, Python-only analyzer, mapper alias tuning).
+
+**Changes:**
+1. **Ruff format gate**: reformatted `core/src/scholardevclaw/nano_analyze.py` (was check-clean but not format-clean); removed the retired `UP038` from ruff `ignore` (`core/pyproject.toml`) to silence the removed-rule warning.
+2. **Python test gate**:
+   - `research_intelligence/extractor.py`: local-registry arXiv match now guards falsy ids — specs with missing/empty `arxiv` (e.g. `async_io`) previously matched **every** unknown identifier via `"" in <id>`, returning 200 instead of a structured 422. This also fixed the two stale `test_research_extractor.py` failures.
+   - `tests/unit/test_cli.py`: replaced `test_cmd_tui_importerror_prints_install_hint` with `test_cmd_tui_missing_bun_prints_install_hint` — `cmd_tui` now launches the TypeScript OpenTUI (agent/ + bun), so the old textual-import-hint expectations were dead; the new test mocks `shutil.which` so tests never spawn a subprocess.
+3. **Benchmark regression gate (0.700 → 0.800 restored)**: removed the over-broad `"learning_rate"` alias in `mapping/engine.py` — its `"scheduler"` alias fuzzy-matched `build_scheduler()` in the cosine fixture, regenerating `train.py` instead of the expected new module (`benchmarks/runner.py` cosine_lr_schedule case). Gate now passes at baseline 0.800.
+4. **Acceptance gate**: `ci.yml` checkout no longer uses `submodules: recursive` (broken gitlink `vendor/openclaw` has no `.gitmodules` URL → exit 128); added a pinned `karpathy/nanoGPT` clone step (`3adf61e`) because `test_repos/` is gitignored and absent on fresh runners. Local acceptance run: 10/10 cases, 100% apply/test/human-accept rates, gate passed.
+5. **nanogpt-opt steps 1–3** (pushed earlier today): frozen 10 specs in `core/specs/` + `nano_specs.py` loader (607be98); Python-only `nano_analyze.py` AST analyzer + tests (ab08149); mapper `_alias_lookup` dead-`self.*` fix + Llama/nanoGPT aliases + tests (26b127b).
+
+**Verification:** ruff check + format clean; mypy clean (cli/server/pipeline); full pytest 2524 passed / 3 skipped (cold cache); benchmark gate baseline=0.800 current=0.800; demo smoke OK; acceptance gate passed.
 
 ### 2026-07-09 (fix: disable mouse input in OpenTUI)
 **Summary:** Disabled mouse pointer capture in the TypeScript OpenTUI. `@opentui/core`s `createCliRenderer` enables mouse click handling by default, which interfered with the keyboard-first terminal design. Added `useMouse: false` to the renderer options.
