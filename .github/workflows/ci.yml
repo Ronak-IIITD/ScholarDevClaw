@@ -89,6 +89,16 @@ jobs:
           cache: pip
           cache-dependency-path: core/pyproject.toml
       - run: pip install -e ".[dev,product,tui]"
+      # test_repos/ is fully untracked (gitignored), so fresh runners have no
+      # nanoGPT fixture. Clone it at the pinned canary commit so the analyzer
+      # (test_nano_analyze) and e2e suite exercise the real repo instead of
+      # failing/skipping on a missing checkout. Same commit as the acceptance
+      # manifest; `cli demo` already self-clones this fixture.
+      - name: Clone nanoGPT test fixture
+        run: |
+          mkdir -p ../test_repos
+          git clone --filter=blob:none --no-checkout https://github.com/karpathy/nanoGPT.git ../test_repos/nanogpt
+          git -C ../test_repos/nanogpt checkout --detach 3adf61e154c3fe3fca428ad6bc3818b27a3b8291
       - name: Run tests with coverage
         run: |
           python -m pytest tests/ -x -q \
