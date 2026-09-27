@@ -21,6 +21,8 @@ def build_markdown_summary(payload: dict[str, Any]) -> str:
         f"- Unsupported cases: `{aggregate.get('unsupported_cases', 0)}`",
         f"- Aggregate score: `{aggregate.get('aggregate_score', 0)}`",
         f"- Supported score: `{aggregate.get('supported_score', 0)}`",
+        f"- Verified cases: `{aggregate.get('verified_cases', 0)}` (candidates that executed)",
+        f"- Verified score: `{aggregate.get('verified_score', 0)}` (imported/executed candidates only)",
         "",
         "| Case | Spec | Status | Score | Candidate | Notes |",
         "|------|------|--------|-------|-----------|-------|",

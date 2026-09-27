@@ -137,7 +137,8 @@ def _classify(baseline: dict[str, Any] | None, current: dict[str, Any] | None) -
 
 # Status ordering from "best" to "worst" used to detect downgrades.
 _STATUS_RANK = {
-    "matched": 3,
+    "matched": 4,
+    "ast_matched": 3,
     "partial": 2,
     "missing_candidate": 1,
     "generation_failed": 1,

@@ -2,7 +2,20 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-09-27 (Step 4: hardened libcst transformers — idempotent, honest, reversible)
+**Last updated:** 2026-09-27 (Step 5: honest validator — no fake numbers in benchmark scoring)
+
+### 2026-09-27 (Step 5: honest validator — no fake numbers in benchmark scoring)
+**Summary:** The benchmark harness no longer reports a verified score for candidates that never executed. Scoring tiers now reflect what was actually measured, reports expose a verified-only breakdown, and the stale root `benchmark-report/` artifact (a tracked JSON claiming aggregate 1.0 while 7/10 cases failed to import) was deleted.
+
+**Changes:**
+1. **Verified-gated scoring** (`core/benchmarks/runner.py`): `status=matched, score=1.0` now requires `import_ok` — previously a candidate whose AST matched the reference was scored 1.0 even when its import failed (`import_ok: false` with `score: 1.0`, the known fake-number flaw). New honest tier: `ast_matched, score 0.75` (AST-identical but unexecuted — below verified 1.0, above symbol-overlap partial 0.5). Rubric: 1.0 matched+executed / 0.75 ast_matched unexecuted / 0.5 partial / 0.0 mismatch.
+2. **Verified breakdown** (`runner.py`, `report.py`): `BenchmarkSuiteReport` + report JSON + markdown summary now carry `verified_cases` and `verified_score` (mean score over candidates that actually imported/executed), and `main()` prints them — so aggregate numbers can always be read next to how much was measured vs inferred.
+3. **Regression status ranks** (`core/benchmarks/regression.py`): added `ast_matched` and re-tiered (`matched 4 / ast_matched 3 / partial 2 / …`) so status downgrades (e.g. verified match → unverified) are detected.
+4. **Stale artifact removed**: deleted tracked `benchmark-report/benchmark_report.json` (root) — nothing reads it, and it showed `aggregate_score: 1.0` with `import_ok: false` on 7/10 cases.
+5. **Baseline regenerated honestly** (`core/benchmarks/benchmark_report.json` + `benchmark_summary.md`): produced with `torch` import-masked via a `PYTHONPATH` shim raising `ImportError(name="torch")` so it matches the CI gate environment (`pip install -e ".[dev]"`, no ml extras): aggregate 0.725, `verified_cases: 3`, `verified_score: 1.000` (layernorm/gelu/cosine executed; rmsnorm/swiglu/alibi now `ast_matched 0.75` with the real import error recorded; rope/flash/lora/gqa `partial 0.5`).
+6. **Tests** (`core/tests/unit/test_benchmark_runner.py`): `test_run_case_ast_match_without_import_is_not_verified` (AST match + failed import → `ast_matched`, 0.75, never 1.0, error retained) and `test_run_benchmarks_reports_verified_breakdown` (mixed executed/blocked → aggregate 0.875, `verified_cases=1`, `verified_score=1.0`, serialized into report JSON).
+
+**Verification:** ruff check + format clean (`src/ tests/` + touched benchmark files); mypy clean (CI invocation); full pytest **2541 passed / 3 skipped** (cold cache, offline env); benchmark gate passes in both environments — CI sim (no torch): baseline 0.725 vs current 0.725; local (torch 2.13): current 0.800, `verified_score 1.000 (10/10 executed)`; acceptance 10/10, 100% apply/test.
 
 ### 2026-09-27 (Step 4: hardened libcst transformers — idempotent, honest, reversible)
 **Summary:** All 10 frozen nanogpt-opt CST transformers now guarantee three properties: idempotency (a second apply is a byte-identical no-op that records zero changes), honest change records (never claim an edit that was not performed), and reversibility (captured originals restored byte-identically with a no-clobber guard).

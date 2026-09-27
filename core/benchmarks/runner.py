@@ -74,6 +74,8 @@ class BenchmarkSuiteReport:
     unsupported_cases: int
     aggregate_score: float
     supported_score: float
+    verified_cases: int
+    verified_score: float
     results: list[BenchmarkResult]
 
 
@@ -294,9 +296,18 @@ def evaluate_candidate_artifact(
         result.import_ok = False
         result.error = f"Candidate import failed: {exc}"
 
-    if result.ast_match and result.smoke_ok is not False:
+    if result.ast_match and result.import_ok and result.smoke_ok is not False:
         result.status = "matched"
         result.score = 1.0
+        return result
+
+    if result.ast_match and not result.import_ok:
+        # Honest tier: the candidate's AST matches the reference, but it was
+        # never executed (e.g. torch unavailable in this environment).
+        # Scored below a verified match but above symbol-overlap partial —
+        # never claim a verified full score for an unexecuted candidate.
+        result.status = "ast_matched"
+        result.score = 0.75
         return result
 
     if result.symbol_overlap >= 0.5 or result.smoke_ok:
@@ -362,6 +373,8 @@ def _serialize_report(report: BenchmarkSuiteReport) -> dict[str, Any]:
             "unsupported_cases": report.unsupported_cases,
             "aggregate_score": report.aggregate_score,
             "supported_score": report.supported_score,
+            "verified_cases": report.verified_cases,
+            "verified_score": report.verified_score,
         },
         "results": [asdict(result) for result in report.results],
     }
@@ -386,6 +399,12 @@ def run_benchmarks(
         sum(result.score for result in supported) / max(len(supported), 1),
         3,
     )
+    # Verified = the candidate actually executed (import succeeded). The
+    # verified score never mixes in text-only (ast_matched) results, so it
+    # can be trusted as "measured, not inferred".
+    verified = [result for result in results if result.import_ok]
+    verified_cases = len(verified)
+    verified_score = round(sum(result.score for result in verified) / max(verified_cases, 1), 3)
 
     report = BenchmarkSuiteReport(
         generated_at=datetime.now(timezone.utc).isoformat(),
@@ -394,6 +413,8 @@ def run_benchmarks(
         unsupported_cases=len(results) - len(supported),
         aggregate_score=aggregate_score,
         supported_score=supported_score,
+        verified_cases=verified_cases,
+        verified_score=verified_score,
         results=results,
     )
     write_report(report, output_path=output_path)
@@ -450,6 +471,9 @@ def main() -> None:
     print(f"  Unsupported     : {report.unsupported_cases}")
     print(f"  Aggregate score : {report.aggregate_score:.3f}")
     print(f"  Supported score : {report.supported_score:.3f}")
+    print(
+        f"  Verified score  : {report.verified_score:.3f} ({report.verified_cases}/{report.total_cases} executed)"
+    )
     print(f"  Report          : {output_path}")
 
     exit_code = 0

@@ -9,7 +9,14 @@ if str(CORE_ROOT) not in sys.path:
     sys.path.insert(0, str(CORE_ROOT))
 
 from benchmarks.report import build_markdown_summary
-from benchmarks.runner import BenchmarkCase, CandidateArtifact, load_cases, run_benchmarks, run_case
+from benchmarks.runner import (
+    BenchmarkCase,
+    CandidateArtifact,
+    _load_module,
+    load_cases,
+    run_benchmarks,
+    run_case,
+)
 
 
 def test_catalog_contains_hardening_doc_cases():
@@ -150,3 +157,100 @@ def test_run_benchmarks_writes_json_and_markdown_summary(tmp_path: Path):
     assert payload["aggregate"]["total_cases"] == 1
     assert "gelu-demo" in summary
     assert "Aggregate score" in summary
+
+
+def test_run_case_ast_match_without_import_is_not_verified(tmp_path: Path):
+    """An AST match whose import failed must never be scored as a verified pass."""
+    from unittest.mock import patch
+
+    expected_file = tmp_path / "expected.py"
+    expected_source = "class RMSNorm:\n    pass\n"
+    expected_file.write_text(expected_source)
+
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+
+    case = BenchmarkCase(
+        id="demo",
+        title="Demo",
+        arxiv_id="0000.00000",
+        pipeline_spec="rmsnorm",
+        target_repo=repo_path,
+        expected_file=expected_file,
+        candidate_hints=["rmsnorm.py"],
+    )
+
+    with patch(
+        "benchmarks.runner._load_module",
+        side_effect=ImportError("Missing required dependency 'torch'"),
+    ):
+        result = run_case(
+            case, candidate_factory=lambda _: CandidateArtifact({"rmsnorm.py": expected_source})
+        )
+
+    assert result.ast_match is True
+    assert result.import_ok is False
+    assert result.status == "ast_matched"
+    assert result.score == 0.75, "unverified candidates must not receive a full score"
+    assert "import failed" in (result.error or "")
+
+
+def test_run_benchmarks_reports_verified_breakdown(tmp_path: Path):
+    """Aggregate exposes how many candidates actually executed and their score."""
+    from unittest.mock import patch
+
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+
+    executed_file = tmp_path / "executed.py"
+    executed_source = "class Executed:\n    pass\n"
+    executed_file.write_text(executed_source)
+    executed_case = BenchmarkCase(
+        id="executed",
+        title="Executed",
+        arxiv_id="0000.00001",
+        pipeline_spec="rmsnorm",
+        target_repo=repo_path,
+        expected_file=executed_file,
+        candidate_hints=["executed.py"],
+    )
+
+    blocked_file = tmp_path / "blocked.py"
+    blocked_source = "class Blocked:\n    pass\n"
+    blocked_file.write_text(blocked_source)
+    blocked_case = BenchmarkCase(
+        id="blocked",
+        title="Blocked",
+        arxiv_id="0000.00002",
+        pipeline_spec="rmsnorm",
+        target_repo=repo_path,
+        expected_file=blocked_file,
+        candidate_hints=["blocked.py"],
+    )
+
+    real_load = _load_module
+
+    def selective_load(module_path, module_name):
+        if "candidate_blocked" in module_name:
+            raise ImportError("Missing required dependency 'torch'")
+        return real_load(module_path, module_name)
+
+    def factory(case: BenchmarkCase) -> CandidateArtifact:
+        source = executed_source if case.id == "executed" else blocked_source
+        return CandidateArtifact({case.candidate_hints[0]: source})
+
+    report_path = tmp_path / "benchmark_report.json"
+    with patch("benchmarks.runner._load_module", side_effect=selective_load):
+        report = run_benchmarks(
+            cases=[executed_case, blocked_case],
+            candidate_factory=factory,
+            output_path=report_path,
+        )
+
+    assert report.aggregate_score == 0.875  # (1.0 verified + 0.75 ast_matched) / 2
+    assert report.verified_cases == 1
+    assert report.verified_score == 1.0
+
+    payload = json.loads(report_path.read_text())
+    assert payload["aggregate"]["verified_cases"] == 1
+    assert payload["aggregate"]["verified_score"] == 1.0

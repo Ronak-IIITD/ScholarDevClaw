@@ -1,11 +1,13 @@
 {
-  "generated_at": "2026-05-28T09:06:19.537448+00:00",
+  "generated_at": "2026-09-27T08:03:34.555562+00:00",
   "aggregate": {
     "total_cases": 10,
     "supported_cases": 10,
     "unsupported_cases": 0,
-    "aggregate_score": 0.8,
-    "supported_score": 0.8
+    "aggregate_score": 0.725,
+    "supported_score": 0.725,
+    "verified_cases": 3,
+    "verified_score": 1.0
   },
   "results": [
     {
@@ -13,8 +15,8 @@
       "title": "Root Mean Square Layer Normalization",
       "arxiv_id": "1910.07467",
       "pipeline_spec": "rmsnorm",
-      "status": "matched",
-      "score": 1.0,
+      "status": "ast_matched",
+      "score": 0.75,
       "candidate_file": "rmsnorm.py",
       "ast_match": true,
       "symbol_overlap": 1.0,
@@ -29,7 +31,7 @@
       "error": "Candidate import failed: Missing required dependency 'torch'. Please run 'pip install -e \".[ml]\"' in the core directory. Original error: No module named 'torch'",
       "metadata": {
         "branch_name": "integration/rmsnorm",
-        "mapping_confidence": 60,
+        "mapping_confidence": 70,
         "mapping_strategy": "replace",
         "mapping_target_count": 1,
         "generated_file_count": 1,
@@ -58,7 +60,7 @@
       "error": "Candidate import failed: Missing required dependency 'torch'. Please run 'pip install -e \".[ml]\"' in the core directory. Original error: No module named 'torch'",
       "metadata": {
         "branch_name": "integration/rope",
-        "mapping_confidence": 60,
+        "mapping_confidence": 70,
         "mapping_strategy": "replace",
         "mapping_target_count": 1,
         "generated_file_count": 1,
@@ -71,8 +73,8 @@
       "title": "GLU Variants Improve Transformer",
       "arxiv_id": "2002.05202",
       "pipeline_spec": "swiglu",
-      "status": "matched",
-      "score": 1.0,
+      "status": "ast_matched",
+      "score": 0.75,
       "candidate_file": "swiglu.py",
       "ast_match": true,
       "symbol_overlap": 1.0,
@@ -87,11 +89,11 @@
       "error": "Candidate import failed: Missing required dependency 'torch'. Please run 'pip install -e \".[ml]\"' in the core directory. Original error: No module named 'torch'",
       "metadata": {
         "branch_name": "integration/swiglu",
-        "mapping_confidence": 70,
+        "mapping_confidence": 90,
         "mapping_strategy": "replace",
-        "mapping_target_count": 2,
+        "mapping_target_count": 3,
         "generated_file_count": 1,
-        "transformation_count": 2,
+        "transformation_count": 1,
         "notes": "Directly supported by the current extractor."
       }
     },
@@ -116,11 +118,11 @@
       "error": "Candidate import failed: Missing required dependency 'torch'. Please run 'pip install -e \".[ml]\"' in the core directory. Original error: No module named 'torch'",
       "metadata": {
         "branch_name": "integration/flashattention",
-        "mapping_confidence": 70,
+        "mapping_confidence": 80,
         "mapping_strategy": "replace",
         "mapping_target_count": 2,
         "generated_file_count": 1,
-        "transformation_count": 2,
+        "transformation_count": 1,
         "notes": "Directly supported by the current extractor."
       }
     },
@@ -147,7 +149,7 @@
       "error": "Candidate import failed: Missing required dependency 'torch'. Please run 'pip install -e \".[ml]\"' in the core directory. Original error: No module named 'torch'",
       "metadata": {
         "branch_name": "integration/lora",
-        "mapping_confidence": 70,
+        "mapping_confidence": 80,
         "mapping_strategy": "augment",
         "mapping_target_count": 2,
         "generated_file_count": 1,
@@ -178,7 +180,7 @@
       "error": null,
       "metadata": {
         "branch_name": "integration/layernorm",
-        "mapping_confidence": 60,
+        "mapping_confidence": 75,
         "mapping_strategy": "replace",
         "mapping_target_count": 2,
         "generated_file_count": 1,
@@ -207,7 +209,7 @@
       "error": null,
       "metadata": {
         "branch_name": "integration/gelu",
-        "mapping_confidence": 60,
+        "mapping_confidence": 75,
         "mapping_strategy": "replace",
         "mapping_target_count": 2,
         "generated_file_count": 1,
@@ -236,11 +238,11 @@
       "error": "Candidate import failed: Missing required dependency 'torch'. Please run 'pip install -e \".[ml]\"' in the core directory. Original error: No module named 'torch'",
       "metadata": {
         "branch_name": "integration/grouped-query-attention",
-        "mapping_confidence": 70,
+        "mapping_confidence": 85,
         "mapping_strategy": "replace",
         "mapping_target_count": 3,
         "generated_file_count": 1,
-        "transformation_count": 3,
+        "transformation_count": 1,
         "notes": "Current runtime spec name differs from the hardening doc shorthand."
       }
     },
@@ -249,8 +251,8 @@
       "title": "Train Short, Test Long: Attention with Linear Biases Enables Input Length Generalization",
       "arxiv_id": "2108.12409",
       "pipeline_spec": "alibi",
-      "status": "matched",
-      "score": 1.0,
+      "status": "ast_matched",
+      "score": 0.75,
       "candidate_file": "alibi_positional_bias.py",
       "ast_match": true,
       "symbol_overlap": 1.0,
@@ -265,7 +267,7 @@
       "error": "Candidate import failed: Missing required dependency 'torch'. Please run 'pip install -e \".[ml]\"' in the core directory. Original error: No module named 'torch'",
       "metadata": {
         "branch_name": "integration/alibi",
-        "mapping_confidence": 60,
+        "mapping_confidence": 70,
         "mapping_strategy": "replace",
         "mapping_target_count": 1,
         "generated_file_count": 1,
@@ -294,7 +296,7 @@
       "error": null,
       "metadata": {
         "branch_name": "integration/cosine-annealing-with-warmup",
-        "mapping_confidence": 40,
+        "mapping_confidence": 45,
         "mapping_strategy": "none",
         "mapping_target_count": 0,
         "generated_file_count": 1,
