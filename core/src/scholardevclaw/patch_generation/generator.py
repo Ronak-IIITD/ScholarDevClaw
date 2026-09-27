@@ -56,6 +56,10 @@ class Transformation:
     original: str
     modified: str
     changes: list[dict] = field(default_factory=list)
+    # Actual CST-level edits recorded by the transformer (honest log: only
+    # entries for changes that really happened). `changes` keeps its legacy
+    # per-target context records.
+    cst_changes: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -130,16 +134,34 @@ class SwiGLUTransformer(CSTTransformer):
             return updated_node.with_changes(name=new_name)
         return updated_node
 
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
+        # Rename references to the MLP class so the class rename never
+        # leaves dangling call sites (e.g. `self.mlp = MLP(dim)`).
+        if original_node.value == "MLP":
+            self.changes.append({"type": "rename_reference", "from": "MLP", "to": "SwiGLU"})
+            return cst.Name("SwiGLU")
+        return updated_node
+
     def leave_Call(self, original_node: cst.Call, updated_node: cst.Call) -> cst.Call:  # noqa: N802
         if self.in_mlp_class:
             func = original_node.func
+            # Actually perform the GELU -> SiLU swap; never record a change
+            # that was not applied to the tree.
             if isinstance(func, cst.Attribute) and func.attr.value == "GELU":
                 self.changes.append({"type": "replace_activation", "from": "GELU", "to": "SiLU"})
+                return updated_node.with_changes(func=func.with_changes(attr=cst.Name("SiLU")))
+            if isinstance(func, cst.Name) and func.value == "GELU":
+                self.changes.append({"type": "replace_activation", "from": "GELU", "to": "SiLU"})
+                return updated_node.with_changes(func=cst.Name("SiLU"))
         return updated_node
 
 
 class GEGLUTransformer(CSTTransformer):
-    """Replaces MLP class with GEGLU and swaps GELU → gated GELU inside it."""
+    """Renames the MLP class to GEGLU (references included).
+
+    The gated-GELU activation itself lives in the generated GEGLU module
+    template — this transformer only performs renames it can apply honestly.
+    """
 
     def __init__(self) -> None:
         self.changes: list[dict] = []
@@ -160,11 +182,14 @@ class GEGLUTransformer(CSTTransformer):
             return updated_node.with_changes(name=new_name)
         return updated_node
 
-    def leave_Call(self, original_node: cst.Call, updated_node: cst.Call) -> cst.Call:  # noqa: N802
-        if self.in_mlp_class:
-            func = original_node.func
-            if isinstance(func, cst.Attribute) and func.attr.value == "GELU":
-                self.changes.append({"type": "replace_activation", "from": "GELU", "to": "GEGLU"})
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
+        # Rename references to the MLP class so call sites stay consistent
+        # with the class rename. The activation swap is intentionally NOT
+        # claimed here: nn.GELU -> "gated GELU" is not a rename we can
+        # perform honestly in place (the generated GEGLU module provides it).
+        if original_node.value == "MLP":
+            self.changes.append({"type": "rename_reference", "from": "MLP", "to": "GEGLU"})
+            return cst.Name("GEGLU")
         return updated_node
 
 
@@ -251,6 +276,17 @@ class QKNormTransformer(CSTTransformer):
                 {"type": "rename_class", "from": original_node.name.value, "to": new_name.value}
             )
             return updated_node.with_changes(name=new_name)
+        return updated_node
+
+    def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:  # noqa: N802
+        # Rename references too — a class rename without its call sites
+        # would leave the module broken (NameError at import time).
+        if original_node.value in ("CausalSelfAttention", "Attention"):
+            replacement = "QKNorm" + original_node.value
+            self.changes.append(
+                {"type": "rename_reference", "from": original_node.value, "to": replacement}
+            )
+            return cst.Name(replacement)
         return updated_node
 
 
@@ -2295,6 +2331,7 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
             original = file_path.read_text()
             modified = original
             applied_changes: list[dict[str, str]] = []
+            applied_cst_changes: list[dict] = []
 
             for target in sorted(targets, key=lambda item: int(item.get("line", 0) or 0)):
                 context = target.get("context", {})
@@ -2304,7 +2341,7 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
                 if not replacement or not original_name:
                     continue
 
-                next_source = self._apply_transformation(
+                next_source, cst_changes = self._apply_transformation_detailed(
                     modified,
                     original_name,
                     replacement,
@@ -2329,6 +2366,7 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
                             "to": replacement,
                         }
                     )
+                    applied_cst_changes.extend(cst_changes)
 
             if modified != original:
                 return [
@@ -2337,6 +2375,7 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
                         original=original,
                         modified=modified,
                         changes=applied_changes,
+                        cst_changes=applied_cst_changes,
                     )
                 ]
         except Exception:
@@ -2348,26 +2387,120 @@ Please fix the code to resolve these errors. Return ONLY the fixed code without 
         self, source: str, original: str, replacement: str, algorithm: str
     ) -> str:
         """Apply an AST-level transformation, falling back to string replacement."""
+        return self._apply_transformation_detailed(source, original, replacement, algorithm)[0]
+
+    def _apply_transformation_detailed(
+        self, source: str, original: str, replacement: str, algorithm: str
+    ) -> tuple[str, list[dict]]:
+        """Apply a transformation and return ``(modified_source, cst_changes)``.
+
+        Hardened guarantees:
+        - ``cst_changes`` only contains entries for edits actually made.
+        - The string fallback renames on word boundaries only, so a
+          replacement that contains the original (``Norm`` inside
+          ``MyLayerNorm``) can never double-apply.
+        - Output is never syntactically worse than the input: if the input
+          parses but the result does not, the original source is returned.
+        """
+        if not original or not replacement or original == replacement:
+            return source, []
+
         try:
             tree = parse_module(source)
+        except Exception:
+            # Input itself is not parseable — legacy string fallback.
+            logger.debug(
+                "Source unparseable for %s transform, using word-boundary replace", algorithm
+            )
+            return self._string_replace_safe(source, original, replacement), []
+
+        try:
             transformer = _get_transformer(algorithm, original, replacement)
             modified_tree = tree.visit(transformer)
             result = modified_tree.code
-
-            # Log changes from the transformer
-            changes = getattr(transformer, "changes", [])
-            if changes:
-                logger.info(
-                    "AST transform (%s): %d changes applied",
-                    algorithm,
-                    len(changes),
-                )
-            return result
-
+            cst_changes = list(getattr(transformer, "changes", []))
         except Exception:
             logger.debug(
                 "AST transformation failed for %s, using string replacement",
                 algorithm,
                 exc_info=True,
             )
-            return source.replace(original, replacement)
+            return self._string_replace_safe(source, original, replacement), []
+
+        if cst_changes:
+            logger.info(
+                "AST transform (%s): %d changes applied",
+                algorithm,
+                len(cst_changes),
+            )
+        return self._ensure_valid_source(source, result), cst_changes
+
+    @staticmethod
+    def _string_replace_safe(source: str, original: str, replacement: str) -> str:
+        """Word-boundary rename that can never corrupt valid input."""
+        pattern = re.compile(rf"\b{re.escape(original)}\b")
+        result = pattern.sub(replacement, source)
+        try:
+            ast.parse(source)
+        except SyntaxError:
+            # Input was already broken; preserve legacy behavior and return
+            # the rename (identifier-for-identifier swaps add no new errors).
+            return result
+        return PatchGenerator._ensure_valid_source(source, result)
+
+    @staticmethod
+    def _ensure_valid_source(source: str, result: str) -> str:
+        """Return ``result`` only if it is valid Python, else the original."""
+        if result == source:
+            return result
+        try:
+            ast.parse(result)
+        except SyntaxError:
+            logger.warning("Transform produced invalid Python; keeping original source")
+            return source
+        return result
+
+    @staticmethod
+    def revert_transformations(
+        repo_path: Path | str, transformations: list[Transformation] | list[dict]
+    ) -> list[str]:
+        """Restore the original sources captured by *transformations*.
+
+        Each file is restored only when its current content still matches
+        the ``modified`` payload, so later edits are never clobbered.
+        Accepts :class:`Transformation` objects or their payload dicts.
+        Returns the list of restored files (relative paths).
+        """
+        root = Path(repo_path).resolve()
+        restored: list[str] = []
+        for item in transformations:
+            if isinstance(item, dict):
+                rel_file = str(item.get("file", "") or "")
+                original = str(item.get("original", "") or "")
+                modified = str(item.get("modified", "") or "")
+            else:
+                rel_file = item.file
+                original = item.original
+                modified = item.modified
+            if not rel_file:
+                continue
+            target = (root / rel_file).resolve()
+            try:
+                if not target.is_relative_to(root):
+                    logger.warning("Skipping revert of path outside repo: %s", rel_file)
+                    continue
+            except (ValueError, OSError):
+                continue
+            if not target.exists():
+                logger.warning("Skipping revert of missing file: %s", rel_file)
+                continue
+            current = target.read_text()
+            if current != modified:
+                logger.warning(
+                    "Skipping revert of %s: file changed since the patch was applied",
+                    rel_file,
+                )
+                continue
+            target.write_text(original)
+            restored.append(rel_file)
+        return restored

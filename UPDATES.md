@@ -2,7 +2,20 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-09-25 (fix: green CI across lint, tests, benchmark, acceptance gates)
+**Last updated:** 2026-09-27 (Step 4: hardened libcst transformers — idempotent, honest, reversible)
+
+### 2026-09-27 (Step 4: hardened libcst transformers — idempotent, honest, reversible)
+**Summary:** All 10 frozen nanogpt-opt CST transformers now guarantee three properties: idempotency (a second apply is a byte-identical no-op that records zero changes), honest change records (never claim an edit that was not performed), and reversibility (captured originals restored byte-identically with a no-clobber guard).
+
+**Changes:**
+1. **Reference renames fix dangling call sites** (`generator.py`): added `leave_Name` to SwiGLU/GEGLU (`MLP` → new class) and QKNorm (`CausalSelfAttention`/`Attention` → `QKNorm…`) — previously class-only renames left broken call sites, and re-running could not be a true no-op.
+2. **Honest change records**: `SwiGLUTransformer.leave_Call` now actually performs the GELU → SiLU swap (was recording `replace_activation` without touching the tree); `GEGLUTransformer` no longer records an activation swap it cannot honestly perform in place (the gated activation lives in the generated GEGLU module template).
+3. **New `Transformation.cst_changes`**: the transformer's real edit log is now propagated from `_transform_target_group`; legacy `changes` (per-target context replaces) keeps its old semantics so existing behavior/tests are unaffected.
+4. **Safe apply path**: `_apply_transformation_detailed` — degenerate inputs short-circuit, string fallback uses word boundaries (`\b`-anchored, no substring doubling), and output that fails `ast.parse` while the input parsed is discarded in favor of the original. Legacy `str`-returning `_apply_transformation` remains as a thin wrapper (unparseable-input fallback behavior preserved for `test_string_fallback_on_parse_error`).
+5. **`PatchGenerator.revert_transformations`**: restores `Transformation.original` only when the file still equals the captured `modified` payload (never clobbers later edits), accepts dataclass or dict payloads, and rejects paths escaping the repo root.
+6. **Tests**: new `core/tests/unit/test_nano_transform_hardening.py` (15 tests): parametrized idempotency over all 10 frozen specs, pipeline-level second-run no-op, SwiGLU/GEGLU/QKNorm honesty, fallback boundary + legacy behavior, revert roundtrip / no-clobber / dict payloads / path traversal.
+
+**Verification:** ruff check + format clean (`src/ tests/`); mypy clean (CI invocation + `generator.py`); full pytest **2539 passed / 3 skipped** (cold cache, offline env); benchmark gate baseline=0.800 current=0.800; acceptance 10/10, 100% apply/test.
 
 ### 2026-09-25 (fix: green CI across lint, tests, benchmark, acceptance gates)
 **Summary:** Repaired the four failing GitHub Actions gates and fixed two pre-existing bugs they exposed. Also landed the first three nanogpt-opt plan steps (spec freeze, Python-only analyzer, mapper alias tuning).
