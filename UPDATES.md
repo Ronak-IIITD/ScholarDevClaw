@@ -2,7 +2,20 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-09-27 (Step 5: honest validator — no fake numbers in benchmark scoring)
+**Last updated:** 2026-09-27 (Step 6: lean `nanogpt-opt` CLI + pip entry point)
+
+### 2026-09-27 (Step 6: lean `nanogpt-opt` CLI + pip entry point)
+**Summary:** Added the plan's lean 4-command CLI — `nanogpt-opt analyze | suggest | apply | validate` — as a separate additive console script over the frozen 10-spec surface. `apply` is dry-run by default, writes atomically-per-spec with a revert manifest, and `validate` reports honest `pass / fail / skipped` per stage (a stage that never ran is never a pass).
+
+**Changes:**
+1. **New module** `core/src/scholardevclaw/nano_cli.py` (~600 lines) + console script `nanogpt-opt` in `core/pyproject.toml [project.scripts]`:
+   - `analyze <repo>` — Python-only `nano_analyze.analyze_repo` over the 10 frozen specs (offline, no LLM).
+   - `suggest <repo> [--spec]` — maps each applicable spec via `pipeline.run_map` to file:line targets with confidence/strategy (LLM assistant degrades to `None` gracefully).
+   - `apply <repo> [--spec] [--write] [--revert]` — default dry-run prints unified diffs and writes nothing; `--write` runs **sequential generate→conflict-check→write per spec** so later specs chain onto earlier edits (originals form an undo chain), created files are create-only (never clobber an existing path, never recorded for revert), and the manifest is persisted at `.nanogpt-opt/manifest.json`; `--revert` walks the chain **backwards** with the Step-4 no-clobber guard, removes created files, and deletes the manifest only on a complete restore. Re-running `--write` on an already-patched repo is a clean no-op ("nothing to apply").
+   - `validate <repo>` — three honest stages: `compile` (ast.parse all `.py`, excludes `.git/__pycache__/venv/...`), `tests` (runs pytest only if test files **and** pytest exist, else `skipped`), `benchmark` (runs `bench*.py`/`benchmark*.py` if present, else `skipped`); summary `N passed, M failed, K skipped -> pass|fail`, exit 1 on any fail; `--json` for machine output. No heal loop, no LLM, no fabricated passes.
+2. **Tests** `core/tests/unit/test_nano_cli.py` (15 tests): command routing; analyze JSON schema + unknown-spec rejection; suggest maps rmsnorm→model.py at ≥70% confidence; apply dry-run writes nothing; write→revert roundtrip is byte-identical with manifest cleanup; idempotent second `--write`; revert-without-manifest error; validate honest-skip output, syntax-error fail, failing-test fail, pytest-missing skip, JSON payload shape, and an explicit "skipped is never counted as pass" test.
+
+**Verification:** ruff check + format clean (`src/ tests/`); mypy clean (CI invocation); full pytest **2556 passed / 3 skipped** (cold cache; warm-cache e2e title test re-verified passing cold); benchmark gate baseline=0.725 current=0.800 pass; acceptance 10/10, 100% apply/test. End-to-end smoke on a nanoGPT copy: `analyze` (10 applicable) → `suggest` (10 specs, concrete targets, ~1s) → `apply --write` (7 files transformed + 8 created across specs, all parse OK) → `validate` → `apply --revert` → **byte-identical** original; second `--write` = no-op. `pip install -e .` exposes `nanogpt-opt --help`.
 
 ### 2026-09-27 (Step 5: honest validator — no fake numbers in benchmark scoring)
 **Summary:** The benchmark harness no longer reports a verified score for candidates that never executed. Scoring tiers now reflect what was actually measured, reports expose a verified-only breakdown, and the stale root `benchmark-report/` artifact (a tracked JSON claiming aggregate 1.0 while 7/10 cases failed to import) was deleted.

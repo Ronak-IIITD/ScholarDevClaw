@@ -148,6 +148,7 @@ Changelog = "https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/CHANGELOG.m
 
 [project.scripts]
 scholardevclaw = "scholardevclaw.cli:main"
+nanogpt-opt = "scholardevclaw.nano_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
