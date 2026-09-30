@@ -2,7 +2,19 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-09-27 (Step 6: lean `nanogpt-opt` CLI + pip entry point)
+**Last updated:** 2026-09-27 (Step 7a: proof on 3 external repos)
+
+### 2026-09-27 (Step 7a: proof on 3 external repos)
+**Summary:** The full `nanogpt-opt` pipeline was proven end-to-end (analyze → suggest → apply `--write` → idempotent re-run → `--revert` → honest `validate`) on three real external repositories cloned from GitHub — never on an internal fixture alone. Every write roundtrip restored **byte-identical** files with the manifest fully cleaned up.
+
+**Repos and results** (all clones under `test_repos/external-*`, untracked):
+1. **`karpathy/nanoGPT`** (5 py files): analyze → 10/10 specs applicable; suggest → all 10 specs mapped (rmsnorm@75 … swiglu@90 … lion@85, concrete `file:line` targets); `apply --write` across **all 10 specs** → 10 files changed + 8 created in 12.6s; second `--write` → "nothing to apply" (idempotent); `--revert` → **byte-identical**, manifest removed; `validate` → compile pass (15 files), tests skipped (none), benchmark fail (`bench.py` exit 1) → overall fail, **exit 1**.
+2. **`lucidrains/vit-pytorch`** (86 py files): analyze → 5 specs applicable (rmsnorm, swiglu, rope, alibi, cosine_warmup); suggest → rmsnorm 15 targets @90, swiglu 460 targets @100, rope 13, alibi 14, cosine_warmup 0 targets @45 (honest empty); `apply --write --spec rmsnorm` → 20 changed + 5 created in 177.6s; idempotent re-run ✓; `--revert` → **byte-identical** ✓; `validate` → compile pass, tests **fail** (collection errors: missing optional deps) → exit 1 (honest, no fake pass).
+3. **`lucidrains/x-transformers`** (43 py files): analyze → 5 specs applicable; suggest → rmsnorm 12 @80, swiglu 105 @100, rope 8 @75, alibi 15 @85, cosine_warmup 0 @45; `apply --write --spec rmsnorm` → 12 changed + 5 created in 202.7s; idempotent re-run ✓; `--revert` → **byte-identical** ✓; `validate` → compile pass, tests fail (collection errors) → exit 1 (honest).
+
+**Replaced** `bentrevett/pytorch-seq2seq` from the planned trio after it proved to be notebooks-only (0 `.py` files → analyze correctly reported `files: 0`, an honest empty result but weak proof); the empty-repo honesty was verified in the process.
+
+**Verification:** roundtrip harness (sha256 of every `.py` before/after) reported `ALL ROUNDTRIPS OK: True` — write rc=0, idempotent=true, byte_identical=true, manifest_gone=true on all 3; validate exit codes verified real (1 on fail) outside a shell pipe; JSON payload stage schema confirmed (`compile.checked=15`, `tests.reason`, `benchmark.results[].exit_code`). No tracked files modified by proof runs (repos are untracked clones).
 
 ### 2026-09-27 (Step 6: lean `nanogpt-opt` CLI + pip entry point)
 **Summary:** Added the plan's lean 4-command CLI — `nanogpt-opt analyze | suggest | apply | validate` — as a separate additive console script over the frozen 10-spec surface. `apply` is dry-run by default, writes atomically-per-spec with a revert manifest, and `validate` reports honest `pass / fail / skipped` per stage (a stage that never ran is never a pass).
