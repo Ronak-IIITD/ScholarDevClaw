@@ -2,7 +2,17 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-09-27 (Step 7a: proof on 3 external repos)
+**Last updated:** 2026-09-27 (Step 7b: demo video + README rewrite for nanogpt-opt)
+
+### 2026-09-27 (Step 7b: demo video + README rewrite for nanogpt-opt)
+**Summary:** Recorded the 54s `nanogpt-opt` demo video (tape + MP4 + GIF) showing the full honest loop on a live clone of `karpathy/nanoGPT`, and rewrote the README to lead with the lean 4-command workflow instead of the legacy multi-language claims.
+
+**Changes:**
+1. **Demo video** — `demo-nanogpt.tape` (vhs), rendered `demo-nanogpt.mp4` (53.7s, 1180×740, Dracula) + `demo-nanogpt.gif` (2.85MB, 8fps, 960px). Nine steps, frame-verified: `analyze` (10/10 applicable specs) → `suggest --spec rmsnorm` (target `model.py:18`, conf 75) → dry-run diff → `--write` (model.py transformed + rmsnorm.py + manifest) → second `--write` (`nothing to apply`) → `validate` (`compile pass / tests skipped / benchmark fail → exit=1`, honest) → `git status --short` dirty → `--revert` (restored + created files removed) → `git status --short && echo CLEAN-revert` → clean. Rendering toolchain: vhs v0.12.1 (`go install`), ttyd 1.7.7 (release binary), ffmpeg (GIF via palettegen/paletteuse two-pass — system ffmpeg lacks `diff_mode`).
+2. **vhs gotcha recorded:** `Set TypingSpeed 90` in vhs v0.12.1 causes an immediate websocket EOF mid-typing and then a **hang** (vhs never exits after "recording failed"; output is trapped if piped). Removed from the tape — default typing speed works. Also: `Output` rejects absolute paths; `pkill -f vhs` matches its own command line (use `[v]hs` patterns).
+3. **README rewritten** — leads with `nanogpt-opt` (four commands table, quick start, 54s demo embed, external-repo proof table with byte-identical roundtrips, honesty guarantees, architecture diagram, honest benchmark-gate numbers); legacy surfaces noted as still CI-covered. `demo.md` header now points to the new demo. Old claims removed: `pip install scholardevclaw`, multi-language support table, "reads any arXiv paper" tagline.
+
+**Verification:** frames extracted at 8/25/35/45/52s and visually checked (all nine steps legible; final frame shows `CLEAN-revert`); post-render `git status` of the nanoGPT clone is 0 lines (the recording's revert left it pristine); GIF frame count 429 @ 8fps = full duration; README links target committed files (`demo-nanogpt.gif`, `.tape`, `.mp4`).
 
 ### 2026-09-27 (Step 7a: proof on 3 external repos)
 **Summary:** The full `nanogpt-opt` pipeline was proven end-to-end (analyze → suggest → apply `--write` → idempotent re-run → `--revert` → honest `validate`) on three real external repositories cloned from GitHub — never on an internal fixture alone. Every write roundtrip restored **byte-identical** files with the manifest fully cleaned up.

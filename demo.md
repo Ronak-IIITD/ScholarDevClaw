@@ -1,5 +1,7 @@
 # ScholarDevClaw - Quick Start Guide
 
+> **Note:** This guide covers the legacy `scholardevclaw` surfaces (CLI/TUI/API). For the primary lean workflow see [`nanogpt-opt`](README.md) and the recorded [`demo-nanogpt.mp4`](demo-nanogpt.mp4) / [`demo-nanogpt.tape`](demo-nanogpt.tape).
+
 This guide shows you how to use ScholarDevClaw to integrate ML research papers into your PyTorch repositories.
 
 ## Prerequisites
