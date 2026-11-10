@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { Nav } from "@/components/Nav";
 import { api } from "@/lib/api";
 import type { SpecSummary } from "@/lib/types";
@@ -10,25 +10,21 @@ interface SpecDetailPageProps {
 }
 
 export default function SpecDetailPage({ params }: SpecDetailPageProps) {
+  const { name } = use(params);
+  return <SpecDetail key={name} name={name} />;
+}
+
+function SpecDetail({ name }: { name: string }) {
   const [spec, setSpec] = useState<SpecSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadSpec = async () => {
-    const { name } = await params;
-    try {
-      const s = await api.specs.get(name);
-      setSpec(s);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Spec not found");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadSpec();
-  }, [params]);
+    void api.specs.get(name)
+      .then(setSpec)
+      .catch((error) => setError(error instanceof Error ? error.message : "Spec not found"))
+      .finally(() => setLoading(false));
+  }, [name]);
 
   if (loading) {
     return (

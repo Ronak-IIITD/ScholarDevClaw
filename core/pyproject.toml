@@ -154,7 +154,7 @@ nanogpt-opt = "scholardevclaw.nano_cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-scholardevclaw = ["py.typed", "product/templates/*.j2"]
+scholardevclaw = ["py.typed", "product/templates/*.j2", "specs/*.json"]
 
 [tool.ruff]
 line-length = 100

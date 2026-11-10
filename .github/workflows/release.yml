@@ -68,7 +68,12 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: core/pyproject.toml
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,product,tui]"
+      - name: Clone nanoGPT test fixture
+        run: |
+          mkdir -p ../test_repos
+          git clone --filter=blob:none --no-checkout https://github.com/karpathy/nanoGPT.git ../test_repos/nanogpt
+          git -C ../test_repos/nanogpt checkout --detach 3adf61e154c3fe3fca428ad6bc3818b27a3b8291
       - run: python -m pytest tests/ -x -q
 
   # ──────────────────────────────────────────────

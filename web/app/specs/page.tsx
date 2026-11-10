@@ -12,19 +12,11 @@ export default function SpecsPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
 
-  const loadSpecs = async () => {
-    try {
-      const s = await api.specs.list();
-      setSpecs(s);
-    } catch (e) {
-      console.error("Failed to load specs:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadSpecs();
+    void api.specs.list()
+      .then(setSpecs)
+      .catch((error) => console.error("Failed to load specs:", error))
+      .finally(() => setLoading(false));
   }, []);
 
   const categories = ["all", ...new Set(specs.map((s) => s.category).filter(Boolean))];
