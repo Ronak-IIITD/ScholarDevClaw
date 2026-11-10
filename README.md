@@ -23,7 +23,9 @@ Every command accepts `--json`.
 
 ```bash
 git clone https://github.com/Ronak-IIITD/ScholarDevClaw.git && cd ScholarDevClaw
-pip install -e core
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e core
 
 nanogpt-opt analyze /path/to/repo
 nanogpt-opt suggest /path/to/repo --spec rmsnorm
@@ -66,7 +68,7 @@ Every roundtrip below was verified by SHA-256 of all `.py` files before/after: *
 - **Skipped ≠ pass.** Tests without test files (or without pytest) and benchmarks without scripts report `skipped`; the summary counts them separately; exit code reflects only real failures.
 - **No fake benchmark numbers.** A benchmark case scores `1.0` only when it actually imported and executed (`import_ok`); AST-identical but unexecuted candidates score `0.75` (`ast_matched`). The committed no-torch baseline (`core/benchmarks/benchmark_report.json`, aggregate `0.725`) gates CI at `current ≥ baseline − 0.1`.
 - **Dry-run default.** `apply` writes nothing until `--write`; created files are create-only — an existing path is never clobbered and never recorded for revert.
-- **Byte-identical revert.** Transformed files are restored from manifest originals; `--revert` walks specs backwards with a no-clobber guard.
+- **Byte-identical revert.** One manifest tracks writes across multiple invocations. `--revert` checks the files for changes before restoring the original bytes. With older manifests, inspect and remove any generated files listed as unverified, then retry `--revert`.
 
 ## Architecture
 

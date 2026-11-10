@@ -1261,6 +1261,7 @@ def _build_mapping_result(
     llm_assistant: Any | None = None,
     log_callback: LogCallback | None = None,
     analysis: dict[str, Any] | None = None,
+    research_spec: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     from scholardevclaw.mapping.engine import MappingEngine
     from scholardevclaw.research_intelligence.extractor import ResearchExtractor
@@ -1275,10 +1276,11 @@ def _build_mapping_result(
     else:
         analysis_dict = analysis
 
-    extractor = ResearchExtractor(llm_assistant=llm_assistant)
     if log_callback is not None:
         log_callback(f"Resolving specification: {spec_name}")
-    spec = extractor.get_spec(spec_name)
+    spec = research_spec
+    if spec is None:
+        spec = ResearchExtractor(llm_assistant=llm_assistant).get_spec(spec_name)
     if spec is None:
         raise ValueError(
             "What failed: mapping spec resolution. "
@@ -1317,11 +1319,13 @@ def run_map(
     *,
     log_callback: LogCallback | None = None,
     use_cache: bool = True,
+    research_spec: dict[str, Any] | None = None,
 ) -> PipelineResult:
     logs: list[str] = []
     _log(logs, f"Mapping spec '{spec_name}' to repository: {repo_path}", log_callback)
 
-    # Build cache key from repo + spec
+    # Name-based cache keys only apply to specs resolved by the legacy registry.
+    use_cache = use_cache and research_spec is None
     cache_key = f"{repo_path}:{spec_name}"
 
     # Check cache first
@@ -1342,12 +1346,16 @@ def run_map(
             metadata={"repo_path": str(path), "spec_name": spec_name},
         )
 
-        llm_assistant = _create_llm_assistant()
+        llm_assistant = _create_llm_assistant() if research_spec is None else None
+        spec_override: dict[str, Any] = (
+            {"research_spec": research_spec} if research_spec is not None else {}
+        )
         mapping_result, spec = _build_mapping_result(
             path,
             spec_name,
             llm_assistant=llm_assistant,
             log_callback=log_callback,
+            **spec_override,
         )
         targets = mapping_result.get("targets", [])
 
@@ -1397,6 +1405,7 @@ def run_generate(
     output_dir: str | None = None,
     log_callback: LogCallback | None = None,
     analysis: dict[str, Any] | None = None,
+    research_spec: dict[str, Any] | None = None,
 ) -> PipelineResult:
     from scholardevclaw.patch_generation.generator import PatchGenerator
 
@@ -1416,13 +1425,17 @@ def run_generate(
             metadata={"repo_path": str(path), "spec_name": spec_name},
         )
 
-        llm_assistant = _create_llm_assistant()
+        llm_assistant = _create_llm_assistant() if research_spec is None else None
+        spec_override: dict[str, Any] = (
+            {"research_spec": research_spec} if research_spec is not None else {}
+        )
         mapping_result, spec = _build_mapping_result(
             path,
             spec_name,
             llm_assistant=llm_assistant,
             log_callback=log_callback,
             analysis=analysis,
+            **spec_override,
         )
 
         generator = PatchGenerator(path, llm_assistant=llm_assistant)

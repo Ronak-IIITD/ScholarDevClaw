@@ -19,17 +19,6 @@ export default function RunPage() {
     setLogLines((prev) => [...prev, `[${timestamp}] ${line}`]);
   };
 
-  const loadStatus = async () => {
-    try {
-      const status = await api.pipeline.status();
-      setRunStatus(status);
-    } catch (e) {
-      console.error("Failed to load pipeline status:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const { connected, runStatus: wsRunStatus } = usePipelineSocket({
     onMessage: (msg) => {
       if (msg.type === "pipeline_step") {
@@ -55,7 +44,10 @@ export default function RunPage() {
   const effectiveRunStatus = wsRunStatus || runStatus;
 
   useEffect(() => {
-    loadStatus();
+    void api.pipeline.status()
+      .then(setRunStatus)
+      .catch((error) => console.error("Failed to load pipeline status:", error))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) {

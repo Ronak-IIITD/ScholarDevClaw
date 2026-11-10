@@ -5,7 +5,7 @@ Next.js 16 (App Router) dashboard for the ScholarDevClaw research-to-code integr
 ## Features
 
 - **Dashboard** — Server health, pipeline status, quick actions (demo run, custom run), live WebSocket feed
-- **Specs Browser** — Search/filter all 22 paper specifications with categories
+- **Specs Browser** — Search and filter paper specifications by category
 - **Spec Detail** — Full spec metadata, description, run instructions
 - **Live Run View** — Real-time pipeline step timeline via WebSocket, live log feed
 
@@ -13,7 +13,7 @@ Next.js 16 (App Router) dashboard for the ScholarDevClaw research-to-code integr
 
 Mirrors the landing page editorial theme:
 - Colors: `--paper:#f5f2eb`, `--ink:#0c0c0c`, `--accent:#c8410a` (terracotta), `--accent2:#1a3a2a` (deep green)
-- Fonts: DM Serif Display (headings), DM Mono (mono), DM Sans (body)
+- Fonts: Serif headings, monospace labels, and sans-serif body text with local fallbacks
 - Grain overlay, paper/ink aesthetic
 
 ## Getting Started
@@ -53,7 +53,7 @@ CORS is pre-configured in the backend to allow `http://localhost:3000`.
 ```
 web/
 ├── app/
-│   ├── layout.tsx          # Root layout with DM fonts + Nav
+│   ├── layout.tsx          # Root layout
 │   ├── globals.css         # Design system (paper/ink/terracotta)
 │   ├── page.tsx            # Dashboard home
 │   ├── specs/
@@ -76,10 +76,10 @@ web/
 ## Scripts
 
 ```bash
-bun dev      # Development server
-bun build    # Production build
-bun start    # Production server
-bun lint     # ESLint
+bun run dev      # Development server
+bun run build    # Production build
+bun run start    # Production server
+bun run lint     # ESLint
 ```
 
 ## Backend Requirements
@@ -89,7 +89,7 @@ The FastAPI server must be running:
 ```bash
 cd ../core
 source .venv/bin/activate
-uvicorn scholardevclaw.api.server:app --reload --port 8000
+ENV=development SCHOLARDEVCLAW_DEV_MODE=true uvicorn scholardevclaw.api.server:app --reload --port 8000
 ```
 
 Or via Docker Compose:

@@ -187,6 +187,20 @@ def test_suggest_maps_spec_to_targets(transformer_repo, capsys):
     assert suggestions[0]["targets"][0]["file"] == "model.py"
 
 
+def test_suggest_and_apply_use_frozen_spec(transformer_repo, capsys, monkeypatch):
+    from scholardevclaw.research_intelligence.extractor import ResearchExtractor
+
+    def fail_registry_lookup(*args):
+        pytest.fail("nanogpt-opt must use the packaged specs")
+
+    monkeypatch.setattr(ResearchExtractor, "get_spec", fail_registry_lookup)
+    for command in ("suggest", "apply"):
+        assert nano_cli.main([command, str(transformer_repo), "--spec", "rmsnorm", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        results = payload["suggestions" if command == "suggest" else "results"]
+        assert results[0]["ok"]
+
+
 # =========================================================================
 # apply / revert
 # =========================================================================
@@ -238,6 +252,86 @@ def test_apply_second_run_is_noop(transformer_repo, capsys):
     assert _checksums(transformer_repo) == _checksums_base(
         transformer_repo, MODEL_SOURCE, TRAIN_SOURCE
     )
+
+
+def test_revert_restores_multiple_writes_and_original_line_endings(transformer_repo):
+    model = transformer_repo / "model.py"
+    original = MODEL_SOURCE.replace("\n", "\r\n").encode()
+    model.write_bytes(original)
+    for spec in ("rmsnorm", "swiglu"):
+        assert nano_cli.main(["apply", str(transformer_repo), "--spec", spec, "--write"]) == 0
+        assert (transformer_repo / f"{spec}.py").is_file()
+
+    assert nano_cli.main(["apply", str(transformer_repo), "--revert"]) == 0
+    assert model.read_bytes() == original
+    assert not (transformer_repo / "rmsnorm.py").exists()
+    assert not (transformer_repo / "swiglu.py").exists()
+    assert not (transformer_repo / ".nanogpt-opt").exists()
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_revert_keeps_modified_or_unverified_generated_file(transformer_repo, capsys, legacy):
+    repo = str(transformer_repo)
+    assert nano_cli.main(["apply", repo, "--spec", "rmsnorm", "--write"]) == 0
+    capsys.readouterr()
+    generated = transformer_repo / "rmsnorm.py"
+    patched = _checksums(transformer_repo)
+    manifest = transformer_repo / ".nanogpt-opt" / "manifest.json"
+    if legacy:
+        data = json.loads(manifest.read_text())
+        del data["new_file_contents"]
+        manifest.write_text(json.dumps(data))
+    else:
+        patched["rmsnorm.py"] += "\n# user's edit\n"
+        generated.write_text(patched["rmsnorm.py"])
+
+    assert nano_cli.main(["apply", repo, "--revert", "--json"]) == 1
+    assert json.loads(capsys.readouterr().out)["kept"] == ["rmsnorm.py"]
+    assert _checksums(transformer_repo) == patched
+    assert manifest.exists()
+
+    generated.unlink()
+    assert nano_cli.main(["apply", repo, "--revert"]) == 0
+    assert _checksums(transformer_repo) == _checksums_base(
+        transformer_repo, MODEL_SOURCE, TRAIN_SOURCE
+    )
+
+
+def test_failed_second_write_preserves_first_patch(transformer_repo, monkeypatch):
+    repo = str(transformer_repo)
+    assert nano_cli.main(["apply", repo, "--spec", "rmsnorm", "--write"]) == 0
+    before = _checksums(transformer_repo)
+    manifest = transformer_repo / ".nanogpt-opt" / "manifest.json"
+    previous_manifest = manifest.read_bytes()
+    open_path = Path.open
+
+    def fail_new_file(path, mode="r", *args, **kwargs):
+        if path.name == "swiglu.py" and mode == "x":
+            raise OSError("cannot write swiglu.py")
+        return open_path(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_new_file)
+    assert nano_cli.main(["apply", repo, "--spec", "swiglu", "--write"]) == 1
+    assert _checksums(transformer_repo) == before
+    assert manifest.read_bytes() == previous_manifest
+    assert nano_cli.main(["apply", repo, "--revert"]) == 0
+    assert _checksums(transformer_repo) == _checksums_base(
+        transformer_repo, MODEL_SOURCE, TRAIN_SOURCE
+    )
+
+
+def test_second_write_keeps_edits_made_after_first_patch(transformer_repo):
+    repo = str(transformer_repo)
+    assert nano_cli.main(["apply", repo, "--spec", "rmsnorm", "--write"]) == 0
+    model = transformer_repo / "model.py"
+    edited = model.read_text() + "\n# user's edit\n"
+    model.write_text(edited)
+
+    assert nano_cli.main(["apply", repo, "--spec", "swiglu", "--write"]) == 1
+    assert nano_cli.main(["apply", repo, "--revert"]) == 1
+    assert model.read_text() == edited
+    assert not (transformer_repo / "swiglu.py").exists()
+    assert (transformer_repo / "rmsnorm.py").is_file()
 
 
 def _checksums_base(root: Path, model: str, train: str) -> dict[str, str]:

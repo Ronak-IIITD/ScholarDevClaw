@@ -28,31 +28,14 @@ export default function Dashboard() {
     setLogLines((prev) => [...prev, `[${timestamp}] ${line}`]);
   };
 
-  const loadHealth = async () => {
-    try {
-      const h = await api.health();
-      setHealth(h);
-    } catch (e) {
-      console.error("Health check failed:", e);
-    }
+  const loadHealth = () => {
+    void api.health().then(setHealth).catch((error) => console.error("Health check failed:", error));
   };
 
-  const loadSpecs = async () => {
-    try {
-      const s = await api.specs.list();
-      setSpecs(s);
-    } catch (e) {
-      console.error("Failed to load specs:", e);
-    }
-  };
-
-  const loadPipelineStatus = async () => {
-    try {
-      const status = await api.pipeline.status();
-      setRunStatus(status);
-    } catch (e) {
-      console.error("Failed to load pipeline status:", e);
-    }
+  const loadPipelineStatus = () => {
+    void api.pipeline.status().then(setRunStatus).catch((error) => {
+      console.error("Failed to load pipeline status:", error);
+    });
   };
 
   const { connected, runStatus: wsRunStatus } = usePipelineSocket({
@@ -72,8 +55,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadHealth();
-    loadSpecs();
     loadPipelineStatus();
+    void api.specs.list().then(setSpecs).catch((error) => {
+      console.error("Failed to load specs:", error);
+    });
   }, []);
 
   const handleRun = async () => {

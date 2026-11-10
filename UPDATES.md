@@ -2,7 +2,13 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-09-27 (Step 7b: demo video + README rewrite for nanogpt-opt)
+**Last updated:** 2026-11-10 (CLI and dashboard recovery)
+
+### 2026-11-10 (CLI and dashboard recovery)
+
+- Packaged the ten frozen specs and used them for `nanogpt-opt` suggestions and patch generation. The editable install and wheel load the same specs.
+- Fixed rollback across separate `--write` calls. A failed write restores that spec's partial edits, and revert preserves user changes and original line endings. Older manifests require manual review of generated files whose contents were never recorded.
+- Added the missing dashboard client modules to source control, fixed its data loading and WebSocket reconnect behavior, and removed the build-time font download. CI now lints and builds the dashboard, and release tests fetch the same pinned nanoGPT fixture as regular CI.
 
 ### 2026-09-27 (Step 7b: demo video + README rewrite for nanogpt-opt)
 **Summary:** Recorded the 54s `nanogpt-opt` demo video (tape + MP4 + GIF) showing the full honest loop on a live clone of `karpathy/nanoGPT`, and rewrote the README to lead with the lean 4-command workflow instead of the legacy multi-language claims.

@@ -19,9 +19,13 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import stat
 import subprocess
 import sys
+import tempfile
 import time
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -147,7 +151,7 @@ def cmd_suggest(args: argparse.Namespace) -> int:
     specs, base = _spec_or_all(repo, args.spec)
     suggestions: list[dict[str, Any]] = []
     for name in specs:
-        result = run_map(str(repo), name, use_cache=False)
+        result = run_map(str(repo), name, research_spec=load_spec(name))
         if not result.ok:
             suggestions.append({"spec": name, "ok": False, "error": result.error, "targets": []})
             continue
@@ -215,7 +219,7 @@ def _unified_preview(path: str, original: str, modified: str) -> str:
 def _apply_spec(repo: Path, spec: str) -> dict[str, Any]:
     from scholardevclaw.application.pipeline import run_generate
 
-    result = run_generate(str(repo), spec)
+    result = run_generate(str(repo), spec, research_spec=load_spec(spec))
     if not result.ok:
         return {"spec": spec, "ok": False, "error": result.error}
     return {
@@ -231,7 +235,7 @@ def _apply_spec(repo: Path, spec: str) -> dict[str, Any]:
 
 
 def _spec_write_plan(
-    repo: Path, item: dict[str, Any]
+    repo: Path, item: dict[str, Any], patched_contents: dict[str, str | None]
 ) -> tuple[list[str], list[dict[str, str]], list[str]]:
     """Validate one spec's writes.
 
@@ -243,17 +247,23 @@ def _spec_write_plan(
     """
     conflicts: list[str] = []
     for tr in item.get("transformations", []):
-        target = (repo / tr["file"]).resolve()
+        target = repo / tr["file"]
         try:
-            target.relative_to(repo)
+            target.resolve().relative_to(repo)
         except ValueError:
             conflicts.append(f"{tr['file']} (escapes repository root)")
             continue
-        if not target.exists():
-            conflicts.append(f"{tr['file']} (missing)")
+        if target.is_symlink() or not target.is_file():
+            conflicts.append(f"{tr['file']} (missing or not a regular file)")
             continue
-        if target.read_text() != tr.get("original", ""):
+        with target.open(newline="") as source:
+            original = source.read()
+        if original.replace("\r\n", "\n").replace("\r", "\n") != tr.get("original", ""):
             conflicts.append(f"{tr['file']} (modified since generation)")
+        elif tr["file"] in patched_contents and original != patched_contents[tr["file"]]:
+            conflicts.append(f"{tr['file']} (changed or unverified since the previous patch)")
+        else:
+            tr["original"] = original
     writable_new: list[dict[str, str]] = []
     kept_existing: list[str] = []
     for f in item.get("new_files", []):
@@ -270,23 +280,71 @@ def _spec_write_plan(
     return conflicts, writable_new, kept_existing
 
 
-def _write_manifest(
-    repo: Path,
-    spec_names: list[str],
-    created: list[dict[str, str]],
-    transformations: list[dict[str, str]],
-) -> Path:
-    manifest_dir = repo / MANIFEST_DIR
-    manifest_dir.mkdir(exist_ok=True)
-    manifest = {
+def _load_manifest(path: Path) -> dict[str, Any]:
+    if path.is_symlink() or path.parent.is_symlink():
+        raise ValueError(f"refusing to use a symlink for the patch manifest: {path}")
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "specs": spec_names,
-        "new_files": [f["path"] for f in created],
-        "transformations": transformations,
+        "specs": [],
+        "new_files": [],
+        "transformations": [],
     }
-    path = _manifest_path(repo)
-    path.write_text(json.dumps(manifest, indent=2))
-    return path
+
+
+def _latest_patch_contents(manifest: dict[str, Any]) -> dict[str, str | None]:
+    contents: dict[str, str | None] = dict.fromkeys(manifest["new_files"])
+    contents.update(manifest.get("new_file_contents", {}))
+    contents.update((entry["file"], entry["modified"]) for entry in manifest["transformations"])
+    return contents
+
+
+@contextmanager
+def _stage_text(path: Path, content: str, *, preserve_mode: bool = False) -> Iterator[None]:
+    with tempfile.NamedTemporaryFile(
+        mode="w", newline="", dir=path.parent, delete=False
+    ) as temporary:
+        pending = Path(temporary.name)
+        try:
+            temporary.write(content)
+            temporary.close()
+            if preserve_mode:
+                pending.chmod(stat.S_IMODE(path.stat().st_mode))
+            yield
+            pending.replace(path)
+        finally:
+            temporary.close()
+            pending.unlink(missing_ok=True)
+
+
+def _replace_source(path: Path, content: str) -> None:
+    with _stage_text(path, content, preserve_mode=True):
+        pass
+
+
+@contextmanager
+def _patch_lock(repo: Path) -> Iterator[None]:
+    directory = repo / MANIFEST_DIR
+    if directory.is_symlink():
+        raise ValueError(f"refusing to use a symlink for the patch directory: {directory}")
+    directory.mkdir(exist_ok=True)
+    lock = directory / "lock"
+    try:
+        lock.touch(exist_ok=False)
+    except FileExistsError as exc:
+        raise ValueError(
+            f"another apply or revert holds {lock}. "
+            "If it was interrupted, confirm it has stopped before removing the lock."
+        ) from exc
+    try:
+        yield
+    finally:
+        lock.unlink()
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
 
 
 def cmd_apply(args: argparse.Namespace) -> int:
@@ -296,7 +354,8 @@ def cmd_apply(args: argparse.Namespace) -> int:
         return 2
 
     if args.revert:
-        return _cmd_revert(repo, args.json)
+        with _patch_lock(repo):
+            return _cmd_revert(repo, args.json)
 
     specs, base = _spec_or_all(repo, args.spec)
 
@@ -360,12 +419,19 @@ def cmd_apply(args: argparse.Namespace) -> int:
                 print(f"    + {f['path']}")
         return 0
 
-    # --write: sequential generate -> conflict-check -> write per spec, so
+    with _patch_lock(repo):
+        return _apply_write(repo, specs, base, args.json)
+
+
+def _apply_write(repo: Path, specs: list[str], base: dict[str, Any], as_json: bool) -> int:
+    # Generate and write one spec at a time so
     # later specs build on the files written by earlier ones (chained
     # originals; revert walks the chain backwards).
-    applied_specs: list[str] = []
-    created = []
-    transformations = []
+    path = _manifest_path(repo)
+    manifest = _load_manifest(path)
+    patched_contents = _latest_patch_contents(manifest)
+    created: list[dict[str, str]] = []
+    transformations: list[dict[str, str]] = []
     results_summary = []
     for name in specs:
         item = _apply_spec(repo, name)  # reads the current disk state
@@ -382,15 +448,12 @@ def cmd_apply(args: argparse.Namespace) -> int:
         )
         if not ok:
             continue
-        conflicts, writable_new, kept_existing = _spec_write_plan(repo, item)
+        conflicts, writable_new, kept_existing = _spec_write_plan(repo, item, patched_contents)
         results_summary[-1]["new_file_count"] = len(writable_new)
         if kept_existing:
             results_summary[-1]["kept_existing_files"] = kept_existing
         if conflicts:
-            # Persist what was already applied so it stays revertible.
-            if transformations or created:
-                _write_manifest(repo, applied_specs, created, transformations)
-            if args.json:
+            if as_json:
                 _print_json(
                     {
                         "error": f"conflict while applying spec '{name}'",
@@ -408,22 +471,37 @@ def cmd_apply(args: argparse.Namespace) -> int:
                         file=sys.stderr,
                     )
             return 1
-        for tr in item["transformations"]:
-            (repo / tr["file"]).write_text(tr["modified"])
-            transformations.append(tr)
-        for f in writable_new:
-            destination = repo / f["path"]
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(f["content"])
-            created.append(f)
-        if item["transformations"] or writable_new:
-            applied_specs.append(name)
+        changes = item["transformations"]
+        if not changes and not writable_new:
+            continue
+        manifest["specs"].append(name)
+        manifest["transformations"].extend(changes)
+        manifest["new_files"].extend(f["path"] for f in writable_new)
+        manifest.setdefault("new_file_contents", {}).update(
+            {f["path"]: f["content"] for f in writable_new}
+        )
+        with ExitStack() as undo:
+            # Stage the manifest before touching any source, then publish it
+            # after the spec succeeds. Roll back this spec on I/O errors.
+            with _stage_text(path, json.dumps(manifest, indent=2)):
+                for tr in changes:
+                    target = repo / tr["file"]
+                    _replace_source(target, tr["modified"])
+                    undo.callback(_replace_source, target, tr["original"])
+                for f in writable_new:
+                    destination = repo / f["path"]
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with destination.open("x", newline="") as output:
+                        undo.callback(destination.unlink)
+                        output.write(f["content"])
+            undo.pop_all()
+        transformations.extend(changes)
+        created.extend(writable_new)
+        patched_contents.update((f["path"], f["content"]) for f in writable_new)
+        patched_contents.update((tr["file"], tr["modified"]) for tr in changes)
 
     nothing_done = not transformations and not created
-    manifest_path: Path | None = None
-    if not nothing_done:
-        manifest_path = _write_manifest(repo, applied_specs, created, transformations)
-    if args.json:
+    if as_json:
         payload = {
             **base,
             "dry_run": False,
@@ -431,8 +509,8 @@ def cmd_apply(args: argparse.Namespace) -> int:
             "wrote_files": sorted({t["file"] for t in transformations}),
             "created_files": [f["path"] for f in created],
         }
-        if manifest_path is not None:
-            payload["manifest"] = str(manifest_path.relative_to(repo))
+        if not nothing_done:
+            payload["manifest"] = str(path.relative_to(repo))
         _print_json(payload)
         return 0
     print(f"nanogpt-opt apply: {repo}")
@@ -462,37 +540,51 @@ def _cmd_revert(repo: Path, as_json: bool) -> int:
     if not manifest_file.exists():
         _err(f"no manifest at {manifest_file}")
         return 1
-    manifest = json.loads(manifest_file.read_text())
+    manifest = _load_manifest(manifest_file)
 
-    from scholardevclaw.patch_generation.generator import PatchGenerator
-
-    # Chained originals: each transformation was generated against the state
-    # left by the previous one, so revert walks the chain backwards.
-    entries = [dict(t) for t in manifest.get("transformations", [])]
-    restored = PatchGenerator.revert_transformations(repo, list(reversed(entries)))
-    restored = list(dict.fromkeys(restored))  # dedupe files restored via the chain
-    removed: list[str] = []
+    # Compare against the final patch before restoring the first snapshot.
+    originals: dict[str, str] = {}
+    modified = _latest_patch_contents(manifest)
+    for entry in manifest["transformations"]:
+        originals.setdefault(entry["file"], entry["original"])
+    created = set(manifest["new_files"])
+    restore: dict[str, str] = {}
+    remove: list[str] = []
     kept: list[str] = []
-    for rel in manifest.get("new_files", []):
-        target = (repo / rel).resolve()
-        try:
-            target.relative_to(repo)
-        except ValueError:
+    for rel in dict.fromkeys([*originals, *manifest["new_files"]]):
+        target = repo / rel
+        if target.is_symlink() or not target.resolve().is_relative_to(repo):
             kept.append(rel)
             continue
-        if target.exists():
-            target.unlink()
+        if rel in created and not target.exists():
+            continue
+        if not target.is_file():
+            kept.append(rel)
+            continue
+        with target.open(newline="") as source:
+            current = source.read()
+        if rel not in created and current == originals[rel]:
+            continue
+        if rel not in modified or current != modified[rel]:
+            kept.append(rel)
+        elif rel in created:
+            remove.append(rel)
+        else:
+            restore[rel] = originals[rel]
+
+    restored: list[str] = []
+    removed: list[str] = []
+    if not kept:
+        for rel, original in restore.items():
+            _replace_source(repo / rel, original)
+            restored.append(rel)
+        for rel in remove:
+            (repo / rel).unlink()
             removed.append(rel)
-    chain_ok = len(restored) == len({t.get("file", "") for t in entries})
-    if chain_ok and not kept:
         manifest_file.unlink(missing_ok=True)
-        try:
-            manifest_file.parent.rmdir()  # remove .nanogpt-opt/ if now empty
-        except OSError:
-            pass
     if as_json:
         _print_json({"restored": restored, "removed_new_files": removed, "kept": kept})
-        return 0
+        return int(bool(kept))
     print(f"nanogpt-opt revert: {repo}")
     print(f"  restored: {len(restored)} file(s)")
     for rel in restored:
@@ -501,12 +593,13 @@ def _cmd_revert(repo: Path, as_json: bool) -> int:
     for rel in removed:
         print(f"    - {rel}")
     if kept:
-        print("  kept (modified after apply):")
+        print("  kept (changed, missing, or unverified by the manifest):")
         for rel in kept:
             print(f"    - {rel}")
+        print("  Resolve these conflicts and run --revert again.")
     if not restored and not removed:
         print("  nothing reverted")
-    return 0
+    return int(bool(kept))
 
 
 # ---------------------------------------------------------------------------
@@ -694,6 +787,9 @@ def main(argv: list[str] | None = None) -> int:
     }
     try:
         return handlers[args.command](args)
+    except (OSError, ValueError) as exc:
+        _err(str(exc))
+        return 1
     except KeyboardInterrupt:
         _err("interrupted")
         return 130

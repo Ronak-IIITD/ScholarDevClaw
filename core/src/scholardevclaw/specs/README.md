@@ -1,6 +1,6 @@
 # nanogpt-opt v1 — Frozen Specs (Step 1)
 
-Frozen from `src/scholardevclaw/research_intelligence/extractor.py:PAPER_SPECS`.
+Frozen from `../research_intelligence/extractor.py:PAPER_SPECS`.
 Only these 10 are supported. Everything else in `PAPER_SPECS` is out of scope for v1.
 
 - `rmsnorm`, `preln_transformer`, `qknorm` — normalization
@@ -13,6 +13,6 @@ Only these 10 are supported. Everything else in `PAPER_SPECS` is out of scope fo
 ## Rules
 - Do NOT add new specs here without a matching libcst transformer in `patch_generation/generator.py` + an eval case on `test_repos/nanogpt`.
 - Do NOT edit these JSONs to change `target_patterns` without updating `mapping/engine.py` aliases + tests.
-- Source of truth for v1 is these files, loaded via `src/scholardevclaw/nano_specs.py`. `extractor.py` remains legacy.
+- The CLI loads these files via `../nano_specs.py`. The Python package includes the same JSON files used in development.
 
 See `manifest.json` for version + scope.
