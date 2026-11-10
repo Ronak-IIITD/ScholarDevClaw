@@ -1347,12 +1347,15 @@ def run_map(
         )
 
         llm_assistant = _create_llm_assistant() if research_spec is None else None
+        spec_override: dict[str, Any] = (
+            {"research_spec": research_spec} if research_spec is not None else {}
+        )
         mapping_result, spec = _build_mapping_result(
             path,
             spec_name,
             llm_assistant=llm_assistant,
             log_callback=log_callback,
-            research_spec=research_spec,
+            **spec_override,
         )
         targets = mapping_result.get("targets", [])
 
@@ -1423,13 +1426,16 @@ def run_generate(
         )
 
         llm_assistant = _create_llm_assistant() if research_spec is None else None
+        spec_override: dict[str, Any] = (
+            {"research_spec": research_spec} if research_spec is not None else {}
+        )
         mapping_result, spec = _build_mapping_result(
             path,
             spec_name,
             llm_assistant=llm_assistant,
             log_callback=log_callback,
             analysis=analysis,
-            research_spec=research_spec,
+            **spec_override,
         )
 
         generator = PatchGenerator(path, llm_assistant=llm_assistant)
