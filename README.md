@@ -19,6 +19,30 @@ Detect, apply, and revert **10 proven transformer optimizations** as validated, 
 
 Every command accepts `--json`.
 
+## SDPA migration preview
+
+`nanogpt-opt sdpa /path/to/repo` previews a migration of the minGPT causal
+attention pattern to `torch.nn.functional.scaled_dot_product_attention`.
+The unified diff preserves the existing mask buffer, parameter names, and
+attention dropout's training/evaluation mode. The emitted code requires PyTorch 2.0+.
+
+The first supported pattern uses `forward(self, x)`, packed Q/K/V projections,
+the standard head reshape, reciprocal-square-root scaling, a lower-triangular
+mask buffer and its slice,
+`F.softmax`, and `self.attn_dropout = nn.Dropout(config.attn_pdrop)`.
+It checks the `F`, `nn`, `torch`, `math.sqrt`, and `float` bindings, and reports unfamiliar
+methods and existing SDPA calls as skipped. Supported names and statement order
+match [pinned minGPT](https://github.com/karpathy/minGPT/blob/37baab71b9abea1b76ab957409a1cc2fbfba8a26/mingpt/model.py).
+
+```bash
+nanogpt-opt sdpa /path/to/minGPT
+nanogpt-opt sdpa /path/to/minGPT --json
+```
+
+This command produces a static preview. Numerical verification and applying
+SDPA patches are the next milestone. Review assumes standard PyTorch tensors
+and modules without custom dropout hooks or monkey-patched operators.
+
 ## Quick start
 
 ```bash

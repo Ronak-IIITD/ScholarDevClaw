@@ -2,7 +2,19 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-11-10 (CLI and dashboard recovery)
+**Last updated:** 2026-11-13 (SDPA preview and merge workflow)
+
+### 2026-11-13 (Push and merge workflow)
+
+- Recorded the user's standing instruction to push completed changes, merge into main after CI passes, and sync the local main checkout.
+
+### 2026-11-13 (SDPA migration preview)
+
+- Added `nanogpt-opt sdpa <repo> [--json]` through the shared pipeline. It previews the supported minGPT causal-attention rewrite using LibCST.
+- Preserved mask buffers, parameter names, source encoding, comments, and attention dropout mode. Import binding checks and the complete forward pattern restrict which sites receive a diff.
+- Added per-site reasons for unsupported methods and existing SDPA calls, plus per-file scan errors. The scanner prunes environments and symlinks and never imports target code.
+- This milestone provides static previews. Runtime numerical verification and applying the migration are planned next.
+- Verified 2,649 Python tests passing with one skip and the live integration test excluded, plus Ruff, Mypy, and CLI smoke checks. A separate run on minGPT at `37baab71b9abea1b76ab957409a1cc2fbfba8a26` confirmed strict checkpoint loading and matching logits and parameter gradients at sequence lengths 1, 8, and 16 with dropout disabled.
 
 ### 2026-11-10 (CLI and dashboard recovery)
 
