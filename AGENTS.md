@@ -268,5 +268,5 @@ High-quality changes in this repo usually:
 
 ## Rules
 
-1. Always push to the code to Github after your todo is completed of that particular task
+1. After completing and verifying a task, commit and push the changes to GitHub. The user authorizes merging completed work into main after every push. Open or update the pull request, wait for CI checks to pass, merge it into main, and sync the local main checkout. Fix failing checks before merging.
 2. Always add the last updated + chanellog of the progress in UPDATES.md

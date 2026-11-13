@@ -2,7 +2,11 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-11-13 (SDPA migration preview)
+**Last updated:** 2026-11-13 (SDPA preview and merge workflow)
+
+### 2026-11-13 (Push and merge workflow)
+
+- Recorded the user's standing instruction to push completed changes, merge into main after CI passes, and sync the local main checkout.
 
 ### 2026-11-13 (SDPA migration preview)
 
