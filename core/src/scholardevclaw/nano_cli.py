@@ -1,4 +1,4 @@
-"""nanogpt-opt — lean 4-command CLI over the frozen 10-spec surface.
+"""nanogpt-opt — transformer patch workflows and an SDPA migration preview.
 
 Commands
     analyze   Scan a Python transformer repo; report applicable frozen specs.
@@ -6,6 +6,7 @@ Commands
     apply     Preview (default) or apply the patch; ``--revert`` restores.
     validate  Honest verification: compile / tests / benchmark, with explicit
               ``skipped`` states — a stage that did not run never reports pass.
+    sdpa      Preview the supported minGPT causal-attention migration.
 
 Design rules:
 - Additive entry point; the legacy ``scholardevclaw`` CLI is untouched.
@@ -740,6 +741,34 @@ def cmd_validate(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def cmd_sdpa(args: argparse.Namespace) -> int:
+    from scholardevclaw.application.pipeline import run_sdpa_preview
+
+    result = run_sdpa_preview(args.repo)
+    if args.json:
+        _print_json({**result.payload, "ok": result.ok, "error": result.error})
+        return 0 if result.ok else 1
+    if not result.payload:
+        _err(result.error or "could not scan repository")
+        return 1
+    payload = result.payload
+    print(f"nanogpt-opt sdpa (preview): {payload['repo']}")
+    print(f"  Python files scanned: {payload['files_scanned']}")
+    for site in payload["sites"]:
+        print(
+            f"  {site['file']}:{site['line']} {site['class_name']}: "
+            f"{site['status']} — {site['reason']}"
+        )
+    for failure in payload["errors"]:
+        _err(f"{failure['file']}: {failure['error']}")
+    if not payload["sites"] and not payload["errors"]:
+        print("  no attention candidates found")
+    for diff in payload["diffs"].values():
+        print(diff, end="" if diff.endswith("\n") else "\n")
+    print("  Preview only. Numerical verification is pending.")
+    return 0 if result.ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nanogpt-opt",
@@ -773,6 +802,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("repo", help="Repository path")
     p_validate.add_argument("--json", action="store_true", help="Machine-readable output")
 
+    p_sdpa = sub.add_parser(
+        "sdpa", help="Preview a minGPT-style causal attention migration to SDPA"
+    )
+    p_sdpa.add_argument("repo", help="Repository path")
+    p_sdpa.add_argument("--json", action="store_true", help="Machine-readable output")
+
     return parser
 
 
@@ -784,6 +819,7 @@ def main(argv: list[str] | None = None) -> int:
         "suggest": cmd_suggest,
         "apply": cmd_apply,
         "validate": cmd_validate,
+        "sdpa": cmd_sdpa,
     }
     try:
         return handlers[args.command](args)

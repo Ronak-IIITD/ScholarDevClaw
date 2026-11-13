@@ -1525,6 +1525,25 @@ def run_generate(
         )
 
 
+def run_sdpa_preview(repo_path: str) -> PipelineResult:
+    """Build a static SDPA migration preview through the shared workflow layer."""
+    from scholardevclaw.patch_generation.sdpa import preview_sdpa_repo
+
+    try:
+        payload = preview_sdpa_repo(_ensure_repo(repo_path))
+        return PipelineResult(
+            ok=not payload["errors"],
+            title="SDPA Migration Preview",
+            payload=payload,
+            logs=[],
+            error="Some Python files could not be scanned" if payload["errors"] else None,
+        )
+    except (OSError, ValueError) as exc:
+        return PipelineResult(
+            ok=False, title="SDPA Migration Preview", payload={}, logs=[], error=str(exc)
+        )
+
+
 def run_validate(
     repo_path: str,
     patch: dict[str, Any] | None = None,
