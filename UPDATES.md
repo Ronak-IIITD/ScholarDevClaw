@@ -2,7 +2,12 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-11-18 (GitHub developer preview)
+**Last updated:** 2026-11-18 (TUI transition test reliability)
+
+### 2026-11-18 (TUI transition test reliability)
+
+- Wait for Textual to finish scheduled animations and process their callbacks
+  before asserting transition results in CI.
 
 ### 2026-11-18 (GitHub developer preview)
 
