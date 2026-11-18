@@ -7,7 +7,7 @@ the underlying widget state over time.
 The unit tests in :mod:`tests.unit.test_tui_screen_transitions`
 cover the pure logic of transitions; the tests in this module verify
 that the integration with Textual's animation system works as
-expected (e.g. opacity reaches the target after ``pilot.pause``).
+expected (e.g. opacity reaches the target when the animator finishes).
 
 We deliberately do not exercise offset animation through the
 Textual animator — Textual 8.2.x has known issues animating
@@ -17,6 +17,8 @@ covered here.
 """
 
 from __future__ import annotations
+
+import asyncio
 
 import pytest
 
@@ -125,8 +127,7 @@ class TestAnimateEnterReal:
             assert screen.opacity == pytest.approx(0.0)
 
             animate_enter(screen, FADE)
-            # Wait for the animation to finish (FADE is 0.18s).
-            await pilot.pause(0.3)
+            await asyncio.wait_for(pilot.wait_for_scheduled_animations(), timeout=5)
             # Opacity should be at the target value.
             assert screen.opacity == pytest.approx(
                 ending_state(FADE, entering=True)["opacity"],
@@ -147,7 +148,7 @@ class TestAnimateEnterReal:
             assert screen.offset == (8, 0)
 
             animate_enter(screen, SLIDE_LEFT)
-            await pilot.pause(0.3)
+            await asyncio.wait_for(pilot.wait_for_scheduled_animations(), timeout=5)
             # Offset is snapped to the target at completion.
             assert screen.offset == ending_state(SLIDE_LEFT, entering=True)["offset"]
 
@@ -185,7 +186,7 @@ class TestAnimateExitReal:
 
             apply_starting_state(screen, FADE, entering=False)
             animate_exit(screen, FADE)
-            await pilot.pause(0.3)
+            await asyncio.wait_for(pilot.wait_for_scheduled_animations(), timeout=5)
             assert screen.opacity == pytest.approx(
                 ending_state(FADE, entering=False)["opacity"],
                 abs=0.01,
@@ -205,7 +206,7 @@ class TestAnimateExitReal:
             animate_exit(screen, FADE, on_complete=lambda: fired.append(True))
             # Before the animation finishes the callback hasn't fired.
             assert fired == []
-            await pilot.pause(0.3)
+            await asyncio.wait_for(pilot.wait_for_scheduled_animations(), timeout=5)
             # After the animation the callback has fired.
             assert fired == [True]
 
