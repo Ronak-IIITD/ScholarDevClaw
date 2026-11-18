@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Preview a minGPT-style attention migration to native PyTorch SDPA.">
+  <title>ScholarDevClaw · SDPA migration preview</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./site.webmanifest">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #181711;
+      --paper: #f5f2eb;
+      --accent: #a7390f;
+      --line: #d6cec0;
+      --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 1rem/1.6 system-ui, sans-serif; }
+    a { color: inherit; text-underline-offset: .2em; }
+    a:hover { color: var(--accent); }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+    header, main, footer { max-width: 74rem; margin: auto; padding-inline: clamp(1.25rem, 5vw, 4rem); }
+    header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding-block: 1.25rem; border-bottom: 1px solid var(--line); }
+    header strong { font: bold 1.15rem Georgia, serif; }
+    header a, footer { font-size: .88rem; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(2rem, 5vw, 5rem); align-items: center; padding-block: clamp(3rem, 8vw, 7rem); }
+    .eyebrow { color: var(--accent); font: .79rem var(--mono); }
+    h1, h2 { font-family: Georgia, serif; font-weight: 400; line-height: 1.05; }
+    h1 { font-size: clamp(2.75rem, 5.6vw, 5.4rem); letter-spacing: -.055em; margin: .25em 0; text-wrap: balance; }
+    h2 { font-size: clamp(1.8rem, 3.5vw, 2.75rem); letter-spacing: -.035em; margin: 0 0 .4em; }
+    p { max-width: 39rem; }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1.6rem; }
+    .button { display: inline-block; background: var(--ink); color: var(--paper); padding: .6rem 1rem; text-decoration: none; }
+    .button:hover { background: var(--accent); color: white; }
+    .terminal { margin: 0; background: #22221b; color: #fff8e9; border-radius: .45rem; }
+    .terminal figcaption { padding: .6rem 1rem; border-bottom: 1px solid #4c4a40; font: .8rem var(--mono); }
+    pre { font: .82rem/1.65 var(--mono); overflow: auto; margin: 0; padding: 1.1rem; }
+    .prompt { color: #e9b88b; }
+    .added { color: #b5dfa9; }
+    .details { padding-block: 2rem 3rem; border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; }
+    footer { border-top: 1px solid var(--line); padding-block: 1.2rem; }
+    @media (max-width: 760px) {
+      .hero, .details { grid-template-columns: minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>ScholarDevClaw</strong>
+    <a href="https://github.com/Ronak-IIITD/ScholarDevClaw">GitHub repository</a>
+  </header>
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Developer preview 2.1.0a1</p>
+        <h1>Preview a PyTorch attention migration</h1>
+        <p>Run <code>nanogpt-opt sdpa</code> on a minGPT-style checkout to see
+          the proposed switch to native PyTorch SDPA and why unfamiliar sites
+          were skipped. The preview leaves your files untouched.</p>
+        <div class="actions">
+          <a class="button" href="https://github.com/Ronak-IIITD/ScholarDevClaw/releases/tag/preview-v2.1.0a1">Get the preview</a>
+          <a href="https://github.com/Ronak-IIITD/ScholarDevClaw#reproduce-the-demo">Reproduce the demo</a>
+        </div>
+      </div>
+      <figure class="terminal">
+        <figcaption>Excerpt from the minGPT preview</figcaption>
+        <pre><code><span class="prompt">$ nanogpt-opt sdpa minGPT</span>
+
+--- a/mingpt/model.py
++++ b/mingpt/model.py
+<span class="added">+        y = F.scaled_dot_product_attention(
++            q, k, v,
++            attn_mask=self.bias[:, :, :T, :T] != 0,
++            dropout_p=self.attn_dropout.p if self.attn_dropout.training else 0.0,
++        )</span>
+
+Preview only. Numerical verification is pending.</code></pre>
+      </figure>
+    </section>
+    <section class="details" aria-label="Preview requirements and contributions">
+      <div>
+        <h2>Try it with Python</h2>
+        <p>The preview runs on Python 3.10–3.12 without PyTorch or API keys.
+          The proposed code uses PyTorch 2.0 or later.</p>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw#install-the-developer-preview">Installation instructions</a>
+      </div>
+      <div>
+        <h2>Share an attention pattern</h2>
+        <p>Send a small source fixture and the diff or refusal you expect.
+          The contributor guide explains how to run the focused checks.</p>
+        <a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/CONTRIBUTING.md">Contributor guide</a>
+      </div>
+    </section>
+  </main>
+  <footer><a href="https://github.com/Ronak-IIITD/ScholarDevClaw/blob/main/LICENSE">MIT License</a></footer>
+</body>
+</html>
