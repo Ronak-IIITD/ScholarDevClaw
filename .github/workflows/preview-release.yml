@@ -1,0 +1,87 @@
+name: Developer Preview
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "core/**"
+      - "scripts/demo_sdpa.py"
+      - ".github/workflows/preview-release.yml"
+  push:
+    tags: ["preview-v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Build and test preview archives
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/pyproject.toml
+      - name: Build wheel and source archive
+        run: |
+          python -m pip install build twine
+          python -m build --outdir dist core
+          python -m twine check --strict dist/*
+      - name: Install and run the demo from each archive
+        run: |
+          scratch=$(mktemp -d)
+          for archive in "$GITHUB_WORKSPACE"/dist/*; do
+            (
+              cd "$scratch"
+              python -m venv clean
+              source clean/bin/activate
+              python -m pip install "$archive"
+              python -m pip check
+              version=$(python -c 'import scholardevclaw; from importlib.metadata import version; assert scholardevclaw.__version__ == version("scholardevclaw"); print(scholardevclaw.__version__)')
+              if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+                test "$GITHUB_REF_NAME" = "preview-v$version"
+              fi
+              test "$(nanogpt-opt --version)" = "nanogpt-opt $version"
+              test "$(scholardevclaw --version)" = "scholardevclaw $version"
+              python -c 'from importlib.util import find_spec; assert find_spec("torch") is None'
+              python "$GITHUB_WORKSPACE/scripts/demo_sdpa.py"
+            )
+            rm -r "$scratch/clean"
+          done
+      - name: Record SHA-256 checksums
+        working-directory: dist
+        run: sha256sum *.whl *.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub prerelease
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: preview-distributions
+          path: dist
+      - name: Verify and publish tested assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd dist && sha256sum --check SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag --prerelease --title "ScholarDevClaw ${GITHUB_REF_NAME#preview-v}" \
+            --notes-file docs/preview-release.md

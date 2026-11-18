@@ -30,6 +30,7 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
+from scholardevclaw import __version__
 from scholardevclaw.nano_analyze import analyze_repo
 from scholardevclaw.nano_specs import list_supported_specs, load_spec
 
@@ -772,9 +773,9 @@ def cmd_sdpa(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nanogpt-opt",
-        description="Lean research-to-code patches for PyTorch transformer repos "
-        "(10 frozen specs: nanoGPT scope).",
+        description="Preview SDPA migrations and explore transformer patches.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_analyze = sub.add_parser("analyze", help="Scan a repo; report applicable frozen specs")

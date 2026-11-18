@@ -37,7 +37,6 @@ Examples:
   scholardevclaw suggest ./my-project
   scholardevclaw integrate ./my-project rmsnorm
 
-Version: 2.0
 """
 
 import argparse
@@ -50,6 +49,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from scholardevclaw import __version__
 from scholardevclaw.application.schema_contract import evaluate_payload_compatibility
 from scholardevclaw.auth.cli import cmd_auth
 
@@ -3802,7 +3802,7 @@ def cmd_agent(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ScholarDevClaw - Autonomous Research-to-Code Agent v2.0",
+        description="ScholarDevClaw - Research-to-Code Agent",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 ScholarDevClaw analyzes your codebase, researches relevant papers,
@@ -3859,6 +3859,7 @@ For more information: https://github.com/Ronak-IIITD/ScholarDevClaw
         """,
     )
 
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # analyze
