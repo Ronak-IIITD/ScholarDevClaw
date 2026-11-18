@@ -2,7 +2,16 @@
 
 ## 0) Last Updated + Changelog
 
-**Last updated:** 2026-11-13 (SDPA preview and merge workflow)
+**Last updated:** 2026-11-18 (GitHub developer preview)
+
+### 2026-11-18 (GitHub developer preview)
+
+- Unified installed version reporting at `2.1.0a1` and added a release
+  workflow that tests the wheel and source archive before publishing.
+- Reworked the project and package READMEs and the landing page around the
+  static SDPA command. Added a pinned minGPT demo and recording.
+- Added a contributor walkthrough and issue template for attention patterns,
+  with focused checks for supported and refused cases.
 
 ### 2026-11-13 (Push and merge workflow)
 

@@ -1,7 +1,7 @@
 {
   "name": "ScholarDevClaw",
   "short_name": "ScholarDevClaw",
-  "description": "Research-to-code AI agent for automated ML paper integration.",
+  "description": "Preview minGPT-style attention migrations to PyTorch SDPA.",
   "start_url": "/ScholarDevClaw/",
   "display": "standalone",
   "background_color": "#040509",

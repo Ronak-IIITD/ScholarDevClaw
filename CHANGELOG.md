@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plugin ecosystem with hook system, registry, and community extensions (planned)
 - Multi-repo support for cross-repository analysis and knowledge transfer (planned)
 
+## [2.1.0a1] - 2026-11-18
+
+- Added a GitHub developer preview for the static SDPA migration, with a
+  tested wheel, source archive, and SHA-256 checksums.
+- Added a pinned minGPT walkthrough and a contributor guide for attention
+  pattern fixtures.
+
 ## [0.1.0] - 2026-03-06
 
 ### Added
@@ -43,5 +50,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Input validation, rate limiting, secret management, subprocess sandboxing
 - Nginx hardening: HSTS, CSP, server_tokens off, body limits, IP restrictions
 
-[Unreleased]: https://github.com/Ronak-IIITD/ScholarDevClaw/compare/v0.1.0...HEAD
+[2.1.0a1]: https://github.com/Ronak-IIITD/ScholarDevClaw/releases/tag/preview-v2.1.0a1
 [0.1.0]: https://github.com/Ronak-IIITD/ScholarDevClaw/releases/tag/v0.1.0

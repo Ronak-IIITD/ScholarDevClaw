@@ -1,123 +1,68 @@
-# ScholarDevClaw / nanogpt-opt
+# ScholarDevClaw
 
-Detect, apply, and revert **10 proven transformer optimizations** as validated, reversible patches — with an honest validator that never reports a pass for work it did not do.
+Preview a source migration from minGPT-style causal attention to PyTorch's
+`scaled_dot_product_attention` (SDPA). `nanogpt-opt` shows a unified diff,
+reports why it skipped unfamiliar patterns, and leaves the checkout untouched.
 
-![nanogpt-opt demo](demo-nanogpt.gif)
+## Install the developer preview
 
-## The four commands
-
-`nanogpt-opt` is a lean CLI over a frozen scope of 10 research-backed specs:
-
-`rmsnorm` · `preln_transformer` · `qknorm` · `swiglu` · `flashattention2` · `grouped_query_attention` · `rope` · `alibi` · `lion` · `cosine_warmup`
-
-| Command | What it does |
-|---------|--------------|
-| `analyze <repo>` | Offline scan (tree-sitter, no LLM): Python files, model classes, applicable specs. |
-| `suggest <repo> [--spec]` | Maps specs to concrete `file:line` targets with confidence + strategy. |
-| `apply <repo> [--spec] [--write\|--revert]` | **Dry-run by default** (unified diff, zero writes). `--write` applies atomically per spec and records `.nanogpt-opt/manifest.json`; `--revert` restores **byte-identical** originals and removes created files. Re-running `--write` on a patched repo is a clean no-op. |
-| `validate <repo>` | Honest scorecard: `compile` / `tests` / `benchmark`, each `pass`, `fail`, or `skipped`. A stage that never ran is `skipped` — never a pass. Exit 1 on any fail. |
-
-Every command accepts `--json`.
-
-## SDPA migration preview
-
-`nanogpt-opt sdpa /path/to/repo` previews a migration of the minGPT causal
-attention pattern to `torch.nn.functional.scaled_dot_product_attention`.
-The unified diff preserves the existing mask buffer, parameter names, and
-attention dropout's training/evaluation mode. The emitted code requires PyTorch 2.0+.
-
-The first supported pattern uses `forward(self, x)`, packed Q/K/V projections,
-the standard head reshape, reciprocal-square-root scaling, a lower-triangular
-mask buffer and its slice,
-`F.softmax`, and `self.attn_dropout = nn.Dropout(config.attn_pdrop)`.
-It checks the `F`, `nn`, `torch`, `math.sqrt`, and `float` bindings, and reports unfamiliar
-methods and existing SDPA calls as skipped. Supported names and statement order
-match [pinned minGPT](https://github.com/karpathy/minGPT/blob/37baab71b9abea1b76ab957409a1cc2fbfba8a26/mingpt/model.py).
+Use Python 3.10–3.12 and Git. The preview runs without PyTorch, a GPU, Node.js,
+or API credentials. The proposed code uses PyTorch 2.0 or later.
 
 ```bash
-nanogpt-opt sdpa /path/to/minGPT
-nanogpt-opt sdpa /path/to/minGPT --json
-```
-
-This command produces a static preview. Numerical verification and applying
-SDPA patches are the next milestone. Review assumes standard PyTorch tensors
-and modules without custom dropout hooks or monkey-patched operators.
-
-## Quick start
-
-```bash
-git clone https://github.com/Ronak-IIITD/ScholarDevClaw.git && cd ScholarDevClaw
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e core
-
-nanogpt-opt analyze /path/to/repo
-nanogpt-opt suggest /path/to/repo --spec rmsnorm
-nanogpt-opt apply   /path/to/repo --spec rmsnorm            # dry-run: unified diff
-nanogpt-opt apply   /path/to/repo --spec rmsnorm --write    # apply + manifest
-nanogpt-opt validate /path/to/repo                          # honest pass/fail/skipped
-nanogpt-opt apply   /path/to/repo --revert                  # byte-identical restore
+python -m pip install https://github.com/Ronak-IIITD/ScholarDevClaw/releases/download/preview-v2.1.0a1/scholardevclaw-2.1.0a1-py3-none-any.whl
+nanogpt-opt --version
 ```
 
-No GPU required; `analyze` needs no network and no LLM.
+The [GitHub prerelease](https://github.com/Ronak-IIITD/ScholarDevClaw/releases/tag/preview-v2.1.0a1)
+also includes the source archive and SHA-256 checksums. To install from a
+checkout, run `python -m pip install ./core` in its root.
 
-## Demo (54s)
+## Reproduce the demo
 
-[`demo-nanogpt.tape`](demo-nanogpt.tape) renders [`demo-nanogpt.mp4`](demo-nanogpt.mp4) / `demo-nanogpt.gif` — the full loop against a live clone of [karpathy/nanoGPT](https://github.com/karpathy/nanoGPT):
-
-1. `analyze` → 10/10 applicable specs
-2. `suggest --spec rmsnorm` → target at `model.py:18`, confidence 75
-3. `apply` dry-run → unified diff, zero writes
-4. `apply --write` → `model.py` transformed + `rmsnorm.py` created + manifest
-5. second `--write` → `nothing to apply` (idempotent)
-6. `validate` → compile pass, tests skipped, benchmark fail → **`exit=1`** (honest)
-7. `git status` → dirty; `--revert` → restored; `git status` → **clean**
-
-Render it yourself: `vhs demo-nanogpt.tape` (requires [vhs](https://github.com/charmbracelet/vhs), `ttyd`, `ffmpeg`).
-
-## Proof on external repositories
-
-Every roundtrip below was verified by SHA-256 of all `.py` files before/after: **byte-identical revert**, manifest fully cleaned, idempotent second `--write`.
-
-| External repo | Files | Specs applied | Result |
-|---------------|-------|---------------|--------|
-| `karpathy/nanoGPT` | 5 | all 10 | 10 files changed + 8 created; revert byte-identical (12.6s) |
-| `lucidrains/vit-pytorch` | 86 | `rmsnorm` (15 targets) | 20 changed + 5 created; revert byte-identical (177s) |
-| `lucidrains/x-transformers` | 43 | `rmsnorm` (12 targets) | 12 changed + 5 created; revert byte-identical (203s) |
-
-`validate` on each reported honestly: compilation passed; tests/benchmark reported `fail` or `skipped` for real environmental reasons (missing optional deps, `bench.py` runtime failure) — never a fabricated pass.
-
-## Honesty guarantees
-
-- **Skipped ≠ pass.** Tests without test files (or without pytest) and benchmarks without scripts report `skipped`; the summary counts them separately; exit code reflects only real failures.
-- **No fake benchmark numbers.** A benchmark case scores `1.0` only when it actually imported and executed (`import_ok`); AST-identical but unexecuted candidates score `0.75` (`ast_matched`). The committed no-torch baseline (`core/benchmarks/benchmark_report.json`, aggregate `0.725`) gates CI at `current ≥ baseline − 0.1`.
-- **Dry-run default.** `apply` writes nothing until `--write`; created files are create-only — an existing path is never clobbered and never recorded for revert.
-- **Byte-identical revert.** One manifest tracks writes across multiple invocations. `--revert` checks the files for changes before restoring the original bytes. With older manifests, inspect and remove any generated files listed as unverified, then retry `--revert`.
-
-## Architecture
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│ nanogpt-opt (nano_cli.py) — analyze/suggest/apply/validate│
-├──────────────────────────────────────────────────────────┤
-│ Python core pipeline (shared by scholardevclaw CLI/TUI/API)│
-│  • repo intelligence (tree-sitter analyzer)               │
-│  • mapping (alias matcher, confidence ≥ 70)               │
-│  • patch generation (libcst transformers, reversible)     │
-│  • validation + benchmark harness (honest scoring)        │
-└──────────────────────────────────────────────────────────┘
+```bash
+git clone --branch preview-v2.1.0a1 https://github.com/Ronak-IIITD/ScholarDevClaw.git
+cd ScholarDevClaw
+python scripts/demo_sdpa.py
 ```
 
-The legacy `scholardevclaw` CLI, Textual TUI, FastAPI server, and TypeScript orchestrator remain in the repo and are covered by CI.
+The script fetches minGPT at
+[`37baab71b9ab`](https://github.com/karpathy/minGPT/blob/37baab71b9abea1b76ab957409a1cc2fbfba8a26/mingpt/model.py)
+into a temporary directory. It shows the proposed diff, checks that the checkout
+stayed clean, and shows what happens when a copy uses custom attention scaling.
+![Terminal demo showing the minGPT diff and custom-scale refusal](docs/sdpa-preview.gif)
 
-## Docs
+To try a checkout of your own:
 
-- [Quick Start Guide (legacy surfaces)](demo.md)
-- [API Reference](docs/API.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
-- [Architecture Notes](ARCHITECTURE.md)
-- [Agent Handbook](AGENTS.md)
+```bash
+nanogpt-opt sdpa /path/to/repo
+nanogpt-opt sdpa /path/to/repo --json
+```
 
-## Contributing and community
+## Supported patterns
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md). Use [GitHub Discussions](https://github.com/Ronak-IIITD/ScholarDevClaw/discussions) for questions and show-and-tell, and [GitHub Issues](https://github.com/Ronak-IIITD/ScholarDevClaw/issues) for bugs or feature requests.
+| Attention pattern | Preview result |
+|---|---|
+| Pinned minGPT's manual causal attention | Proposes an SDPA call using the existing mask and attention dropout mode |
+| Already calls native SDPA, as in nanoGPT | Reports `already_migrated` and emits no diff for the site |
+| Custom scaling, masks, or ambiguous bindings | Reports `unsupported` with a reason and emits no diff for the site |
+
+The matcher expects minGPT's forward layout, packed Q/K/V projections, standard
+scaling, lower-triangular mask buffer, and `nn.Dropout`. It keeps parameter names
+and the mask buffer. The command performs static analysis and reports
+`verification: "not_run"`. Runtime numerical checks and applying SDPA patches
+are future milestones.
+
+## Contributing
+
+Start with the [contributor guide](CONTRIBUTING.md) or
+[submit an attention pattern](https://github.com/Ronak-IIITD/ScholarDevClaw/issues/new?template=attention_pattern.md)
+with a small source fixture and the expected result.
+
+The existing `analyze`, `suggest`, `apply`, and `validate` commands cover the
+earlier transformer patch workflow. See the [nanoGPT demo recording](demo-nanogpt.mp4)
+and the [legacy CLI guide](GUIDE.md) for those workflows and the wider project.
+
+[MIT License](LICENSE)
